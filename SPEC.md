@@ -59,8 +59,50 @@ The app finds stops two ways:
 For each watched stop, trackmo shows the next few departures: **line**, **destination**
 (where the service is headed), **platform** where TfL gives one, and a **countdown**.
 Countdowns render as minutes — "Due" when imminent, "3 min", "12 min" — sorted
-soonest-first. The app shows more per stop; a glance surface (widget) shows the top
-one or two per stop or per filtered line.
+soonest-first.
+
+**The unit of display is a flat row per (service, stop, direction)** — a *service*
+being a line (or bus route) at a stop. A row shows the line, its destination (the
+resolved destination the domain carries — `destinationName`, else `towards`), the stop,
+and the soonest countdowns. A two-way service
+at a stop is two rows, one per direction; a one-directional case (a terminus platform, a
+one-way-street stop, a single branch) is one. Nothing is hidden behind a gesture, which
+is what a glance surface needs (**D8**). TfL's `direction` is the primary key and the
+domain retains it — it can't be *reconstructed* from destination or platform in general
+(a branch shares a direction; a terminus doesn't imply one). TfL omits `direction` on
+some services, though, so when it is absent the grouping falls back to the platform, then
+the destination, as a best-effort discriminator (the resolved *direction key*) rather
+than merging opposite directions; a prediction with none of the three is genuinely
+indistinguishable and shares one "unknown" row. When a direction *does* branch
+(same line, same direction, different destinations), the row keeps each departure's own
+destination, so a countdown is never shown under the wrong one; the row's headline names
+the soonest departure's.
+
+The row set is not purely prediction-derived: a watched stop or line with a **known
+disruption** but **zero predictions** still contributes a row — a status row (for the
+stop, or for that service at the stop) carrying the disruption and no countdown,
+direction-independent since no prediction supplies a direction. So a suspended line or a
+closed stop is surfaced, not silently dropped for want of a departure to build a row from
+(see *Disruptions*) — the quietly-wrong failure the whole model exists to avoid.
+
+The list shows the **watched stops'** rows (D1) — trackmo renders the stops the user
+chose ahead of time, not "nearest to me" — ordered **location-free** so the view works
+with location denied: soonest-first, with **starred** rows pinned to the top. Starring is
+ranking only, separate from which stops are watched (add/remove membership). Distance
+ranking belongs to *finding* stops (near-me discovery, *Finding stops*), not to ordering
+the watched list.
+
+**The final display model, and how a direction is labeled, are still open.** The flat
+list ships first because it is the simplest thing that is fully glanceable. A more
+compact **(service, stop) card that swipes between directions** is the leading candidate
+to iterate toward once the flat list has been used on a device — it collapses a two-way
+service to one card but hides the other direction behind a gesture the widget host owns,
+so it is a later call, not a prerequisite (**D8**). The direction label is the resolved
+destination the domain carries (`destinationName`, else `towards`) for now; two
+refinements are recorded to explore (`TODO.md` Phase 2): labeling
+a direction by the **next branch or interchange point** downstream rather than the
+terminus, and keying **one row per destination**. Both feed letting users set **favorite
+destinations** to filter or rank by.
 
 TfL's endpoint is named "Arrivals"; for a bus stop these are departures *from* that
 stop, which is what a rider wants. Trackmo calls them departures throughout the UI.
@@ -184,8 +226,9 @@ TfL requests that *are* the product: a nearby-stops lookup necessarily sends coo
 to TfL, and a departures lookup necessarily sends the watched stop IDs. That is inherent
 and disclosed.
 
-The persisted config (watched stops, the last-good snapshot, the user's `app_key`) does
-travel through **Android's own backup and device-to-device transfer** — trackmo allows
+All of trackmo's persisted config — watched stops, per-stop filters, row stars, any saved
+favorite destinations, the user's `app_key` — and the last-good snapshot travel through
+**Android's own backup and device-to-device transfer** — trackmo allows
 both, deliberately, so a phone swap keeps the user's setup rather than losing it
 (maintainer, 2026-09-18; the fleet's "never lose the user's work" over a literal
 never-leaves-the-device wording). This is the platform's user-controlled channel tied to
@@ -280,3 +323,25 @@ Mirrors the sibling fleet:
 - **D7 — No baked-in TfL key; works keyless, optional user key for the higher limit.**
   A shared key would pool all users into one bucket and ship a credential; a per-user
   key avoids both. See *Data source*.
+- **D8 — Ship a flat list (one row per service, stop, direction) with star-to-pin;
+  final display model left open.** A station serves many lines and most run two ways,
+  so the display has to present direction somehow. The flat list gives each direction
+  its own row: nothing hidden, fully glanceable, and the simplest thing to build and to
+  render on a widget. Its cost is length — a busy stop is many rows — which starring
+  (ranking, distinct from watched-stop membership) and, later, smarter selection are
+  meant to manage. The list orders the watched stops' rows location-free (soonest-first,
+  starred pinned), so it works with location denied; distance ranking is for *finding*
+  stops, not ordering this list (D1). A more compact **(service, stop) card that swipes
+  between directions** is the leading candidate to iterate toward, but it hides the other
+  direction behind a gesture the widget host owns, so it is deferred until the flat list
+  has been used on a device — not a prerequisite. TfL's `direction` is the primary key
+  and is retained (it can't be reconstructed from destination/platform in general); when
+  TfL omits it, grouping falls back to platform then destination as a best-effort
+  discriminator, and an all-blank prediction shares one "unknown" row. A branching
+  direction keeps each departure's own destination so none is mislabeled. The
+  direction label is the resolved destination the domain carries (`destinationName`, else
+  `towards`) for now; two refinements are recorded to
+  explore (`TODO.md` Phase 2) — labeling a direction by the next branch/interchange point
+  rather than the terminus, and one row per destination — both feeding user-set favorite
+  destinations. Supersedes the earlier open question; the flat-list-vs-swipe-card choice
+  and how a direction is labeled are the remaining open calls, to settle from real use.
