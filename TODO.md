@@ -77,11 +77,13 @@ exercises the whole spine the widget later renders from.
       follow-ups.
   - `/Line/{ids}/Status` for the shown stops' lines: **[landed, PR #12]** mark a departure
     whose line is disrupted (a chip carrying TfL's status wording); a good-service line is
-    left unmarked. **Still to do:** show a line's status even when it has zero predictions
-    (a suspended line often returns none) as a direction-independent status row, from the
-    watched stop→line mapping retained independently of the predictions (SPEC
-    *Departures* / *Disruptions*) — needs the stop→line mapping, so it rides with Phase 2's
-    watched stops or a seed line list.
+    left unmarked. **[landed, PR #14]** show a line's status even when it has zero
+    predictions (a suspended line often returns none) as a direction-independent status row,
+    from the stop's declared lines (seeded per stop on `StopRef`/`StopArrivals`, carried
+    independently of the predictions; Phase 2's watched stops replace the seed). The status
+    lookup now covers declared lines too, and `DepartureRows.across` synthesizes a
+    status-only row (empty `upcoming`, sorted first) for a disrupted declared line with no
+    prediction rows (SPEC *Departures* / *Disruptions*).
   - `/StopPoint/{id}/Disruption` for the watched stops: mark or suppress a **closed
     stop** even when its lines' status is normal — otherwise a closed stop shows
     valid-looking departures, the same quietly-wrong failure by a different path. A closed
