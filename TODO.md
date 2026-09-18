@@ -71,20 +71,27 @@ exercises the whole spine the widget later renders from.
       without (SPEC principle 1 / D3); the *full* disruption experience is Phase 3.
       **The MainScreen slice landed ahead of this**, so until it does, a suspended line's
       predictions render as ordinary countdowns — the immediate next Phase 1 item, not a
-      gap left open indefinitely:
-  - `/Line/{ids}/Status` for the shown stops' lines: mark a departure whose line is
-    disrupted, **and show a line's status even when it has zero predictions** (a
-    suspended line often returns none) as a direction-independent status row, from the
+      gap left open indefinitely. **Landing incrementally**: line-status marking for lines
+      that have predictions, plus the partial-failure ("status unknown") handling, landed
+      in PR #12; the zero-prediction status row and stop closures below are the remaining
+      follow-ups.
+  - `/Line/{ids}/Status` for the shown stops' lines: **[landed, PR #12]** mark a departure
+    whose line is disrupted (a chip carrying TfL's status wording); a good-service line is
+    left unmarked. **Still to do:** show a line's status even when it has zero predictions
+    (a suspended line often returns none) as a direction-independent status row, from the
     watched stop→line mapping retained independently of the predictions (SPEC
-    *Departures* / *Disruptions*).
+    *Departures* / *Disruptions*) — needs the stop→line mapping, so it rides with Phase 2's
+    watched stops or a seed line list.
   - `/StopPoint/{id}/Disruption` for the watched stops: mark or suppress a **closed
     stop** even when its lines' status is normal — otherwise a closed stop shows
     valid-looking departures, the same quietly-wrong failure by a different path. A closed
     stop with **zero predictions** still surfaces as the same direction-independent
     status row (SPEC *Departures*), so the stop isn't dropped for want of a departure.
-  - Handle a **partial refresh** (arrivals succeed, disruption lookup fails): keep the
-    aged last-good disruption state or mark departures "status unknown" — never present
-    them as verified-clean (SPEC *Disruptions*).
+  - Handle a **partial refresh** (arrivals succeed, disruption lookup fails): **[landed,
+    PR #12]** the line-status lookup failing flags the shown departures "status unknown"
+    (a banner) rather than presenting them as verified-clean (SPEC *Disruptions*). Keeping
+    the *aged last-good* disruption state instead rides with the persisted snapshot (a
+    later Phase 1 item — there's no persisted last-good to fall back to yet).
 - [ ] **`docs/PRIVACY.md` describing the debug log's contents** — moved up from Phase 5:
       Phase 1 introduces the logger and Phase 0 the deploy pipeline, so a build carrying
       the log can reach testers now, and AGENTS.md requires the disclosure to exist before
