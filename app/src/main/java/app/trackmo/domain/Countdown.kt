@@ -36,6 +36,28 @@ object Countdown {
         return if (minutes < 1) "Due" else "$minutes min"
     }
 
+    /**
+     * Several [departures]' countdowns as one line — "Due · 3 · 6 min" — for a card that
+     * merges a service's next few times instead of one row each. Each departure renders as
+     * [label] would ("Due" or the bare minute count), joined by " · ", with the "min" unit
+     * written once at the end so it reads as a list of minutes rather than repeating it.
+     *
+     * The caller passes an already-[upcoming] list (soonest-first, departed ones dropped),
+     * **all to the same destination** — the screen groups by destination first so a
+     * branching direction never merges a divergent train's time under the wrong headline
+     * (SPEC D8). Empty in, empty out. The unit is omitted when every entry is "Due" (all
+     * imminent), since there is no number for it to qualify.
+     */
+    fun mergedLabel(departures: List<Departure>, now: Instant): String {
+        if (departures.isEmpty()) return ""
+        val minutes = departures.map { remaining(it, now).toMinutes() }
+        val parts = minutes.map { if (it < 1) "Due" else it.toString() }
+        // upcoming() sorts soonest-first, so any "Due" precedes the numbers — the unit
+        // belongs at the end, present whenever at least one entry is a minute count.
+        val unit = if (minutes.any { it >= 1 }) " min" else ""
+        return parts.joinToString(" · ") + unit
+    }
+
     /** [departures] that have not yet gone, soonest-first (ties broken by line for stability). */
     fun upcoming(departures: List<Departure>, now: Instant): List<Departure> =
         departures.filterNot { hasDeparted(it, now) }

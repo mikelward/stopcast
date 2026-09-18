@@ -54,12 +54,12 @@ exercises the whole spine the widget later renders from.
       a best-effort discriminator, so opposite directions stay apart whenever TfL gives any
       of those — a prediction with none of the three has nothing to key on and shares one
       "unknown" row.
-- [x] `MainScreen`: a **flat list, one row per (service, stop, direction)** (D8) over a
-      seed set this phase — line, destination (the resolved destination the domain
-      carries — `destinationName`, else `towards`), **platform where TfL gives one**
-      (per departure — a row's countdowns can sit on different platforms),
-      stop, and the next countdowns, with the "updated N ago" stamp and client-side
-      countdown recompute. Ordered location-free (soonest-first). **Star-to-pin lands in Phase 2 with its
+- [x] `MainScreen`: a **flat list of compact cards, one per (service, stop, direction)**
+      (D8) over a seed set this phase — line pill + destination, and the service's next few
+      countdowns **merged onto one line** ("Due · 3 · 6 min"), with the "updated N ago"
+      stamp and client-side countdown recompute. Ordered location-free (soonest-first).
+      (The stop name is not on the card for now — see the row-merge item below.)
+      **Star-to-pin lands in Phase 2 with its
       persistence** — not here — so a star always survives restart rather than resetting
       (a half-persisted control loses the user's ordering). The compact swipe-card model
       is a later candidate too (SPEC D8). Landed with `MainViewModel` (fetches the seed
@@ -67,6 +67,15 @@ exercises the whole spine the widget later renders from.
       rate-limited / can't-reach-TfL states), `DepartureRows.across` for the merged
       soonest-first list, and `MainScreenScreenshotTest` (loaded light/dark, empty,
       offline).
+    - [x] **Row-merge card redesign** (this PR): the per-departure rows became one compact
+      card per service — merged countdowns via `Countdown.mergedLabel`, destination as the
+      elided headline (no "inbound/outbound" word). **Platform and (for now) the stop name
+      are dropped from the card** — the stop read as clutter in the compact layout and is
+      implied by the widget's chosen context; it returns with multi-stop watching (Phase 2).
+      Platform stays in the domain model for a later detail surface. A branching direction
+      merges only the headline destination's times and keeps each divergent destination on
+      its own line, so no countdown sits under the wrong one (D8). Near-uniform card height;
+      only a disruption chip or a branch adds a line.
 - [x] **Minimal disruption marking** — the honesty floor the first view can't ship
       without (SPEC principle 1 / D3); the *full* disruption experience is Phase 3.
       Landed incrementally across PR #12 (line-status marking + partial-failure handling),
@@ -131,6 +140,14 @@ exercises the whole spine the widget later renders from.
 - [ ] Add/remove **watched stops** (the source of truth for what's shown) — added from
       search or nearby discovery, removed explicitly; persist the set. Distinct from
       starring; removing a multi-line stop drops all its rows.
+- [ ] **Restore the stop name to the departure card when the list spans more than one
+      stop.** The compact-card redesign dropped it (too much clutter, and implicit on a
+      single-stop widget), but the current seed is already multi-stop (Oxford Circus +
+      King's Cross), so a card gives no boarding location and a countdown can't be told
+      apart from the other station's (SPEC D1 / principle 1). Accepted as an MVP
+      limitation on the demo seed (maintainer, ship-MVP call); once real watched stops
+      land, show the stop (a subline, or only when >1 distinct stop is on screen) so
+      cards stay unambiguous. Codex P1 on PR #17 (`discussion_r4049648510`).
 - [ ] **Star** rows to reorder them to the top — ranking only, not membership; persisted
       via DataStore so a star survives restart (D8). Key the star by the full
       **`(stop, service, resolved direction key)`** identity — the same three parts that
@@ -236,14 +253,16 @@ Builds on Phase 1's minimal line-status marking.
   device against real TfL refresh cadence.
 - **`MainScreen` design guesses (all reversible; drive, MainScreen slice).** The screen
   landed on defaults worth a real-device look: **one flat soonest-first list across
-  stops** (each row labeled with its stop) rather than per-stop sections like the mock —
-  SPEC's "soonest-first" wording drove it, but sectioned-by-stop is an easy alternative;
-  a seed of **Oxford Circus + King's Cross St. Pancras** (public stations) until Phase 2
-  watched stops; `OutlinedCard` rows with line / stop·direction / destination headline /
-  per-departure platform+countdown; a **10-second** on-screen clock tick for the
-  countdown recompute; and a **three-kind error taxonomy** (offline / rate-limited /
-  can't-reach-TfL) via a typed `TflException`. None is load-bearing; all are cheap to
-  re-shape once the flat list is seen on a device.
+  stops** rather than per-stop sections like the mock — SPEC's "soonest-first" wording
+  drove it, but sectioned-by-stop is an easy alternative; a seed of **Oxford Circus +
+  King's Cross St. Pancras** (public stations) until Phase 2 watched stops; a
+  **10-second** on-screen clock tick for the countdown recompute; and a **three-kind
+  error taxonomy** (offline / rate-limited / can't-reach-TfL) via a typed `TflException`.
+  The row layout since settled on the **compact per-service card** (line pill +
+  destination + merged countdowns, platform and stop name dropped — the row-merge item
+  below records that redesign and the Phase-2 stop-name return), so it's no longer a guess
+  here. None of the rest is load-bearing; all are cheap to re-shape once the flat list is
+  seen on a device.
 - **Per-stop snapshot: whole-screen stamp reads the *freshest* stop (PR #16, drive).**
   With per-stop ages, the top "updated N ago" stamp is ambiguous — chosen to be the
   newest stop's age (what "last refreshed" means), with per-row withhold carrying each
