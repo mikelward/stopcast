@@ -104,25 +104,23 @@ exercises the whole spine the widget later renders from.
       frame on the DataStore read; the intro says the first deliverable exercises
       persistence). This is what gives the offline state something to show after process
       death — the two belong together, so snapshot storage lands here, not in Phase 2.
-  - **Per-stop last-good with honest per-stop ages.** MainScreen's snapshot is one
-    whole-list `Loaded(stops, fetchedAt)` replaced wholesale each fetch, so a partial
-    refresh drops the failed stop's rows entirely (the banner surfaces it — honest floor
-    met — but the aged rows are lost until that stop recovers). Give each `StopArrivals`
-    its own `fetchedAt`, merge a refresh into the prior snapshot (update the stops that
-    succeeded, keep the ones that failed at their older age), and make staleness/withhold
-    per-row from each stop's age rather than one screen-wide flag. This is the design the
-    repeated MainScreen review findings point at (deferred from PR #10, Codex P1 on
-    `3c4befb`); it deletes the drop-on-partial-refresh class rather than patching it.
-    - **Also decouple a stop's disruption fetch from its arrivals** (deferred from PR #15,
-      Codex P2 on `ba72fa1`): a stop whose *arrivals* request fails is dropped from the
-      snapshot, so its independently-available `/StopPoint/{id}/Disruption` is never
-      fetched and a known closure on it doesn't surface — the same drop-on-partial-refresh
-      class by a different path. The floor holds today (the failed stop shows the partial
-      banner and no false departures, just not its closure text), so this rides the
-      per-stop redesign: fetch arrivals and disruption per stop independently, and let a
-      failed-arrivals-but-disrupted stop still contribute its stop-status row with a
-      per-stop "couldn't refresh" mark — a naive bolt-on onto the current whole-list
-      snapshot would instead risk showing that stop as empty rather than un-refreshed.
+      **The in-memory per-stop snapshot model landed in PR #16 (below); what remains here
+      is persisting it to DataStore and the stamped-placeholder first frame.**
+  - **[landed, PR #16] Per-stop last-good with honest per-stop ages.** MainScreen's
+    snapshot was one whole-list `Loaded(stops, fetchedAt)` replaced wholesale each fetch,
+    so a partial refresh dropped the failed stop's rows entirely and one screen-wide flag
+    withheld every stop's countdowns when the snapshot aged. Each `StopArrivals` now
+    carries its own `fetchedAt`; a refresh merges into the prior snapshot (update the
+    stops that succeeded, keep the ones that failed at their older age, via the pure
+    `Snapshot.mergeStop`); and staleness/withhold is per row from each stop's age. This
+    was the design the repeated MainScreen review findings pointed at (deferred from
+    PR #10, Codex P1 on `3c4befb`); it deletes the drop-on-partial-refresh class rather
+    than patching it.
+    - **[landed, PR #16] Also decouple a stop's disruption fetch from its arrivals**
+      (deferred from PR #15, Codex P2 on `ba72fa1`): a stop's `/StopPoint/{id}/Disruption`
+      is now fetched independently of its arrivals, so a stop whose arrivals fail still
+      surfaces its available closure (a stop-status row) rather than dropping out — the
+      same drop-on-partial-refresh class by a different path, now closed.
 - [ ] Offline / rate-limited / error states rendered honestly (SPEC principles 1–2),
       backed by the persisted snapshot above.
 - [ ] Unit tests for the domain; Robolectric + Roborazzi screenshot tests for the
@@ -246,6 +244,15 @@ Builds on Phase 1's minimal line-status marking.
   countdown recompute; and a **three-kind error taxonomy** (offline / rate-limited /
   can't-reach-TfL) via a typed `TflException`. None is load-bearing; all are cheap to
   re-shape once the flat list is seen on a device.
+- **Per-stop snapshot: whole-screen stamp reads the *freshest* stop (PR #16, drive).**
+  With per-stop ages, the top "updated N ago" stamp is ambiguous — chosen to be the
+  newest stop's age (what "last refreshed" means), with per-row withhold carrying each
+  stale stop's own truth, over the oldest stop's age (which would read "Tap to refresh"
+  beside live countdowns). The mild understatement is bounded and made honest by the
+  per-row "—". Also: `refreshFailure` fires only on a *total* failure (nothing fresh at
+  all), `partialRefresh` when some stops refreshed and some were kept aged. All
+  reversible — one stamp expression and two banner predicates. Wants a real-device look
+  at a stop lagging behind its neighbors.
 - **First screenshot job records + uploads only; no drift gate yet** (drive). CI proves
   the screens render (the `build` job runs them for pass/fail) and uploads the recorded
   PNGs, but does not yet fail on pixel drift or auto-commit the canonical set, because
