@@ -60,11 +60,49 @@ jobs:
           path: app/build/reports/tests/
           if-no-files-found: ignore
 
+  screenshot-tests:
+    name: screenshot-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: classify
+    if: needs.classify.outputs.docs_only != 'true'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2  # v5
+      # One step per screenshot class, an explicit allow-list: a new
+      # *ScreenshotTest not added here records nothing even when it passes.
+      # The `build` job already runs these for pass/fail; this job re-runs them
+      # in record mode to produce the PNGs uploaded below for review. Recording
+      # the canonical set back onto the PR branch (drift refresh + visual-diff
+      # comment) is the tracked follow-up — see TODO Phase 0.
+      - name: Run MainScreen screenshot tests
+        run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.ui.MainScreenScreenshotTest" -Proborazzi.test.record=true
+      - name: Upload Roborazzi screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: roborazzi-screenshots
+          path: app/src/test/snapshots/images/
+          if-no-files-found: warn
+      - name: Upload screenshot test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+
   lanes:
     name: lanes
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [classify, build]
+    needs: [classify, build, screenshot-tests]
     if: always()
     steps:
       - uses: actions/checkout@v5
@@ -76,4 +114,4 @@ jobs:
           pr: ${{ github.event.pull_request.number }}
           classify-result: ${{ needs.classify.result }}
           base-sha: ${{ needs.classify.outputs.base_sha }}
-          results: build=${{ needs.build.result }}
+          results: build=${{ needs.build.result }} screenshot-tests=${{ needs.screenshot-tests.result }}
