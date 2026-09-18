@@ -3,6 +3,7 @@ package app.trackmo.ui
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -29,6 +30,25 @@ class LinePillTest {
     fun `an unmapped line or mode has no color, so the caller falls back to neutral`() {
         assertNull(lineFillColor("elizabeth", "elizabeth-line"))
         assertNull(lineFillColor("", ""))
+    }
+
+    @Test
+    fun `the halo is the opposite tone of the text, at partial alpha`() {
+        // Black text → a translucent white halo; white text → a translucent black halo,
+        // so the glow always lifts the label off the fill rather than blending into it.
+        val onBlackText = haloFor(Color.Black)
+        assertEquals(1f, onBlackText.red, 0f)
+        assertEquals(1f, onBlackText.green, 0f)
+        assertEquals(1f, onBlackText.blue, 0f)
+
+        val onWhiteText = haloFor(Color.White)
+        assertEquals(0f, onWhiteText.red, 0f)
+        assertEquals(0f, onWhiteText.green, 0f)
+        assertEquals(0f, onWhiteText.blue, 0f)
+
+        // Partial alpha keeps it a lift, not an opaque second outline.
+        assertTrue(onBlackText.alpha > 0f && onBlackText.alpha < 1f)
+        assertEquals(onBlackText.alpha, onWhiteText.alpha, 0f)
     }
 
     @Test
