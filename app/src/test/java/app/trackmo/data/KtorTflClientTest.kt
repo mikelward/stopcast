@@ -1,9 +1,9 @@
 package app.trackmo.data
 
+import app.trackmo.domain.TflException
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
-import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
@@ -11,6 +11,9 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -134,9 +137,45 @@ class KtorTflClientTest {
     }
 
     @Test
-    fun `a rate-limited response throws rather than returning empty`() {
-        assertThrows(ClientRequestException::class.java) {
+    fun `a 429 maps to RateLimited, not an empty list`() {
+        assertThrows(TflException.RateLimited::class.java) {
             runTest { client("{}", status = HttpStatusCode.TooManyRequests).arrivals("940GZZLUVIC") }
         }
+    }
+
+    @Test
+    fun `another non-2xx maps to Unreachable`() {
+        assertThrows(TflException.Unreachable::class.java) {
+            runTest { client("{}", status = HttpStatusCode.InternalServerError).arrivals("940GZZLUVIC") }
+        }
+    }
+
+    @Test
+    fun `an unresolved host maps to Offline`() {
+        // No DNS resolution is the device-is-offline signal.
+        val client = throwingClient(UnknownHostException("api.tfl.example"))
+        assertThrows(TflException.Offline::class.java) {
+            runTest { client.arrivals("940GZZLUVIC") }
+        }
+    }
+
+    @Test
+    fun `a transport failure while online maps to Unreachable, not Offline`() {
+        // A read timeout (device online, TfL slow/down) is a subclass of IOException
+        // but not UnknownHostException, so it's Unreachable — the UI must not tell an
+        // online user they're offline during a TfL outage.
+        val client = throwingClient(SocketTimeoutException("read timed out"))
+        assertThrows(TflException.Unreachable::class.java) {
+            runTest { client.arrivals("940GZZLUVIC") }
+        }
+    }
+
+    private fun throwingClient(error: IOException): KtorTflClient {
+        val engine = MockEngine { throw error }
+        val http = HttpClient(engine) {
+            expectSuccess = true
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        }
+        return KtorTflClient(httpClient = http, baseUrl = "https://tfl.example")
     }
 }

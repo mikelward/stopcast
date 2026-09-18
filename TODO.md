@@ -25,13 +25,13 @@ exercises the whole spine the widget later renders from.
 
 ### Phase 0 — remaining (follow-up PRs)
 
-- [ ] Screenshot job (Roborazzi record + drift commit + visual-diff comment) — lands
-      with the first screenshot test in Phase 1. This also covers the throwaway
-      `HomePlaceholder`: Phase 1 replaces it with the real `MainScreen`, which arrives
-      with its own Robolectric/Roborazzi coverage and the CI allow-list step. Standing up
-      the whole record/drift/diff apparatus in Phase 0 for a placeholder that Phase 1
-      deletes — and re-adding the Robolectric/Roborazzi deps trimmed here — is the infra
-      this phase deliberately deferred (Codex, PR #4).
+- [ ] Screenshot job — **record + upload landed** with `MainScreen` (the `build` job
+      runs the screenshot tests for pass/fail; the `screenshot-tests` job re-runs them in
+      record mode and uploads the PNGs). Still to do: **drift refresh** (record the
+      canonical set back onto the PR branch, since local and CI rendering can differ) and
+      the **before/after visual-diff PR comment** (the `mikelward/ci-commit-artifact`
+      apparatus the siblings use). Until that lands, committed baselines are reviewed via
+      the uploaded artifact, and CI does not yet gate on pixel drift.
 - [ ] Deploy job (Play internal track, release notes from commit subjects) — Phase 5,
       needs the signing secrets.
 - [ ] `AboutLibraries` licenses export + Licenses screen scaffolding.
@@ -54,7 +54,7 @@ exercises the whole spine the widget later renders from.
       a best-effort discriminator, so opposite directions stay apart whenever TfL gives any
       of those — a prediction with none of the three has nothing to key on and shares one
       "unknown" row.
-- [ ] `MainScreen`: a **flat list, one row per (service, stop, direction)** (D8) over a
+- [x] `MainScreen`: a **flat list, one row per (service, stop, direction)** (D8) over a
       seed set this phase — line, destination (the resolved destination the domain
       carries — `destinationName`, else `towards`), **platform where TfL gives one**
       (per departure — a row's countdowns can sit on different platforms),
@@ -62,9 +62,16 @@ exercises the whole spine the widget later renders from.
       countdown recompute. Ordered location-free (soonest-first). **Star-to-pin lands in Phase 2 with its
       persistence** — not here — so a star always survives restart rather than resetting
       (a half-persisted control loses the user's ordering). The compact swipe-card model
-      is a later candidate too (SPEC D8).
+      is a later candidate too (SPEC D8). Landed with `MainViewModel` (fetches the seed
+      off the main thread, maps failures to a typed `TflException` → honest offline /
+      rate-limited / can't-reach-TfL states), `DepartureRows.across` for the merged
+      soonest-first list, and `MainScreenScreenshotTest` (loaded light/dark, empty,
+      offline).
 - [ ] **Minimal disruption marking** — the honesty floor the first view can't ship
-      without (SPEC principle 1 / D3); the *full* disruption experience is Phase 3:
+      without (SPEC principle 1 / D3); the *full* disruption experience is Phase 3.
+      **The MainScreen slice landed ahead of this**, so until it does, a suspended line's
+      predictions render as ordinary countdowns — the immediate next Phase 1 item, not a
+      gap left open indefinitely:
   - `/Line/{ids}/Status` for the shown stops' lines: mark a departure whose line is
     disrupted, **and show a line's status even when it has zero predictions** (a
     suspended line often returns none) as a direction-independent status row, from the
@@ -87,6 +94,15 @@ exercises the whole spine the widget later renders from.
       frame on the DataStore read; the intro says the first deliverable exercises
       persistence). This is what gives the offline state something to show after process
       death — the two belong together, so snapshot storage lands here, not in Phase 2.
+  - **Per-stop last-good with honest per-stop ages.** MainScreen's snapshot is one
+    whole-list `Loaded(stops, fetchedAt)` replaced wholesale each fetch, so a partial
+    refresh drops the failed stop's rows entirely (the banner surfaces it — honest floor
+    met — but the aged rows are lost until that stop recovers). Give each `StopArrivals`
+    its own `fetchedAt`, merge a refresh into the prior snapshot (update the stops that
+    succeeded, keep the ones that failed at their older age), and make staleness/withhold
+    per-row from each stop's age rather than one screen-wide flag. This is the design the
+    repeated MainScreen review findings point at (deferred from PR #10, Codex P1 on
+    `3c4befb`); it deletes the drop-on-partial-refresh class rather than patching it.
 - [ ] Offline / rate-limited / error states rendered honestly (SPEC principles 1–2),
       backed by the persisted snapshot above.
 - [ ] Unit tests for the domain; Robolectric + Roborazzi screenshot tests for the
@@ -200,6 +216,22 @@ Builds on Phase 1's minimal line-status marking.
   often between routine refreshes) or a looser 10 min. Reversible — one constant, pinned
   by `StalenessTest`; change the value and the test together. Wants a look on a real
   device against real TfL refresh cadence.
+- **`MainScreen` design guesses (all reversible; drive, MainScreen slice).** The screen
+  landed on defaults worth a real-device look: **one flat soonest-first list across
+  stops** (each row labeled with its stop) rather than per-stop sections like the mock —
+  SPEC's "soonest-first" wording drove it, but sectioned-by-stop is an easy alternative;
+  a seed of **Oxford Circus + King's Cross St. Pancras** (public stations) until Phase 2
+  watched stops; `OutlinedCard` rows with line / stop·direction / destination headline /
+  per-departure platform+countdown; a **10-second** on-screen clock tick for the
+  countdown recompute; and a **three-kind error taxonomy** (offline / rate-limited /
+  can't-reach-TfL) via a typed `TflException`. None is load-bearing; all are cheap to
+  re-shape once the flat list is seen on a device.
+- **First screenshot job records + uploads only; no drift gate yet** (drive). CI proves
+  the screens render (the `build` job runs them for pass/fail) and uploads the recorded
+  PNGs, but does not yet fail on pixel drift or auto-commit the canonical set, because
+  local and CI rendering can differ and the refresh apparatus isn't wired. The
+  drift-refresh + visual-diff-comment follow-up is tracked under Phase 0. Reversible —
+  adding the gate is additive.
 
 ## Decisions
 
