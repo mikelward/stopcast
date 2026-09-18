@@ -202,7 +202,7 @@ class DepartureRowsTest {
 
         // across() threads the same map through to every stop's rows.
         val acrossRows = DepartureRows.across(
-            listOf(StopArrivals("940GZZLUVIC", "Victoria", listOf(victoria, northern))),
+            listOf(StopArrivals("940GZZLUVIC", "Victoria", listOf(victoria, northern), fetchedAt = now)),
             now,
             statuses,
         ).associateBy { it.lineId }
@@ -217,6 +217,7 @@ class DepartureRowsTest {
             "940GZZLUKSX",
             "King's Cross St. Pancras",
             departures = listOf(victoria),
+            fetchedAt = now,
             lines = listOf(
                 LineRef("victoria", "Victoria", "tube"), // has a prediction → no status row
                 LineRef("circle", "Circle", "tube"), // disrupted, no prediction → status row
@@ -247,12 +248,78 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `a stale stop's disrupted line does not synthesize a No-departures status row`() {
+        // Arrivals are stale (aged past the threshold) and the line's predictions have all
+        // expired. "No departures" would be a categorical claim the stale data can't back —
+        // a delayed line's predictions may have merely expired, not stopped — so no status
+        // row is synthesized; the screen's stale empty-state prompt covers the stop instead.
+        val old = now.minusSeconds(600)
+        val expired = departure("victoria", "Victoria", "outbound", "Brixton", -60)
+        val stop = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            departures = listOf(expired),
+            fetchedAt = old,
+            lines = listOf(LineRef("victoria", "Victoria", "tube")),
+        )
+        val statuses = mapOf("victoria" to LineStatus("victoria", 6, "Severe Delays"))
+
+        assertEquals(emptyList<DepartureRow>(), DepartureRows.across(listOf(stop), now, statuses))
+    }
+
+    @Test
+    fun `a fresh stop's disrupted line with no predictions still synthesizes a status row`() {
+        // The same shape, but the stop is fresh, so "no departures" is trustworthy and the
+        // status row is synthesized — guarding the suppression above from over-reaching.
+        val fresh = now.minusSeconds(30)
+        val expired = departure("victoria", "Victoria", "outbound", "Brixton", -60)
+        val stop = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            departures = listOf(expired),
+            fetchedAt = fresh,
+            lines = listOf(LineRef("victoria", "Victoria", "tube")),
+        )
+        val statuses = mapOf("victoria" to LineStatus("victoria", 6, "Severe Delays"))
+
+        val rows = DepartureRows.across(listOf(stop), now, statuses)
+
+        assertEquals(1, rows.size)
+        assertEquals("victoria", rows[0].lineId)
+        assertTrue(rows[0].upcoming.isEmpty())
+        assertEquals("Severe Delays", rows[0].status?.description)
+    }
+
+    @Test
+    fun `a disruption-only stop shows its closure but no No-departures status row`() {
+        // Arrivals were never fetched (arrivalsFresh = false), though the stop is stamped
+        // fresh from its disruption. Its disrupted declared line must NOT synthesize a
+        // "No departures" row (we don't know its departures), but the closure still shows.
+        val stop = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            departures = emptyList(),
+            fetchedAt = now,
+            lines = listOf(LineRef("victoria", "Victoria", "tube")),
+            disruptions = listOf(StopDisruption("Stop moved to Pancras Road")),
+            arrivalsFresh = false,
+        )
+        val statuses = mapOf("victoria" to LineStatus("victoria", 6, "Severe Delays"))
+
+        val rows = DepartureRows.across(listOf(stop), now, statuses)
+
+        assertEquals(1, rows.size)
+        assertEquals("Stop moved to Pancras Road", rows[0].stopDisruption)
+    }
+
+    @Test
     fun `a stop disruption becomes a stop-status row, sorted above line and timed rows`() {
         val victoria = departure("victoria", "Victoria", "outbound", "Brixton", 120)
         val stop = StopArrivals(
             "940GZZLUKSX",
             "King's Cross St. Pancras",
             departures = listOf(victoria),
+            fetchedAt = now,
             lines = listOf(LineRef("circle", "Circle", "tube")), // suspended, no prediction
             disruptions = listOf(StopDisruption("Station closed until further notice")),
         )
@@ -290,6 +357,7 @@ class DepartureRowsTest {
             "940GZZLUOXC",
             "Oxford Circus",
             listOf(departure("victoria", "Victoria", "inbound", "Brixton", 300)),
+            fetchedAt = now,
         )
         val ksx = StopArrivals(
             "940GZZLUKSX",
@@ -298,6 +366,7 @@ class DepartureRowsTest {
                 departure("northern", "Northern", "southbound", "Morden", 120),
                 departure("victoria", "Victoria", "outbound", "Walthamstow Central", 420),
             ),
+            fetchedAt = now,
         )
 
         val rows = DepartureRows.across(listOf(oxc, ksx), now)
@@ -313,11 +382,39 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `across stamps each row with its own stop's fetch age`() {
+        val fresh = now.minusSeconds(30)
+        val old = now.minusSeconds(600)
+        val oxc = StopArrivals(
+            "940GZZLUOXC",
+            "Oxford Circus",
+            listOf(departure("victoria", "Victoria", "inbound", "Brixton", 300)),
+            fetchedAt = fresh,
+        )
+        val ksx = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            listOf(departure("northern", "Northern", "southbound", "Morden", 120)),
+            fetchedAt = old,
+            disruptions = listOf(StopDisruption("Station closed until further notice")),
+        )
+
+        val ageByStop = DepartureRows.across(listOf(oxc, ksx), now).associate { it.stopId to it.fetchedAt }
+
+        // Each stop's rows (its timed rows and its stop-status row) carry that stop's own
+        // age, so the screen withholds a stale stop's countdowns while a fresh one stays
+        // live rather than one screen-wide flag deciding for both (SPEC D4).
+        assertEquals(fresh, ageByStop.getValue("940GZZLUOXC"))
+        assertEquals(old, ageByStop.getValue("940GZZLUKSX"))
+    }
+
+    @Test
     fun `across drops departed services and can yield an empty list`() {
         val stop = StopArrivals(
             "940GZZLUOXC",
             "Oxford Circus",
             listOf(departure("victoria", "Victoria", "outbound", "Brixton", -30)),
+            fetchedAt = now,
         )
 
         assertEquals(emptyList<DepartureRow>(), DepartureRows.across(listOf(stop), now))

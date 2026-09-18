@@ -9,6 +9,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import app.trackmo.domain.Departure
 import app.trackmo.domain.LineRef
@@ -64,7 +66,12 @@ class MainScreenScreenshotTest {
         mode = mode,
     )
 
-    private fun stops(): List<StopArrivals> = listOf(
+    // Each stop is stamped independently: the two default to the same age, but a caller can
+    // age one and not the other to render a mixed-age snapshot (see `mixed age`).
+    private fun stops(
+        ksxFetchedAt: Instant,
+        oxcFetchedAt: Instant = ksxFetchedAt,
+    ): List<StopArrivals> = listOf(
         StopArrivals(
             "940GZZLUKSX",
             "King's Cross St. Pancras",
@@ -74,6 +81,7 @@ class MainScreenScreenshotTest {
                 // A bus, to show the red pill and the mode-based fallback.
                 dep("73", "73", "inbound", "Victoria", 150, "", mode = "bus"),
             ),
+            fetchedAt = ksxFetchedAt,
             // Declared lines: Circle is served here but returns no arrivals — a suspended
             // line, so it surfaces as a status row (see statuses()).
             lines = listOf(
@@ -91,6 +99,7 @@ class MainScreenScreenshotTest {
                 dep("central", "Central", "eastbound", "Woodford", 600, "Platform 3"),
                 dep("bakerloo", "Bakerloo", "northbound", "Harrow & Wealdstone", 300, "Platform 2"),
             ),
+            fetchedAt = oxcFetchedAt,
             // A stop-level disruption: the station is flagged (a stop-status row), while
             // its departures still show below (marked, not suppressed).
             disruptions = listOf(StopDisruption("Station closed until further notice")),
@@ -110,7 +119,7 @@ class MainScreenScreenshotTest {
     fun `loaded, light`() {
         capture("main-loaded.png") {
             MainScreen(
-                DeparturesUiState.Loaded(stops(), now.minusSeconds(120), lineStatuses = statuses()),
+                DeparturesUiState.Loaded(stops(now.minusSeconds(120)), now.minusSeconds(120), lineStatuses = statuses()),
                 now,
                 {},
             )
@@ -129,7 +138,7 @@ class MainScreenScreenshotTest {
     fun `loaded, dark`() {
         capture("main-loaded-dark.png", dark = true) {
             MainScreen(
-                DeparturesUiState.Loaded(stops(), now.minusSeconds(120), lineStatuses = statuses()),
+                DeparturesUiState.Loaded(stops(now.minusSeconds(120)), now.minusSeconds(120), lineStatuses = statuses()),
                 now,
                 {},
             )
@@ -137,10 +146,33 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `mixed age, one stop fresh and one stale`() {
+        capture("main-mixed-age.png") {
+            MainScreen(
+                // King's Cross refreshed 30s ago; Oxford Circus hasn't refreshed in 10 min.
+                // The whole-screen stamp stays fresh (the newest stop), while Oxford Circus
+                // withholds its own countdowns — one screen-wide flag no longer decides for
+                // both stops (SPEC D4).
+                DeparturesUiState.Loaded(
+                    stops(ksxFetchedAt = now.minusSeconds(30), oxcFetchedAt = now.minusSeconds(600)),
+                    now.minusSeconds(30),
+                    lineStatuses = statuses(),
+                ),
+                now,
+                {},
+            )
+        }
+        // The fresh stop shows a live countdown; the stale stop withholds its own ("—")
+        // while staying on screen, rather than vanishing or being shown as live.
+        composeRule.onNodeWithText("Brixton").assertExists()
+        composeRule.onAllNodesWithText("—").onFirst().assertExists()
+    }
+
+    @Test
     fun `disruptions couldn't be checked`() {
         capture("main-disruptions-unknown.png") {
             MainScreen(
-                DeparturesUiState.Loaded(stops(), now.minusSeconds(60), disruptionUnknown = true),
+                DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), disruptionUnknown = true),
                 now,
                 {},
             )
@@ -152,7 +184,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `stale, countdowns withheld`() {
         capture("main-stale.png") {
-            MainScreen(DeparturesUiState.Loaded(stops(), now.minusSeconds(600)), now, {})
+            MainScreen(DeparturesUiState.Loaded(stops(now.minusSeconds(600)), now.minusSeconds(600)), now, {})
         }
         // Past the staleness threshold the numbers are withheld, so the stamp prompts a
         // refresh instead of showing live-looking countdowns.
@@ -163,7 +195,7 @@ class MainScreenScreenshotTest {
     fun `partial refresh warns`() {
         capture("main-partial.png") {
             MainScreen(
-                DeparturesUiState.Loaded(stops(), now.minusSeconds(60), partialRefresh = true),
+                DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), partialRefresh = true),
                 now,
                 {},
             )
@@ -176,7 +208,7 @@ class MainScreenScreenshotTest {
         capture("main-partial-and-failed.png") {
             MainScreen(
                 DeparturesUiState.Loaded(
-                    stops(),
+                    stops(now.minusSeconds(120)),
                     now.minusSeconds(120),
                     partialRefresh = true,
                     refreshFailure = DeparturesUiState.Error.Kind.OFFLINE,
@@ -195,7 +227,7 @@ class MainScreenScreenshotTest {
         capture("main-refresh-failed.png") {
             MainScreen(
                 DeparturesUiState.Loaded(
-                    stops(),
+                    stops(now.minusSeconds(120)),
                     now.minusSeconds(120),
                     refreshFailure = DeparturesUiState.Error.Kind.OFFLINE,
                 ),
@@ -221,6 +253,35 @@ class MainScreenScreenshotTest {
         }
         // Stale + empty must not assert "none" from untrusted data (SPEC D4) — it prompts
         // a refresh instead of the fresh "No upcoming departures".
+        composeRule.onNodeWithText("Departures may be out of date").assertExists()
+    }
+
+    @Test
+    fun `empty rows with a stale retained stop prompt a refresh, not none`() {
+        // One stop fresh, one stale, both with only departed services → no rows. The
+        // freshest-stop stamp is fresh, but the stale stop's empty rows can't be trusted as
+        // "no departures" — newer services it couldn't fetch may exist (SPEC D4). A
+        // logic-only assertion, so it renders without capturing a baseline.
+        val fresh = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            listOf(dep("victoria", "Victoria", "southbound", "Brixton", -60, "Platform 1")),
+            fetchedAt = now.minusSeconds(30),
+        )
+        val stale = StopArrivals(
+            "940GZZLUOXC",
+            "Oxford Circus",
+            listOf(dep("central", "Central", "eastbound", "Hainault", -120, "Platform 3")),
+            fetchedAt = now.minusSeconds(600),
+        )
+        composeRule.setContent {
+            TrackmoTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(DeparturesUiState.Loaded(listOf(fresh, stale), now.minusSeconds(30)), now, {})
+                }
+            }
+        }
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("Departures may be out of date").assertExists()
     }
 

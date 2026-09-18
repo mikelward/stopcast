@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -121,6 +122,9 @@ class MainViewModelTest {
     @Test
     fun `a total failure after a load keeps the aged last-good snapshot`() = runTest(dispatcher) {
         var failing = false
+        // A genuine total failure: BOTH the arrivals and the (now-decoupled) disruption
+        // request fail, so nothing fresh comes back at all. If only arrivals failed while
+        // disruption succeeded, that would be a partial refresh, not this.
         val client = object : TflClient {
             override suspend fun arrivals(stopId: String): List<Departure> {
                 if (failing) throw TflException.Offline(null)
@@ -129,7 +133,10 @@ class MainViewModelTest {
 
             override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
 
-            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                if (failing) throw TflException.Offline(null)
+                return emptyList()
+            }
         }
         val vm = viewModel(client)
         advanceUntilIdle()
@@ -142,13 +149,16 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         // The refresh failed outright: the departures the user was reading stay on screen
-        // (same aged data), but the failure is carried so the screen can say so rather
-        // than pass stale rows off as fresh (SPEC D4 / principle 2).
+        // (same aged data, at the same age), but they are now flagged not-fresh and the
+        // failure is carried so the screen can say so rather than pass stale rows off as
+        // fresh (SPEC D4 / principle 2).
         val kept = vm.state.value
         assertTrue(kept is DeparturesUiState.Loaded)
         kept as DeparturesUiState.Loaded
-        assertEquals(loaded.stops, kept.stops)
+        assertEquals(loaded.stops.map { it.departures }, kept.stops.map { it.departures })
         assertEquals(loaded.fetchedAt, kept.fetchedAt)
+        assertTrue(kept.stops.none { it.arrivalsFresh })
+        assertEquals(false, kept.partialRefresh)
         assertEquals(DeparturesUiState.Error.Kind.OFFLINE, kept.refreshFailure)
     }
 
@@ -310,6 +320,48 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `a failed disruption refresh drops the prior closure rather than showing it stale`() =
+        runTest(dispatcher) {
+            var disruptionFails = false
+            val client = object : TflClient {
+                override suspend fun arrivals(stopId: String) =
+                    listOf(departure("victoria", "Victoria", 300))
+
+                override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+                override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                    if (disruptionFails) throw TflException.Offline(null)
+                    return if (stopId == "940GZZLUOXC") {
+                        listOf(StopDisruption("Station closed until further notice"))
+                    } else {
+                        emptyList()
+                    }
+                }
+            }
+            val vm = MainViewModel(client, seeds, clock = { now }, io = dispatcher)
+            advanceUntilIdle()
+            val first = vm.state.value
+            assertTrue(first is DeparturesUiState.Loaded)
+            first as DeparturesUiState.Loaded
+            assertEquals(
+                listOf("Station closed until further notice"),
+                first.stops.single { it.stopId == "940GZZLUOXC" }.disruptions.map { it.description },
+            )
+
+            // Next refresh: arrivals still succeed, but the disruption fetch fails. The stale
+            // closure is dropped, not shown beside a fresh arrivals stamp; the disruption
+            // state is flagged unknown instead (SPEC principle 1).
+            disruptionFails = true
+            vm.refresh()
+            advanceUntilIdle()
+            val second = vm.state.value
+            assertTrue(second is DeparturesUiState.Loaded)
+            second as DeparturesUiState.Loaded
+            assertTrue(second.stops.single { it.stopId == "940GZZLUOXC" }.disruptions.isEmpty())
+            assertTrue(second.disruptionUnknown)
+        }
+
+    @Test
     fun `a failed stop-disruption lookup flags disruptionUnknown, keeping the arrivals`() = runTest(dispatcher) {
         val vm = viewModel(
             FakeClient(
@@ -330,6 +382,32 @@ class MainViewModelTest {
         assertEquals(listOf("940GZZLUOXC", "940GZZLUKSX"), state.stops.map { it.stopId })
         assertTrue(state.disruptionUnknown)
     }
+
+    @Test
+    fun `known-empty stops with failed disruption lookups render empty, not an error`() =
+        runTest(dispatcher) {
+            // Arrivals succeed but return no departures; the disruption lookups fail. TfL was
+            // reached and genuinely showed nothing, so this is an honest empty/unknown state,
+            // not a whole-screen network error (SPEC principle 1).
+            val client = object : TflClient {
+                override suspend fun arrivals(stopId: String) = emptyList<Departure>()
+
+                override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+                override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                    throw TflException.Offline(null)
+                }
+            }
+            val vm = MainViewModel(client, seeds, clock = { now }, io = dispatcher)
+            advanceUntilIdle()
+
+            val state = vm.state.value
+            assertTrue(state is DeparturesUiState.Loaded)
+            state as DeparturesUiState.Loaded
+            assertEquals(listOf("940GZZLUOXC", "940GZZLUKSX"), state.stops.map { it.stopId })
+            assertTrue(state.disruptionUnknown)
+            assertNull(state.refreshFailure)
+        }
 
     @Test
     fun `stamps the snapshot from the start of the fetch, not after the request chain`() =
@@ -392,5 +470,152 @@ class MainViewModelTest {
             DeparturesUiState.Error(DeparturesUiState.Error.Kind.RATE_LIMITED),
             vm.state.value,
         )
+    }
+
+    @Test
+    fun `a stop that fails to refresh keeps its aged rows while a fresh stop updates`() =
+        runTest(dispatcher) {
+            var current = now
+            var failKsx = false
+            val client = object : TflClient {
+                override suspend fun arrivals(stopId: String): List<Departure> {
+                    if (stopId == "940GZZLUKSX" && failKsx) throw TflException.Offline(null)
+                    return listOf(departure("victoria", "Victoria", 120))
+                }
+
+                override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+                override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+            }
+            val vm = MainViewModel(client, seeds, clock = { current }, io = dispatcher)
+            advanceUntilIdle()
+            val first = vm.state.value
+            assertTrue(first is DeparturesUiState.Loaded)
+            first as DeparturesUiState.Loaded
+            // Both stops fetched at the first load's time.
+            assertEquals(setOf(now), first.stops.map { it.fetchedAt }.toSet())
+
+            // Time passes; on the next refresh KSX fails while Oxford Circus succeeds.
+            current = now.plusSeconds(120)
+            failKsx = true
+            vm.refresh()
+            advanceUntilIdle()
+
+            val merged = vm.state.value
+            assertTrue(merged is DeparturesUiState.Loaded)
+            merged as DeparturesUiState.Loaded
+            val ageByStop = merged.stops.associate { it.stopId to it.fetchedAt }
+            // Oxford Circus refreshed to the new time; King's Cross kept its aged rows at
+            // the old time rather than vanishing — the drop-on-partial-refresh class the
+            // per-stop snapshot deletes (SPEC D4 / principle 2).
+            assertEquals(now.plusSeconds(120), ageByStop.getValue("940GZZLUOXC"))
+            assertEquals(now, ageByStop.getValue("940GZZLUKSX"))
+            assertTrue(merged.partialRefresh)
+            // The whole-screen stamp is the freshest stop's age.
+            assertEquals(now.plusSeconds(120), merged.fetchedAt)
+        }
+
+    @Test
+    fun `every arrivals request failing on first load errors even when stops declare lines`() =
+        runTest(dispatcher) {
+            // The production seed stops declare lines. If every arrivals request fails on a
+            // first load, the stops must NOT be kept on their lines alone and shown as "no
+            // departures" — the offline/rate-limit failure has to surface (SPEC principle 1).
+            val seedsWithLines = listOf(
+                StopRef("940GZZLUOXC", "Oxford Circus", listOf(LineRef("victoria", "Victoria", "tube"))),
+                StopRef("940GZZLUKSX", "King's Cross St. Pancras", listOf(LineRef("circle", "Circle", "tube"))),
+            )
+            val client = FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.failure(TflException.Offline(null)),
+                    "940GZZLUKSX" to Result.failure(TflException.Offline(null)),
+                ),
+            )
+            val vm = MainViewModel(client, seedsWithLines, clock = { now }, io = dispatcher)
+            advanceUntilIdle()
+
+            assertEquals(
+                DeparturesUiState.Error(DeparturesUiState.Error.Kind.OFFLINE),
+                vm.state.value,
+            )
+        }
+
+    @Test
+    fun `a total failure preserves a prior partial-refresh warning`() = runTest(dispatcher) {
+        var oxcFails = false
+        var allFail = false
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                if (allFail || (oxcFails && stopId == "940GZZLUOXC")) throw TflException.Offline(null)
+                return listOf(departure("victoria", "Victoria", 300))
+            }
+
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                if (allFail) throw TflException.Offline(null)
+                return emptyList()
+            }
+        }
+        // A partial refresh first: Oxford Circus fails, King's Cross succeeds.
+        oxcFails = true
+        val vm = MainViewModel(client, seeds, clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        val partial = vm.state.value
+        assertTrue(partial is DeparturesUiState.Loaded)
+        partial as DeparturesUiState.Loaded
+        assertTrue(partial.partialRefresh)
+
+        // Then a total failure: nothing fresh. The kept snapshot is still incomplete, so the
+        // partial warning must persist alongside the refresh-failure one, not be cleared.
+        allFail = true
+        vm.refresh()
+        advanceUntilIdle()
+        val kept = vm.state.value
+        assertTrue(kept is DeparturesUiState.Loaded)
+        kept as DeparturesUiState.Loaded
+        assertTrue(kept.partialRefresh)
+        assertEquals(DeparturesUiState.Error.Kind.OFFLINE, kept.refreshFailure)
+    }
+
+    @Test
+    fun `a stop whose arrivals fail still surfaces its fresh disruption`() = runTest(dispatcher) {
+        // First load, no prior: King's Cross's arrivals fail but its disruption succeeds
+        // with a closure. The decoupled fetch means the closure still surfaces rather than
+        // the stop dropping out for want of predictions (the deferred PR #15 finding).
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                if (stopId == "940GZZLUKSX") throw TflException.Offline(null)
+                return listOf(departure("victoria", "Victoria", 300))
+            }
+
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> =
+                if (stopId == "940GZZLUKSX") {
+                    listOf(StopDisruption("Station closed until further notice"))
+                } else {
+                    emptyList()
+                }
+        }
+        val vm = viewModel(client)
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        val ksx = state.stops.single { it.stopId == "940GZZLUKSX" }
+        // Arrivals failed with no prior, so it has no departures — but it stays in the
+        // snapshot on its disruption alone, so the closed stop is flagged, not dropped.
+        assertTrue(ksx.departures.isEmpty())
+        assertEquals(
+            listOf("Station closed until further notice"),
+            ksx.disruptions.map { it.description },
+        )
+        // Its arrivals were never fetched, so it's flagged not-fresh — a status row can't
+        // then claim "No departures" for this stop (only the closure shows).
+        assertFalse(ksx.arrivalsFresh)
+        // Oxford Circus refreshed and King's Cross's arrivals didn't — a partial refresh.
+        assertTrue(state.partialRefresh)
     }
 }
