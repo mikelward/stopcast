@@ -101,6 +101,16 @@ class KtorTflClientTest {
     }
 
     @Test
+    fun `retains TfL direction, defaulting to empty when the field is absent`() = runTest {
+        val departures = client(arrivalsJson).arrivals("940GZZLUVIC")
+
+        // TfL gives inbound/outbound on the tube predictions; the bus one omits it.
+        assertEquals("inbound", departures[0].direction)
+        assertEquals("outbound", departures[1].direction)
+        assertEquals("", departures[2].direction)
+    }
+
+    @Test
     fun `blank platform is null and blank destination falls back to towards`() = runTest {
         val departures = client(arrivalsJson).arrivals("940GZZLUVIC")
 
