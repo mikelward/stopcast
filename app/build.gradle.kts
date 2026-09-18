@@ -1,0 +1,178 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+}
+
+fun gitOutput(vararg args: String, fallback: String): String =
+    try {
+        // No isIgnoreExitValue: a nonzero exit — a source archive with no .git,
+        // where rev-list/rev-parse exit 128 — must throw so the catch runs and
+        // warns. Ignoring the exit left that common failure path silent, with
+        // the warning below unreachable.
+        val output = providers.exec {
+            commandLine("git", *args)
+        }.standardOutput.asText.get().trim()
+        output.ifEmpty { fallback }
+    } catch (e: Exception) {
+        // Don't fail configuration on a source-archive/no-git build, but don't
+        // be silent either: a fallback versionCode/SHA is fine for a debug build
+        // and wrong for a release one. Failing release builds outright belongs
+        // with the deploy job (TODO Phase 5) — for now, leave a trace.
+        logger.warn("git ${args.joinToString(" ")} failed (${e.message}); using fallback \"$fallback\"")
+        fallback
+    }
+
+// Monotonic versionCode as long as main only moves forward; Play rejects an
+// AAB whose versionCode is <= the highest already uploaded. CI checks out with
+// fetch-depth: 0 so the count isn't truncated by a shallow clone.
+val gitCommitCount: Int =
+    gitOutput("rev-list", "--count", "HEAD", fallback = "1").toIntOrNull() ?: 1
+val gitShortSha: String = gitOutput("rev-parse", "--short", "HEAD", fallback = "unknown")
+val baseVersionName = "0.1"
+
+// The four release-keystore variables, normalized once: blank is absent, so a
+// whitespace-only secret can't slip past the all-or-none guard and attach an
+// empty signing config that fails deep inside AGP.
+fun releaseKeystoreEnv(name: String): String? =
+    providers.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
+
+val releaseKeystorePath = releaseKeystoreEnv("RELEASE_KEYSTORE_FILE")
+val releaseKeystorePassword = releaseKeystoreEnv("RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = releaseKeystoreEnv("RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseKeystoreEnv("RELEASE_KEY_PASSWORD")
+
+val anyReleaseKeystoreVarSet = releaseKeystorePath != null || releaseKeystorePassword != null ||
+    releaseKeyAlias != null || releaseKeyPassword != null
+val releaseSigningConfigured = releaseKeystorePath != null && releaseKeystorePassword != null &&
+    releaseKeyAlias != null && releaseKeyPassword != null
+
+android {
+    namespace = "app.trackmo"
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "app.trackmo"
+        // minSdk 34 (Android 14) is the device floor across the sibling fleet;
+        // the lock-screen placement (Android 16 QPR) is the OS deciding a
+        // standard widget is eligible, not a separate code path (SPEC).
+        minSdk = 34
+        targetSdk = 36
+        versionCode = gitCommitCount
+        versionName = "$baseVersionName.$gitCommitCount+$gitShortSha"
+    }
+
+    signingConfigs {
+        // CI materializes the Play upload keystore from a secret; Play App
+        // Signing re-signs before delivery. Local builds without the secrets
+        // produce an unsigned release AAB, so forks and fresh clones build
+        // cleanly. All four vars, or none.
+        create("release") {
+            if (anyReleaseKeystoreVarSet && !releaseSigningConfigured) {
+                error(
+                    "Partial release-keystore configuration. Set all of RELEASE_KEYSTORE_FILE, " +
+                        "RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD — or none, " +
+                        "to build unsigned.",
+                )
+            }
+            if (releaseSigningConfigured) {
+                val keystore = file(releaseKeystorePath!!)
+                check(keystore.exists()) {
+                    "RELEASE_KEYSTORE_FILE is set but does not exist: ${keystore.path}"
+                }
+                storeFile = keystore
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Always, not just in CI: the release build is the artifact that
+            // ships, so it should be the artifact anyone can reproduce (R8
+            // bugs live in reflection/serialization/enum handling, which this
+            // app uses for its persisted state).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+        debug {
+            // Suffixed so a debug build co-installs beside a release-signed
+            // build instead of colliding on the package name.
+            applicationIdSuffix = ".debug"
+        }
+    }
+
+    buildFeatures {
+        compose = true
+        // VERSION_NAME for the About screen — a compile-time constant, so the
+        // version never needs a PackageManager IPC on a composition path.
+        buildConfig = true
+    }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+
+    lint {
+        // Lint's test-source passes feed a report nothing consumes: a real
+        // defect in a test surfaces as a failing test, not a warning.
+        ignoreTestSources = true
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+tasks.withType<Test>().configureEach {
+    if (project.hasProperty("roborazzi.test.record")) {
+        jvmArgs("-Droborazzi.test.record=true")
+    }
+    if (project.hasProperty("roborazzi.test.verify")) {
+        jvmArgs("-Droborazzi.test.verify=true")
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+dependencies {
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material.icons.core)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.datastore)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+    // The shared on-device debug log, mikelward/androidlog — resolved from the
+    // Maven repository declared in settings.gradle.kts. `logging-android`
+    // carries the parts that need a `Context`; `logging-core` is the buffer
+    // and the value rules.
+    implementation(libs.androidlog.logging.core)
+    implementation(libs.androidlog.logging.android)
+
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    // Robolectric + Roborazzi (and the Compose UI test deps) land in Phase 1
+    // with the first screenshot test — Phase 0 has only pure-JVM unit tests.
+}

@@ -150,9 +150,10 @@ the shortest phrasing that stays unambiguous; justify a longer form in the PR.
   lands on `main` and (once the deploy pipeline exists) ships to Play "What's new" — so
   title **every** commit on the branch for end users, not just the PR.
 - **Prefix a subject that has no user-visible effect**, used precisely: `ci:`, `docs:`
-  (docs/`*.md`, including `docs/PRIVACY.md`), `internal:` (build/plumbing; a shipped
-  dependency is bare), `refactor:`, `test:`/`tests:`. A bare subject means a user could
-  notice the difference.
+  (docs/`*.md`, including `docs/PRIVACY.md`), `todo:` (`TODO.md` bookkeeping alone),
+  `internal:` (build/plumbing; a shipped dependency is bare), `refactor:`,
+  `test:`/`tests:`. A bare subject means a user could notice the difference. `docs` and
+  `todo` are the two prefixes the docs lane accepts (`.github/lanes.conf`).
 - **No model identifier** — never put a model name or version (e.g. `Opus 4.8`,
   `Sonnet`, a `claude-*` id) in a commit message, PR title/body, code comment, or any
   other pushed artifact; keep it to chat. This targets the model *name/version* only —

@@ -10,19 +10,31 @@ exercises the whole spine the widget later renders from.
 
 ## Phase 0 — Project scaffolding
 
-- [ ] Gradle build: single `:app` module, Compose, kotlinx.serialization, DataStore,
-      `mikelward/androidlog` as a resolved dependency (mirror simmo's
-      `settings.gradle.kts` / `libs.versions.toml`).
-- [ ] `minSdk 34`, `targetSdk`/`compileSdk` per the fleet, versionCode from the git
-      commit count.
-- [ ] `.claude/hooks/session-start.sh` to provision the Android SDK on web sessions.
-- [ ] CI (`ci.yml`) mirroring the sibling fleet: build + unit tests + lint, the
-      screenshot job (Roborazzi record + drift commit + visual-diff comment), and the
-      deploy job (Play internal track, release notes from commit subjects).
-- [ ] Shared checks wired: `lanes` (`.github/lanes.conf`), `codex` (the
-      `mikelward/codex-review` workflows), `zizmor`.
+- [x] Gradle build: single `:app` module, Compose, DataStore, `mikelward/androidlog`
+      as a resolved dependency (mirrors simmo's `settings.gradle.kts` /
+      `libs.versions.toml`). kotlinx.serialization lands with the TfL models in Phase 1.
+- [x] `minSdk 34`, `targetSdk 36` / `compileSdk 37` per the fleet, versionCode from the
+      git commit count.
+- [x] `.claude/hooks/session-start.sh` to provision the Android SDK on web sessions.
+- [x] CI: the fleet `ci.yml` runs a `build` job (`./gradlew test` + `lint` + debug APK)
+      behind the `lanes` classify/gate, on PRs and `main`.
+- [x] Shared checks wired: `lanes` (`.github/lanes.conf`), `codex` (the
+      `mikelward/codex-review` workflows), `zizmor` — added by the fleet CI scaffold (#3).
+- [x] Green `./gradlew test` and `./gradlew lint` (the aggregate tasks AGENTS.md
+      requires — CI runs these, not the debug-only variants).
+
+### Phase 0 — remaining (follow-up PRs)
+
+- [ ] Screenshot job (Roborazzi record + drift commit + visual-diff comment) — lands
+      with the first screenshot test in Phase 1. This also covers the throwaway
+      `HomePlaceholder`: Phase 1 replaces it with the real `MainScreen`, which arrives
+      with its own Robolectric/Roborazzi coverage and the CI allow-list step. Standing up
+      the whole record/drift/diff apparatus in Phase 0 for a placeholder that Phase 1
+      deletes — and re-adding the Robolectric/Roborazzi deps trimmed here — is the infra
+      this phase deliberately deferred (Codex, PR #4).
+- [ ] Deploy job (Play internal track, release notes from commit subjects) — Phase 5,
+      needs the signing secrets.
 - [ ] `AboutLibraries` licenses export + Licenses screen scaffolding.
-- [ ] Green `./gradlew test` and `./gradlew lint`.
 
 ## Phase 1 — In-app departures view (first deliverable)
 
@@ -91,6 +103,11 @@ Builds on Phase 1's minimal line-status marking.
 ## Phase 5 — Distribution and polish
 
 - [ ] Play internal-track deploy proven end to end; signing keystore via secrets.
+- [ ] Fail a **release** build when the git-derived versionCode/SHA fell back (a
+      source-archive or no-git build): Play rejects a non-incrementing versionCode, so a
+      silent fallback of `1` is wrong for a shipped artifact. The derivation logs a
+      warning now; the hard release-side guard lands here with the deploy job that makes
+      release integrity meaningful (Codex, PR #4).
 - [ ] Licenses / About screen finalized.
 - [ ] Finalize the store-facing privacy disclosure (location, watched stops, the TfL
       requests) and the Play Data Safety answers — building on the debug-log disclosure
