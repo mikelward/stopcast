@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 fun gitOutput(vararg args: String, fallback: String): String =
@@ -170,9 +171,19 @@ dependencies {
     implementation(libs.androidlog.logging.core)
     implementation(libs.androidlog.logging.android)
 
+    // TfL client: Ktor with the OkHttp engine + kotlinx.serialization content
+    // negotiation, mirroring clothescast. MockEngine (below) tests the client
+    // against recorded fixtures with no live network (SPEC *Testing*).
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.ktor.client.mock)
     // Robolectric + Roborazzi (and the Compose UI test deps) land in Phase 1
     // with the first screenshot test — Phase 0 has only pure-JVM unit tests.
 }

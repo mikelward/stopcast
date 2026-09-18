@@ -38,8 +38,10 @@ exercises the whole spine the widget later renders from.
 
 ## Phase 1 — In-app departures view (first deliverable)
 
-- [ ] TfL client behind a domain interface: nearby `/StopPoint`, `/StopPoint/{id}/
-      Arrivals`; kotlinx.serialization models; recorded fixtures.
+- [x] TfL Arrivals client behind a domain interface (`TflClient`):
+      `/StopPoint/{id}/Arrivals`, kotlinx.serialization DTOs mapped to `Departure`,
+      Ktor + OkHttp, recorded-fixture (`MockEngine`) tests. (Nearby `/StopPoint` lookup
+      lands with Phase 2's "near me now".)
 - [x] Domain (pure Kotlin, JVM-tested): arrival→countdown formatting ("Due"/"3 min"),
       soonest-first ordering, expired-prediction drop (a countdown reaching zero leaves
       the list, never sticks at "Due"), a single shared staleness threshold, nearest-stop
@@ -75,7 +77,8 @@ exercises the whole spine the widget later renders from.
 ## Phase 2 — Watched stops and settings
 
 - [ ] Pin/unpin stops; persistence via DataStore.
-- [ ] "Near me now" discovery (on-demand location) with one-tap pin; stop search.
+- [ ] "Near me now" discovery (on-demand location, nearby `/StopPoint` lookup) with
+      one-tap pin; stop search.
 - [ ] Per-stop line/direction filters (D2).
 - [ ] Optional user `app_key` in settings (D7).
 - [ ] Extend the persisted snapshot (from Phase 1) to cover the watched-stop set,
