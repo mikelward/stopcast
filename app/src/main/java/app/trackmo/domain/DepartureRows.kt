@@ -43,15 +43,33 @@ object DepartureRows {
                     upcoming = group,
                 )
             }
-            .sortedWith(
-                compareBy(
-                    { it.upcoming.first().expectedArrival },
-                    { it.lineName },
-                    { it.direction },
-                    { it.directionKey },
-                ),
-            )
+            .sortedWith(rowOrder)
     }
+
+    /**
+     * The flat departures list across several stops (SPEC D8): every stop's rows in
+     * one soonest-first list, so the next thing to leave — whichever stop it is at —
+     * is at the top. Each [StopArrivals] is grouped by [forStop], then the rows are
+     * merged and re-sorted by the same [rowOrder]. Ordering is location-free (D1): the
+     * list works with location denied. Starred rows are pinned to the top by the
+     * caller in Phase 2, not here.
+     */
+    fun across(stops: List<StopArrivals>, now: Instant): List<DepartureRow> =
+        stops.flatMap { forStop(it.stopId, it.stopName, it.departures, now) }
+            .sortedWith(rowOrder)
+
+    /**
+     * Rows ordered by their soonest departure, ties broken by line, then direction,
+     * then the resolved direction key — a total, input-order-independent order shared
+     * by [forStop] and [across] so a stop's rows sort the same alone or merged.
+     */
+    private val rowOrder: Comparator<DepartureRow> =
+        compareBy(
+            { it.upcoming.first().expectedArrival },
+            { it.lineName },
+            { it.direction },
+            { it.directionKey },
+        )
 
     /**
      * The discriminator that keeps directions apart within a line at a stop. TfL's
@@ -69,3 +87,14 @@ object DepartureRows {
 
     private data class RowKey(val lineId: String, val directionKey: String)
 }
+
+/**
+ * One watched stop's arrivals, as [DepartureRows.across] takes them: the stop's
+ * identity ([stopId]/[stopName], the caller's context since the client fetches per
+ * stop) paired with the raw [departures] TfL returned for it.
+ */
+data class StopArrivals(
+    val stopId: String,
+    val stopName: String,
+    val departures: List<Departure>,
+)

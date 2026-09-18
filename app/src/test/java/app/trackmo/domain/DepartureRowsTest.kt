@@ -186,4 +186,43 @@ class DepartureRowsTest {
 
         assertEquals(emptyList<DepartureRow>(), rows)
     }
+
+    @Test
+    fun `across merges several stops into one soonest-first list`() {
+        val oxc = StopArrivals(
+            "940GZZLUOXC",
+            "Oxford Circus",
+            listOf(departure("victoria", "Victoria", "inbound", "Brixton", 300)),
+        )
+        val ksx = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            listOf(
+                departure("northern", "Northern", "southbound", "Morden", 120),
+                departure("victoria", "Victoria", "outbound", "Walthamstow Central", 420),
+            ),
+        )
+
+        val rows = DepartureRows.across(listOf(oxc, ksx), now)
+
+        // Soonest-first across both stops: KSX Northern (120s), OXC Victoria (300s),
+        // KSX Victoria (420s) — each row stamped with the stop it came from.
+        assertEquals(3, rows.size)
+        assertEquals(
+            listOf("King's Cross St. Pancras", "Oxford Circus", "King's Cross St. Pancras"),
+            rows.map { it.stopName },
+        )
+        assertEquals(listOf("northern", "victoria", "victoria"), rows.map { it.lineId })
+    }
+
+    @Test
+    fun `across drops departed services and can yield an empty list`() {
+        val stop = StopArrivals(
+            "940GZZLUOXC",
+            "Oxford Circus",
+            listOf(departure("victoria", "Victoria", "outbound", "Brixton", -30)),
+        )
+
+        assertEquals(emptyList<DepartureRow>(), DepartureRows.across(listOf(stop), now))
+    }
 }

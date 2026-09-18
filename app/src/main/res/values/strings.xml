@@ -1,4 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Trackmo</string>
+
+    <!-- Freshness stamp in the top bar. %1$s is "just now" / "3 min ago". -->
+    <string name="updated_stamp">Updated %1$s</string>
+    <string name="stale_stamp">Tap to refresh</string>
+
+    <!-- Departures list -->
+    <string name="departures_loading">Loading departures…</string>
+    <string name="departures_empty">No upcoming departures</string>
+    <!-- Empty list from a stale snapshot: don't assert "none" from data too old to
+         trust — say it may be out of date and prompt a refresh (SPEC D4). -->
+    <string name="departures_stale_empty">Departures may be out of date</string>
+    <string name="refresh">Refresh</string>
+    <!-- Shown when some watched stops refreshed but at least one failed. -->
+    <string name="partial_refresh">Some stops couldn\'t be refreshed</string>
+    <!-- Shown over the aged last-good list when a refresh failed outright. -->
+    <string name="refresh_failed_offline">Couldn\'t refresh — you\'re offline</string>
+    <string name="refresh_failed_rate_limited">Couldn\'t refresh — TfL is rate-limiting</string>
+    <string name="refresh_failed_unreachable">Couldn\'t refresh — can\'t reach TfL</string>
+
+    <!-- Honest failure states (SPEC principles 1–2) -->
+    <string name="error_offline">You\'re offline</string>
+    <string name="error_rate_limited">TfL is rate-limiting requests</string>
+    <string name="error_unreachable">Can\'t reach TfL</string>
 </resources>
