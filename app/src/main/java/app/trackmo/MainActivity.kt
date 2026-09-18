@@ -16,6 +16,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.trackmo.data.KtorTflClient
+import app.trackmo.domain.LineRef
 import app.trackmo.ui.MainScreen
 import app.trackmo.ui.MainViewModel
 import app.trackmo.ui.StopRef
@@ -62,10 +63,34 @@ class MainActivity : ComponentActivity() {
         private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
 
         // A temporary public-station seed until Phase 2 adds watched stops the user
-        // chooses (SPEC D1). Public infrastructure, not anyone's saved route.
+        // chooses (SPEC D1). Public infrastructure, not anyone's saved route. The `lines`
+        // are the stations' served tube lines (public facts), carried so a suspended line
+        // that returns no arrivals still surfaces as a status row (SPEC *Departures*);
+        // Phase 2's watched stops will carry this from TfL's own stop→line data.
+        private fun tube(id: String, name: String) = LineRef(id = id, name = name, mode = "tube")
+
         private val SEED_STOPS = listOf(
-            StopRef(id = "940GZZLUOXC", name = "Oxford Circus"),
-            StopRef(id = "940GZZLUKSX", name = "King's Cross St. Pancras"),
+            StopRef(
+                id = "940GZZLUOXC",
+                name = "Oxford Circus",
+                lines = listOf(
+                    tube("bakerloo", "Bakerloo"),
+                    tube("central", "Central"),
+                    tube("victoria", "Victoria"),
+                ),
+            ),
+            StopRef(
+                id = "940GZZLUKSX",
+                name = "King's Cross St. Pancras",
+                lines = listOf(
+                    tube("circle", "Circle"),
+                    tube("hammersmith-city", "Hammersmith & City"),
+                    tube("metropolitan", "Metropolitan"),
+                    tube("northern", "Northern"),
+                    tube("piccadilly", "Piccadilly"),
+                    tube("victoria", "Victoria"),
+                ),
+            ),
         )
     }
 }
