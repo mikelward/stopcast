@@ -65,21 +65,65 @@ object DepartureRows {
         now: Instant,
         lineStatuses: Map<String, LineStatus> = emptyMap(),
     ): List<DepartureRow> =
-        stops.flatMap { forStop(it.stopId, it.stopName, it.departures, now, lineStatuses) }
-            .sortedWith(rowOrder)
+        stops.flatMap { stop ->
+            val timed = forStop(stop.stopId, stop.stopName, stop.departures, now, lineStatuses)
+            timed + statusRows(stop, timed, lineStatuses)
+        }.sortedWith(rowOrder)
 
     /**
-     * Rows ordered by their soonest departure, ties broken by line, then direction,
-     * then the resolved direction key — a total, input-order-independent order shared
-     * by [forStop] and [across] so a stop's rows sort the same alone or merged.
+     * Status rows for a stop's disrupted lines that have **no prediction rows** — a
+     * suspended line often returns zero arrivals, so without this it would vanish from
+     * the list rather than surface as suspended (SPEC *Departures*, the quietly-wrong
+     * failure the model exists to avoid). Only the stop's declared [StopArrivals.lines]
+     * can name such a line, since the predictions don't. A line that *does* have
+     * prediction rows is already marked on them (its [DepartureRow.status]) and gets no
+     * separate status row; a good-service line gets none either.
+     */
+    private fun statusRows(
+        stop: StopArrivals,
+        timed: List<DepartureRow>,
+        lineStatuses: Map<String, LineStatus>,
+    ): List<DepartureRow> {
+        val timedLineIds = timed.mapTo(mutableSetOf()) { it.lineId }
+        return stop.lines
+            .filter { it.id !in timedLineIds }
+            .mapNotNull { line ->
+                val status = lineStatuses[line.id]?.takeIf(LineStatus::disrupted)
+                    ?: return@mapNotNull null
+                DepartureRow(
+                    stopId = stop.stopId,
+                    stopName = stop.stopName,
+                    lineId = line.id,
+                    lineName = line.name,
+                    direction = "",
+                    directionKey = STATUS_DIRECTION_KEY,
+                    destination = "",
+                    mode = line.mode,
+                    upcoming = emptyList(),
+                    status = status,
+                )
+            }
+    }
+
+    /**
+     * Rows ordered with **status rows first** — a disruption with no countdown is the
+     * most important thing to see and has no departure time to sort by — then timed rows
+     * by their soonest departure, ties broken by line, then direction, then the resolved
+     * direction key. A total, input-order-independent order shared by [forStop] and
+     * [across] so a stop's rows sort the same alone or merged. Status rows sort among
+     * themselves by stop then line for a stable order.
      */
     private val rowOrder: Comparator<DepartureRow> =
-        compareBy(
-            { it.upcoming.first().expectedArrival },
-            { it.lineName },
-            { it.direction },
-            { it.directionKey },
-        )
+        compareBy<DepartureRow> { it.upcoming.isNotEmpty() } // false (status) sorts first
+            .thenBy { it.upcoming.firstOrNull()?.expectedArrival ?: Instant.MIN }
+            .thenBy { it.lineName }
+            .thenBy { it.direction }
+            .thenBy { it.directionKey }
+            // Final tie-break: two status rows for the same line at different stops share
+            // every key above (time MIN, blank direction, the status sentinel), so stop
+            // keeps their order stable. Harmless for timed rows, which the keys above
+            // already separate.
+            .thenBy { it.stopName }
 
     /**
      * The discriminator that keeps directions apart within a line at a stop. TfL's
@@ -102,9 +146,14 @@ object DepartureRows {
  * One watched stop's arrivals, as [DepartureRows.across] takes them: the stop's
  * identity ([stopId]/[stopName], the caller's context since the client fetches per
  * stop) paired with the raw [departures] TfL returned for it.
+ *
+ * [lines] is the stop's served lines, known independently of the predictions, so a
+ * disrupted line with zero arrivals still surfaces as a status row (SPEC *Departures*).
+ * Empty when the caller has no such mapping — then only prediction-derived rows are shown.
  */
 data class StopArrivals(
     val stopId: String,
     val stopName: String,
     val departures: List<Departure>,
+    val lines: List<LineRef> = emptyList(),
 )

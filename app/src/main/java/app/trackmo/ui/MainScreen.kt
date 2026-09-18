@@ -247,6 +247,18 @@ private fun DepartureRowCard(row: DepartureRow, now: Instant, stale: Boolean) {
             // A disrupted line is flagged here (SPEC D3) — the chip names TfL's status
             // ("Severe Delays", "Suspended"), the line itself being the pill above.
             row.status?.let { status -> DisruptionChip(status.description) }
+            if (row.upcoming.isEmpty()) {
+                // A status row: this line is disrupted (the chip says how) and returned no
+                // predictions, so it's surfaced rather than dropped for want of a departure
+                // (SPEC *Departures*). No countdown — just note there are no times.
+                Text(
+                    text = stringResource(R.string.status_no_departures),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                return@Column
+            }
             Text(
                 text = row.destination.ifBlank { row.lineName },
                 style = MaterialTheme.typography.titleMedium,

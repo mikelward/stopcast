@@ -15,8 +15,12 @@ package app.trackmo.domain
  * [destination] is the human-readable headline — the *soonest* upcoming departure's
  * destination; a branching line can run several destinations in one direction, so
  * later entries in [upcoming] may differ, but the headline names what leaves next.
- * [upcoming] holds that group's not-yet-departed departures, soonest-first, and is
- * never empty (a group with nothing upcoming produces no row).
+ * [upcoming] holds that group's not-yet-departed departures, soonest-first. It is empty
+ * only for a **status row** — a disrupted line with no predictions (a suspended line
+ * often returns none), surfaced so it isn't silently dropped for want of a departure
+ * (SPEC *Departures*). A status row is direction-independent ([direction] blank,
+ * [directionKey] the [STATUS_DIRECTION_KEY] sentinel) and always carries a non-null
+ * [status]; a prediction group with nothing upcoming still produces no row at all.
  * [mode] is the group's TfL mode (all its departures share the line, so the mode is
  * one value), carried so the row can be shown in its mode's identity — a tube line's
  * color, London-bus red — without the render layer re-deriving it.
@@ -37,3 +41,10 @@ data class DepartureRow(
     val upcoming: List<Departure>,
     val status: LineStatus? = null,
 )
+
+/**
+ * The [DepartureRow.directionKey] a status row carries — a fixed sentinel, since a status
+ * row has no direction. It keeps `(stopId, lineId, directionKey)` unique for a status row
+ * (there is one per stop+line, and the line has no prediction rows to collide with).
+ */
+const val STATUS_DIRECTION_KEY: String = "status"

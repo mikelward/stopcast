@@ -2,6 +2,7 @@ package app.trackmo.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
 import app.trackmo.domain.StopArrivals
 import app.trackmo.domain.TflClient
@@ -17,8 +18,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** A stop to show, until Phase 2's watched-stops persistence replaces the seed set. */
-data class StopRef(val id: String, val name: String)
+/**
+ * A stop to show, until Phase 2's watched-stops persistence replaces the seed set.
+ * [lines] is the stop's served lines, carried so a disrupted line with no predictions
+ * still surfaces as a status row (SPEC *Departures*); empty means only predicted lines
+ * are known for the stop.
+ */
+data class StopRef(val id: String, val name: String, val lines: List<LineRef> = emptyList())
 
 /**
  * Owns the departures snapshot the screen renders (SPEC staleness contract): the fetch
@@ -71,7 +77,7 @@ class MainViewModel(
             for (stop in seedStops) {
                 try {
                     val departures = withContext(io) { client.arrivals(stop.id) }
-                    fetched += StopArrivals(stop.id, stop.name, departures)
+                    fetched += StopArrivals(stop.id, stop.name, departures, stop.lines)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -82,21 +88,24 @@ class MainViewModel(
 
             // Check the status of every line we're about to show, so a disrupted line is
             // marked rather than its countdowns shown as trustworthy (SPEC *Disruptions* /
-            // D3). One batched request, off the arrivals path. Only lines with predictions
-            // are checked here — a fully suspended line returns none, and surfacing it
-            // still needs the watched stop→line mapping (Phase 1's next item). A lookup
+            // D3). One batched request, off the arrivals path. The set is the stops'
+            // declared lines PLUS every predicted line: the declared lines cover a
+            // suspended line that returned no predictions (so it can surface as a status
+            // row), and the predicted set catches anything a stop didn't declare. A lookup
             // that fails leaves the arrivals shown but flags them "status unknown" rather
             // than passing them off as verified-clean.
             var lineStatuses = emptyMap<String, LineStatus>()
             var disruptionUnknown = false
             if (fetched.isNotEmpty()) {
-                val shownLineIds = fetched.flatMap { it.departures }.map { it.lineId }
-                val lineIds = shownLineIds.filterTo(mutableSetOf()) { it.isNotBlank() }
+                val predictedLineIds = fetched.flatMap { it.departures }.map { it.lineId }
+                val declaredLineIds = fetched.flatMap { it.lines }.map { it.id }
+                val lineIds = (predictedLineIds + declaredLineIds)
+                    .filterTo(mutableSetOf()) { it.isNotBlank() }
                 // A departure whose line TfL didn't identify (blank id) can't have its
                 // status checked, so its presence alone leaves the disruption state
                 // unknown — never shown as verified-clean (SPEC principle 1). This also
                 // covers the all-blank case, where no status request is made at all.
-                if (shownLineIds.any { it.isBlank() }) disruptionUnknown = true
+                if (predictedLineIds.any { it.isBlank() }) disruptionUnknown = true
                 if (lineIds.isNotEmpty()) {
                     try {
                         val statuses = withContext(io) { client.lineStatuses(lineIds) }
