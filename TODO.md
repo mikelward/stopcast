@@ -46,7 +46,7 @@ exercises the whole spine the widget later renders from.
       soonest-first ordering, expired-prediction drop (a countdown reaching zero leaves
       the list, never sticks at "Due"), a single shared staleness threshold, nearest-stop
       ranking. (`Departure`, `Countdown`, `Staleness`, `NearestStops` + JVM tests.)
-- [ ] Retain TfL's `direction` (inbound/outbound) on `TflArrivalDto` → `Departure` as the
+- [x] Retain TfL's `direction` (inbound/outbound) on `TflArrivalDto` → `Departure` as the
       primary grouping key — it can't be reconstructed from destination/platform in general
       (a branch shares a direction) — then group departures into **(service, stop,
       direction) rows**: a pure domain grouping, soonest-first within each row, JVM-tested
