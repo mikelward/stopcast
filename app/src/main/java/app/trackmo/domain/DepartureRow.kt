@@ -20,6 +20,10 @@ package app.trackmo.domain
  * [mode] is the group's TfL mode (all its departures share the line, so the mode is
  * one value), carried so the row can be shown in its mode's identity — a tube line's
  * color, London-bus red — without the render layer re-deriving it.
+ * [status] is the line's disruption, if any — set only when the line is disrupted, so a
+ * non-null value marks the row (SPEC *Disruptions*: a delayed or suspended line's
+ * countdowns are flagged rather than shown as if trustworthy). Null when the line has a
+ * good service, or when its status was not looked up.
  */
 data class DepartureRow(
     val stopId: String,
@@ -31,4 +35,5 @@ data class DepartureRow(
     val destination: String,
     val mode: String,
     val upcoming: List<Departure>,
+    val status: LineStatus? = null,
 )

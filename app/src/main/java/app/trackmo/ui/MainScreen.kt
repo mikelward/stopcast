@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -126,8 +127,11 @@ private fun LoadedContent(
         Staleness.isStale(Duration.between(state.fetchedAt, now).toKotlinDuration())
     }
     // Group against the live clock, not fetch time, so departed services leave the list
-    // and the order advances between fetches (SPEC D4). Cheap and pure.
-    val rows = remember(state.stops, now) { DepartureRows.across(state.stops, now) }
+    // and the order advances between fetches (SPEC D4). Line statuses stamp each row so a
+    // disrupted line is marked (SPEC D3). Cheap and pure.
+    val rows = remember(state.stops, state.lineStatuses, now) {
+        DepartureRows.across(state.stops, now, state.lineStatuses)
+    }
 
     // Pull-to-refresh over the whole loaded surface (SPEC D6).
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = modifier) {
@@ -141,6 +145,11 @@ private fun LoadedContent(
             }
             if (state.partialRefresh) {
                 Banner(stringResource(R.string.partial_refresh))
+            }
+            // Arrivals loaded but their disruption status couldn't be checked — say so
+            // rather than let the times read as verified-clean (SPEC *Disruptions*).
+            if (state.disruptionUnknown) {
+                Banner(stringResource(R.string.disruptions_unknown))
             }
             if (rows.isEmpty()) {
                 // Scrollable even though it doesn't overflow: PullToRefreshBox reads the
@@ -235,6 +244,9 @@ private fun DepartureRowCard(row: DepartureRow, now: Instant, stale: Boolean) {
                     modifier = Modifier.weight(1f).padding(start = 12.dp),
                 )
             }
+            // A disrupted line is flagged here (SPEC D3) — the chip names TfL's status
+            // ("Severe Delays", "Suspended"), the line itself being the pill above.
+            row.status?.let { status -> DisruptionChip(status.description) }
             Text(
                 text = row.destination.ifBlank { row.lineName },
                 style = MaterialTheme.typography.titleMedium,
@@ -273,6 +285,31 @@ private fun DepartureRowCard(row: DepartureRow, now: Instant, stale: Boolean) {
                 }
             }
         }
+    }
+}
+
+/**
+ * Marks a row whose line is disrupted (SPEC D3). A small error-toned chip carrying TfL's
+ * status wording, sat between the header and the destination so it reads before the
+ * countdowns it qualifies. The pill above already names the line, so the chip is the
+ * status alone ("Severe Delays"), not "Victoria line: severe delays".
+ */
+@Composable
+private fun DisruptionChip(description: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.padding(top = 8.dp),
+    ) {
+        Text(
+            text = description,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
     }
 }
 

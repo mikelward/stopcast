@@ -14,4 +14,14 @@ package app.trackmo.domain
  */
 interface TflClient {
     suspend fun arrivals(stopId: String): List<Departure>
+
+    /**
+     * The current status of each line in [lineIds], from `/Line/{ids}/Status` — one
+     * [LineStatus] per line TfL knows, carrying the worst of that line's statuses. An
+     * empty [lineIds] makes no request and returns empty. Like [arrivals] it throws on a
+     * transport or decode failure; the caller decides what a failed disruption lookup
+     * means (SPEC *Disruptions*: mark the affected departures "status unknown", never
+     * present them as verified-clean).
+     */
+    suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus>
 }

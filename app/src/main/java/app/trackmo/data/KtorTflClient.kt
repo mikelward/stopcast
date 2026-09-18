@@ -1,6 +1,7 @@
 package app.trackmo.data
 
 import app.trackmo.domain.Departure
+import app.trackmo.domain.LineStatus
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
 import io.ktor.client.HttpClient
@@ -35,10 +36,33 @@ class KtorTflClient(
     private val appKey: String? = null,
 ) : TflClient {
     override suspend fun arrivals(stopId: String): List<Departure> =
-        try {
+        tflRequest {
             httpClient.get("$baseUrl/StopPoint/$stopId/Arrivals") {
                 if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
             }.body<List<TflArrivalDto>>().map { it.toDeparture() }
+        }
+
+    override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+        // No lines → no request: a refresh with no predicted lines has nothing to check,
+        // and an empty `/Line//Status` path would 404.
+        if (lineIds.isEmpty()) return emptyList()
+        val ids = lineIds.joinToString(",")
+        return tflRequest {
+            httpClient.get("$baseUrl/Line/$ids/Status") {
+                if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+            }.body<List<TflLineDto>>().mapNotNull { it.toLineStatus() }
+        }
+    }
+
+    /**
+     * Runs a TfL request and maps every transport/decode failure to the domain
+     * [TflException] the caller reasons about (offline / rate-limited / unreachable),
+     * so both endpoints share one error contract rather than repeating the mapping.
+     * Sanitized throughout — a status code or class name, never a payload (SPEC *Privacy*).
+     */
+    private suspend inline fun <T> tflRequest(block: () -> T): T =
+        try {
+            block()
         } catch (e: CancellationException) {
             // Never swallow cancellation — rethrow first so structured concurrency
             // isn't broken (a canceled refresh must actually cancel).
@@ -68,7 +92,7 @@ class KtorTflClient(
             throw e
         } catch (e: Exception) {
             // A decode failure or anything else unexpected: reached the client but
-            // couldn't produce departures. Sanitized — the class name, no payload.
+            // couldn't produce a result. Sanitized — the class name, no payload.
             throw TflException.Unreachable("unexpected: ${e::class.simpleName}", e)
         }
 

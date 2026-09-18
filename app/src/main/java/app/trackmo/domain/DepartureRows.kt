@@ -25,6 +25,7 @@ object DepartureRows {
         stopName: String,
         departures: List<Departure>,
         now: Instant,
+        lineStatuses: Map<String, LineStatus> = emptyMap(),
     ): List<DepartureRow> {
         // upcoming() has already dropped departed services and sorted soonest-first;
         // groupBy preserves that encounter order within each group.
@@ -42,6 +43,10 @@ object DepartureRows {
                     destination = soonest.destination,
                     mode = soonest.mode,
                     upcoming = group,
+                    // Marks the row only when the line is actually disrupted — a
+                    // good-service (or unlooked-up) line leaves it null, so a non-null
+                    // status always means "flag this" (SPEC *Disruptions* / D3).
+                    status = lineStatuses[key.lineId]?.takeIf(LineStatus::disrupted),
                 )
             }
             .sortedWith(rowOrder)
@@ -55,8 +60,12 @@ object DepartureRows {
      * list works with location denied. Starred rows are pinned to the top by the
      * caller in Phase 2, not here.
      */
-    fun across(stops: List<StopArrivals>, now: Instant): List<DepartureRow> =
-        stops.flatMap { forStop(it.stopId, it.stopName, it.departures, now) }
+    fun across(
+        stops: List<StopArrivals>,
+        now: Instant,
+        lineStatuses: Map<String, LineStatus> = emptyMap(),
+    ): List<DepartureRow> =
+        stops.flatMap { forStop(it.stopId, it.stopName, it.departures, now, lineStatuses) }
             .sortedWith(rowOrder)
 
     /**

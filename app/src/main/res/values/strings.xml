@@ -15,6 +15,9 @@
     <string name="refresh">Refresh</string>
     <!-- Shown when some watched stops refreshed but at least one failed. -->
     <string name="partial_refresh">Some stops couldn\'t be refreshed</string>
+    <!-- Shown when arrivals loaded but the disruption lookup failed, so these times'
+         disruption status was never checked (SPEC Disruptions: not verified-clean). -->
+    <string name="disruptions_unknown">Couldn\'t check for disruptions</string>
     <!-- Shown over the aged last-good list when a refresh failed outright. -->
     <string name="refresh_failed_offline">Couldn\'t refresh — you\'re offline</string>
     <string name="refresh_failed_rate_limited">Couldn\'t refresh — TfL is rate-limiting</string>

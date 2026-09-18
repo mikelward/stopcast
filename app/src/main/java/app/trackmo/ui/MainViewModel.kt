@@ -2,6 +2,7 @@ package app.trackmo.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.trackmo.domain.LineStatus
 import app.trackmo.domain.StopArrivals
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
@@ -78,6 +79,42 @@ class MainViewModel(
                     warn("arrivals fetch failed for stop ${stop.id}: ${reason(e)}")
                 }
             }
+
+            // Check the status of every line we're about to show, so a disrupted line is
+            // marked rather than its countdowns shown as trustworthy (SPEC *Disruptions* /
+            // D3). One batched request, off the arrivals path. Only lines with predictions
+            // are checked here — a fully suspended line returns none, and surfacing it
+            // still needs the watched stop→line mapping (Phase 1's next item). A lookup
+            // that fails leaves the arrivals shown but flags them "status unknown" rather
+            // than passing them off as verified-clean.
+            var lineStatuses = emptyMap<String, LineStatus>()
+            var disruptionUnknown = false
+            if (fetched.isNotEmpty()) {
+                val shownLineIds = fetched.flatMap { it.departures }.map { it.lineId }
+                val lineIds = shownLineIds.filterTo(mutableSetOf()) { it.isNotBlank() }
+                // A departure whose line TfL didn't identify (blank id) can't have its
+                // status checked, so its presence alone leaves the disruption state
+                // unknown — never shown as verified-clean (SPEC principle 1). This also
+                // covers the all-blank case, where no status request is made at all.
+                if (shownLineIds.any { it.isBlank() }) disruptionUnknown = true
+                if (lineIds.isNotEmpty()) {
+                    try {
+                        val statuses = withContext(io) { client.lineStatuses(lineIds) }
+                        lineStatuses = statuses.filter { it.disrupted }.associateBy { it.lineId }
+                        // A line TfL returned no determinable status for is unknown, not
+                        // clean — flag it so those rows aren't shown as verified-clean
+                        // (the client drops such lines, so they're absent here).
+                        val determined = statuses.mapTo(mutableSetOf()) { it.lineId }
+                        if (lineIds.any { it !in determined }) disruptionUnknown = true
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        disruptionUnknown = true
+                        warn("line status fetch failed for ${lineIds.joinToString(",")}: ${reason(e)}")
+                    }
+                }
+            }
+
             _state.value = when {
                 fetched.isNotEmpty() ->
                     // Grouping into rows is the screen's job, recomputed from the live
@@ -86,6 +123,8 @@ class MainViewModel(
                         stops = fetched,
                         fetchedAt = clock(),
                         partialRefresh = firstError != null,
+                        lineStatuses = lineStatuses,
+                        disruptionUnknown = disruptionUnknown,
                     )
                 // Nothing came back and nothing failed → there were no stops to fetch
                 // (no watched stops yet, or the seed is empty). That's an empty list, not
