@@ -72,6 +72,13 @@ class MainViewModel(
         }
         _refreshing.value = true
         val job = viewModelScope.launch {
+            // Stamp the snapshot from the START of the fetch, not after the request chain
+            // (arrivals, line status, per-stop disruptions run in sequence). Stamping at
+            // the end would report the oldest departures as "just updated" and push the
+            // staleness cutoff out by the whole chain's duration — a conservative earlier
+            // stamp keeps the age and the stale-data withhold honest (SPEC D4). Per-stop
+            // ages are the later refinement (TODO Phase 1 snapshot item).
+            val fetchStartedAt = clock()
             val fetched = mutableListOf<StopArrivals>()
             var firstError: Throwable? = null
             for (stop in seedStops) {
@@ -124,13 +131,30 @@ class MainViewModel(
                 }
             }
 
+            // Check each shown stop for its own disruptions (a closure, a moved stop), so
+            // a closed stop is flagged rather than shown with catchable-looking departures
+            // (SPEC *Disruptions*). Per stop (the endpoint scopes to it), off the render
+            // path. A lookup that fails leaves the stop shown but flags the disruption
+            // state unknown rather than verified-clean.
+            val stopsWithDisruptions = fetched.map { stop ->
+                try {
+                    stop.copy(disruptions = withContext(io) { client.stopDisruptions(stop.stopId) })
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    disruptionUnknown = true
+                    warn("stop disruption fetch failed for stop ${stop.stopId}: ${reason(e)}")
+                    stop
+                }
+            }
+
             _state.value = when {
                 fetched.isNotEmpty() ->
                     // Grouping into rows is the screen's job, recomputed from the live
                     // clock (SPEC D4) — the snapshot is just the raw stops as fetched.
                     DeparturesUiState.Loaded(
-                        stops = fetched,
-                        fetchedAt = clock(),
+                        stops = stopsWithDisruptions,
+                        fetchedAt = fetchStartedAt,
                         partialRefresh = firstError != null,
                         lineStatuses = lineStatuses,
                         disruptionUnknown = disruptionUnknown,
@@ -138,7 +162,7 @@ class MainViewModel(
                 // Nothing came back and nothing failed → there were no stops to fetch
                 // (no watched stops yet, or the seed is empty). That's an empty list, not
                 // a network error — TfL was never contacted.
-                firstError == null -> DeparturesUiState.Loaded(stops = emptyList(), fetchedAt = clock())
+                firstError == null -> DeparturesUiState.Loaded(stops = emptyList(), fetchedAt = fetchStartedAt)
                 // A refresh that fails outright keeps the aged last-good snapshot rather
                 // than blanking the departures the user was reading — but carries the
                 // failure so the screen says "couldn't refresh" explicitly, not silently

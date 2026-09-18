@@ -67,8 +67,34 @@ object DepartureRows {
     ): List<DepartureRow> =
         stops.flatMap { stop ->
             val timed = forStop(stop.stopId, stop.stopName, stop.departures, now, lineStatuses)
-            timed + statusRows(stop, timed, lineStatuses)
+            stopStatusRow(stop) + timed + statusRows(stop, timed, lineStatuses)
         }.sortedWith(rowOrder)
+
+    /**
+     * A stop-level status row for a stop with its own disruption(s) — a closure or moved
+     * stop — so it isn't shown as if its departures were catchable (SPEC *Disruptions*).
+     * One row per stop, its descriptions joined; the stop's timed rows are kept (marked,
+     * not suppressed), since TfL's closure data is coarse and often absent, so hiding
+     * departments on it would risk dropping valid ones. Empty when the stop is clear.
+     */
+    private fun stopStatusRow(stop: StopArrivals): List<DepartureRow> {
+        if (stop.disruptions.isEmpty()) return emptyList()
+        return listOf(
+            DepartureRow(
+                stopId = stop.stopId,
+                stopName = stop.stopName,
+                lineId = "",
+                lineName = "",
+                direction = "",
+                directionKey = STOP_STATUS_DIRECTION_KEY,
+                destination = "",
+                mode = "",
+                upcoming = emptyList(),
+                status = null,
+                stopDisruption = stop.disruptions.joinToString(" · ") { it.description },
+            ),
+        )
+    }
 
     /**
      * Status rows for a stop's disrupted lines that have **no prediction rows** — a
@@ -106,24 +132,28 @@ object DepartureRows {
     }
 
     /**
-     * Rows ordered with **status rows first** — a disruption with no countdown is the
-     * most important thing to see and has no departure time to sort by — then timed rows
-     * by their soonest departure, ties broken by line, then direction, then the resolved
-     * direction key. A total, input-order-independent order shared by [forStop] and
-     * [across] so a stop's rows sort the same alone or merged. Status rows sort among
-     * themselves by stop then line for a stable order.
+     * Rows ordered by **rank** first — stop-status rows (a whole stop disrupted), then
+     * line-status rows (a line disrupted with no countdown), then timed rows — since a
+     * disruption is the most important thing to see and has no departure time to sort by.
+     * Within timed rows: soonest departure, ties broken by line, direction, then the
+     * resolved direction key. A total, input-order-independent order shared by [forStop]
+     * and [across] so a stop's rows sort the same alone or merged; stop is the final
+     * tie-break so status rows for the same line/stop-status across stops stay stable.
      */
     private val rowOrder: Comparator<DepartureRow> =
-        compareBy<DepartureRow> { it.upcoming.isNotEmpty() } // false (status) sorts first
+        compareBy<DepartureRow> { rank(it) }
             .thenBy { it.upcoming.firstOrNull()?.expectedArrival ?: Instant.MIN }
             .thenBy { it.lineName }
             .thenBy { it.direction }
             .thenBy { it.directionKey }
-            // Final tie-break: two status rows for the same line at different stops share
-            // every key above (time MIN, blank direction, the status sentinel), so stop
-            // keeps their order stable. Harmless for timed rows, which the keys above
-            // already separate.
             .thenBy { it.stopName }
+
+    /** 0 = stop-status row, 1 = line-status row (no countdown), 2 = timed row. */
+    private fun rank(row: DepartureRow): Int = when {
+        row.stopDisruption != null -> 0
+        row.upcoming.isEmpty() -> 1
+        else -> 2
+    }
 
     /**
      * The discriminator that keeps directions apart within a line at a stop. TfL's
@@ -150,10 +180,14 @@ object DepartureRows {
  * [lines] is the stop's served lines, known independently of the predictions, so a
  * disrupted line with zero arrivals still surfaces as a status row (SPEC *Departures*).
  * Empty when the caller has no such mapping — then only prediction-derived rows are shown.
+ * [disruptions] are the stop's own disruptions (a closure, a moved stop), surfaced as a
+ * stop-level status row so a closed stop isn't shown as if its departures were catchable
+ * (SPEC *Disruptions*). Empty when the stop is clear or wasn't checked.
  */
 data class StopArrivals(
     val stopId: String,
     val stopName: String,
     val departures: List<Departure>,
     val lines: List<LineRef> = emptyList(),
+    val disruptions: List<StopDisruption> = emptyList(),
 )

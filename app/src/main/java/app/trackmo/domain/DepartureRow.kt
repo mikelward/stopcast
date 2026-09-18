@@ -28,6 +28,10 @@ package app.trackmo.domain
  * non-null value marks the row (SPEC *Disruptions*: a delayed or suspended line's
  * countdowns are flagged rather than shown as if trustworthy). Null when the line has a
  * good service, or when its status was not looked up.
+ * [stopDisruption] marks a **stop-level status row** — a whole-stop disruption (a closure)
+ * rather than a line one (SPEC *Disruptions*). When set, the row is *about the stop*: it
+ * carries no line (blank [lineId]/[lineName]/[mode]), no [upcoming] and no [status], and
+ * the text is TfL's stop-disruption description. Null on every line and timed row.
  */
 data class DepartureRow(
     val stopId: String,
@@ -40,6 +44,7 @@ data class DepartureRow(
     val mode: String,
     val upcoming: List<Departure>,
     val status: LineStatus? = null,
+    val stopDisruption: String? = null,
 )
 
 /**
@@ -48,3 +53,10 @@ data class DepartureRow(
  * (there is one per stop+line, and the line has no prediction rows to collide with).
  */
 const val STATUS_DIRECTION_KEY: String = "status"
+
+/**
+ * The [DepartureRow.directionKey] a stop-level status row carries — a fixed sentinel, so
+ * `(stopId, lineId, directionKey)` is unique for the one stop-status row per stop (its
+ * [DepartureRow.lineId] is blank, so it can't collide with a line's rows).
+ */
+const val STOP_STATUS_DIRECTION_KEY: String = "stop-status"
