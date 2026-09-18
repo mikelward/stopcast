@@ -352,6 +352,22 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `the loading placeholder carries a pending stamp`() {
+        // Cold start, before the persisted snapshot is read: the frame is a placeholder, but
+        // it still shows a stamp ("Loading…") so the top bar is present from the first frame
+        // and fills in with the real age when the snapshot arrives (SPEC snapshot-render).
+        composeRule.setContent {
+            TrackmoTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(DeparturesUiState.Loading, now, {})
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Loading…").assertExists()
+    }
+
+    @Test
     fun `offline, dark`() {
         capture("main-error-offline.png", dark = true) {
             MainScreen(DeparturesUiState.Error(DeparturesUiState.Error.Kind.OFFLINE), now, {})

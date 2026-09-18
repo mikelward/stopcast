@@ -1,8 +1,11 @@
 package app.trackmo.ui
 
 import app.trackmo.domain.Departure
+import app.trackmo.domain.DeparturesSnapshot
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
+import app.trackmo.domain.SnapshotStore
+import app.trackmo.domain.StopArrivals
 import app.trackmo.domain.StopDisruption
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
@@ -69,8 +72,30 @@ class MainViewModelTest {
     private fun status(lineId: String, severity: Int, description: String) =
         LineStatus(lineId = lineId, severity = severity, description = description)
 
-    private fun viewModel(client: TflClient, warn: (String) -> Unit = {}) =
-        MainViewModel(client, seeds, clock = { now }, io = dispatcher, warn = warn)
+    private fun viewModel(
+        client: TflClient,
+        store: SnapshotStore = SnapshotStore.NONE,
+        warn: (String) -> Unit = {},
+    ) = MainViewModel(client, seeds, clock = { now }, io = dispatcher, snapshotStore = store, warn = warn)
+
+    /** An in-memory [SnapshotStore] recording every save, seeded with an optional last-good. */
+    private class FakeStore(initial: DeparturesSnapshot? = null) : SnapshotStore {
+        var stored: DeparturesSnapshot? = initial
+        val saves = mutableListOf<DeparturesSnapshot>()
+        override suspend fun load(): DeparturesSnapshot? = stored
+        override suspend fun save(snapshot: DeparturesSnapshot) {
+            stored = snapshot
+            saves += snapshot
+        }
+    }
+
+    private fun stopArrivals(stopId: String, name: String, offsetSeconds: Long, fetchedAt: Instant) =
+        StopArrivals(
+            stopId = stopId,
+            stopName = name,
+            departures = listOf(departure("victoria", "Victoria", offsetSeconds)),
+            fetchedAt = fetchedAt,
+        )
 
     @Test
     fun `every stop succeeding yields one soonest-first Loaded snapshot`() = runTest(dispatcher) {
@@ -617,5 +642,399 @@ class MainViewModelTest {
         assertFalse(ksx.arrivalsFresh)
         // Oxford Circus refreshed and King's Cross's arrivals didn't — a partial refresh.
         assertTrue(state.partialRefresh)
+    }
+
+    @Test
+    fun `a successful snapshot is persisted for the next launch and the widget`() =
+        runTest(dispatcher) {
+            val store = FakeStore()
+            val vm = viewModel(
+                FakeClient(
+                    mapOf(
+                        "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                        "940GZZLUKSX" to Result.success(listOf(departure("northern", "Northern", 120))),
+                    ),
+                ),
+                store = store,
+            )
+            advanceUntilIdle()
+
+            val saved = store.saves.last()
+            assertEquals(listOf("940GZZLUOXC", "940GZZLUKSX"), saved.stops.map { it.stopId })
+            assertEquals(now, saved.fetchedAt)
+        }
+
+    @Test
+    fun `an error result does not clobber a previously saved snapshot`() = runTest(dispatcher) {
+        // Nothing is stored, and every stop fails on this first load → an Error state with no
+        // content. Persisting that would erase whatever the widget last showed, so it must not.
+        val store = FakeStore()
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.failure(TflException.Offline(null)),
+                    "940GZZLUKSX" to Result.failure(TflException.Offline(null)),
+                ),
+                disruptionsByStop = mapOf(
+                    "940GZZLUOXC" to Result.failure(TflException.Offline(null)),
+                    "940GZZLUKSX" to Result.failure(TflException.Offline(null)),
+                ),
+            ),
+            store = store,
+        )
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value is DeparturesUiState.Error)
+        assertTrue(store.saves.isEmpty())
+    }
+
+    @Test
+    fun `the persisted last-good is restored as the prior a failed refresh falls back to`() =
+        runTest(dispatcher) {
+            // King's Cross has an aged last-good on disk; Oxford Circus does not. On this
+            // launch Oxford Circus refreshes but King's Cross fails outright (arrivals and
+            // disruption). Because the restored snapshot is the prior the refresh merges into,
+            // King's Cross keeps its aged rows instead of dropping out.
+            val aged = now.minusSeconds(120)
+            val store = FakeStore(
+                DeparturesSnapshot(
+                    stops = listOf(stopArrivals("940GZZLUKSX", "King's Cross St. Pancras", 300, aged)),
+                    fetchedAt = aged,
+                ),
+            )
+            val vm = viewModel(
+                FakeClient(
+                    mapOf(
+                        "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                        "940GZZLUKSX" to Result.failure(TflException.Offline(null)),
+                    ),
+                    disruptionsByStop = mapOf(
+                        "940GZZLUKSX" to Result.failure(TflException.Offline(null)),
+                    ),
+                ),
+                store = store,
+            )
+            advanceUntilIdle()
+
+            val state = vm.state.value
+            assertTrue(state is DeparturesUiState.Loaded)
+            state as DeparturesUiState.Loaded
+            assertEquals(setOf("940GZZLUOXC", "940GZZLUKSX"), state.stops.map { it.stopId }.toSet())
+            val ksx = state.stops.single { it.stopId == "940GZZLUKSX" }
+            // Kept from the restored snapshot at its aged time, not refreshed away.
+            assertEquals(aged, ksx.fetchedAt)
+            assertTrue(ksx.departures.isNotEmpty())
+            assertTrue(state.partialRefresh)
+        }
+
+    @Test
+    fun `the restored snapshot is marked disruption-unknown until the refresh checks status`() =
+        runTest(dispatcher) {
+            val aged = now.minusSeconds(120)
+            val store = FakeStore(
+                DeparturesSnapshot(
+                    stops = listOf(stopArrivals("940GZZLUOXC", "Oxford Circus", 300, aged)),
+                    fetchedAt = aged,
+                ),
+            )
+            // A refresh that never completes, so the state settles at the restored snapshot:
+            // the restore has not checked line status, so those departures must not read as
+            // verified-clean while the check is pending.
+            val hangingClient = object : TflClient {
+                override suspend fun arrivals(stopId: String): List<Departure> =
+                    kotlinx.coroutines.CompletableDeferred<List<Departure>>().await()
+
+                override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+                override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+            }
+            val vm = viewModel(hangingClient, store = store)
+            advanceUntilIdle()
+
+            val state = vm.state.value
+            assertTrue(state is DeparturesUiState.Loaded)
+            state as DeparturesUiState.Loaded
+            assertEquals(listOf("940GZZLUOXC"), state.stops.map { it.stopId })
+            assertTrue(state.disruptionUnknown)
+            // The saved snapshot is missing King's Cross (a seed stop), so the restore is
+            // flagged partial rather than shown as a complete list.
+            assertTrue(state.partialRefresh)
+        }
+
+    @Test
+    fun `a complete restored snapshot is not flagged partial`() = runTest(dispatcher) {
+        val aged = now.minusSeconds(120)
+        val store = FakeStore(
+            DeparturesSnapshot(
+                stops = seeds.map { stopArrivals(it.id, it.name, 300, aged) },
+                fetchedAt = aged,
+            ),
+        )
+        val hangingClient = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> =
+                kotlinx.coroutines.CompletableDeferred<List<Departure>>().await()
+
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = viewModel(hangingClient, store = store)
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        assertEquals(seeds.map { it.id }.toSet(), state.stops.map { it.stopId }.toSet())
+        assertFalse(state.partialRefresh)
+    }
+
+    @Test
+    fun `a restored snapshot with a carried-stale stop is flagged partial`() = runTest(dispatcher) {
+        // All seed stops are present, but one was carried-forward-stale when saved
+        // (arrivalsFresh = false), so the snapshot is mixed-age — flag it partial rather than
+        // let the freshest-stop stamp pass it off as uniformly fresh.
+        val aged = now.minusSeconds(120)
+        val store = FakeStore(
+            DeparturesSnapshot(
+                stops = listOf(
+                    stopArrivals("940GZZLUOXC", "Oxford Circus", 300, aged),
+                    stopArrivals("940GZZLUKSX", "King's Cross St. Pancras", 300, aged)
+                        .copy(arrivalsFresh = false),
+                ),
+                fetchedAt = aged,
+            ),
+        )
+        val hangingClient = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> =
+                kotlinx.coroutines.CompletableDeferred<List<Departure>>().await()
+
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = viewModel(hangingClient, store = store)
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        assertTrue(state.partialRefresh)
+    }
+
+    @Test
+    fun `a refresh recovers the last-good from the store when not in a Loaded state`() =
+        runTest(dispatcher) {
+            // Everything fails (offline). First load with an empty store → Error. Then a
+            // snapshot exists on disk (a prior good session), and a later refresh — still
+            // offline, still not in a Loaded state — recovers it as the aged last-good rather
+            // than staying stuck on the error screen with valid data on disk.
+            val store = FakeStore()
+            val offline = mapOf(
+                "940GZZLUOXC" to Result.failure<List<Departure>>(TflException.Offline(null)),
+                "940GZZLUKSX" to Result.failure<List<Departure>>(TflException.Offline(null)),
+            )
+            val offlineDisruptions = mapOf(
+                "940GZZLUOXC" to Result.failure<List<StopDisruption>>(TflException.Offline(null)),
+                "940GZZLUKSX" to Result.failure<List<StopDisruption>>(TflException.Offline(null)),
+            )
+            val vm = viewModel(FakeClient(offline, disruptionsByStop = offlineDisruptions), store = store)
+            advanceUntilIdle()
+            assertTrue(vm.state.value is DeparturesUiState.Error)
+
+            store.stored = DeparturesSnapshot(
+                stops = seeds.map { stopArrivals(it.id, it.name, 300, now.minusSeconds(120)) },
+                fetchedAt = now.minusSeconds(120),
+            )
+            vm.refresh()
+            advanceUntilIdle()
+
+            val state = vm.state.value
+            assertTrue(state is DeparturesUiState.Loaded)
+            state as DeparturesUiState.Loaded
+            assertEquals(seeds.map { it.id }.toSet(), state.stops.map { it.stopId }.toSet())
+            assertEquals(DeparturesUiState.Error.Kind.OFFLINE, state.refreshFailure)
+        }
+
+    @Test
+    fun `a total-failure refresh from the store keeps the snapshot's incompleteness`() =
+        runTest(dispatcher) {
+            // First load errors with an empty store. Then an INCOMPLETE snapshot is on disk
+            // (King's Cross, a seed stop, is missing — an earlier partial refresh saved only
+            // Oxford Circus). A later refresh, still offline, recovers it from the store as
+            // the prior — and must carry its incompleteness, so the kept list stays flagged
+            // partial rather than passed off as complete (SPEC principle 2). Before the fix
+            // the fallback kept only the stops and derived partial from the (Error) previous
+            // state, so the warning was dropped.
+            val store = FakeStore()
+            val offline = mapOf(
+                "940GZZLUOXC" to Result.failure<List<Departure>>(TflException.Offline(null)),
+                "940GZZLUKSX" to Result.failure<List<Departure>>(TflException.Offline(null)),
+            )
+            val offlineDisruptions = mapOf(
+                "940GZZLUOXC" to Result.failure<List<StopDisruption>>(TflException.Offline(null)),
+                "940GZZLUKSX" to Result.failure<List<StopDisruption>>(TflException.Offline(null)),
+            )
+            val vm = viewModel(FakeClient(offline, disruptionsByStop = offlineDisruptions), store = store)
+            advanceUntilIdle()
+            assertTrue(vm.state.value is DeparturesUiState.Error)
+
+            store.stored = DeparturesSnapshot(
+                stops = listOf(stopArrivals("940GZZLUOXC", "Oxford Circus", 300, now.minusSeconds(120))),
+                fetchedAt = now.minusSeconds(120),
+            )
+            vm.refresh()
+            advanceUntilIdle()
+
+            val state = vm.state.value
+            assertTrue(state is DeparturesUiState.Loaded)
+            state as DeparturesUiState.Loaded
+            assertEquals(listOf("940GZZLUOXC"), state.stops.map { it.stopId })
+            assertTrue(state.partialRefresh)
+            assertEquals(DeparturesUiState.Error.Kind.OFFLINE, state.refreshFailure)
+        }
+
+    @Test
+    fun `a refresh from a non-Loaded state shows the aged store snapshot before the network returns`() =
+        runTest(dispatcher) {
+            // First load errors (offline, empty store) → Error. Then a snapshot is on disk and
+            // a refresh runs while the network HANGS. The aged last-good must be shown at once
+            // rather than the spinner held through the hung fetch — valid data on disk must not
+            // be hidden behind a stuck spinner (SPEC principle 5).
+            val store = FakeStore()
+            var hang = false
+            val client = object : TflClient {
+                override suspend fun arrivals(stopId: String): List<Departure> {
+                    if (hang) return kotlinx.coroutines.CompletableDeferred<List<Departure>>().await()
+                    throw TflException.Offline(null)
+                }
+
+                override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+                override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                    if (hang) return kotlinx.coroutines.CompletableDeferred<List<StopDisruption>>().await()
+                    throw TflException.Offline(null)
+                }
+            }
+            val vm = viewModel(client, store = store)
+            advanceUntilIdle()
+            assertTrue(vm.state.value is DeparturesUiState.Error)
+
+            val aged = now.minusSeconds(120)
+            store.stored = DeparturesSnapshot(
+                stops = seeds.map { stopArrivals(it.id, it.name, 300, aged) },
+                fetchedAt = aged,
+            )
+            hang = true
+            vm.refresh()
+            advanceUntilIdle()
+
+            // The fetch is suspended (hung) mid-flight, so the state settles at the aged
+            // last-good published from the store fallback — not stuck on Loading.
+            val state = vm.state.value
+            assertTrue(state is DeparturesUiState.Loaded)
+            state as DeparturesUiState.Loaded
+            assertEquals(seeds.map { it.id }.toSet(), state.stops.map { it.stopId }.toSet())
+            assertEquals(aged, state.fetchedAt)
+            assertTrue(vm.refreshing.value)
+        }
+
+    @Test
+    fun `a total-failure refresh does not overwrite a complete saved snapshot`() =
+        runTest(dispatcher) {
+            // A complete good snapshot is saved on the first load. Then a total failure carries
+            // the aged rows (arrivalsFresh = false) — but that is not authoritative, so it must
+            // NOT be persisted over the complete one, or the next launch would restore it as a
+            // partial snapshot despite the good data still being on disk.
+            var failing = false
+            val client = object : TflClient {
+                override suspend fun arrivals(stopId: String): List<Departure> {
+                    if (failing) throw TflException.Offline(null)
+                    return listOf(departure("victoria", "Victoria", 300))
+                }
+
+                override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+                override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                    if (failing) throw TflException.Offline(null)
+                    return emptyList()
+                }
+            }
+            val store = FakeStore()
+            val vm = viewModel(client, store = store)
+            advanceUntilIdle()
+            val goodSave = store.saves.last()
+            assertEquals(seeds.map { it.id }.toSet(), goodSave.stops.map { it.stopId }.toSet())
+            assertTrue(goodSave.stops.all { it.arrivalsFresh })
+            val savesBefore = store.saves.size
+
+            failing = true
+            vm.refresh()
+            advanceUntilIdle()
+
+            // No new save from the failed cycle; the complete snapshot on disk is untouched.
+            assertEquals(savesBefore, store.saves.size)
+            assertTrue(store.stored!!.stops.all { it.arrivalsFresh })
+        }
+
+    @Test
+    fun `a cycle with only fresh disruptions and no fresh arrivals does not overwrite the snapshot`() =
+        runTest(dispatcher) {
+            // A complete good snapshot is saved on the first load. Then arrivals fail for every
+            // stop but the disruption calls succeed (empty). anyFreshData would call that
+            // authoritative, but there is no fresh ARRIVALS content and disruptions aren't
+            // persisted — so saving would only rewrite the snapshot to arrivalsFresh = false
+            // and make the next launch restore it as partial. It must be skipped.
+            var arrivalsFail = false
+            val client = object : TflClient {
+                override suspend fun arrivals(stopId: String): List<Departure> {
+                    if (arrivalsFail) throw TflException.Offline(null)
+                    return listOf(departure("victoria", "Victoria", 300))
+                }
+
+                override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+                override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+            }
+            val store = FakeStore()
+            val vm = viewModel(client, store = store)
+            advanceUntilIdle()
+            val goodSave = store.saves.last()
+            assertTrue(goodSave.stops.all { it.arrivalsFresh })
+            val savesBefore = store.saves.size
+
+            // Arrivals fail, disruptions still succeed (empty).
+            arrivalsFail = true
+            vm.refresh()
+            advanceUntilIdle()
+
+            // No new save; the complete snapshot on disk is untouched.
+            assertEquals(savesBefore, store.saves.size)
+            assertTrue(store.stored!!.stops.all { it.arrivalsFresh })
+        }
+
+    @Test
+    fun `an empty watched list persists an authoritative empty snapshot`() = runTest(dispatcher) {
+        // No stops to fetch → an authoritative "no departures", which must overwrite an
+        // obsolete saved snapshot rather than leaving removed stops on disk for the next
+        // launch (and the widget) to restore.
+        val store = FakeStore(
+            DeparturesSnapshot(
+                stops = listOf(stopArrivals("940GZZLUOXC", "Oxford Circus", 300, now.minusSeconds(600))),
+                fetchedAt = now.minusSeconds(600),
+            ),
+        )
+        val emptyClient = FakeClient(emptyMap())
+        val vm = MainViewModel(
+            emptyClient,
+            seedStops = emptyList(),
+            clock = { now },
+            io = dispatcher,
+            snapshotStore = store,
+        )
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value is DeparturesUiState.Loaded)
+        val saved = store.saves.last()
+        assertTrue(saved.stops.isEmpty())
     }
 }

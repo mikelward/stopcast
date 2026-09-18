@@ -108,13 +108,28 @@ exercises the whole spine the widget later renders from.
       Phase 1 introduces the logger and Phase 0 the deploy pipeline, so a build carrying
       the log can reach testers now, and AGENTS.md requires the disclosure to exist before
       the log ships.
-- [ ] **Persist the last-good snapshot; show a stamped placeholder at once and fill it
+- [x] **Persist the last-good snapshot; show a stamped placeholder at once and fill it
       in when the async read completes** (SPEC snapshot-render — never block the first
       frame on the DataStore read; the intro says the first deliverable exercises
       persistence). This is what gives the offline state something to show after process
       death — the two belong together, so snapshot storage lands here, not in Phase 2.
-      **The in-memory per-stop snapshot model landed in PR #16 (below); what remains here
-      is persisting it to DataStore and the stamped-placeholder first frame.**
+      **The in-memory per-stop snapshot model landed in PR #16 (below); what remained was
+      persisting it to DataStore and the stamped-placeholder first frame.**
+    - **[landed, this PR] `SnapshotStore` over DataStore + kotlinx.serialization.** A
+      `DeparturesSnapshot` domain type (the honest last-good: the stops at their per-stop
+      ages, no transient cycle flags), a `SnapshotStore` seam, and a DataStore-backed
+      implementation serializing a `data`-layer `PersistedSnapshot` DTO as JSON (Instants as
+      epoch millis; a `version` field discards a forward-incompatible format rather than
+      mis-reading it; corrupt/empty bytes read as "no last-good"). `MainViewModel` restores
+      it on init — the first frame is the Loading placeholder, the async read fills in the
+      aged snapshot — and the restored snapshot becomes the **prior the first refresh merges
+      into**, so a stop that then fails to refresh keeps its aged rows. Each successful
+      refresh persists the new last-good; an empty/error result never clobbers a good saved
+      one. The DataStore is a process singleton (one instance per file, so the widget can
+      share it). The store opens no off-device channel of its own (SPEC *Privacy*): a private
+      file that rides Android backup / device-to-device transfer like the rest of the app's
+      data (SPEC §12), a platform path the user controls. **This is the store the Glance
+      widget reads next.**
   - **[landed, PR #16] Per-stop last-good with honest per-stop ages.** MainScreen's
     snapshot was one whole-list `Loaded(stops, fetchedAt)` replaced wholesale each fetch,
     so a partial refresh dropped the failed stop's rows entirely and one screen-wide flag

@@ -198,11 +198,20 @@ private fun LoadedContent(
 
 @Composable
 private fun FreshnessStamp(state: DeparturesUiState, now: Instant, onRefresh: () -> Unit) {
-    if (state !is DeparturesUiState.Loaded) return
-    val age = Duration.between(state.fetchedAt, now).toKotlinDuration()
-    val text =
-        if (Staleness.isStale(age)) stringResource(R.string.stale_stamp)
-        else stringResource(R.string.updated_stamp, RelativeTime.formatAge(age))
+    val text = when (state) {
+        // The placeholder frame (before any snapshot is read from disk) still carries a
+        // stamp — a pending "Loading…" — so the top bar is present from the first frame and
+        // fills in with the real age when the snapshot arrives (SPEC snapshot-render), rather
+        // than the stamp popping in late.
+        DeparturesUiState.Loading -> stringResource(R.string.loading_stamp)
+        is DeparturesUiState.Loaded -> {
+            val age = Duration.between(state.fetchedAt, now).toKotlinDuration()
+            if (Staleness.isStale(age)) stringResource(R.string.stale_stamp)
+            else stringResource(R.string.updated_stamp, RelativeTime.formatAge(age))
+        }
+        // An error has its own full-screen message (no snapshot, so no age to stamp).
+        is DeparturesUiState.Error -> return
+    }
     // The stamp is tappable too, so the "Tap to refresh" it shows when stale does what
     // it says (the Refresh action beside it is the always-present control).
     Text(

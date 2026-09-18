@@ -2,9 +2,11 @@ package app.trackmo.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.trackmo.domain.DeparturesSnapshot
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
 import app.trackmo.domain.Snapshot
+import app.trackmo.domain.SnapshotStore
 import app.trackmo.domain.StopArrivals
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
@@ -44,6 +46,9 @@ class MainViewModel(
     private val seedStops: List<StopRef>,
     private val clock: () -> Instant = Instant::now,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    // Persists the last-good snapshot across sessions and to the widget. No-op by default so
+    // tests and an unwired build run identically minus the restore.
+    private val snapshotStore: SnapshotStore = SnapshotStore.NONE,
     // No-op by default: the shared on-device logger is deferred until `docs/PRIVACY.md`
     // describes what it carries (both are their own Phase 1 items), so nothing is logged
     // in production until then. The seam stays for tests and that later wiring.
@@ -59,7 +64,25 @@ class MainViewModel(
     private var fetchJob: Job? = null
 
     init {
-        refresh()
+        // Show the persisted last-good at once (a stamped placeholder, aged), then refresh.
+        // The read is off the main thread and the first frame is already the Loading
+        // placeholder, so nothing blocks on the DataStore read (SPEC snapshot-render). The
+        // restored snapshot becomes the `prior` the refresh merges into, so a stop that then
+        // fails to refresh keeps its aged rows rather than dropping out.
+        viewModelScope.launch {
+            val restored = try {
+                withContext(io) { snapshotStore.load() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                warn("snapshot restore failed: ${reason(e)}")
+                null
+            }
+            if (restored != null && _state.value is DeparturesUiState.Loading) {
+                _state.value = restoredLoaded(restored)
+            }
+            refresh()
+        }
     }
 
     /** Re-fetch every seed stop and swap in a fresh snapshot; safe to call repeatedly. */
@@ -79,8 +102,44 @@ class MainViewModel(
             // into the prior snapshot per stop is what keeps a failed stop's aged rows
             // rather than dropping the stop wholesale, so each stop carries its own age.
             val now = clock()
-            val prior = (previous as? DeparturesUiState.Loaded)?.stops.orEmpty()
-                .associateBy { it.stopId }
+            // Prior to merge into, plus whether it was already incomplete. The in-memory
+            // last-good if we have one (its partialRefresh is already accurate), else the
+            // persisted snapshot read from disk (completeness derived the same way the init
+            // restore does). Falling back to the store — not just the in-memory state — means
+            // a refresh that runs before (or races) the init restore, e.g. a manual refresh
+            // during the disk read, still merges into the last-good and keeps aged rows on
+            // failure, rather than falling to an Error that discards data still valid on disk
+            // (SPEC principle 2). Carrying the completeness too keeps a total-failure refresh
+            // from clearing the "some stops couldn't be refreshed" warning on an
+            // already-incomplete snapshot recovered from the store.
+            val priorLoaded = previous as? DeparturesUiState.Loaded
+            val priorStops: List<StopArrivals>
+            val priorPartial: Boolean
+            if (priorLoaded != null) {
+                priorStops = priorLoaded.stops
+                priorPartial = priorLoaded.partialRefresh
+            } else {
+                val loaded = try {
+                    withContext(io) { snapshotStore.load() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    warn("snapshot restore failed: ${reason(e)}")
+                    null
+                }
+                priorStops = loaded?.stops ?: emptyList()
+                priorPartial = loaded != null && isIncomplete(loaded.stops)
+                // Show the aged last-good at once rather than holding the spinner through the
+                // whole fetch: this branch runs only when the state wasn't Loaded (a refresh
+                // that raced or replaced the init restore), and if the network then hangs a
+                // Loading spinner would hide valid data already read from disk (SPEC principle
+                // 5). Same construction as the init restore, so both restore paths reach the
+                // screen identically. The fetch below then replaces it.
+                if (loaded != null) {
+                    _state.value = restoredLoaded(loaded)
+                }
+            }
+            val prior = priorStops.associateBy { it.stopId }
             val merged = mutableListOf<StopArrivals>()
             var firstError: Throwable? = null
             var anyArrivalsFailed = false
@@ -88,6 +147,11 @@ class MainViewModel(
             // the difference between a partial refresh (keep the fresh, age the rest) and a
             // total failure (nothing new — keep the whole aged snapshot and say so).
             var anyFreshData = false
+            // True once any stop's ARRIVALS returned (fresh durable content). Distinct from
+            // anyFreshData because disruptions aren't persisted: a cycle where every arrivals
+            // request failed but a disruption returned has nothing durable to save, so it must
+            // not overwrite a complete saved snapshot with carried arrivalsFresh=false rows.
+            var anyFreshArrivals = false
             var disruptionUnknown = false
 
             for (stop in seedStops) {
@@ -118,6 +182,7 @@ class MainViewModel(
                     warn("stop disruption fetch failed for stop ${stop.id}: ${reason(e)}")
                     null
                 }
+                if (departures != null) anyFreshArrivals = true
                 if (departures != null || disruptions != null) anyFreshData = true
                 Snapshot.mergeStop(
                     stopId = stop.id,
@@ -167,7 +232,7 @@ class MainViewModel(
                 }
             }
 
-            _state.value = when {
+            val newState = when {
                 merged.isNotEmpty() ->
                     // Grouping into rows is the screen's job, recomputed from the live
                     // clock (SPEC D4) — the snapshot is the merged stops, each at its age.
@@ -182,11 +247,14 @@ class MainViewModel(
                         // is the prior one unchanged, so inherit its partial flag rather than
                         // clearing it — an already-incomplete list stays incomplete, and that
                         // warning must not be dropped just because the refresh also failed.
+                        // priorPartial carries that flag whether the prior was in-memory or
+                        // recovered from the store, so a store-recovered incomplete snapshot
+                        // stays flagged too.
                         partialRefresh =
                             if (anyFreshData) {
                                 anyArrivalsFailed
                             } else {
-                                (previous as? DeparturesUiState.Loaded)?.partialRefresh == true
+                                priorPartial
                             },
                         // Nothing fresh came back at all (every request failed) but a prior
                         // snapshot was kept — carry the failure so the screen says "couldn't
@@ -204,12 +272,69 @@ class MainViewModel(
                 // → an honest error, not an empty or stale list (SPEC principles 1–2).
                 else -> DeparturesUiState.Error(kindOf(firstError))
             }
+            _state.value = newState
+
+            // Persist the new last-good so a later launch — and the widget — render it before
+            // any fetch, but only when this cycle was authoritative: it returned fresh
+            // ARRIVALS (the durable content), or it was the authoritative *empty* (no stops to
+            // fetch — e.g. the watched list was emptied), which must overwrite a now-obsolete
+            // saved snapshot rather than leaving removed stops on disk for the next launch and
+            // the widget to resurrect. A cycle with no fresh arrivals — a total failure, or
+            // one where only a disruption returned (disruptions aren't persisted) — has no
+            // durable content to save, and saving it would rewrite every stop to
+            // `arrivalsFresh = false` and so degrade a previously-complete saved snapshot into
+            // one that restores as partial. Best-effort, off the render path.
+            val authoritative = anyFreshArrivals || (merged.isEmpty() && firstError == null)
+            if (newState is DeparturesUiState.Loaded && authoritative) {
+                try {
+                    withContext(io) {
+                        snapshotStore.save(DeparturesSnapshot(newState.stops, newState.fetchedAt))
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    warn("snapshot save failed: ${reason(e)}")
+                }
+            }
         }
         fetchJob = job
         // Clear the in-flight flag only when this job settles — a job superseded by a
         // newer refresh doesn't clear the newer one's indicator.
         job.invokeOnCompletion { if (fetchJob === job) _refreshing.value = false }
     }
+
+    /**
+     * Whether a saved snapshot is incomplete relative to [seedStops] — a seed stop is missing
+     * (an earlier partial refresh saved only the stops that succeeded), or a stop is present
+     * but was carried-forward-stale when saved (`arrivalsFresh == false`), so the snapshot is
+     * mixed-age. Either way it's shown as partial rather than passed off as a complete,
+     * uniformly-fresh whole (SPEC principle 2). A restored stop is in exactly one of three
+     * states — present-and-fresh, present-and-carried-stale, or missing — so this is the
+     * complete incompleteness test.
+     */
+    private fun isIncomplete(stops: List<StopArrivals>): Boolean =
+        seedStops.any { seed -> stops.none { it.stopId == seed.id } } ||
+            stops.any { !it.arrivalsFresh }
+
+    /**
+     * The aged last-good [DeparturesUiState.Loaded] to show from a restored [snapshot] before
+     * any network. A saved snapshot can be incomplete (a missing stop, or a carried-stale
+     * one), shown as partial rather than passed off as a complete, fresh whole (see
+     * [isIncomplete]). It hasn't been status-checked, so it's flagged disruption-unknown — a
+     * service suspended since the snapshot isn't shown as normal until the refresh
+     * re-establishes status (SPEC principle 1); stop closures aren't persisted at all
+     * (point-in-time; see PersistedSnapshot), so there are none to resurrect. Both restore
+     * paths — init, and a refresh that beats or replaces it — build the state here, so the
+     * aged snapshot always reaches the screen the same way (SPEC principle 5). The immediate
+     * refresh recomputes everything once it completes.
+     */
+    private fun restoredLoaded(snapshot: DeparturesSnapshot): DeparturesUiState.Loaded =
+        DeparturesUiState.Loaded(
+            stops = snapshot.stops,
+            fetchedAt = snapshot.fetchedAt,
+            partialRefresh = isIncomplete(snapshot.stops),
+            disruptionUnknown = true,
+        )
 
     private fun reason(e: Throwable): String =
         (e as? TflException)?.message ?: e::class.simpleName.orEmpty()
