@@ -184,6 +184,14 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.mock)
-    // Robolectric + Roborazzi (and the Compose UI test deps) land in Phase 1
-    // with the first screenshot test — Phase 0 has only pure-JVM unit tests.
+
+    // Robolectric + Roborazzi drive the Compose screenshot tests (SPEC *Testing*):
+    // they render MainScreen in each state to a PNG on the JVM, no emulator.
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    // Declares the activity `createAndroidComposeRule<ComponentActivity>` launches.
+    // Debug-only, and safe because unit tests run on the debug variant alone here.
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
