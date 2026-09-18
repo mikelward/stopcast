@@ -40,6 +40,7 @@ object DepartureRows {
                     direction = soonest.direction,
                     directionKey = key.directionKey,
                     destination = soonest.destination,
+                    mode = soonest.mode,
                     upcoming = group,
                 )
             }

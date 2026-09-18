@@ -19,6 +19,11 @@ import java.time.Instant
  * the stable key for grouping a stop's departures into per-direction rows (SPEC D8):
  * the human-readable [destination] can't substitute — TfL leaves it blank on some
  * services, and a branching line runs several destinations in one direction.
+ *
+ * [mode] is TfL's `modeName` (`tube`, `bus`, `dlr`, `overground`, `elizabeth-line`,
+ * `tram`, …), kept so a surface can present a service in its mode's identity — a tube
+ * line in its own color, a bus in London-bus red — without re-deriving the mode from
+ * the line id. Empty when TfL omits it.
  */
 data class Departure(
     val lineId: String,
@@ -27,4 +32,5 @@ data class Departure(
     val destination: String,
     val platform: String?,
     val expectedArrival: Instant,
+    val mode: String,
 )
