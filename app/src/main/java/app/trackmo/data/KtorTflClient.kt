@@ -3,6 +3,8 @@ package app.trackmo.data
 import app.trackmo.domain.Departure
 import app.trackmo.domain.LineStatus
 import app.trackmo.domain.StopDisruption
+import app.trackmo.domain.StopFinder
+import app.trackmo.domain.StopLocation
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
 import io.ktor.client.HttpClient
@@ -35,12 +37,32 @@ class KtorTflClient(
     private val httpClient: HttpClient,
     private val baseUrl: String = DEFAULT_BASE_URL,
     private val appKey: String? = null,
-) : TflClient {
+) : TflClient, StopFinder {
     override suspend fun arrivals(stopId: String): List<Departure> =
         tflRequest {
             httpClient.get("$baseUrl/StopPoint/$stopId/Arrivals") {
                 if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
             }.body<List<TflArrivalDto>>().map { it.toDeparture() }
+        }
+
+    override suspend fun nearbyStops(
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
+        stopTypes: List<String>,
+    ): List<StopLocation> =
+        tflRequest {
+            httpClient.get("$baseUrl/StopPoint") {
+                parameter("lat", latitude)
+                parameter("lon", longitude)
+                parameter("stopTypes", stopTypes.joinToString(","))
+                parameter("radius", radiusMeters)
+                // The geo search omits each stop's served lines unless asked; without this the
+                // stops come back line-less in production (the fixture has them), so a suspended
+                // no-prediction line couldn't surface as a status row without a second lookup.
+                parameter("returnLines", true)
+                if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+            }.body<TflStopPointsResponseDto>().stopPoints.mapNotNull { it.toStopLocationOrNull() }
         }
 
     override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
