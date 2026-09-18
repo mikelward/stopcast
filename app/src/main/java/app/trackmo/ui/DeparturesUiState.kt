@@ -1,5 +1,6 @@
 package app.trackmo.ui
 
+import app.trackmo.domain.LineStatus
 import app.trackmo.domain.StopArrivals
 import java.time.Instant
 
@@ -28,12 +29,21 @@ sealed interface DeparturesUiState {
      * when a later refresh failed outright and this aged snapshot was kept — the screen
      * shows the failure explicitly rather than passing stale rows off as fresh, and it
      * clears on the next successful refresh.
+     *
+     * [lineStatuses] carries the disruptions found for the shown lines (keyed by line id,
+     * disrupted lines only), so a delayed or suspended line's rows are marked rather than
+     * shown as trustworthy (SPEC *Disruptions* / D3). [disruptionUnknown] is true when the
+     * status lookup itself failed while arrivals succeeded: the disruption state of these
+     * departures was never checked, so the screen says so rather than pass them off as
+     * verified-clean (SPEC *Disruptions*).
      */
     data class Loaded(
         val stops: List<StopArrivals>,
         val fetchedAt: Instant,
         val partialRefresh: Boolean = false,
         val refreshFailure: Error.Kind? = null,
+        val lineStatuses: Map<String, LineStatus> = emptyMap(),
+        val disruptionUnknown: Boolean = false,
     ) : DeparturesUiState
 
     /**
