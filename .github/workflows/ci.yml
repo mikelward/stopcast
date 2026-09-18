@@ -27,25 +27,44 @@ jobs:
           mode: classify
           pr: ${{ github.event.pull_request.number }}
 
-  # TODO: replace this with the project's real jobs (test, build, lint,
-  # ...), each carrying `needs: classify` and
-  # `if: needs.classify.outputs.docs_only != 'true'`. Add each job's name
-  # to the `lanes` job's own `needs:` and `results:` below, and delete this
-  # placeholder once a real job exists -- see mikelward/lanes's README for
-  # the documented shape.
-  placeholder:
+  build:
+    name: build
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     needs: classify
     if: needs.classify.outputs.docs_only != 'true'
     steps:
-      - run: echo "no real jobs yet -- see the TODO in this file"
+      - uses: actions/checkout@v5
+        with:
+          # Full history so the git-derived versionCode isn't truncated.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      # ubuntu-latest ships the Android SDK; AGP auto-installs the compileSdk
+      # minor platform on the first build.
+      - uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2  # v5
+      - name: Unit tests
+        run: ./gradlew test
+      - name: Lint
+        run: ./gradlew lint
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug
+      - name: Upload unit test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
 
   lanes:
     name: lanes
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [classify, placeholder]
+    needs: [classify, build]
     if: always()
     steps:
       - uses: actions/checkout@v5
@@ -57,4 +76,4 @@ jobs:
           pr: ${{ github.event.pull_request.number }}
           classify-result: ${{ needs.classify.result }}
           base-sha: ${{ needs.classify.outputs.base_sha }}
-          results: placeholder=${{ needs.placeholder.result }}
+          results: build=${{ needs.build.result }}
