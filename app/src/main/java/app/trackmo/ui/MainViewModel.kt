@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
+import app.trackmo.domain.Snapshot
 import app.trackmo.domain.StopArrivals
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
@@ -72,25 +73,61 @@ class MainViewModel(
         }
         _refreshing.value = true
         val job = viewModelScope.launch {
-            // Stamp the snapshot from the START of the fetch, not after the request chain
-            // (arrivals, line status, per-stop disruptions run in sequence). Stamping at
-            // the end would report the oldest departures as "just updated" and push the
-            // staleness cutoff out by the whole chain's duration — a conservative earlier
-            // stamp keeps the age and the stale-data withhold honest (SPEC D4). Per-stop
-            // ages are the later refinement (TODO Phase 1 snapshot item).
-            val fetchStartedAt = clock()
-            val fetched = mutableListOf<StopArrivals>()
+            // Stamp each stop from the START of the fetch, not after the request chain, so
+            // a slow TfL or many stops can't report the oldest departures as "just updated"
+            // or push the staleness cutoff out by the chain's duration (SPEC D4). Merging
+            // into the prior snapshot per stop is what keeps a failed stop's aged rows
+            // rather than dropping the stop wholesale, so each stop carries its own age.
+            val now = clock()
+            val prior = (previous as? DeparturesUiState.Loaded)?.stops.orEmpty()
+                .associateBy { it.stopId }
+            val merged = mutableListOf<StopArrivals>()
             var firstError: Throwable? = null
+            var anyArrivalsFailed = false
+            // True once any request returned fresh data (arrivals or disruption, any stop):
+            // the difference between a partial refresh (keep the fresh, age the rest) and a
+            // total failure (nothing new — keep the whole aged snapshot and say so).
+            var anyFreshData = false
+            var disruptionUnknown = false
+
             for (stop in seedStops) {
-                try {
-                    val departures = withContext(io) { client.arrivals(stop.id) }
-                    fetched += StopArrivals(stop.id, stop.name, departures, stop.lines)
+                val departures = try {
+                    withContext(io) { client.arrivals(stop.id) }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     if (firstError == null) firstError = e
+                    anyArrivalsFailed = true
                     warn("arrivals fetch failed for stop ${stop.id}: ${reason(e)}")
+                    null
                 }
+                // Fetch the stop's disruption independently of its arrivals (a closure, a
+                // moved stop), so a closed stop is flagged rather than shown with
+                // catchable-looking departures — and a stop whose *arrivals* failed still
+                // surfaces its available closure rather than dropping out entirely (SPEC
+                // *Disruptions*). Per stop (the endpoint scopes to it), off the render path.
+                // A lookup that fails falls back to the aged disruption and flags the state
+                // unknown rather than passing the stop off as verified-clear.
+                val disruptions = try {
+                    withContext(io) { client.stopDisruptions(stop.id) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (firstError == null) firstError = e
+                    disruptionUnknown = true
+                    warn("stop disruption fetch failed for stop ${stop.id}: ${reason(e)}")
+                    null
+                }
+                if (departures != null || disruptions != null) anyFreshData = true
+                Snapshot.mergeStop(
+                    stopId = stop.id,
+                    stopName = stop.name,
+                    lines = stop.lines,
+                    freshDepartures = departures,
+                    freshDisruptions = disruptions,
+                    prior = prior[stop.id],
+                    now = now,
+                )?.let { merged += it }
             }
 
             // Check the status of every line we're about to show, so a disrupted line is
@@ -102,10 +139,9 @@ class MainViewModel(
             // that fails leaves the arrivals shown but flags them "status unknown" rather
             // than passing them off as verified-clean.
             var lineStatuses = emptyMap<String, LineStatus>()
-            var disruptionUnknown = false
-            if (fetched.isNotEmpty()) {
-                val predictedLineIds = fetched.flatMap { it.departures }.map { it.lineId }
-                val declaredLineIds = fetched.flatMap { it.lines }.map { it.id }
+            if (merged.isNotEmpty()) {
+                val predictedLineIds = merged.flatMap { it.departures }.map { it.lineId }
+                val declaredLineIds = merged.flatMap { it.lines }.map { it.id }
                 val lineIds = (predictedLineIds + declaredLineIds)
                     .filterTo(mutableSetOf()) { it.isNotBlank() }
                 // A departure whose line TfL didn't identify (blank id) can't have its
@@ -131,44 +167,41 @@ class MainViewModel(
                 }
             }
 
-            // Check each shown stop for its own disruptions (a closure, a moved stop), so
-            // a closed stop is flagged rather than shown with catchable-looking departures
-            // (SPEC *Disruptions*). Per stop (the endpoint scopes to it), off the render
-            // path. A lookup that fails leaves the stop shown but flags the disruption
-            // state unknown rather than verified-clean.
-            val stopsWithDisruptions = fetched.map { stop ->
-                try {
-                    stop.copy(disruptions = withContext(io) { client.stopDisruptions(stop.stopId) })
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    disruptionUnknown = true
-                    warn("stop disruption fetch failed for stop ${stop.stopId}: ${reason(e)}")
-                    stop
-                }
-            }
-
             _state.value = when {
-                fetched.isNotEmpty() ->
+                merged.isNotEmpty() ->
                     // Grouping into rows is the screen's job, recomputed from the live
-                    // clock (SPEC D4) — the snapshot is just the raw stops as fetched.
+                    // clock (SPEC D4) — the snapshot is the merged stops, each at its age.
                     DeparturesUiState.Loaded(
-                        stops = stopsWithDisruptions,
-                        fetchedAt = fetchStartedAt,
-                        partialRefresh = firstError != null,
+                        stops = merged,
+                        // The whole-screen "last updated" stamp is the freshest stop's age;
+                        // per-row withhold uses each stop's own age (SPEC D4).
+                        fetchedAt = merged.maxOf { it.fetchedAt },
+                        // Some stops shown are fresh and at least one couldn't be refreshed
+                        // (kept aged) — say so, rather than pass a mixed-age list off as one
+                        // fresh whole. On a total failure (nothing fresh) the merged snapshot
+                        // is the prior one unchanged, so inherit its partial flag rather than
+                        // clearing it — an already-incomplete list stays incomplete, and that
+                        // warning must not be dropped just because the refresh also failed.
+                        partialRefresh =
+                            if (anyFreshData) {
+                                anyArrivalsFailed
+                            } else {
+                                (previous as? DeparturesUiState.Loaded)?.partialRefresh == true
+                            },
+                        // Nothing fresh came back at all (every request failed) but a prior
+                        // snapshot was kept — carry the failure so the screen says "couldn't
+                        // refresh" rather than passing the aged rows off as fresh (SPEC D4 /
+                        // principle 2). Cleared by the next refresh that gets anything.
+                        refreshFailure = if (!anyFreshData && firstError != null) kindOf(firstError) else null,
                         lineStatuses = lineStatuses,
                         disruptionUnknown = disruptionUnknown,
                     )
                 // Nothing came back and nothing failed → there were no stops to fetch
                 // (no watched stops yet, or the seed is empty). That's an empty list, not
                 // a network error — TfL was never contacted.
-                firstError == null -> DeparturesUiState.Loaded(stops = emptyList(), fetchedAt = fetchStartedAt)
-                // A refresh that fails outright keeps the aged last-good snapshot rather
-                // than blanking the departures the user was reading — but carries the
-                // failure so the screen says "couldn't refresh" explicitly, not silently
-                // (SPEC D4 / principle 2). Cleared by the next successful refresh above.
-                previous is DeparturesUiState.Loaded ->
-                    previous.copy(refreshFailure = kindOf(firstError))
+                firstError == null -> DeparturesUiState.Loaded(stops = emptyList(), fetchedAt = now)
+                // Every stop failed on a first load with no prior snapshot to fall back on
+                // → an honest error, not an empty or stale list (SPEC principles 1–2).
                 else -> DeparturesUiState.Error(kindOf(firstError))
             }
         }

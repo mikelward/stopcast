@@ -1,6 +1,8 @@
 package app.trackmo.domain
 
+import java.time.Duration
 import java.time.Instant
+import kotlin.time.toKotlinDuration
 
 /**
  * Groups a stop's [Departure]s into the flat list's rows (SPEC D8): one
@@ -26,6 +28,9 @@ object DepartureRows {
         departures: List<Departure>,
         now: Instant,
         lineStatuses: Map<String, LineStatus> = emptyMap(),
+        // Defaults to `now` (rows "as of now") so a grouping-only caller need not supply it;
+        // `across` passes the stop's own fetch age so the screen can withhold per stop.
+        fetchedAt: Instant = now,
     ): List<DepartureRow> {
         // upcoming() has already dropped departed services and sorted soonest-first;
         // groupBy preserves that encounter order within each group.
@@ -43,6 +48,7 @@ object DepartureRows {
                     destination = soonest.destination,
                     mode = soonest.mode,
                     upcoming = group,
+                    fetchedAt = fetchedAt,
                     // Marks the row only when the line is actually disrupted — a
                     // good-service (or unlooked-up) line leaves it null, so a non-null
                     // status always means "flag this" (SPEC *Disruptions* / D3).
@@ -66,8 +72,22 @@ object DepartureRows {
         lineStatuses: Map<String, LineStatus> = emptyMap(),
     ): List<DepartureRow> =
         stops.flatMap { stop ->
-            val timed = forStop(stop.stopId, stop.stopName, stop.departures, now, lineStatuses)
-            stopStatusRow(stop) + timed + statusRows(stop, timed, lineStatuses)
+            val timed =
+                forStop(stop.stopId, stop.stopName, stop.departures, now, lineStatuses, stop.fetchedAt)
+            // A synthesized line-status row asserts "No departures", which is only true when
+            // this stop's arrivals were actually fetched AND are still current: fetched (not
+            // a disruption-only stop stamped `now` with no arrivals, nor one carried from a
+            // prior) and not stale (a delayed line's predictions may have merely expired, not
+            // stopped). Otherwise it's suppressed and the stop falls to the screen's stale
+            // empty-state prompt (SPEC principle 1). Timed rows (withheld once stale) and a
+            // fresh stop-status closure still show.
+            val status =
+                if (stop.arrivalsFresh && !isStale(stop.fetchedAt, now)) {
+                    statusRows(stop, timed, lineStatuses)
+                } else {
+                    emptyList()
+                }
+            stopStatusRow(stop) + timed + status
         }.sortedWith(rowOrder)
 
     /**
@@ -90,6 +110,7 @@ object DepartureRows {
                 destination = "",
                 mode = "",
                 upcoming = emptyList(),
+                fetchedAt = stop.fetchedAt,
                 status = null,
                 stopDisruption = stop.disruptions.joinToString(" · ") { it.description },
             ),
@@ -126,6 +147,7 @@ object DepartureRows {
                     destination = "",
                     mode = line.mode,
                     upcoming = emptyList(),
+                    fetchedAt = stop.fetchedAt,
                     status = status,
                 )
             }
@@ -155,6 +177,10 @@ object DepartureRows {
         else -> 2
     }
 
+    /** Whether a stop fetched at [fetchedAt] is past the shared staleness bound at [now]. */
+    private fun isStale(fetchedAt: Instant, now: Instant): Boolean =
+        Staleness.isStale(Duration.between(fetchedAt, now).toKotlinDuration())
+
     /**
      * The discriminator that keeps directions apart within a line at a stop. TfL's
      * `direction` is the intended key, but it omits it on some services; when it is
@@ -183,11 +209,22 @@ object DepartureRows {
  * [disruptions] are the stop's own disruptions (a closure, a moved stop), surfaced as a
  * stop-level status row so a closed stop isn't shown as if its departures were catchable
  * (SPEC *Disruptions*). Empty when the stop is clear or wasn't checked.
+ * [fetchedAt] is when *this stop's* [departures] were fetched — each stop carries its own
+ * age, so a partial refresh keeps a failed stop's aged rows (at their older age) beside a
+ * fresh stop's, and staleness is decided per stop rather than one screen-wide flag
+ * (SPEC D4). [Snapshot.mergeStop] sets it when merging a refresh into the prior snapshot.
+ * [arrivalsFresh] is whether these [departures] came from a **successful arrivals fetch in
+ * this snapshot** (vs carried from a prior, or absent because the fetch failed). It gates
+ * the "No departures" claim a synthesized status row makes: a disruption-only stop is
+ * stamped [fetchedAt] = now yet has no fetched arrivals, so freshness alone can't stand in
+ * for "we know there are no departures" — only a fetch can (SPEC principle 1).
  */
 data class StopArrivals(
     val stopId: String,
     val stopName: String,
     val departures: List<Departure>,
+    val fetchedAt: Instant,
     val lines: List<LineRef> = emptyList(),
     val disruptions: List<StopDisruption> = emptyList(),
+    val arrivalsFresh: Boolean = true,
 )
