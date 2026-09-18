@@ -225,6 +225,20 @@ exercises the whole spine the widget later renders from.
       distinct destinations with a departure inside the window, and fall back to only the
       single next departure when the window is empty, so a quiet stop still shows
       something. An alternative to a fixed "next few per row"; explore from real use.
+- [ ] (Later, open call) **Line-name chip readability** — improve the line pill's
+      contrast and legibility. Candidate: show the first three letters of the line name
+      and give every chip the same fixed width, so the pills form a tidy column instead of
+      ragged-width blobs. Explore on a device against the current full-name pill.
+- [ ] (Later, open call) **Configurable font size** — the user likes the current dense
+      layout; make the text size a setting, with a slightly larger default a candidate.
+      (Raised while starting the location work.)
+- [ ] (Later, open call) **Walk-time reachability filter** — hide departures the user
+      couldn't physically reach in time. Rough model: ~6 km/h ≈ 100 m/min walking, so a
+      stop 200 m away is ~2 min out; drop a departure leaving sooner than the walk time to
+      its stop. Needs the per-stop distance (already available from the nearby lookup) and
+      a chosen speed/margin; make the speed and whether it's on a setting. Explore from
+      real use — a too-aggressive filter that hides a train the user could have jogged for
+      is worse than showing it (SPEC principle 1).
 
 ## Phase 3 — Full disruptions
 

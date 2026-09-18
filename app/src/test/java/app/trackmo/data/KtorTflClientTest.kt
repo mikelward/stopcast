@@ -129,6 +129,69 @@ class KtorTflClientTest {
         ]
         """.trimIndent()
 
+    // A nearby-search fixture in the shape of a real /StopPoint response, trimmed to the
+    // mapped fields. Public station names/ids only, and every coordinate is an
+    // obviously-synthetic stand-in — never a real position (SPEC *Privacy*).
+    // Stop 1 has a blank `id` (falls back to `naptanId`) and a type suffix to strip; stop
+    // 2 is a mixed-mode hub proving per-line mode comes from `lineModeGroups`, with a
+    // blank-id line that must be dropped; stop 3 has no usable id and must be dropped.
+    // Extra top-level and per-stop fields prove ignoreUnknownKeys.
+    private val nearbyJson =
+        """
+        {
+          "${'$'}type": "Tfl.Api.Presentation.Entities.StopPointsResponse",
+          "pageSize": 25,
+          "total": 3,
+          "page": 1,
+          "centrePoint": [51.5, -0.12],
+          "stopPoints": [
+            {
+              "${'$'}type": "Tfl.Api.Presentation.Entities.StopPoint",
+              "id": "",
+              "naptanId": "940GZZLUCHX",
+              "commonName": "Charing Cross Underground Station",
+              "distance": 12.3,
+              "lat": 51.5,
+              "lon": -0.12,
+              "modes": ["tube"],
+              "lines": [
+                { "id": "bakerloo", "name": "Bakerloo" },
+                { "id": "northern", "name": "Northern" }
+              ],
+              "lineModeGroups": [
+                { "modeName": "tube", "lineIdentifier": ["bakerloo", "northern"] }
+              ]
+            },
+            {
+              "id": "HUBSRA",
+              "naptanId": "HUBSRA",
+              "commonName": "Stratford Station",
+              "lat": 51.55,
+              "lon": -0.1,
+              "modes": ["tube", "dlr", "elizabeth-line"],
+              "lines": [
+                { "id": "central", "name": "Central" },
+                { "id": "dlr", "name": "DLR" },
+                { "id": "", "name": "" },
+                { "id": "elizabeth", "name": "Elizabeth line" }
+              ],
+              "lineModeGroups": [
+                { "modeName": "tube", "lineIdentifier": ["central"] },
+                { "modeName": "dlr", "lineIdentifier": ["dlr"] },
+                { "modeName": "elizabeth-line", "lineIdentifier": ["elizabeth"] }
+              ]
+            },
+            {
+              "id": "",
+              "naptanId": "",
+              "commonName": "Nowhere",
+              "lat": 0.0,
+              "lon": 0.0
+            }
+          ]
+        }
+        """.trimIndent()
+
     private fun client(
         body: String,
         status: HttpStatusCode = HttpStatusCode.OK,
@@ -256,6 +319,62 @@ class KtorTflClientTest {
         // route-blocked stop, would be missed (SPEC principle 1).
         assertEquals("true", req.url.parameters["getFamily"])
         assertEquals("true", req.url.parameters["includeRouteBlockedStops"])
+    }
+
+    @Test
+    fun `parses nearby stops, cleaning names and dropping unidentifiable ones`() = runTest {
+        val stops = client(nearbyJson).nearbyStops(latitude = 51.5, longitude = -0.12, radiusMeters = 350)
+
+        // The third stopPoint has no usable id (blank id and naptanId) → dropped.
+        assertEquals(2, stops.size)
+        // Names cleaned of the TfL type suffix.
+        assertEquals("Charing Cross", stops[0].name)
+        assertEquals("Stratford", stops[1].name)
+        // A blank `id` falls back to `naptanId`.
+        assertEquals("940GZZLUCHX", stops[0].id)
+        assertEquals("HUBSRA", stops[1].id)
+        assertEquals(51.5, stops[0].latitude, 1e-6)
+        assertEquals(-0.12, stops[0].longitude, 1e-6)
+    }
+
+    @Test
+    fun `recovers each line's mode from lineModeGroups and drops a blank-id line`() = runTest {
+        val stratford = client(nearbyJson)
+            .nearbyStops(latitude = 51.5, longitude = -0.12, radiusMeters = 350)
+            .single { it.id == "HUBSRA" }
+
+        // The blank-id line is dropped; the rest carry the mode from their lineModeGroup,
+        // not the stop's first mode — so a mixed hub colors each line correctly.
+        val modeByLine = stratford.lines.associate { it.id to it.mode }
+        assertEquals(mapOf("central" to "tube", "dlr" to "dlr", "elizabeth" to "elizabeth-line"), modeByLine)
+    }
+
+    @Test
+    fun `requests the StopPoint search with coordinates, radius, and stop types`() = runTest {
+        var captured: HttpRequestData? = null
+        client(nearbyJson, capture = { captured = it })
+            .nearbyStops(latitude = 51.5, longitude = -0.12, radiusMeters = 350)
+        val req = checkNotNull(captured)
+        assertEquals("/StopPoint", req.url.encodedPath)
+        assertEquals("51.5", req.url.parameters["lat"])
+        assertEquals("-0.12", req.url.parameters["lon"])
+        assertEquals("350", req.url.parameters["radius"])
+        assertEquals(
+            "NaptanMetroStation,NaptanRailStation,NaptanPublicBusCoachTram",
+            req.url.parameters["stopTypes"],
+        )
+        // Without this the search returns line-less stops, so a suspended no-prediction line
+        // couldn't surface as a status row (SPEC Disruptions).
+        assertEquals("true", req.url.parameters["returnLines"])
+        assertNull(req.url.parameters["app_key"])
+    }
+
+    @Test
+    fun `nearby search adds app_key only when set`() = runTest {
+        var captured: HttpRequestData? = null
+        client(nearbyJson, appKey = "EXAMPLE", capture = { captured = it })
+            .nearbyStops(latitude = 51.5, longitude = -0.12, radiusMeters = 350)
+        assertEquals("EXAMPLE", checkNotNull(captured).url.parameters["app_key"])
     }
 
     @Test
