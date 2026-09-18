@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import app.trackmo.domain.Departure
+import app.trackmo.domain.LineStatus
 import app.trackmo.domain.StopArrivals
 import app.trackmo.ui.theme.TrackmoTheme
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -85,19 +86,47 @@ class MainScreenScreenshotTest {
         ),
     )
 
+    // Victoria is disrupted, so its rows carry the chip; the other lines are clean (absent
+    // from the map). Canned line + status wording only (SPEC *Privacy*).
+    private fun statuses(): Map<String, LineStatus> =
+        mapOf("victoria" to LineStatus("victoria", severity = 6, description = "Severe Delays"))
+
     @Test
     fun `loaded, light`() {
         capture("main-loaded.png") {
-            MainScreen(DeparturesUiState.Loaded(stops(), now.minusSeconds(120)), now, {})
+            MainScreen(
+                DeparturesUiState.Loaded(stops(), now.minusSeconds(120), lineStatuses = statuses()),
+                now,
+                {},
+            )
         }
         composeRule.onNodeWithText("Brixton").assertExists()
+        // The disrupted Victoria line is flagged (SPEC D3).
+        composeRule.onNodeWithText("Severe Delays").assertExists()
     }
 
     @Test
     fun `loaded, dark`() {
         capture("main-loaded-dark.png", dark = true) {
-            MainScreen(DeparturesUiState.Loaded(stops(), now.minusSeconds(120)), now, {})
+            MainScreen(
+                DeparturesUiState.Loaded(stops(), now.minusSeconds(120), lineStatuses = statuses()),
+                now,
+                {},
+            )
         }
+    }
+
+    @Test
+    fun `disruptions couldn't be checked`() {
+        capture("main-disruptions-unknown.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(stops(), now.minusSeconds(60), disruptionUnknown = true),
+                now,
+                {},
+            )
+        }
+        // Arrivals shown, but their disruption status is flagged unverified, not clean.
+        composeRule.onNodeWithText("Couldn't check for disruptions").assertExists()
     }
 
     @Test

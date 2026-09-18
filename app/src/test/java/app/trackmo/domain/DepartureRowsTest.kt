@@ -2,6 +2,7 @@ package app.trackmo.domain
 
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class DepartureRowsTest {
@@ -178,6 +179,34 @@ class DepartureRowsTest {
             split.map { it.directionKey },
         )
         assertEquals(2, split.map { it.directionKey }.toSet().size)
+    }
+
+    @Test
+    fun `stamps a disrupted line's rows with its status, leaving clean lines null`() {
+        val victoria = departure("victoria", "Victoria", "outbound", "Brixton", 120)
+        val northern = departure("northern", "Northern", "southbound", "Morden", 180)
+        val statuses = mapOf(
+            "victoria" to LineStatus("victoria", 6, "Severe Delays"),
+            "northern" to LineStatus("northern", LineStatus.GOOD_SERVICE, "Good Service"),
+        )
+
+        val rows = DepartureRows.forStop(
+            "940GZZLUVIC", "Victoria", listOf(victoria, northern), now, statuses,
+        ).associateBy { it.lineId }
+
+        assertEquals("Severe Delays", rows.getValue("victoria").status?.description)
+        // A good-service line still stamps null — a non-null row status always means
+        // "disrupted", decoupled from whatever the map happens to carry.
+        assertNull(rows.getValue("northern").status)
+
+        // across() threads the same map through to every stop's rows.
+        val acrossRows = DepartureRows.across(
+            listOf(StopArrivals("940GZZLUVIC", "Victoria", listOf(victoria, northern))),
+            now,
+            statuses,
+        ).associateBy { it.lineId }
+        assertEquals("Severe Delays", acrossRows.getValue("victoria").status?.description)
+        assertNull(acrossRows.getValue("northern").status)
     }
 
     @Test
