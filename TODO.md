@@ -40,10 +40,10 @@ exercises the whole spine the widget later renders from.
 
 - [ ] TfL client behind a domain interface: nearby `/StopPoint`, `/StopPoint/{id}/
       Arrivals`; kotlinx.serialization models; recorded fixtures.
-- [ ] Domain (pure Kotlin, JVM-tested): arrival→countdown formatting ("Due"/"3 min"),
+- [x] Domain (pure Kotlin, JVM-tested): arrival→countdown formatting ("Due"/"3 min"),
       soonest-first ordering, expired-prediction drop (a countdown reaching zero leaves
       the list, never sticks at "Due"), a single shared staleness threshold, nearest-stop
-      ranking.
+      ranking. (`Departure`, `Countdown`, `Staleness`, `NearestStops` + JVM tests.)
 - [ ] `MainScreen`: departures for the watched stops (a hardcoded/seed stop set is fine
       this phase), with the "updated N ago" stamp and client-side countdown recompute.
 - [ ] **Minimal disruption marking** — the honesty floor the first view can't ship
@@ -136,6 +136,15 @@ Builds on Phase 1's minimal line-status marking.
   filters**, with **starring to reorder**; treat swipe and the smart Home/Work +
   time-of-day behaviors as later enhancements once the basic view is on a device. Settle
   when the Phase 1 `MainScreen` and Phase 2 filters are built.
+
+## Decisions needing review
+
+- **Staleness threshold = 5 minutes** (`Staleness.THRESHOLD`, Phase 1 domain). The one
+  shared "too old to trust" bound past which countdowns are withheld for "tap to refresh"
+  (SPEC D4). Alternatives: a tighter 2–3 min (safer, but shows "tap to refresh" more
+  often between routine refreshes) or a looser 10 min. Reversible — one constant, pinned
+  by `StalenessTest`; change the value and the test together. Wants a look on a real
+  device against real TfL refresh cadence.
 
 ## Decisions
 
