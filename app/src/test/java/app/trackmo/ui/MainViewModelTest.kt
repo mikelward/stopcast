@@ -40,6 +40,7 @@ class MainViewModelTest {
             destination = "Brixton",
             platform = null,
             expectedArrival = now.plusSeconds(offsetSeconds),
+            mode = "tube",
         )
 
     private class FakeClient(val byStop: Map<String, Result<List<Departure>>>) : TflClient {

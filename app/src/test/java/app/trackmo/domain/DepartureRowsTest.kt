@@ -14,6 +14,7 @@ class DepartureRowsTest {
         destination: String,
         offsetSeconds: Long,
         platform: String? = null,
+        mode: String = "tube",
     ) = Departure(
         lineId = lineId,
         lineName = lineName,
@@ -21,6 +22,7 @@ class DepartureRowsTest {
         destination = destination,
         platform = platform,
         expectedArrival = now.plusSeconds(offsetSeconds),
+        mode = mode,
     )
 
     @Test
