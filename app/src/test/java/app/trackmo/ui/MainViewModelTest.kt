@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -124,6 +125,21 @@ class MainViewModelTest {
         assertEquals(loaded.stops, kept.stops)
         assertEquals(loaded.fetchedAt, kept.fetchedAt)
         assertEquals(DeparturesUiState.Error.Kind.OFFLINE, kept.refreshFailure)
+    }
+
+    @Test
+    fun `an empty seed yields an empty Loaded state, not a network error`() = runTest(dispatcher) {
+        // No watched stops → nothing is fetched and nothing fails, so the screen shows an
+        // empty list, not "Can't reach TfL" (TfL was never contacted).
+        val vm = MainViewModel(FakeClient(emptyMap()), emptyList(), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        assertTrue(state.stops.isEmpty())
+        assertEquals(false, state.partialRefresh)
+        assertNull(state.refreshFailure)
     }
 
     @Test
