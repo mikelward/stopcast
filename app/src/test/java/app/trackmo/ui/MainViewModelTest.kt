@@ -1,6 +1,7 @@
 package app.trackmo.ui
 
 import app.trackmo.domain.Departure
+import app.trackmo.domain.LineStatus
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
 import java.time.Instant
@@ -43,10 +44,19 @@ class MainViewModelTest {
             mode = "tube",
         )
 
-    private class FakeClient(val byStop: Map<String, Result<List<Departure>>>) : TflClient {
+    private class FakeClient(
+        val byStop: Map<String, Result<List<Departure>>>,
+        val statuses: Result<List<LineStatus>> = Result.success(emptyList()),
+    ) : TflClient {
         override suspend fun arrivals(stopId: String): List<Departure> =
             byStop.getValue(stopId).getOrThrow()
+
+        override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> =
+            statuses.getOrThrow()
     }
+
+    private fun status(lineId: String, severity: Int, description: String) =
+        LineStatus(lineId = lineId, severity = severity, description = description)
 
     private fun viewModel(client: TflClient, warn: (String) -> Unit = {}) =
         MainViewModel(client, seeds, clock = { now }, io = dispatcher, warn = warn)
@@ -106,6 +116,8 @@ class MainViewModelTest {
                 if (failing) throw TflException.Offline(null)
                 return listOf(departure("victoria", "Victoria", 300))
             }
+
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
         }
         val vm = viewModel(client)
         advanceUntilIdle()
@@ -126,6 +138,103 @@ class MainViewModelTest {
         assertEquals(loaded.stops, kept.stops)
         assertEquals(loaded.fetchedAt, kept.fetchedAt)
         assertEquals(DeparturesUiState.Error.Kind.OFFLINE, kept.refreshFailure)
+    }
+
+    @Test
+    fun `a disrupted line is carried in the snapshot, a good-service line is not`() = runTest(dispatcher) {
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    "940GZZLUKSX" to Result.success(listOf(departure("northern", "Northern", 120))),
+                ),
+                // Victoria has severe delays; Northern is running well — only the
+                // disruption is carried, so a non-null row status always means "flag it".
+                statuses = Result.success(
+                    listOf(
+                        status("victoria", 6, "Severe Delays"),
+                        status("northern", LineStatus.GOOD_SERVICE, "Good Service"),
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        assertEquals(setOf("victoria"), state.lineStatuses.keys)
+        assertEquals("Severe Delays", state.lineStatuses.getValue("victoria").description)
+        assertEquals(false, state.disruptionUnknown)
+    }
+
+    @Test
+    fun `a line TfL returned no status for is treated as unknown, not clean`() = runTest(dispatcher) {
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    "940GZZLUKSX" to Result.success(listOf(departure("northern", "Northern", 120))),
+                ),
+                // Victoria came back disrupted; Northern's status is absent (the client
+                // drops a line with no entries). That undetermined line must flag the
+                // screen "status unknown" rather than let Northern read as verified-clean.
+                statuses = Result.success(listOf(status("victoria", 6, "Severe Delays"))),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        assertEquals(setOf("victoria"), state.lineStatuses.keys)
+        assertTrue(state.disruptionUnknown)
+    }
+
+    @Test
+    fun `a departure with a blank line id leaves the disruption state unknown`() = runTest(dispatcher) {
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    // TfL gave this prediction no line id, so its disruption can't be
+                    // checked — it must not read as verified-clean.
+                    "940GZZLUKSX" to Result.success(listOf(departure("", "", 120))),
+                ),
+                // Victoria comes back good, so the only reason for unknown is the blank id.
+                statuses = Result.success(listOf(status("victoria", LineStatus.GOOD_SERVICE, "Good Service"))),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        assertTrue(state.lineStatuses.isEmpty())
+        assertTrue(state.disruptionUnknown)
+    }
+
+    @Test
+    fun `a failed status lookup flags disruptionUnknown but keeps the arrivals`() = runTest(dispatcher) {
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    "940GZZLUKSX" to Result.success(listOf(departure("northern", "Northern", 120))),
+                ),
+                statuses = Result.failure(TflException.Offline(null)),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        // Arrivals still shown — a failed disruption check must not blank them — but the
+        // screen is told their status is unknown rather than passing them off as clean.
+        assertEquals(listOf("940GZZLUOXC", "940GZZLUKSX"), state.stops.map { it.stopId })
+        assertTrue(state.lineStatuses.isEmpty())
+        assertTrue(state.disruptionUnknown)
     }
 
     @Test

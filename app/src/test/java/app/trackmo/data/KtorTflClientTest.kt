@@ -18,6 +18,7 @@ import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -67,6 +68,48 @@ class KtorTflClientTest {
             "expectedArrival": "2026-09-18T08:01:00Z",
             "timeToStation": 60,
             "modeName": "bus"
+          }
+        ]
+        """.trimIndent()
+
+    // A recorded /Line/{ids}/Status fixture: victoria good, northern severely delayed,
+    // central carrying both a good-service and a minor-delays entry (the disruption must
+    // win). Public line names only (SPEC *Privacy*). Extra fields prove ignoreUnknownKeys.
+    private val statusJson =
+        """
+        [
+          {
+            "${'$'}type": "Tfl.Api.Presentation.Entities.Line",
+            "id": "victoria",
+            "name": "Victoria",
+            "modeName": "tube",
+            "lineStatuses": [
+              { "statusSeverity": 10, "statusSeverityDescription": "Good Service" }
+            ]
+          },
+          {
+            "id": "northern",
+            "name": "Northern",
+            "lineStatuses": [
+              {
+                "statusSeverity": 6,
+                "statusSeverityDescription": "Severe Delays",
+                "reason": "Northern line: severe delays while we fix a faulty train."
+              }
+            ]
+          },
+          {
+            "id": "central",
+            "name": "Central",
+            "lineStatuses": [
+              { "statusSeverity": 10, "statusSeverityDescription": "Good Service" },
+              { "statusSeverity": 9, "statusSeverityDescription": "Minor Delays" }
+            ]
+          },
+          {
+            "id": "circle",
+            "name": "Circle",
+            "lineStatuses": []
           }
         ]
         """.trimIndent()
@@ -139,6 +182,45 @@ class KtorTflClientTest {
         var capturedKeyed: HttpRequestData? = null
         client(arrivalsJson, appKey = "EXAMPLE", capture = { capturedKeyed = it }).arrivals("940GZZLUVIC")
         assertEquals("EXAMPLE", checkNotNull(capturedKeyed).url.parameters["app_key"])
+    }
+
+    @Test
+    fun `parses line statuses, marking disruptions and leaving good service clean`() = runTest {
+        val statuses = client(statusJson)
+            .lineStatuses(listOf("victoria", "northern", "central", "circle"))
+            .associateBy { it.lineId }
+
+        // circle has no status entries → dropped as unknown, not fabricated into good
+        // service (SPEC principle 1: don't manufacture a clean status from absent data).
+        assertEquals(3, statuses.size)
+        assertFalse(statuses.containsKey("circle"))
+        assertFalse(statuses.getValue("victoria").disrupted)
+        assertEquals("Good Service", statuses.getValue("victoria").description)
+        assertTrue(statuses.getValue("northern").disrupted)
+        assertEquals("Severe Delays", statuses.getValue("northern").description)
+        // A good-service entry alongside a disruption must not mask it: filter to the
+        // non-good statuses, then take the worst (lowest severity).
+        assertTrue(statuses.getValue("central").disrupted)
+        assertEquals("Minor Delays", statuses.getValue("central").description)
+    }
+
+    @Test
+    fun `batches the requested lines into one Line Status request`() = runTest {
+        var captured: HttpRequestData? = null
+        client(statusJson, capture = { captured = it }).lineStatuses(listOf("victoria", "northern"))
+        // One request, both lines in the path segment (segments decode any encoding).
+        assertEquals(
+            listOf("Line", "victoria,northern", "Status"),
+            checkNotNull(captured).url.segments,
+        )
+    }
+
+    @Test
+    fun `no line ids makes no request and returns empty`() = runTest {
+        var calls = 0
+        val statuses = client(statusJson, capture = { calls++ }).lineStatuses(emptyList())
+        assertEquals(0, calls)
+        assertTrue(statuses.isEmpty())
     }
 
     @Test
