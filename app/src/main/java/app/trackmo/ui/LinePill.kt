@@ -102,6 +102,8 @@ fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier 
         contentColor = content,
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        // The caller caps the width (to a fraction of the card) so a long name at a large
+        // font ellipsizes rather than starving the countdown; the label already ellipsizes.
         modifier = modifier,
     ) {
         Text(

@@ -18,9 +18,16 @@
     <!-- Shown when arrivals loaded but the disruption lookup failed, so these times'
          disruption status was never checked (SPEC Disruptions: not verified-clean). -->
     <string name="disruptions_unknown">Couldn\'t check for disruptions</string>
-    <!-- On a status row: a disrupted line (e.g. suspended) returning no predictions. The
-         chip above names the disruption; this notes there are no times to show. -->
-    <string name="status_no_departures">No departures</string>
+    <!-- On a status row: a disrupted line (e.g. suspended) returning no predictions. Sits
+         where a countdown would, as a short dash meaning "none" — distinct from the "?" a
+         stale timed row shows for an unknown/withheld countdown. The chip beside it names
+         the disruption. A screen reader announces the description below instead of the bare
+         dash, which alone could read as missing data rather than zero departures. -->
+    <string name="status_no_departures">–</string>
+    <string name="status_no_departures_description">No departures</string>
+    <!-- A timed row's destination line when TfL gives neither destination nor towards but
+         did give a direction; used only when even the direction is missing. -->
+    <string name="destination_unknown">Unknown destination</string>
     <!-- Shown over the aged last-good list when a refresh failed outright. -->
     <string name="refresh_failed_offline">Couldn\'t refresh — you\'re offline</string>
     <string name="refresh_failed_rate_limited">Couldn\'t refresh — TfL is rate-limiting</string>

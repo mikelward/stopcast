@@ -4,13 +4,21 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import app.trackmo.domain.Departure
 import app.trackmo.domain.LineRef
@@ -20,6 +28,7 @@ import app.trackmo.domain.StopDisruption
 import app.trackmo.ui.theme.TrackmoTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import java.time.Instant
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -125,11 +134,20 @@ class MainScreenScreenshotTest {
             )
         }
         composeRule.onNodeWithText("Brixton").assertExists()
+        // The two Brixton times merge onto one line, the unit written once (SPEC D8).
+        composeRule.onNodeWithText("Due · 4 min").assertExists()
+        // A branching direction (Central eastbound) keeps its headline destination and its
+        // divergent one apart, so neither countdown sits under the wrong destination.
+        composeRule.onNodeWithText("Hainault").assertExists()
+        composeRule.onNodeWithText("Woodford").assertExists()
         // The disrupted Victoria line is flagged (SPEC D3).
         composeRule.onNodeWithText("Severe Delays").assertExists()
-        // Circle is suspended with no arrivals, so it surfaces as a status row.
+        // Circle is suspended with no arrivals, so it surfaces as a status row — a dash
+        // ("none") where a countdown would sit (the "Suspended" chip carries the reason).
         composeRule.onNodeWithText("Suspended").assertExists()
-        composeRule.onNodeWithText("No departures").assertExists()
+        composeRule.onNodeWithText("–").assertExists()
+        // The dash announces "No departures" to a screen reader rather than a bare glyph.
+        composeRule.onNodeWithContentDescription("No departures").assertExists()
         // Oxford Circus has a stop-level disruption, shown as a stop-status row.
         composeRule.onNodeWithText("Station closed until further notice").assertExists()
     }
@@ -162,10 +180,10 @@ class MainScreenScreenshotTest {
                 {},
             )
         }
-        // The fresh stop shows a live countdown; the stale stop withholds its own ("—")
+        // The fresh stop shows a live countdown; the stale stop withholds its own ("?")
         // while staying on screen, rather than vanishing or being shown as live.
         composeRule.onNodeWithText("Brixton").assertExists()
-        composeRule.onAllNodesWithText("—").onFirst().assertExists()
+        composeRule.onAllNodesWithText("?").onFirst().assertExists()
     }
 
     @Test
@@ -283,6 +301,54 @@ class MainScreenScreenshotTest {
         }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Departures may be out of date").assertExists()
+    }
+
+    @Test
+    fun `a long line name and full merged countdown at a large font stay legible`() {
+        // The worst case for width: the longest real line name (Hammersmith & City), the
+        // full three-value merged label ("Due · 3 · 6 min"), a large font, and a narrow
+        // screen — where an uncapped pill would consume the card and crush the countdown.
+        // The pill is capped to half the card, and the countdown is the row's reserved
+        // (unweighted) element, so it is measured first and keeps real width while the
+        // destination beside it ellipsizes (SPEC D8). Logic-only — no baseline.
+        val stop = StopArrivals(
+            "940GZZLUHSC",
+            "Hammersmith",
+            listOf(
+                dep("hammersmith-city", "Hammersmith & City", "eastbound", "Barking", 30, "Platform 1"),
+                dep("hammersmith-city", "Hammersmith & City", "eastbound", "Barking", 200, "Platform 1"),
+                dep("hammersmith-city", "Hammersmith & City", "eastbound", "Barking", 380, "Platform 1"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            TrackmoTheme(dynamicColor = false) {
+                val base = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density = base.density, fontScale = 2f),
+                ) {
+                    // Bound the width to the config's screen width (411dp): a logic-only
+                    // layout is otherwise measured unconstrained, where nothing competes for
+                    // width and even an uncapped pill leaves the countdown room. The squeeze
+                    // this guards only happens at a real, narrow width.
+                    Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
+                        MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // The pill must not exceed half the card: capped it measures ~157dp, uncapped ~243dp,
+        // so 180dp fails the regression (the timed path missing the cap) and passes the fix.
+        val pillBounds = composeRule.onNodeWithText("Hammersmith & City").getUnclippedBoundsInRoot()
+        val pillWidth = pillBounds.right - pillBounds.left
+        assertTrue("line pill should be capped, was $pillWidth", pillWidth <= 180.dp)
+        // The full merged countdown keeps substantial reserved width (it leads with the
+        // soonest times and ellipsizes only its tail if even the whole line is too short),
+        // rather than collapsing to zero behind the pill.
+        val countBounds = composeRule.onNodeWithText("Due · 3 · 6 min").getUnclippedBoundsInRoot()
+        val countWidth = countBounds.right - countBounds.left
+        assertTrue("merged countdown should keep width, was $countWidth", countWidth >= 100.dp)
     }
 
     @Test

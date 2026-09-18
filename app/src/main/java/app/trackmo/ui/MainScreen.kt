@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -34,21 +35,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.trackmo.R
 import app.trackmo.domain.Countdown
 import app.trackmo.domain.Departure
+import app.trackmo.domain.DepartureLabels
 import app.trackmo.domain.DepartureRow
 import app.trackmo.domain.DepartureRows
 import app.trackmo.domain.RelativeTime
 import app.trackmo.domain.Staleness
 import java.time.Duration
 import java.time.Instant
-import java.util.Locale
 import kotlin.time.toKotlinDuration
 
 /**
@@ -243,99 +248,210 @@ private fun DepartureRowCard(row: DepartureRow, now: Instant) {
     val stale = remember(row.fetchedAt, now) {
         Staleness.isStale(Duration.between(row.fetchedAt, now).toKotlinDuration())
     }
+    // Cap the line pill at half the card's inner width, so a long name at a large font
+    // scale ellipsizes rather than consuming the card and starving the countdown — which
+    // must stay one line (SPEC D8). Inner width ≈ screen minus the list's 16dp side padding
+    // and the card's 16dp padding. No real line name reaches the cap at the default font.
+    val cardInnerWidth = LocalConfiguration.current.screenWidthDp.dp - 64.dp
+    val pillModifier = Modifier.widthIn(max = cardInnerWidth * 0.5f)
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        // A traversal group so a disrupted timed row can announce its status chip *before*
+        // the destination and countdown it qualifies (the chip is placed below but carries
+        // a lower traversalIndex) — a screen reader shouldn't voice a departure as
+        // actionable before its warning (SPEC principle 2).
+        Column(modifier = Modifier.padding(16.dp).semantics { isTraversalGroup = true }) {
             if (row.stopDisruption != null) {
                 // A stop-level status row: the whole stop is disrupted (a closure), so it
-                // leads with the stop, not a line pill, and its departures — if any — are
-                // still shown below in their own rows, marked not suppressed (SPEC D3).
-                Text(text = row.stopName, style = MaterialTheme.typography.titleMedium)
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                ) {
-                    Text(
-                        text = row.stopDisruption,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    )
-                }
+                // leads with the stop, not a line pill (SPEC D3).
+                StopClosureContent(row.stopName, row.stopDisruption)
                 return@Column
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode)
-                Text(
-                    text = stopLabel(row),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.End,
-                    // Weighted so a long stop/direction label ellipsizes into the
-                    // remaining space rather than squeezing out the line name.
-                    modifier = Modifier.weight(1f).padding(start = 12.dp),
-                )
-            }
-            // A disrupted line is flagged here (SPEC D3) — the chip names TfL's status
-            // ("Severe Delays", "Suspended"), the line itself being the pill above.
-            row.status?.let { status -> DisruptionChip(status.description) }
+
             if (row.upcoming.isEmpty()) {
-                // A status row: this line is disrupted (the chip says how) and returned no
-                // predictions, so it's surfaced rather than dropped for want of a departure
-                // (SPEC *Departures*). No countdown — just note there are no times.
-                Text(
-                    text = stringResource(R.string.status_no_departures),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                return@Column
-            }
-            Text(
-                text = row.destination.ifBlank { row.lineName },
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-            // Each upcoming departure keeps its own destination and platform, since a
-            // branching direction runs several destinations in one row — so a divergent
-            // train names its own destination rather than sitting under the headline's
-            // (SPEC D8: a countdown is never shown under the wrong destination). Once
-            // stale, the countdown is withheld ("—") rather than shown as a live number.
-            row.upcoming.take(MAX_TIMES).forEach { departure ->
+                // A status row: the line is disrupted (the chip says how) and returned no
+                // predictions (SPEC *Departures*). Pill + chip on the left, "No departures"
+                // where a countdown would sit on the right — the pill already names the
+                // line, so no destination text is repeated (it would read "Circle Circle").
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
+                    // The chip lives in the weighted slack so it absorbs the shrink (and
+                    // ellipsizes) when space is tight; "No departures" is unweighted, so the
+                    // Row measures it first and always reserves its width — the status can't
+                    // be squeezed to zero on a narrow screen or at a large font scale.
+                    Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                        row.status?.let { status -> DisruptionChip(status.description) }
+                    }
+                    val noDepartures = stringResource(R.string.status_no_departures_description)
                     Text(
-                        text = departureLabel(departure, row.destination),
-                        style = MaterialTheme.typography.bodySmall,
+                        text = stringResource(R.string.status_no_departures),
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        // Weighted so a long destination/platform label ellipsizes rather
-                        // than consuming the row and clipping the countdown, which is the
-                        // one thing on this row that must always stay visible.
-                        modifier = Modifier.weight(1f).padding(end = 12.dp),
-                    )
-                    Text(
-                        text = if (stale) WITHHELD else Countdown.label(departure, now),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color =
-                            if (stale) MaterialTheme.colorScheme.onSurfaceVariant
-                            else MaterialTheme.colorScheme.onSurface,
+                        // The visible glyph is a compact dash; a screen reader hears the
+                        // explicit "No departures" so a bare dash isn't heard as missing data.
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .semantics { contentDescription = noDepartures },
                     )
                 }
+                return@Column
+            }
+
+            // The next few times, grouped by destination and ordered soonest-first: the
+            // soonest destination leads, and a branching direction (same line, same
+            // direction, different destinations) keeps each destination on its own line
+            // with its own merged countdown, so a countdown is never read under the wrong
+            // destination (SPEC D8). Take before grouping so the card shows a bounded few
+            // times total. Each destination line renders identically — the leading one is
+            // not styled as a bigger "headline" — so a two-destination card reads as a
+            // parallel pair, not a headline plus an afterthought.
+            val byDestination = row.upcoming.take(MAX_TIMES).groupBy { it.destination }
+            // The soonest group first (it holds `row.destination`), then the rest in their
+            // soonest-first encounter order.
+            val destinationLines = buildList {
+                byDestination[row.destination]?.let { add(row.destination to it) }
+                byDestination.forEach { (destination, times) ->
+                    if (destination != row.destination) add(destination to times)
+                }
+            }
+
+            // The pill sits to the left of the destination line(s). A single-destination
+            // card centers the pill against its one line so pill and destination sit level
+            // (the common case); a branching card top-aligns it so the pill hugs the first
+            // destination rather than floating against the pair. The stop name is
+            // intentionally not shown on the card for now — the stop returns with multi-stop
+            // watching (Phase 2), see TODO.
+            val pillAlignment =
+                if (destinationLines.size > 1) Alignment.Top else Alignment.CenterVertically
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = pillAlignment) {
+                LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
+                Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                    destinationLines.forEachIndexed { index, (destination, times) ->
+                        DestinationLine(
+                            // The destination, or the direction key (direction word, else
+                            // platform) as a cue when TfL gives no destination, so cards TfL
+                            // keeps distinct stay distinguishable (SPEC principle 1).
+                            label = DepartureLabels.destinationLabel(destination, row.directionKey)
+                                ?: stringResource(R.string.destination_unknown),
+                            times = times,
+                            stale = stale,
+                            now = now,
+                            // Space the lines of a branching card apart; the first hugs the
+                            // pill's top.
+                            modifier = if (index == 0) Modifier else Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            }
+            // A disrupted line is flagged below the departures, left-aligned with the pill,
+            // but announced first (traversalIndex) so the warning precedes the countdowns it
+            // qualifies. The chip names TfL's status ("Severe Delays"), the line being the
+            // pill above (SPEC D3).
+            row.status?.let { status ->
+                DisruptionChip(
+                    status.description,
+                    Modifier.padding(top = 8.dp).semantics { traversalIndex = -1f },
+                )
             }
         }
     }
+}
+
+/**
+ * A stop closure (a stop-level disruption) as the card's content: the stop name, then the
+ * disruption in an error-toned surface. The stop's own departures, if any, show in their
+ * own cards elsewhere — this card is the closure notice, not a departure (SPEC D3).
+ */
+@Composable
+private fun StopClosureContent(stopName: String, disruption: String) {
+    Text(
+        text = stopName,
+        style = MaterialTheme.typography.titleMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    ) {
+        Text(
+            text = disruption,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+    }
+}
+
+/**
+ * One destination line within a card — `destination · · · countdown` — used for the
+ * soonest destination and for each divergent one of a branching direction alike, so they
+ * render at the **same weight and the same indentation** (all sit in the card's one
+ * destination column, beside the pill). [times] empty is a status row: the line is named
+ * with no countdown. The destination elides so a long name truncates rather than crowding
+ * out the countdown.
+ */
+@Composable
+private fun DestinationLine(
+    label: String,
+    times: List<Departure>,
+    stale: Boolean,
+    now: Instant,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+        )
+        if (times.isNotEmpty()) {
+            CountdownLabel(times, stale, now)
+        }
+    }
+}
+
+/**
+ * A service's merged countdown — "Due · 3 · 6 min" (SPEC D8, one line per destination).
+ * Withheld as "—" once the stop is stale, since the underlying predictions are likely
+ * wrong and a live-looking number would misrepresent them (SPEC D4).
+ */
+@Composable
+private fun CountdownLabel(
+    departures: List<Departure>,
+    stale: Boolean,
+    now: Instant,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = if (stale) WITHHELD else Countdown.mergedLabel(departures, now),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        // One line, never wrapped — the countdown is the one thing that must stay legible
+        // (SPEC D8). It's the unweighted element of its row, so it's measured first and its
+        // width reserved; the destination beside it ellipsizes when space is tight. In the
+        // extreme (a long pill + the full "Due · 3 · 6 min" at a large font, on a narrow
+        // screen) even the whole line can be too short: ellipsize from the end rather than
+        // hard-clip, so the soonest times — which lead the label — stay legible and the
+        // truncation reads as one ("Due · 3 …").
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        color =
+            if (stale) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurface,
+        modifier = modifier,
+    )
 }
 
 /**
@@ -345,12 +461,12 @@ private fun DepartureRowCard(row: DepartureRow, now: Instant) {
  * status alone ("Severe Delays"), not "Victoria line: severe delays".
  */
 @Composable
-private fun DisruptionChip(description: String) {
+private fun DisruptionChip(description: String, modifier: Modifier = Modifier) {
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.padding(top = 8.dp),
+        modifier = modifier,
     ) {
         Text(
             text = description,
@@ -379,24 +495,6 @@ private fun RefreshButton(onRefresh: () -> Unit, modifier: Modifier = Modifier) 
     }
 }
 
-private fun stopLabel(row: DepartureRow): String =
-    if (row.direction.isBlank()) row.stopName
-    // TfL direction labels ("inbound"/"outbound") are English, so titlecase them with a
-    // fixed locale — Locale.getDefault() would produce "İnbound" on a Turkish device.
-    else "${row.stopName} · ${row.direction.replaceFirstChar { it.titlecase(Locale.ROOT) }}"
-
-/**
- * The left-hand label on a departure's time row: its destination when that differs from
- * the row headline (a branching direction), then its platform. Same destination as the
- * headline → just the platform, so the common case stays uncluttered while a divergent
- * branch is always named.
- */
-private fun departureLabel(departure: Departure, headlineDestination: String): String {
-    val divergent = departure.destination.takeIf { it.isNotBlank() && it != headlineDestination }
-    return listOfNotNull(divergent, departure.platform?.takeIf(String::isNotBlank))
-        .joinToString(" · ")
-}
-
 private fun errorMessage(kind: DeparturesUiState.Error.Kind): Int = when (kind) {
     DeparturesUiState.Error.Kind.OFFLINE -> R.string.error_offline
     DeparturesUiState.Error.Kind.RATE_LIMITED -> R.string.error_rate_limited
@@ -410,4 +508,7 @@ private fun refreshFailureMessage(kind: DeparturesUiState.Error.Kind): Int = whe
 }
 
 private const val MAX_TIMES = 3
-private const val WITHHELD = "—"
+// A stale stop's countdown is unknown, not zero, so it withholds the number as "?" — "—"
+// read as "none," which is a different thing (that's the no-departures status). The stamp
+// up top ("Tap to refresh") says why.
+private const val WITHHELD = "?"

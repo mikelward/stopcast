@@ -35,6 +35,32 @@ class CountdownTest {
     }
 
     @Test
+    fun `mergedLabel joins countdowns with the unit written once`() {
+        val soon = departure(offsetSeconds = 40) // Due
+        val mid = departure(offsetSeconds = 180) // 3 min
+        val later = departure(offsetSeconds = 360) // 6 min
+        assertEquals("Due · 3 · 6 min", Countdown.mergedLabel(listOf(soon, mid, later), now))
+    }
+
+    @Test
+    fun `mergedLabel of a single departure matches label`() {
+        assertEquals("3 min", Countdown.mergedLabel(listOf(departure(offsetSeconds = 180)), now))
+        assertEquals("Due", Countdown.mergedLabel(listOf(departure(offsetSeconds = 30)), now))
+    }
+
+    @Test
+    fun `mergedLabel omits the unit when every entry is Due`() {
+        val a = departure(offsetSeconds = 20)
+        val b = departure(offsetSeconds = 50)
+        assertEquals("Due · Due", Countdown.mergedLabel(listOf(a, b), now))
+    }
+
+    @Test
+    fun `mergedLabel of nothing is empty`() {
+        assertEquals("", Countdown.mergedLabel(emptyList(), now))
+    }
+
+    @Test
     fun `a service reaching zero has departed`() {
         assertFalse(Countdown.hasDeparted(departure(offsetSeconds = 1), now))
         assertTrue(Countdown.hasDeparted(departure(offsetSeconds = 0), now))
