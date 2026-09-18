@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import app.trackmo.domain.Departure
+import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
 import app.trackmo.domain.StopArrivals
 import app.trackmo.ui.theme.TrackmoTheme
@@ -72,6 +73,12 @@ class MainScreenScreenshotTest {
                 // A bus, to show the red pill and the mode-based fallback.
                 dep("73", "73", "inbound", "Victoria", 150, "", mode = "bus"),
             ),
+            // Declared lines: Circle is served here but returns no arrivals — a suspended
+            // line, so it surfaces as a status row (see statuses()).
+            lines = listOf(
+                LineRef("victoria", "Victoria", "tube"),
+                LineRef("circle", "Circle", "tube"),
+            ),
         ),
         StopArrivals(
             "940GZZLUOXC",
@@ -86,10 +93,14 @@ class MainScreenScreenshotTest {
         ),
     )
 
-    // Victoria is disrupted, so its rows carry the chip; the other lines are clean (absent
-    // from the map). Canned line + status wording only (SPEC *Privacy*).
+    // Victoria is disrupted (its rows carry the chip); Circle is suspended and returns no
+    // arrivals (a status row). Other lines are clean (absent from the map). Canned line +
+    // status wording only (SPEC *Privacy*).
     private fun statuses(): Map<String, LineStatus> =
-        mapOf("victoria" to LineStatus("victoria", severity = 6, description = "Severe Delays"))
+        mapOf(
+            "victoria" to LineStatus("victoria", severity = 6, description = "Severe Delays"),
+            "circle" to LineStatus("circle", severity = 2, description = "Suspended"),
+        )
 
     @Test
     fun `loaded, light`() {
@@ -103,6 +114,9 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("Brixton").assertExists()
         // The disrupted Victoria line is flagged (SPEC D3).
         composeRule.onNodeWithText("Severe Delays").assertExists()
+        // Circle is suspended with no arrivals, so it surfaces as a status row.
+        composeRule.onNodeWithText("Suspended").assertExists()
+        composeRule.onNodeWithText("No departures").assertExists()
     }
 
     @Test
