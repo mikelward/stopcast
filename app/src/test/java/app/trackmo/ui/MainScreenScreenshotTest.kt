@@ -50,6 +50,7 @@ class MainScreenScreenshotTest {
         destination: String,
         offsetSeconds: Long,
         platform: String,
+        mode: String = "tube",
     ) = Departure(
         lineId = lineId,
         lineName = lineName,
@@ -57,6 +58,7 @@ class MainScreenScreenshotTest {
         destination = destination,
         platform = platform,
         expectedArrival = now.plusSeconds(offsetSeconds),
+        mode = mode,
     )
 
     private fun stops(): List<StopArrivals> = listOf(
@@ -66,6 +68,8 @@ class MainScreenScreenshotTest {
             listOf(
                 dep("victoria", "Victoria", "southbound", "Brixton", 40, "Platform 1"),
                 dep("victoria", "Victoria", "southbound", "Brixton", 240, "Platform 1"),
+                // A bus, to show the red pill and the mode-based fallback.
+                dep("73", "73", "inbound", "Victoria", 150, "", mode = "bus"),
             ),
         ),
         StopArrivals(

@@ -22,6 +22,7 @@ class CountdownTest {
             destination = "Brixton",
             platform = null,
             expectedArrival = now.plusSeconds(offsetSeconds),
+            mode = "tube",
         )
 
     @Test

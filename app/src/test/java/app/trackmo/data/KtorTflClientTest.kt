@@ -65,7 +65,8 @@ class KtorTflClientTest {
             "destinationName": "Pimlico",
             "towards": "Pimlico, Grosvenor Road",
             "expectedArrival": "2026-09-18T08:01:00Z",
-            "timeToStation": 60
+            "timeToStation": 60,
+            "modeName": "bus"
           }
         ]
         """.trimIndent()
@@ -101,6 +102,10 @@ class KtorTflClientTest {
         assertEquals("Walthamstow Central", departures[0].destination)
         assertEquals("Northbound - Platform 1", departures[0].platform)
         assertEquals(Instant.parse("2026-09-18T08:03:00Z"), departures[0].expectedArrival)
+        // modeName is carried so the UI can color by mode; absent → "".
+        assertEquals("tube", departures[0].mode)
+        assertEquals("", departures[1].mode)
+        assertEquals("bus", departures[2].mode)
     }
 
     @Test
