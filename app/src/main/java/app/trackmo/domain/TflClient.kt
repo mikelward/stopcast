@@ -24,4 +24,12 @@ interface TflClient {
      * present them as verified-clean).
      */
     suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus>
+
+    /**
+     * Disruptions reported for the stop [stopId], from `/StopPoint/{id}/Disruption` — a
+     * closure or stop-level notice, empty when the stop is clear. Per stop (the endpoint
+     * scopes to it), so a closed stop is flagged even when its lines run normally (SPEC
+     * *Disruptions*). Throws on a transport/decode failure, like [arrivals].
+     */
+    suspend fun stopDisruptions(stopId: String): List<StopDisruption>
 }

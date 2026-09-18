@@ -226,6 +226,25 @@ private fun DepartureList(rows: List<DepartureRow>, now: Instant, stale: Boolean
 private fun DepartureRowCard(row: DepartureRow, now: Instant, stale: Boolean) {
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
+            if (row.stopDisruption != null) {
+                // A stop-level status row: the whole stop is disrupted (a closure), so it
+                // leads with the stop, not a line pill, and its departures — if any — are
+                // still shown below in their own rows, marked not suppressed (SPEC D3).
+                Text(text = row.stopName, style = MaterialTheme.typography.titleMedium)
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                ) {
+                    Text(
+                        text = row.stopDisruption,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
+                return@Column
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,

@@ -2,6 +2,7 @@ package app.trackmo.data
 
 import app.trackmo.domain.Departure
 import app.trackmo.domain.LineStatus
+import app.trackmo.domain.StopDisruption
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
 import io.ktor.client.HttpClient
@@ -53,6 +54,20 @@ class KtorTflClient(
             }.body<List<TflLineDto>>().mapNotNull { it.toLineStatus() }
         }
     }
+
+    override suspend fun stopDisruptions(stopId: String): List<StopDisruption> =
+        tflRequest {
+            httpClient.get("$baseUrl/StopPoint/$stopId/Disruption") {
+                // Both default false, which would miss the very closures this exists to
+                // surface (SPEC principle 1): getFamily includes disruptions recorded
+                // against a station's child platforms/entrances (a hub id carries few of
+                // its own), and includeRouteBlockedStops includes a stop blocked by a
+                // route-level disruption.
+                parameter("getFamily", true)
+                parameter("includeRouteBlockedStops", true)
+                if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+            }.body<List<TflStopDisruptionDto>>().mapNotNull { it.toStopDisruptionOrNull() }
+        }
 
     /**
      * Runs a TfL request and maps every transport/decode failure to the domain
