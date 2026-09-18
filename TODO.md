@@ -67,14 +67,11 @@ exercises the whole spine the widget later renders from.
       rate-limited / can't-reach-TfL states), `DepartureRows.across` for the merged
       soonest-first list, and `MainScreenScreenshotTest` (loaded light/dark, empty,
       offline).
-- [ ] **Minimal disruption marking** — the honesty floor the first view can't ship
+- [x] **Minimal disruption marking** — the honesty floor the first view can't ship
       without (SPEC principle 1 / D3); the *full* disruption experience is Phase 3.
-      **The MainScreen slice landed ahead of this**, so until it does, a suspended line's
-      predictions render as ordinary countdowns — the immediate next Phase 1 item, not a
-      gap left open indefinitely. **Landing incrementally**: line-status marking for lines
-      that have predictions, plus the partial-failure ("status unknown") handling, landed
-      in PR #12; the zero-prediction status row and stop closures below are the remaining
-      follow-ups.
+      Landed incrementally across PR #12 (line-status marking + partial-failure handling),
+      PR #14 (zero-prediction status rows), and PR #15 (stop closures). Each bullet below
+      records its PR.
   - `/Line/{ids}/Status` for the shown stops' lines: **[landed, PR #12]** mark a departure
     whose line is disrupted (a chip carrying TfL's status wording); a good-service line is
     left unmarked. **[landed, PR #14]** show a line's status even when it has zero
@@ -84,11 +81,15 @@ exercises the whole spine the widget later renders from.
     lookup now covers declared lines too, and `DepartureRows.across` synthesizes a
     status-only row (empty `upcoming`, sorted first) for a disrupted declared line with no
     prediction rows (SPEC *Departures* / *Disruptions*).
-  - `/StopPoint/{id}/Disruption` for the watched stops: mark or suppress a **closed
-    stop** even when its lines' status is normal — otherwise a closed stop shows
-    valid-looking departures, the same quietly-wrong failure by a different path. A closed
-    stop with **zero predictions** still surfaces as the same direction-independent
-    status row (SPEC *Departures*), so the stop isn't dropped for want of a departure.
+  - `/StopPoint/{id}/Disruption` for the watched stops: **[landed, PR #15]** a stop's own
+    disruption surfaces as a stop-level status row (sorted above the line-status and timed
+    rows) even when its lines' status is normal, so a closed stop isn't shown with
+    valid-looking departures. Trackmo **marks** (keeps the departures, adds the row) rather
+    than suppresses — TfL's closure data is coarse and often absent, so hiding departures on
+    it would risk dropping valid ones; and it surfaces **any** stop disruption rather than
+    classifying closures (that's Phase 3). A closed stop with zero predictions still surfaces
+    the row (SPEC *Departures*), since the row is built from the stop's disruption, not a
+    departure.
   - Handle a **partial refresh** (arrivals succeed, disruption lookup fails): **[landed,
     PR #12]** the line-status lookup failing flags the shown departures "status unknown"
     (a banner) rather than presenting them as verified-clean (SPEC *Disruptions*). Keeping
@@ -112,6 +113,16 @@ exercises the whole spine the widget later renders from.
     per-row from each stop's age rather than one screen-wide flag. This is the design the
     repeated MainScreen review findings point at (deferred from PR #10, Codex P1 on
     `3c4befb`); it deletes the drop-on-partial-refresh class rather than patching it.
+    - **Also decouple a stop's disruption fetch from its arrivals** (deferred from PR #15,
+      Codex P2 on `ba72fa1`): a stop whose *arrivals* request fails is dropped from the
+      snapshot, so its independently-available `/StopPoint/{id}/Disruption` is never
+      fetched and a known closure on it doesn't surface — the same drop-on-partial-refresh
+      class by a different path. The floor holds today (the failed stop shows the partial
+      banner and no false departures, just not its closure text), so this rides the
+      per-stop redesign: fetch arrivals and disruption per stop independently, and let a
+      failed-arrivals-but-disrupted stop still contribute its stop-status row with a
+      per-stop "couldn't refresh" mark — a naive bolt-on onto the current whole-list
+      snapshot would instead risk showing that stop as empty rather than un-refreshed.
 - [ ] Offline / rate-limited / error states rendered honestly (SPEC principles 1–2),
       backed by the persisted snapshot above.
 - [ ] Unit tests for the domain; Robolectric + Roborazzi screenshot tests for the
