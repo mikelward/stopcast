@@ -16,19 +16,23 @@ sealed interface DeparturesUiState {
     data object Loading : DeparturesUiState
 
     /**
-     * The last-good snapshot: the raw [stops] fetched at [fetchedAt]. The screen groups
-     * them into rows against the *current* clock, not [fetchedAt], so a departed service
-     * leaves the list and the countdowns and "updated N ago" stamp stay honest as time
-     * advances between fetches (SPEC D4). Once the fetch is [Staleness]-stale the screen
-     * withholds the countdowns rather than show numbers that are probably wrong.
+     * The last-good snapshot: the raw [stops], each stamped with its own fetch age. The
+     * screen groups them into rows against the *current* clock, not fetch time, so a
+     * departed service leaves the list and the countdowns stay honest as time advances
+     * between fetches (SPEC D4). Once a stop's fetch is [Staleness]-stale the screen
+     * withholds *that stop's* countdowns rather than show numbers that are probably wrong,
+     * per stop — a stop that failed to refresh goes to "—" while a fresh one beside it
+     * stays live. [fetchedAt] is the freshest stop's age, for the whole-screen "updated N
+     * ago" stamp; per-row staleness reads each stop's own age.
      *
      * A snapshot with nothing upcoming is a real state — distinct from [Error] — and the
-     * screen says so. [partialRefresh] is true when some stops came back but at least one
-     * failed: the rows shown are incomplete, so the screen flags it rather than passing an
-     * incomplete list off as the whole picture (SPEC principle 2). [refreshFailure] is set
-     * when a later refresh failed outright and this aged snapshot was kept — the screen
-     * shows the failure explicitly rather than passing stale rows off as fresh, and it
-     * clears on the next successful refresh.
+     * screen says so. [partialRefresh] is true when some stops refreshed but at least one
+     * couldn't and was kept at its older age: the list mixes fresh and aged stops, so the
+     * screen flags it rather than passing a mixed-age list off as one fresh whole (SPEC
+     * principle 2). [refreshFailure] is set when a later refresh got *nothing* fresh and
+     * this whole aged snapshot was kept — the screen shows the failure explicitly rather
+     * than passing stale rows off as fresh, and it clears on the next refresh that gets
+     * anything.
      *
      * [lineStatuses] carries the disruptions found for the shown lines (keyed by line id,
      * disrupted lines only), so a delayed or suspended line's rows are marked rather than

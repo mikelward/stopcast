@@ -123,8 +123,22 @@ private fun LoadedContent(
     refreshing: Boolean,
     modifier: Modifier,
 ) {
-    val stale = remember(state.fetchedAt, now) {
-        Staleness.isStale(Duration.between(state.fetchedAt, now).toKotlinDuration())
+    // Whether an empty list can be trusted as a real "no departures". It can only when
+    // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
+    // stop's empty rows might be expired predictions, not a true absence, and newer
+    // services we couldn't fetch may exist (SPEC D4 / principle 1). So this reads every
+    // stop's age and the partial/failure flags — not the freshest-stop stamp, which would
+    // let one fresh stop mask a stale one's uncertainty. Per-row staleness (the withhold)
+    // is decided per stop inside the card from that row's own age.
+    val emptyStateUncertain = remember(state.stops, state.fetchedAt, state.partialRefresh, state.refreshFailure, now) {
+        state.refreshFailure != null ||
+            state.partialRefresh ||
+            state.stops.any {
+                Staleness.isStale(Duration.between(it.fetchedAt, now).toKotlinDuration())
+            } ||
+            // No retained stops to age individually — fall back to the snapshot stamp, so an
+            // aged empty snapshot (e.g. one restored from storage) still prompts a refresh.
+            (state.stops.isEmpty() && Staleness.isStale(Duration.between(state.fetchedAt, now).toKotlinDuration()))
     }
     // Group against the live clock, not fetch time, so departed services leave the list
     // and the order advances between fetches (SPEC D4). Line statuses stamp each row so a
@@ -163,7 +177,7 @@ private fun LoadedContent(
                     // exist (SPEC D4). Prompt a refresh instead of asserting an empty list.
                     Text(
                         text = stringResource(
-                            if (stale) R.string.departures_stale_empty else R.string.departures_empty,
+                            if (emptyStateUncertain) R.string.departures_stale_empty else R.string.departures_empty,
                         ),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -171,7 +185,7 @@ private fun LoadedContent(
                     RefreshButton(onRefresh, Modifier.padding(top = 16.dp))
                 }
             } else {
-                DepartureList(rows, now, stale, Modifier.fillMaxSize())
+                DepartureList(rows, now, Modifier.fillMaxSize())
             }
         }
     }
@@ -210,20 +224,25 @@ private fun Banner(text: String) {
 }
 
 @Composable
-private fun DepartureList(rows: List<DepartureRow>, now: Instant, stale: Boolean, modifier: Modifier) {
+private fun DepartureList(rows: List<DepartureRow>, now: Instant, modifier: Modifier) {
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(rows, key = { "${it.stopId}|${it.lineId}|${it.directionKey}" }) { row ->
-            DepartureRowCard(row, now, stale)
+            DepartureRowCard(row, now)
         }
     }
 }
 
 @Composable
-private fun DepartureRowCard(row: DepartureRow, now: Instant, stale: Boolean) {
+private fun DepartureRowCard(row: DepartureRow, now: Instant) {
+    // Staleness is per row, from this row's own stop age: a stop that failed to refresh
+    // withholds its countdowns ("—") while a fresh stop beside it stays live (SPEC D4).
+    val stale = remember(row.fetchedAt, now) {
+        Staleness.isStale(Duration.between(row.fetchedAt, now).toKotlinDuration())
+    }
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             if (row.stopDisruption != null) {

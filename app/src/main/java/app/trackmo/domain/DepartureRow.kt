@@ -1,5 +1,7 @@
 package app.trackmo.domain
 
+import java.time.Instant
+
 /**
  * One row of the departures list (SPEC D8): a single **(stop, service, direction)**
  * group — a *service* being a line at a stop — with that group's next departures.
@@ -32,6 +34,11 @@ package app.trackmo.domain
  * rather than a line one (SPEC *Disruptions*). When set, the row is *about the stop*: it
  * carries no line (blank [lineId]/[lineName]/[mode]), no [upcoming] and no [status], and
  * the text is TfL's stop-disruption description. Null on every line and timed row.
+ * [fetchedAt] is the age of the stop this row came from (the snapshot stamps each stop
+ * independently), so the screen withholds *this row's* countdowns when *its* stop is stale
+ * — a stop that failed to refresh goes to "—" while a fresh stop beside it still shows live
+ * numbers (SPEC D4). Rows from the same stop share one value; it is not part of a row's
+ * identity (that is `(stopId, lineId, directionKey)`).
  */
 data class DepartureRow(
     val stopId: String,
@@ -43,6 +50,7 @@ data class DepartureRow(
     val destination: String,
     val mode: String,
     val upcoming: List<Departure>,
+    val fetchedAt: Instant,
     val status: LineStatus? = null,
     val stopDisruption: String? = null,
 )
