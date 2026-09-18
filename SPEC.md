@@ -179,16 +179,24 @@ to offer it.
 ## Privacy
 
 Trackmo handles location and the set of stops the user watches — which together reveal
-where they live, work, and travel. None of it leaves the device except as the TfL
-requests that *are* the product: a nearby-stops lookup necessarily sends coordinates to
-TfL, and a departures lookup necessarily sends the watched stop IDs. That is inherent
-and disclosed. For that claim to hold, the persisted private data — the watched stops,
-the last-good snapshot, and the user's `app_key` — is **excluded from Android's cloud
-backup**, which would otherwise copy DataStore off the device by default; the exact
-mechanism (whole-app `allowBackup=false` vs. targeted data-extraction rules) is an
-implementation choice, but the exclusion is not optional. Nothing else leaves the device
-— no analytics over the user's stops or movements, and
-no coordinate, stop list, or API key in logs, commits, PRs, or fixtures. The on-device
+where they live, work, and travel. Trackmo itself sends none of it anywhere except the
+TfL requests that *are* the product: a nearby-stops lookup necessarily sends coordinates
+to TfL, and a departures lookup necessarily sends the watched stop IDs. That is inherent
+and disclosed.
+
+The persisted config (watched stops, the last-good snapshot, the user's `app_key`) does
+travel through **Android's own backup and device-to-device transfer** — trackmo allows
+both, deliberately, so a phone swap keeps the user's setup rather than losing it
+(maintainer, 2026-09-18; the fleet's "never lose the user's work" over a literal
+never-leaves-the-device wording). This is the platform's user-controlled channel tied to
+the user's own Google account, not an off-device channel trackmo adds: cost £0, and no
+Play Data Safety change (Android Auto Backup is a platform feature, not data trackmo
+collects or transmits). The guarantee is therefore precise, not absolute — *trackmo*
+adds no off-device channel beyond the TfL requests, and the user's own backup/transfer
+carries their config under their control.
+
+Nothing else leaves the device — no analytics over the user's stops or movements, and no
+coordinate, stop list, or API key in logs, commits, PRs, or fixtures. The on-device
 debug log carries coarse diagnostics only: a stop ID, a line id, an HTTP status — never
 a raw coordinate or the user's API key.
 

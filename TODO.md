@@ -46,10 +46,6 @@ exercises the whole spine the widget later renders from.
   - Handle a **partial refresh** (arrivals succeed, disruption lookup fails): keep the
     aged last-good disruption state or mark departures "status unknown" — never present
     them as verified-clean (SPEC *Disruptions*).
-- [ ] **Exclude the persisted private data from cloud backup** (`allowBackup=false` or
-      targeted data-extraction rules) as persistence lands, so watched stops, the
-      snapshot, and the `app_key` don't leave the device via Android Auto Backup (SPEC
-      *Privacy*).
 - [ ] **`docs/PRIVACY.md` describing the debug log's contents** — moved up from Phase 5:
       Phase 1 introduces the logger and Phase 0 the deploy pipeline, so a build carrying
       the log can reach testers now, and AGENTS.md requires the disclosure to exist before
@@ -100,7 +96,14 @@ Builds on Phase 1's minimal line-status marking.
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
 
-## Decisions needing review
+## Decisions
 
-_(Autopilot records reversible guesses here — what was decided, the alternative, and
-why it's reversible. Empty for now.)_
+- **Backup and device-to-device transfer of persisted config — DECIDED**
+  (maintainer, 2026-09-18). Allow **both** Android cloud backup and device-to-device
+  transfer; block neither. A phone swap keeps the user's watched stops, snapshot, and
+  `app_key` (the fleet's "never lose the user's work" over a literal
+  never-leaves-the-device wording). **Not MVP-scope work**: there is nothing to
+  implement — the platform default already backs up and transfers, so no data-extraction
+  rules and no `allowBackup=false`. Cost £0; no Play Data Safety change (Android Auto
+  Backup is a platform feature, not data trackmo collects or transmits). Recorded in
+  SPEC *Privacy*.
