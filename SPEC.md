@@ -107,6 +107,14 @@ destinations** to filter or rank by.
 TfL's endpoint is named "Arrivals"; for a bus stop these are departures *from* that
 stop, which is what a rider wants. Trackmo calls them departures throughout the UI.
 
+Each service wears its line's identity: the line name sits in a pill filled with its
+official TfL line color (Northern black, Central red, …), a bus in London-bus red, so
+the list scans by line the way the network map does. The color is decorative — the line
+name is always text, never color-only — and a mode with no defined color (the Elizabeth
+line, the individually-named Overground lines, trams) falls back to a neutral pill rather
+than an invented shade, since a missing color is a cosmetic gap, not a correctness
+failure.
+
 ### Disruptions
 
 A departure time is worse than useless if the service is cancelled or the stop is

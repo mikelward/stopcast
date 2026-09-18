@@ -222,11 +222,7 @@ private fun DepartureRowCard(row: DepartureRow, now: Instant, stale: Boolean) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = row.lineName,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode)
                 Text(
                     text = stopLabel(row),
                     style = MaterialTheme.typography.labelMedium,

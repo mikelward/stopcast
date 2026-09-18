@@ -17,6 +17,9 @@ package app.trackmo.domain
  * later entries in [upcoming] may differ, but the headline names what leaves next.
  * [upcoming] holds that group's not-yet-departed departures, soonest-first, and is
  * never empty (a group with nothing upcoming produces no row).
+ * [mode] is the group's TfL mode (all its departures share the line, so the mode is
+ * one value), carried so the row can be shown in its mode's identity — a tube line's
+ * color, London-bus red — without the render layer re-deriving it.
  */
 data class DepartureRow(
     val stopId: String,
@@ -26,5 +29,6 @@ data class DepartureRow(
     val direction: String,
     val directionKey: String,
     val destination: String,
+    val mode: String,
     val upcoming: List<Departure>,
 )
