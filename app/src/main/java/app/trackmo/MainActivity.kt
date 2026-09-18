@@ -15,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import app.trackmo.data.DataStoreSnapshotStore
 import app.trackmo.data.KtorTflClient
 import app.trackmo.domain.LineRef
 import app.trackmo.ui.MainScreen
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
                 MainViewModel(
                     client = KtorTflClient(httpClient),
                     seedStops = SEED_STOPS,
+                    snapshotStore = DataStoreSnapshotStore.from(applicationContext),
                 )
             }
         }
