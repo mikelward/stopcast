@@ -1,0 +1,55 @@
+package app.trackmo.domain
+
+import java.time.Instant
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class CountdownTest {
+    private val now: Instant = Instant.parse("2026-09-18T08:00:00Z")
+
+    private fun departure(lineId: String = "victoria", lineName: String = "Victoria", offsetSeconds: Long) =
+        Departure(
+            lineId = lineId,
+            lineName = lineName,
+            destination = "Brixton",
+            platform = null,
+            expectedArrival = now.plusSeconds(offsetSeconds),
+        )
+
+    @Test
+    fun `inside the last minute reads Due, otherwise whole minutes`() {
+        assertEquals("Due", Countdown.label(departure(offsetSeconds = 30), now))
+        assertEquals("Due", Countdown.label(departure(offsetSeconds = 59), now))
+        assertEquals("1 min", Countdown.label(departure(offsetSeconds = 60), now))
+        assertEquals("1 min", Countdown.label(departure(offsetSeconds = 119), now))
+        assertEquals("3 min", Countdown.label(departure(offsetSeconds = 180), now))
+    }
+
+    @Test
+    fun `a service reaching zero has departed`() {
+        assertFalse(Countdown.hasDeparted(departure(offsetSeconds = 1), now))
+        assertTrue(Countdown.hasDeparted(departure(offsetSeconds = 0), now))
+        assertTrue(Countdown.hasDeparted(departure(offsetSeconds = -10), now))
+    }
+
+    @Test
+    fun `upcoming drops departed services and sorts soonest-first`() {
+        val gone = departure(lineName = "Northern", offsetSeconds = -30)
+        val soon = departure(lineName = "Central", offsetSeconds = 120)
+        val later = departure(lineName = "Bakerloo", offsetSeconds = 600)
+
+        val upcoming = Countdown.upcoming(listOf(later, gone, soon), now)
+
+        assertEquals(listOf(soon, later), upcoming)
+    }
+
+    @Test
+    fun `ties at the same time break by line for a stable order`() {
+        val central = departure(lineId = "central", lineName = "Central", offsetSeconds = 120)
+        val bakerloo = departure(lineId = "bakerloo", lineName = "Bakerloo", offsetSeconds = 120)
+
+        assertEquals(listOf(bakerloo, central), Countdown.upcoming(listOf(central, bakerloo), now))
+    }
+}
