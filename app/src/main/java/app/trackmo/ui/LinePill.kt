@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -74,22 +75,38 @@ fun textColorOn(fill: Color): Color {
 fun haloFor(text: Color): Color =
     (if (text == Color.Black) Color.White else Color.Black).copy(alpha = HALO_ALPHA)
 
-private const val HALO_ALPHA = 0.6f
+private const val HALO_ALPHA = 0.72f
+
+/**
+ * A border tone for a colored pill: the fill nudged toward its own contrasting text color,
+ * so every pill stays outlined against the card in both themes — a light-ish fill (Circle
+ * yellow, most lines) darkens into a defined edge on a light card, while a near-black fill
+ * (Northern) lightens into a gray edge that survives the dark theme's near-black surface. A
+ * dark fill already separates from a light card by its own darkness, and a light fill from
+ * a dark card, so nudging toward the text color always moves the edge the useful way. Tied
+ * to the line's color rather than a flat neutral, so the outline reads as part of the line.
+ */
+fun borderColorOn(fill: Color): Color = lerp(fill, textColorOn(fill), BORDER_BLEND)
+
+private const val BORDER_BLEND = 0.4f
 
 /**
  * The line name in its line's color — a filled pill, so the list scans by line at a
  * glance. An outline defines every pill and, in particular, keeps a black Northern pill
  * visible against the dark theme's near-black surface; the text color flips to stay
- * legible on the fill, with a faint halo lifting it off the mid-luminance fills where the
- * contrast is tightest (Bakerloo, Victoria). A line/mode with no defined color (see
- * [lineFillColor]) shows a neutral pill rather than an invented one — and no halo, since
- * the theme already guarantees its contrast.
+ * legible on the fill, with a halo lifting it off the mid-luminance fills where the
+ * contrast is tightest (Bakerloo brown, where WCAG makes black-vs-white a near-tie). The
+ * label is bold, and the outline is the line's own color nudged for contrast (see
+ * [borderColorOn]) so it reads as part of the line. A line/mode with no defined color (see
+ * [lineFillColor]) shows a neutral pill rather than an invented one — a neutral theme
+ * outline and no halo, since the theme already guarantees its contrast.
  */
 @Composable
 fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier = Modifier) {
     val fill = lineFillColor(lineId, mode)
     val background = fill ?: MaterialTheme.colorScheme.surfaceVariant
     val content = if (fill == null) MaterialTheme.colorScheme.onSurfaceVariant else textColorOn(fill)
+    val borderColor = if (fill == null) MaterialTheme.colorScheme.outlineVariant else borderColorOn(fill)
     // Zero-offset blurred shadow = a symmetric glow around the glyphs. Only for a defined
     // fill; the neutral pill's theme colors are already contrast-safe.
     val haloBlurPx = with(LocalDensity.current) { 2.dp.toPx() }
@@ -101,7 +118,7 @@ fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier 
         color = background,
         contentColor = content,
         shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = BorderStroke(1.5.dp, borderColor),
         // The caller caps the width (to a fraction of the card) so a long name at a large
         // font ellipsizes rather than starving the countdown; the label already ellipsizes.
         modifier = modifier,
@@ -109,7 +126,7 @@ fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier 
         Text(
             text = lineName,
             style = textStyle,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
