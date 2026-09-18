@@ -9,10 +9,16 @@ import org.junit.Test
 class CountdownTest {
     private val now: Instant = Instant.parse("2026-09-18T08:00:00Z")
 
-    private fun departure(lineId: String = "victoria", lineName: String = "Victoria", offsetSeconds: Long) =
+    private fun departure(
+        lineId: String = "victoria",
+        lineName: String = "Victoria",
+        direction: String = "outbound",
+        offsetSeconds: Long,
+    ) =
         Departure(
             lineId = lineId,
             lineName = lineName,
+            direction = direction,
             destination = "Brixton",
             platform = null,
             expectedArrival = now.plusSeconds(offsetSeconds),
