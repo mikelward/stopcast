@@ -1,6 +1,7 @@
 package app.trackmo.ui
 
 import app.trackmo.domain.Departure
+import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
@@ -48,11 +49,15 @@ class MainViewModelTest {
         val byStop: Map<String, Result<List<Departure>>>,
         val statuses: Result<List<LineStatus>> = Result.success(emptyList()),
     ) : TflClient {
+        var requestedLineIds: Collection<String>? = null
+
         override suspend fun arrivals(stopId: String): List<Departure> =
             byStop.getValue(stopId).getOrThrow()
 
-        override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> =
-            statuses.getOrThrow()
+        override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+            requestedLineIds = lineIds
+            return statuses.getOrThrow()
+        }
     }
 
     private fun status(lineId: String, severity: Int, description: String) =
@@ -190,6 +195,42 @@ class MainViewModelTest {
         assertEquals(setOf("victoria"), state.lineStatuses.keys)
         assertTrue(state.disruptionUnknown)
     }
+
+    @Test
+    fun `fetches status for declared lines and carries them, so a no-prediction line is known`() =
+        runTest(dispatcher) {
+            val client = FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    // King's Cross returns no arrivals for its declared Circle line.
+                    "940GZZLUKSX" to Result.success(emptyList()),
+                ),
+                statuses = Result.success(listOf(status("circle", 2, "Suspended"))),
+            )
+            val vm = MainViewModel(
+                client,
+                listOf(
+                    StopRef("940GZZLUOXC", "Oxford Circus", listOf(LineRef("victoria", "Victoria", "tube"))),
+                    StopRef("940GZZLUKSX", "King's Cross St. Pancras", listOf(LineRef("circle", "Circle", "tube"))),
+                ),
+                clock = { now },
+                io = dispatcher,
+            )
+            advanceUntilIdle()
+
+            // Circle has no prediction, but as a declared line it's still status-checked —
+            // that's what lets it surface as a status row rather than vanish.
+            assertTrue(client.requestedLineIds!!.contains("circle"))
+            val state = vm.state.value
+            assertTrue(state is DeparturesUiState.Loaded)
+            state as DeparturesUiState.Loaded
+            assertEquals("Suspended", state.lineStatuses["circle"]?.description)
+            // The declared lines travel through to the snapshot for the screen's grouping.
+            assertEquals(
+                listOf("circle"),
+                state.stops.single { it.stopId == "940GZZLUKSX" }.lines.map { it.id },
+            )
+        }
 
     @Test
     fun `a departure with a blank line id leaves the disruption state unknown`() = runTest(dispatcher) {

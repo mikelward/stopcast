@@ -3,6 +3,7 @@ package app.trackmo.domain
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DepartureRowsTest {
@@ -207,6 +208,42 @@ class DepartureRowsTest {
         ).associateBy { it.lineId }
         assertEquals("Severe Delays", acrossRows.getValue("victoria").status?.description)
         assertNull(acrossRows.getValue("northern").status)
+    }
+
+    @Test
+    fun `a disrupted declared line with no predictions becomes a status row, sorted first`() {
+        val victoria = departure("victoria", "Victoria", "outbound", "Brixton", 120)
+        val stop = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            departures = listOf(victoria),
+            lines = listOf(
+                LineRef("victoria", "Victoria", "tube"), // has a prediction → no status row
+                LineRef("circle", "Circle", "tube"), // disrupted, no prediction → status row
+                LineRef("northern", "Northern", "tube"), // good service → no row at all
+            ),
+        )
+        val statuses = mapOf(
+            "circle" to LineStatus("circle", 2, "Suspended"),
+            "victoria" to LineStatus("victoria", 6, "Severe Delays"),
+            "northern" to LineStatus("northern", LineStatus.GOOD_SERVICE, "Good Service"),
+        )
+
+        val rows = DepartureRows.across(listOf(stop), now, statuses)
+
+        assertEquals(2, rows.size)
+        // The Circle status row sorts first — no countdown, direction-independent.
+        val statusRow = rows[0]
+        assertEquals("circle", statusRow.lineId)
+        assertEquals(STATUS_DIRECTION_KEY, statusRow.directionKey)
+        assertEquals("", statusRow.direction)
+        assertTrue(statusRow.upcoming.isEmpty())
+        assertEquals("Suspended", statusRow.status?.description)
+        // Victoria has predictions, so it's a timed row marked with its status — not a
+        // second status row. Northern is good service with no predictions → no row.
+        assertEquals("victoria", rows[1].lineId)
+        assertEquals(listOf(victoria), rows[1].upcoming)
+        assertEquals("Severe Delays", rows[1].status?.description)
     }
 
     @Test
