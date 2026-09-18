@@ -113,6 +113,30 @@ Builds on Phase 1's minimal line-status marking.
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
 
+## Open design questions
+
+- **How to show each route's direction / destination in the departures view**
+  (Phase 1–2, maintainer to decide). A stop/line usually runs two ways; how does a card
+  present them? Options raised:
+  - **Flat list** — every direction its own row. Simplest, fully glanceable, nothing
+    hidden; but can get long, and the widget has little room.
+  - **Swipe a card left/right** to change direction/destination. Compact, but hides state
+    behind an interaction — weak for a glance surface, and a lock-screen widget can't
+    easily be swiped.
+  - **Configure per stop in settings** — builds on D2's per-stop line/direction filters
+    (already planned); explicit, no hidden state, but setup effort.
+  - **Star a card to bubble it to the top** — lightweight prioritization over the flat
+    list.
+  - **Smart selection** — add Home and Work and show whichever you're *not* near, and/or
+    pick direction by time of day (morning → work, evening → home). Powerful, but
+    location- and heuristic-dependent, and the widget is deliberately location-free at
+    refresh time (D1) — a wrong guess is its own quietly-wrong risk.
+
+  Lean (undecided): default to the **flat list honoring D2's per-stop direction/line
+  filters**, with **starring to reorder**; treat swipe and the smart Home/Work +
+  time-of-day behaviors as later enhancements once the basic view is on a device. Settle
+  when the Phase 1 `MainScreen` and Phase 2 filters are built.
+
 ## Decisions
 
 - **Backup and device-to-device transfer of persisted config — DECIDED**
