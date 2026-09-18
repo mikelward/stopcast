@@ -247,6 +247,35 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `a stop disruption becomes a stop-status row, sorted above line and timed rows`() {
+        val victoria = departure("victoria", "Victoria", "outbound", "Brixton", 120)
+        val stop = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            departures = listOf(victoria),
+            lines = listOf(LineRef("circle", "Circle", "tube")), // suspended, no prediction
+            disruptions = listOf(StopDisruption("Station closed until further notice")),
+        )
+        val statuses = mapOf("circle" to LineStatus("circle", 2, "Suspended"))
+
+        val rows = DepartureRows.across(listOf(stop), now, statuses)
+
+        // Rank order: stop-status (whole stop) first, then the Circle line-status row,
+        // then the Victoria timed row.
+        assertEquals(3, rows.size)
+        val stopStatus = rows[0]
+        assertEquals("Station closed until further notice", stopStatus.stopDisruption)
+        assertEquals("", stopStatus.lineId)
+        assertEquals(STOP_STATUS_DIRECTION_KEY, stopStatus.directionKey)
+        assertTrue(stopStatus.upcoming.isEmpty())
+        assertNull(stopStatus.status)
+        assertEquals("circle", rows[1].lineId)
+        assertTrue(rows[1].upcoming.isEmpty())
+        assertEquals("victoria", rows[2].lineId)
+        assertEquals(listOf(victoria), rows[2].upcoming)
+    }
+
+    @Test
     fun `no upcoming departures yields no rows`() {
         val gone = departure("victoria", "Victoria", "outbound", "Brixton", -60)
 

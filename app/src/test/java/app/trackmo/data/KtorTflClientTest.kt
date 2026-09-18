@@ -114,6 +114,21 @@ class KtorTflClientTest {
         ]
         """.trimIndent()
 
+    // A recorded /StopPoint/{id}/Disruption fixture: a stop-level notice plus a
+    // blank-description entry that must be dropped. Public station text only.
+    private val disruptionJson =
+        """
+        [
+          {
+            "${'$'}type": "Tfl.Api.Presentation.Entities.Disruption",
+            "atcoCode": "940GZZLUKSX",
+            "description": "Station closed until further notice.",
+            "closureText": "stationClosed"
+          },
+          { "description": "" }
+        ]
+        """.trimIndent()
+
     private fun client(
         body: String,
         status: HttpStatusCode = HttpStatusCode.OK,
@@ -221,6 +236,26 @@ class KtorTflClientTest {
         val statuses = client(statusJson, capture = { calls++ }).lineStatuses(emptyList())
         assertEquals(0, calls)
         assertTrue(statuses.isEmpty())
+    }
+
+    @Test
+    fun `parses stop disruptions, dropping blank descriptions`() = runTest {
+        val disruptions = client(disruptionJson).stopDisruptions("940GZZLUKSX")
+
+        assertEquals(1, disruptions.size)
+        assertEquals("Station closed until further notice.", disruptions[0].description)
+    }
+
+    @Test
+    fun `requests the stop Disruption endpoint, including family and route-blocked stops`() = runTest {
+        var captured: HttpRequestData? = null
+        client(disruptionJson, capture = { captured = it }).stopDisruptions("940GZZLUKSX")
+        val req = checkNotNull(captured)
+        assertEquals("/StopPoint/940GZZLUKSX/Disruption", req.url.encodedPath)
+        // Without these a closure recorded against a child platform/entrance, or a
+        // route-blocked stop, would be missed (SPEC principle 1).
+        assertEquals("true", req.url.parameters["getFamily"])
+        assertEquals("true", req.url.parameters["includeRouteBlockedStops"])
     }
 
     @Test

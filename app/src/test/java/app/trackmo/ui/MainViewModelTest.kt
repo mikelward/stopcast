@@ -3,6 +3,7 @@ package app.trackmo.ui
 import app.trackmo.domain.Departure
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
+import app.trackmo.domain.StopDisruption
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
 import java.time.Instant
@@ -48,6 +49,7 @@ class MainViewModelTest {
     private class FakeClient(
         val byStop: Map<String, Result<List<Departure>>>,
         val statuses: Result<List<LineStatus>> = Result.success(emptyList()),
+        val disruptionsByStop: Map<String, Result<List<StopDisruption>>> = emptyMap(),
     ) : TflClient {
         var requestedLineIds: Collection<String>? = null
 
@@ -58,6 +60,9 @@ class MainViewModelTest {
             requestedLineIds = lineIds
             return statuses.getOrThrow()
         }
+
+        override suspend fun stopDisruptions(stopId: String): List<StopDisruption> =
+            (disruptionsByStop[stopId] ?: Result.success(emptyList())).getOrThrow()
     }
 
     private fun status(lineId: String, severity: Int, description: String) =
@@ -123,6 +128,8 @@ class MainViewModelTest {
             }
 
             override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
         }
         val vm = viewModel(client)
         advanceUntilIdle()
@@ -277,6 +284,82 @@ class MainViewModelTest {
         assertTrue(state.lineStatuses.isEmpty())
         assertTrue(state.disruptionUnknown)
     }
+
+    @Test
+    fun `carries a stop's own disruptions into the snapshot`() = runTest(dispatcher) {
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    "940GZZLUKSX" to Result.success(emptyList()),
+                ),
+                disruptionsByStop = mapOf(
+                    "940GZZLUKSX" to Result.success(listOf(StopDisruption("Station closed until further notice"))),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        assertEquals(
+            listOf("Station closed until further notice"),
+            state.stops.single { it.stopId == "940GZZLUKSX" }.disruptions.map { it.description },
+        )
+    }
+
+    @Test
+    fun `a failed stop-disruption lookup flags disruptionUnknown, keeping the arrivals`() = runTest(dispatcher) {
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    "940GZZLUKSX" to Result.success(listOf(departure("northern", "Northern", 120))),
+                ),
+                // Oxford Circus's stop-disruption lookup fails — we can't verify it isn't
+                // closed, so the departures stay but the state is flagged unknown.
+                disruptionsByStop = mapOf("940GZZLUOXC" to Result.failure(TflException.Offline(null))),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertTrue(state is DeparturesUiState.Loaded)
+        state as DeparturesUiState.Loaded
+        assertEquals(listOf("940GZZLUOXC", "940GZZLUKSX"), state.stops.map { it.stopId })
+        assertTrue(state.disruptionUnknown)
+    }
+
+    @Test
+    fun `stamps the snapshot from the start of the fetch, not after the request chain`() =
+        runTest(dispatcher) {
+            val start = now
+            var current = start
+            // Each request "takes" time, advancing the clock — as a slow TfL or many
+            // stops would. The stamp must reflect the start, or the oldest departures read
+            // as just-updated and the stale cutoff slips by the whole chain (SPEC D4).
+            val client = object : TflClient {
+                override suspend fun arrivals(stopId: String): List<Departure> {
+                    current = current.plusSeconds(30)
+                    return listOf(departure("victoria", "Victoria", 300))
+                }
+
+                override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+                override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                    current = current.plusSeconds(30)
+                    return emptyList()
+                }
+            }
+            val vm = MainViewModel(client, seeds, clock = { current }, io = dispatcher)
+            advanceUntilIdle()
+
+            val state = vm.state.value
+            assertTrue(state is DeparturesUiState.Loaded)
+            state as DeparturesUiState.Loaded
+            assertEquals(start, state.fetchedAt)
+        }
 
     @Test
     fun `an empty seed yields an empty Loaded state, not a network error`() = runTest(dispatcher) {

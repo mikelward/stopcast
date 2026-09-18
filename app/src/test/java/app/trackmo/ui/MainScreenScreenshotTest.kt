@@ -14,6 +14,7 @@ import app.trackmo.domain.Departure
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
 import app.trackmo.domain.StopArrivals
+import app.trackmo.domain.StopDisruption
 import app.trackmo.ui.theme.TrackmoTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import java.time.Instant
@@ -90,6 +91,9 @@ class MainScreenScreenshotTest {
                 dep("central", "Central", "eastbound", "Woodford", 600, "Platform 3"),
                 dep("bakerloo", "Bakerloo", "northbound", "Harrow & Wealdstone", 300, "Platform 2"),
             ),
+            // A stop-level disruption: the station is flagged (a stop-status row), while
+            // its departures still show below (marked, not suppressed).
+            disruptions = listOf(StopDisruption("Station closed until further notice")),
         ),
     )
 
@@ -117,6 +121,8 @@ class MainScreenScreenshotTest {
         // Circle is suspended with no arrivals, so it surfaces as a status row.
         composeRule.onNodeWithText("Suspended").assertExists()
         composeRule.onNodeWithText("No departures").assertExists()
+        // Oxford Circus has a stop-level disruption, shown as a stop-status row.
+        composeRule.onNodeWithText("Station closed until further notice").assertExists()
     }
 
     @Test
