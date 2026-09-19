@@ -533,6 +533,17 @@ Builds on Phase 1's minimal line-status marking.
       show a disruption at all** when it's not relevant to most journeys through the stop (the
       observed case was a detour miles away), with any relevance test still erring toward showing
       over hiding (SPEC principle 1 — a wrongly-hidden real disruption is worse than an extra one).
+- [ ] **Make the disruption chip lighter-weight than a full row** (requested 2026-09-19,
+      on-device). The shipped "Special Service" (and other status) chip takes a whole row,
+      which reads as too heavy for what it conveys — the maintainer suggested a warning
+      triangle (or similar compact affordance) instead. Refines the shipped Phase 1 status
+      chip's density without dropping the signal (SPEC principle 1/2 — the disruption must
+      still be visible and, ideally, tappable to the fuller detail once the Phase 2/3 detail
+      surface exists). Design the compact form before building. **Constraint:** the glance
+      surface (the widget) must still show SPEC's one-line disruption summary + count
+      (`SPEC.md` *Disruptions*) — a screen-reader-only label or an optional tap doesn't satisfy
+      sighted at-a-glance use, so icon-only is a **card** option; on the widget the compact
+      icon accompanies the visible summary rather than replacing it.
 - [ ] **Commute disruption announcements, without being noisy** (requested 2026-09-19,
       on-device). Notify the user of a disruption to *their* commute — a watched line/stop on
       the routes they take — but only when it matters: scoped to their working-hours / trip
