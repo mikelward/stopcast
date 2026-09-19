@@ -51,8 +51,17 @@ class NearbyStopsViewModel(
         /** Resolving: a fix and the nearby lookup are in flight — show a placeholder. */
         data object Locating : State
 
-        /** Located, with the nearest stops to hand to the departures view. */
-        data class Ready(val stops: List<StopRef>) : State
+        /**
+         * Located, with the nearest stops to hand to the departures view. [distanceMeters]
+         * (`stopId` → meters from the fix) lets the departures list collapse a line that
+         * several adjacent nearby stops serve down to its nearest stop (SPEC *Finding stops
+         * → Near me now*); it stays in memory for that on-demand render and never reaches a
+         * log or the persisted snapshot (SPEC *Privacy*).
+         */
+        data class Ready(
+            val stops: List<StopRef>,
+            val distanceMeters: Map<String, Double>,
+        ) : State
 
         /** Permission held but no position available (location off, or no fix yet). */
         data object NoLocation : State
@@ -106,8 +115,22 @@ class NearbyStopsViewModel(
             }
             val nearest = NearestStops.nearest(found, fix.latitude, fix.longitude, limit)
             _state.value =
-                if (nearest.isEmpty()) State.Empty
-                else State.Ready(nearest.map { StopRef(id = it.id, name = it.name, lines = it.lines) })
+                if (nearest.isEmpty()) {
+                    State.Empty
+                } else {
+                    // Distance per stop (in memory only) so the departures list can show a line
+                    // once, from its nearest stop, rather than once per adjacent stop (SPEC
+                    // *Finding stops → Near me now*). Never logged or persisted (SPEC *Privacy*).
+                    val distances = nearest.associate {
+                        it.id to NearestStops.distanceMeters(
+                            fix.latitude, fix.longitude, it.latitude, it.longitude,
+                        )
+                    }
+                    State.Ready(
+                        stops = nearest.map { StopRef(id = it.id, name = it.name, lines = it.lines) },
+                        distanceMeters = distances,
+                    )
+                }
         }
     }
 

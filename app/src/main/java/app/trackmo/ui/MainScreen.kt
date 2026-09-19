@@ -75,6 +75,9 @@ fun MainScreen(
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
     refreshing: Boolean = false,
+    // From "near me now" (`stopId` → meters): collapse a line served by several adjacent
+    // nearby stops to its nearest stop. Empty for a location-free list, shown unchanged.
+    stopDistanceMeters: Map<String, Double> = emptyMap(),
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -102,7 +105,8 @@ fun MainScreen(
                 )
             }
 
-            is DeparturesUiState.Loaded -> LoadedContent(state, now, onRefresh, refreshing, content)
+            is DeparturesUiState.Loaded ->
+                LoadedContent(state, now, onRefresh, refreshing, content, stopDistanceMeters)
 
             is DeparturesUiState.Error ->
                 // Under the pull box with a scrollable child so a downward swipe refreshes
@@ -127,6 +131,7 @@ private fun LoadedContent(
     onRefresh: () -> Unit,
     refreshing: Boolean,
     modifier: Modifier,
+    stopDistanceMeters: Map<String, Double> = emptyMap(),
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -148,8 +153,13 @@ private fun LoadedContent(
     // Group against the live clock, not fetch time, so departed services leave the list
     // and the order advances between fetches (SPEC D4). Line statuses stamp each row so a
     // disrupted line is marked (SPEC D3). Cheap and pure.
-    val rows = remember(state.stops, state.lineStatuses, now) {
-        DepartureRows.across(state.stops, now, state.lineStatuses)
+    val rows = remember(state.stops, state.lineStatuses, now, stopDistanceMeters) {
+        val across = DepartureRows.across(state.stops, now, state.lineStatuses)
+        // A "near me now" list (distances present) shows a line once, from its nearest stop,
+        // instead of once per adjacent stop it passes (SPEC *Finding stops → Near me now*).
+        // A location-free list has no distances and is shown as grouped.
+        if (stopDistanceMeters.isEmpty()) across
+        else DepartureRows.nearbyDeduped(across, stopDistanceMeters)
     }
 
     // Pull-to-refresh over the whole loaded surface (SPEC D6).

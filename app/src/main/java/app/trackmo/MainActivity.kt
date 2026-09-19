@@ -100,7 +100,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 when (val state = nearby) {
-                    is NearbyStopsViewModel.State.Ready -> DeparturesForStops(state.stops)
+                    is NearbyStopsViewModel.State.Ready ->
+                        DeparturesForStops(state.stops, state.distanceMeters)
                     else -> LocationGate(
                         state = state,
                         permanentlyDenied = permissionPermanentlyDenied,
@@ -131,7 +132,7 @@ class MainActivity : ComponentActivity() {
      * view resolves fresh each open.
      */
     @Composable
-    private fun DeparturesForStops(stops: List<StopRef>) {
+    private fun DeparturesForStops(stops: List<StopRef>, stopDistanceMeters: Map<String, Double>) {
         val viewModel: MainViewModel = viewModel(
             key = "departures:" + stops.joinToString(",") { it.id },
             factory = viewModelFactory {
@@ -153,6 +154,10 @@ class MainActivity : ComponentActivity() {
             now = tickingNow(),
             onRefresh = viewModel::refresh,
             refreshing = refreshing,
+            // From "near me now": collapse a line served by several adjacent nearby stops to
+            // its nearest stop (SPEC *Finding stops → Near me now*). Empty for a location-free
+            // list (a watched-stops view), which is shown as-is.
+            stopDistanceMeters = stopDistanceMeters,
         )
     }
 
