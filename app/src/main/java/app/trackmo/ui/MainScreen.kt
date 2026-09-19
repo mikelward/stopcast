@@ -5,6 +5,7 @@ package app.trackmo.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -40,7 +41,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
@@ -57,6 +60,7 @@ import app.trackmo.domain.DepartureRows
 import app.trackmo.domain.RelativeTime
 import app.trackmo.domain.Staleness
 import app.trackmo.domain.StarredRow
+import app.trackmo.domain.abbreviateBranch
 import java.time.Duration
 import java.time.Instant
 import kotlin.time.toKotlinDuration
@@ -396,21 +400,24 @@ private fun DepartureRowCard(
                 return@Column
             }
 
-            // The next few times, grouped by destination and ordered soonest-first: the
-            // soonest destination leads, and a branching direction (same line, same
-            // direction, different destinations) keeps each destination on its own line
-            // with its own merged countdown, so a countdown is never read under the wrong
-            // destination (SPEC D8). Take before grouping so the card shows a bounded few
-            // times total. Each destination line renders identically — the leading one is
-            // not styled as a bigger "headline" — so a two-destination card reads as a
-            // parallel pair, not a headline plus an afterthought.
-            val byDestination = row.upcoming.take(MAX_TIMES).groupBy { it.destination }
-            // The soonest group first (it holds `row.destination`), then the rest in their
+            // The next few times, grouped by destination *and branch* and ordered
+            // soonest-first: the soonest group leads, and a branching direction (same line,
+            // same direction) keeps each destination — and each via-branch of one terminus —
+            // on its own line with its own merged countdown, so a countdown is never read
+            // under the wrong destination or the wrong branch (SPEC D8). The branch is in the
+            // key because one terminus can be reached by two trunks (Edgware via Bank and via
+            // Charing Cross), and merging those would show the later train's countdown under
+            // the first train's branch. Take before grouping so the card shows a bounded few
+            // times total. Each line renders identically — the leading one is not styled as a
+            // bigger "headline" — so a multi-line card reads as a parallel set.
+            val grouped = row.upcoming.take(MAX_TIMES).groupBy { it.destination to it.branch }
+            // The soonest group first (it holds the soonest departure), then the rest in their
             // soonest-first encounter order.
+            val leadKey = row.upcoming.firstOrNull()?.let { it.destination to it.branch }
             val destinationLines = buildList {
-                byDestination[row.destination]?.let { add(row.destination to it) }
-                byDestination.forEach { (destination, times) ->
-                    if (destination != row.destination) add(destination to times)
+                leadKey?.let { key -> grouped[key]?.let { add(Triple(key.first, key.second, it)) } }
+                grouped.forEach { (key, times) ->
+                    if (key != leadKey) add(Triple(key.first, key.second, times))
                 }
             }
 
@@ -425,7 +432,7 @@ private fun DepartureRowCard(
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = pillAlignment) {
                 LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
                 Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                    destinationLines.forEachIndexed { index, (destination, times) ->
+                    destinationLines.forEachIndexed { index, (destination, branch, times) ->
                         DestinationLine(
                             // The destination, or the direction key (direction word, else
                             // platform) as a cue when TfL gives no destination, so cards TfL
@@ -435,6 +442,10 @@ private fun DepartureRowCard(
                             times = times,
                             stale = stale,
                             now = now,
+                            // The branch is now part of the group key, so every time in this
+                            // group shares it — the line's branch names this group, not just
+                            // its first departure.
+                            branch = branch,
                             // Space the lines of a branching card apart; the first hugs the
                             // pill's top.
                             modifier = if (index == 0) Modifier else Modifier.padding(top = 8.dp),
@@ -507,19 +518,67 @@ private fun DestinationLine(
     stale: Boolean,
     now: Instant,
     modifier: Modifier = Modifier,
+    // The "via" branch (TfL's `towards`), shown parenthesized after the destination — the
+    // cue a rider uses to pick a train ("Battersea Power (Charing Cross)"). Null for most
+    // services, so the common row never pays the measuring path below.
+    branch: String? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(end = 12.dp),
-        )
+        if (branch == null) {
+            // Common case — no branch, no measuring: the destination takes the space the
+            // countdown leaves and ellipsizes if it must.
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
+            )
+        } else {
+            // The branch is the cue that tells a branching line's two trunks apart, so it
+            // outranks the terminus for space: it keeps its full name where the row can fit
+            // it, falls back to the board's own short form ("Charing Cross" → "Charing X")
+            // where it can't, and the destination truncates to make the room (SPEC
+            // destination-label). Measured against the actual row width so the full name shows
+            // wherever it fits and shortens only when it must — never abbreviated needlessly.
+            BoxWithConstraints(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                val style = MaterialTheme.typography.titleMedium
+                val measurer = rememberTextMeasurer()
+                val full = "($branch)"
+                val labelWidth = remember(label) { measurer.measure(label, style, maxLines = 1).size.width }
+                val fullWidth = remember(full) { measurer.measure(full, style, maxLines = 1).size.width }
+                val gapPx = with(LocalDensity.current) { 8.dp.roundToPx() }
+                val branchText =
+                    if (labelWidth + gapPx + fullWidth <= constraints.maxWidth) full
+                    else "(${abbreviateBranch(branch)})"
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = label,
+                        style = style,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        // Yields to the branch: fill = false so a short label doesn't leave a
+                        // gap before the branch, but it truncates once the branch has taken its
+                        // room.
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Text(
+                        text = branchText,
+                        style = style,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+        }
         if (times.isNotEmpty()) {
             CountdownLabel(times, stale, now)
         }

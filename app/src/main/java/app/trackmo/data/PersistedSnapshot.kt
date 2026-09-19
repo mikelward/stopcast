@@ -57,6 +57,10 @@ internal data class PersistedDeparture(
     val platform: String? = null,
     val expectedArrivalMillis: Long,
     val mode: String,
+    // The "via" branch, when TfL gave one. Nullable with a default, so a snapshot written by
+    // an older build (no branch field) reads back as null — restored departures show no branch
+    // until the next refresh, no version bump needed.
+    val branch: String? = null,
 )
 
 @Serializable
@@ -116,6 +120,7 @@ private fun Departure.toPersisted(): PersistedDeparture =
         platform = platform,
         expectedArrivalMillis = expectedArrival.toEpochMilli(),
         mode = mode,
+        branch = branch,
     )
 
 private fun PersistedDeparture.toDomain(): Departure =
@@ -127,4 +132,5 @@ private fun PersistedDeparture.toDomain(): Departure =
         platform = platform,
         expectedArrival = Instant.ofEpochMilli(expectedArrivalMillis),
         mode = mode,
+        branch = branch,
     )
