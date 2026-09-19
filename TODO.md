@@ -245,16 +245,27 @@ exercises the whole spine the widget later renders from.
     - The natural unit may be a "mode-stop" (all services at a nearby stop); how stops /
       mode-stops / directions map onto the TfL model and API is an **implementation** question
       left open here — this bullet is the policy, not the settled shape (which is in SPEC).
-  - **Near-me-now display order — decided floor, rest open.** The stop *selection* is
-    distance-sorted, but the displayed rows still re-sort **soonest-first**
-    (`DepartureRows.across`, the location-free watched-list order, D1). **Decided (maintainer,
-    2026-09-19): the mode-coverage rows — the stops mixed in from beyond ~0.2 mi to keep a
-    mode represented — render BELOW the inner-ring (~0.2 mi) rows**, so a far river-boat pier
-    or Tube reserved for coverage never floats to the top on a soon countdown. **Still open:**
-    the order *within* each band — pure distance vs soonest-first. Within a card the merged
-    countdowns stay soonest-first regardless. **The current soonest-first display is probably
-    fine for now** (maintainer) — revisit when convenient; implementing the band split needs
-    the per-stop distance in the display layer (now available, #36).
+  - **Near-me-now display order — closest stop first (maintainer, 2026-09-19, supersedes the
+    two-band lean below).** The near-me list now sorts **by stop distance, closest first**
+    (`DepartureRows.byStopDistance`), with **soonest-first only as a same-stop tiebreak** (rows
+    at one stop are equidistant, so time orders them; it never moves a near stop below a far
+    one). Warnings still lead (by `rank`) and starred rows are lifted afterward by `pinStarred`.
+    Applies only on the near-me path (distances present); the location-free watched list keeps
+    `across`'s soonest-first order (D1). A stop missing from the distance map sorts last.
+    - **Why, and why "starting point":** closest-first matches "what can I walk to from here,"
+      and — the incidental win — it **cuts reshuffles**: distance is near-constant between
+      refreshes, so a stop's rows stay grouped and only re-order *within* the stop as
+      countdowns tick, instead of the whole list re-interleaving across stops every tick like
+      global soonest-first did. Accepted cost: the closest stop leads even when nothing leaves
+      it soon (a far stop's imminent departure sits lower) — judged acceptable to **try on a
+      device** and revisit. Not bucketed yet, so fine GPS jitter can still swap near-equal
+      stops; coarse-bucketing distance is the first lever if that reads as churn on-device.
+    - **Superseded (earlier lean, kept for the reasoning):** a two-band order — inner-ring
+      (~0.2 mi) rows first, mode-coverage rows (pulled in from beyond ~0.2 mi) below — so a far
+      coverage Tube/pier never floats up on a soon countdown. Closest-first achieves the same
+      "far coverage stop doesn't jump the queue" outcome without a threshold to tune, so the
+      band split is dropped as the starting point; revisit only if pure distance reads worse on
+      a device than banding would.
 - [ ] **Search for a stop by name or line, and pin it.** Beyond nearby discovery, let the
       user type a **stop/station name** (TfL `/StopPoint/Search`) *or* a **line**
       (`/Line/Search/{query}` — the query is a path segment, not a `?query=` parameter like the

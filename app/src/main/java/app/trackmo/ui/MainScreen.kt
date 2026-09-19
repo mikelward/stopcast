@@ -206,11 +206,18 @@ private fun LoadedContent(
         // A "near me now" list (distances present) shows a line once, from its nearest stop,
         // instead of once per adjacent stop it passes (SPEC *Finding stops → Near me now*).
         // A location-free list has no distances and is shown as grouped.
-        val deduped =
-            if (stopDistanceMeters.isEmpty()) across
-            else DepartureRows.nearbyDeduped(across, stopDistanceMeters)
+        // A "near me now" list (distances present) shows a line once, from its nearest stop,
+        // then orders the rows closest-stop-first (soonest breaks a same-stop tie). A
+        // location-free list has no distances and keeps across's soonest-first order (D1).
+        val ordered =
+            if (stopDistanceMeters.isEmpty()) {
+                across
+            } else {
+                val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters)
+                DepartureRows.byStopDistance(deduped, stopDistanceMeters)
+            }
         // Lift the user's starred services to the top (SPEC D8), warnings still leading.
-        DepartureRows.pinStarred(deduped, starred)
+        DepartureRows.pinStarred(ordered, starred)
     }
 
     // Pull-to-refresh over the whole loaded surface (SPEC D6).
