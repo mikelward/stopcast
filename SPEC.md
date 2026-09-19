@@ -50,7 +50,13 @@ The app finds stops two ways:
 
 - **Near me now** — with location permission, trackmo lists the stops nearest the
   user's current position (TfL `/StopPoint` by coordinates) so pinning the right ones
-  is one tap. This is an in-app, on-demand action, never a background one.
+  is one tap. This is an in-app, on-demand action, never a background one. To keep it
+  fast and honest: a recent cached position is used at once; if a fresh fix is slow or
+  absent, a *somewhat-stale* cached one substitutes for it rather than making the user
+  wait or fail — but only within a bounded age, past which trackmo reports "couldn't get
+  your location" rather than showing a previous location's stops as current (a user who
+  has traveled would be misled). A failure to get a fix is always logged, so a misfire is
+  diagnosable.
 - **Search** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run).
 
