@@ -127,7 +127,11 @@ the card carries the destination and drops both — the countdown, the one thing
 always stay legible, keeps the room. The platform stays in the domain model for a later
 surface (a detail view) but earns no space on the glance card. The destination elides to a
 single line, so a long one ("Harrow & Wealdstone") truncates rather than wrapping the card
-taller or pushing the countdown off the edge. **The one exception is a destination-less
+taller or pushing the countdown off the edge. The destination's **station-type suffix is
+trimmed** the way stop names are — TfL's "Brixton Underground Station" shows as "Brixton"
+(*Concise copy*); the bare " Station" is dropped too, so a terminus like "Battersea Power
+Station" reads "Battersea Power" rather than running longer than every other label. **The
+one exception is a destination-less
 service**: when TfL gives neither a destination nor a "towards", the direction word — or,
 failing that, the platform — is shown *in the destination's place* as the only cue that
 keeps two directions of the same line distinct (never mislabel a countdown). That fallback
