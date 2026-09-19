@@ -362,6 +362,28 @@ code path to maintain. Trackmo does **not** opt out of lock-screen placement (th
 (Android 14 / API 34); the lock-screen *placement* simply appears on devices new enough
 to offer it.
 
+The widget renders the **persisted last-good snapshot** the app writes — never the
+network. It reads the snapshot once when the host asks it to update and renders from it,
+so it can't stall on a fetch, and it stamps the data's age and marks it stale rather than
+passing old times off as live (D4). Its rows **mirror the in-app list**: the same rows
+grouped the same way — one line per (destination, branch), so a branching service's
+divergent trains each keep their own countdown — and the user's **starred** services
+pinned to the top (D8), sharing the domain's grouping and pinning so the two surfaces can't
+drift. It shows the via-branch in the board's short form ("Charing X") since the compact
+widget can't measure how the full name fits. (Reordering the nearby set closest-first is
+not yet mirrored — it needs per-stop distances the snapshot doesn't carry and is moot once
+Phase 2's watched stops replace the interim nearby source.) The app pushes an update whenever it fetches, so the
+widget follows the app's last refresh rather than waking on the OS's periodic schedule
+(battery). Because the widget's host never re-renders it on its own (no periodic update),
+the widget also schedules **one render-only redraw at its staleness boundary**, so a widget
+left untouched after the app closes flips itself to the stale `?` treatment instead of
+holding live-looking countdowns forever (D4) — a single bounded wake per snapshot, not a
+polling cadence, and not a data refresh (fetching new data while the app isn't driving the
+widget stays deferred, D5). **Interim data source**: until Phase 2's user-chosen watched stops exist, the
+widget shows the last *nearby* set the app fetched — "the stops near where you last
+opened the app". Phase 2 replaces that with the watched stops; a live-refresh cadence for
+the widget when the app isn't driving it is deferred (D5).
+
 ## Privacy
 
 Trackmo handles location and the set of stops the user watches — which together reveal
@@ -466,7 +488,11 @@ Mirrors the sibling fleet:
   to refresh".
 - **D5 — Widget refresh is opportunistic and bounded, not aggressive polling.** Tap,
   host update, and a bounded periodic schedule while plausibly visible; degrade to
-  on-demand. The interval is a battery-tuning detail, not a spec guarantee.
+  on-demand. The interval is a battery-tuning detail, not a spec guarantee. Keeping the
+  widget *honest* is separate from refreshing its *data*: because the host never re-renders
+  a static widget on its own, the widget schedules one render-only redraw at its staleness
+  boundary (a single bounded wake per snapshot) so it flips to the stale treatment when the
+  app is closed (D4) — fetching new data on that schedule remains the deferred part.
 - **D6 — The app refreshes on open, on foreground return, on pull-to-refresh, and
   auto-refreshes once a minute while the screen is on** (paused when backgrounded). The
   intended targets — home users and an always-on kiosk display — leave the screen open,

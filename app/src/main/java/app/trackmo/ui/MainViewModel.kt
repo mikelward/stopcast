@@ -60,6 +60,12 @@ class MainViewModel(
     // describes what it carries (both are their own Phase 1 items), so nothing is logged
     // in production until then. The seam stays for tests and that later wiring.
     private val warn: (String) -> Unit = {},
+    // Best-effort widget redraw: poked after a star toggle (so the widget's pinned order updates
+    // at once — SPEC D8) AND after a completed refresh that did NOT save (a failed or aged-only
+    // cycle), so the static RemoteViews recompute the snapshot's age from the current clock and
+    // withhold stale countdowns (SPEC D4) rather than freezing at the last save's stamp. Doesn't
+    // persist anything. No-op by default; MainActivity supplies the widget update.
+    private val redrawWidget: suspend () -> Unit = {},
 ) : ViewModel() {
     private val _state = MutableStateFlow<DeparturesUiState>(DeparturesUiState.Loading)
     val state: StateFlow<DeparturesUiState> = _state.asStateFlow()
@@ -367,11 +373,20 @@ class MainViewModel(
                     withContext(io) {
                         snapshotStore.save(DeparturesSnapshot(newState.stops, newState.fetchedAt))
                     }
+                    // save() pokes the widget itself (WidgetSnapshotStore), so it re-renders with
+                    // the fresh snapshot; no separate redraw needed on this path.
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     warn("snapshot save failed: ${reason(e)}")
                 }
+            } else {
+                // No save this cycle — a failed refresh (kept the aged last-good) or an error.
+                // The widget's RemoteViews are static: without a redraw they keep showing the age
+                // and countdowns from the last save, ageing invisibly and never crossing into the
+                // withheld "?" state (SPEC D4 / principle 2). Poke a best-effort redraw so it
+                // recomputes from the current clock, without overwriting the last-good snapshot.
+                redrawWidgetBestEffort("failed refresh")
             }
         }
         fetchJob = job
@@ -397,7 +412,29 @@ class MainViewModel(
                 // The write didn't take and the store won't re-emit, so the star silently
                 // stays as it was — tell the user rather than let the tap look broken.
                 _starWriteFailed.value = true
+                return@launch
             }
+            // The pin is persisted and the in-app list has already re-ordered off [starred].
+            // The widget redraw is a separate, secondary surface: re-render it now so the star
+            // change shows without waiting for the next fetch (it pins starred rows from the
+            // persisted state — SPEC D8), but a redraw failure is logged only — it must not
+            // report "couldn't save your pin," which is reserved for an actual store failure.
+            redrawWidgetBestEffort("star change")
+        }
+    }
+
+    /**
+     * Redraw the widget, best-effort: a secondary surface, so a failure is logged (sanitized) and
+     * swallowed — it never fails the primary operation. Rethrows [CancellationException] first so
+     * structured concurrency isn't broken. [context] names the trigger for the log line.
+     */
+    private suspend fun redrawWidgetBestEffort(context: String) {
+        try {
+            redrawWidget()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            warn("widget redraw after $context failed: ${reason(e)}")
         }
     }
 

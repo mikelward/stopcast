@@ -65,4 +65,7 @@
     <!-- Shown after a permanent permission denial, where re-requesting can't prompt again. -->
     <string name="location_denied">Turn on location access in Settings to see nearby stops.</string>
     <string name="open_settings">Open settings</string>
+
+    <!-- Shown in the widget picker. -->
+    <string name="widget_description">Live departures from the stops near you</string>
 </resources>

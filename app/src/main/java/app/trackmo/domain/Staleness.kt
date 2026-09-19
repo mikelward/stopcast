@@ -29,4 +29,13 @@ object Staleness {
 
     /** True once a fetch this old should no longer have its countdowns shown. */
     fun isStale(age: Duration): Boolean = age >= THRESHOLD
+
+    /**
+     * Time left before a fetch this old crosses the staleness boundary — for scheduling a
+     * one-shot render-only redraw that flips a *static* surface (the widget, whose host never
+     * re-renders it on its own) to the stale treatment at the boundary. [Duration.ZERO] once
+     * already at or past it: there is nothing left to flip, so the caller schedules nothing.
+     * Clock-free like [isStale]; the caller passes the age.
+     */
+    fun remainingUntilStale(age: Duration): Duration = (THRESHOLD - age).coerceAtLeast(Duration.ZERO)
 }

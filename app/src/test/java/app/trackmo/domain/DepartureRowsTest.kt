@@ -17,6 +17,7 @@ class DepartureRowsTest {
         offsetSeconds: Long,
         platform: String? = null,
         mode: String = "tube",
+        branch: String? = null,
     ) = Departure(
         lineId = lineId,
         lineName = lineName,
@@ -25,7 +26,92 @@ class DepartureRowsTest {
         platform = platform,
         expectedArrival = now.plusSeconds(offsetSeconds),
         mode = mode,
+        branch = branch,
     )
+
+    private fun rowWith(vararg upcoming: Departure): DepartureRow {
+        val soonest = upcoming.first()
+        return DepartureRow(
+            stopId = "940GZZLUEUS",
+            stopName = "Euston",
+            lineId = soonest.lineId,
+            lineName = soonest.lineName,
+            direction = soonest.direction,
+            directionKey = soonest.direction,
+            destination = soonest.destination,
+            mode = soonest.mode,
+            upcoming = upcoming.toList(),
+            fetchedAt = now,
+        )
+    }
+
+    @Test
+    fun `destinationLines yields one group for a non-branching row`() {
+        val row = rowWith(
+            departure("victoria", "Victoria", "outbound", "Brixton", 120),
+            departure("victoria", "Victoria", "outbound", "Brixton", 360),
+        )
+        val lines = DepartureRows.destinationLines(row, maxTimes = 3)
+        assertEquals(1, lines.size)
+        assertEquals("Brixton", lines[0].destination)
+        assertNull(lines[0].branch)
+        assertEquals(2, lines[0].times.size)
+    }
+
+    @Test
+    fun `destinationLines splits a branching direction, soonest group first`() {
+        // Same line and direction, two destinations — the soonest (Brixton) leads, the
+        // divergent one (Walthamstow) keeps its own group and its own times (SPEC D8).
+        val row = rowWith(
+            departure("victoria", "Victoria", "outbound", "Brixton", 120),
+            departure("victoria", "Victoria", "outbound", "Walthamstow Central", 300),
+            departure("victoria", "Victoria", "outbound", "Brixton", 480),
+        )
+        val lines = DepartureRows.destinationLines(row, maxTimes = 3)
+        assertEquals(listOf("Brixton", "Walthamstow Central"), lines.map { it.destination })
+        assertEquals(2, lines[0].times.size)
+        assertEquals(1, lines[1].times.size)
+    }
+
+    @Test
+    fun `destinationLines splits one terminus reached via two branches`() {
+        // The P1 case: same terminus, different trunks. Each branch is its own group with its
+        // own countdown, so a divergent train's time never sits under the wrong branch.
+        val row = rowWith(
+            departure("northern", "Northern", "northbound", "Edgware", 120, branch = "Bank"),
+            departure("northern", "Northern", "northbound", "Edgware", 540, branch = "Charing Cross"),
+        )
+        val lines = DepartureRows.destinationLines(row, maxTimes = 3)
+        assertEquals(2, lines.size)
+        assertEquals(listOf("Bank", "Charing Cross"), lines.map { it.branch })
+        lines.forEach { assertEquals("Edgware", it.destination) }
+    }
+
+    @Test
+    fun `destinationLines caps the countdowns within each group`() {
+        val many = (1..8).map { departure("victoria", "Victoria", "outbound", "Brixton", it * 60L) }
+        val lines = DepartureRows.destinationLines(rowWith(*many.toTypedArray()), maxTimes = 3)
+        assertEquals(1, lines.size)
+        assertEquals(3, lines[0].times.size)
+    }
+
+    @Test
+    fun `destinationLines keeps a divergent destination whose soonest train is past the cap`() {
+        // Three imminent Morden trains fill the first maxTimes, then a Battersea train. Capping
+        // the flat list before grouping would drop Battersea's line entirely; grouping first
+        // keeps it, with its own (single) countdown (SPEC D8).
+        val row = rowWith(
+            departure("northern", "Northern", "southbound", "Morden", 60),
+            departure("northern", "Northern", "southbound", "Morden", 120),
+            departure("northern", "Northern", "southbound", "Morden", 180),
+            departure("northern", "Northern", "southbound", "Battersea Power Station", 240),
+        )
+        val lines = DepartureRows.destinationLines(row, maxTimes = 3)
+        assertEquals(listOf("Morden", "Battersea Power Station"), lines.map { it.destination })
+        assertEquals(3, lines[0].times.size)
+        assertEquals(1, lines[1].times.size)
+        assertEquals(240L, lines[1].times.single().expectedArrival.epochSecond - now.epochSecond)
+    }
 
     @Test
     fun `a two-way line at a stop becomes one row per direction`() {
