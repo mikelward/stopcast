@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import app.trackmo.domain.Departure
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
@@ -443,6 +444,25 @@ class MainScreenScreenshotTest {
         capture("main-error-offline.png", dark = true) {
             MainScreen(DeparturesUiState.Error(DeparturesUiState.Error.Kind.OFFLINE), now, {})
         }
+    }
+
+    @Test
+    fun `the locate action shows left of refresh and invokes the callback`() {
+        var located = false
+        composeRule.setContent {
+            TrackmoTheme(dynamicColor = false) {
+                Surface {
+                    MainScreen(
+                        DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60)),
+                        now,
+                        onRefresh = {},
+                        onLocateHere = { located = true },
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithContentDescription("Stops near me").assertExists().performClick()
+        assertTrue(located)
     }
 
     private fun capture(name: String, dark: Boolean = false, content: @Composable () -> Unit) {

@@ -17,6 +17,9 @@
          trust — say it may be out of date and prompt a refresh (SPEC D4). -->
     <string name="departures_stale_empty">Departures may be out of date</string>
     <string name="refresh">Refresh</string>
+    <!-- Top-bar action left of refresh: re-find stops at the current location; the
+         accessible label for the crosshair icon. Temporary (on-device radius testing). -->
+    <string name="locate_here">Stops near me</string>
     <!-- Shown when some watched stops refreshed but at least one failed. -->
     <string name="partial_refresh">Some stops couldn\'t be refreshed</string>
     <!-- Shown when arrivals loaded but the disruption lookup failed, so these times'
