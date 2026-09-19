@@ -188,8 +188,13 @@ wrong. The exact value is a tuned constant defined in one place in code (and pin
 tests), not in this spec — but there is exactly one, so no two surfaces can disagree
 about when data has gone stale.
 
-- The **app** refreshes on open, on pull-to-refresh, and may auto-refresh while
-  foregrounded.
+- The **app** refreshes on open, on return to the foreground, on pull-to-refresh, and
+  **auto-refreshes once a minute while the screen is on** (paused when backgrounded).
+  The primary targets are home users and an always-on **kiosk** display (see *Non-goals*
+  / D6), where a screen left open all day must keep its predictions live without a manual
+  pull. A failed auto-refresh keeps the last-good departures on screen with a "couldn't
+  refresh" warning rather than blanking — and once the data is truly stale (past the
+  threshold) the per-row countdowns are withheld, so nothing wrong is shown as live.
 - The **widget** refreshes opportunistically — on tap, on host update, and on a
   bounded periodic schedule while it is plausibly visible — and degrades to on-demand
   rather than polling hard in the background (**D5**). The spec's guarantee is honesty
@@ -355,8 +360,13 @@ Mirrors the sibling fleet:
 - **D5 — Widget refresh is opportunistic and bounded, not aggressive polling.** Tap,
   host update, and a bounded periodic schedule while plausibly visible; degrade to
   on-demand. The interval is a battery-tuning detail, not a spec guarantee.
-- **D6 — The app refreshes on open and pull-to-refresh**, and may auto-refresh while
-  foregrounded.
+- **D6 — The app refreshes on open, on foreground return, on pull-to-refresh, and
+  auto-refreshes once a minute while the screen is on** (paused when backgrounded). The
+  intended targets — home users and an always-on kiosk display — leave the screen open,
+  so a one-minute cadence keeps TfL predictions (which update roughly every ~30 s) fresh
+  without a manual pull, while staying a tiny fraction of the keyless per-IP rate budget.
+  A failed tick keeps the last-good departures with a warning (D4), never a blank screen.
+  The interval is one tuned constant in code, not a spec guarantee.
 - **D7 — No baked-in TfL key; works keyless, optional user key for the higher limit.**
   A shared key would pool all users into one bucket and ship a credential; a per-user
   key avoids both. See *Data source*.

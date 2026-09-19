@@ -140,6 +140,7 @@ class MainActivity : ComponentActivity() {
         val state by viewModel.state.collectAsStateWithLifecycle()
         val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
         RefreshOnForeground(viewModel)
+        AutoRefresh(viewModel)
         MainScreen(
             state = state,
             now = tickingNow(),
@@ -208,6 +209,57 @@ internal suspend fun refreshOnForeground(lifecycle: Lifecycle, onForeground: () 
     var firstForeground = true
     lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
         if (firstForeground) firstForeground = false else onForeground()
+    }
+}
+
+/**
+ * Re-fetches on a fixed cadence while the screen is on, so an always-open surface — a
+ * kiosk, or a phone left on the departures screen — keeps its predictions live without a
+ * manual pull (SPEC D5/D6). A failed tick keeps the last-good departures and surfaces a
+ * "couldn't refresh" banner rather than blanking (handled in [MainViewModel]); once truly
+ * stale the per-row countdowns withhold. Gated on the RESUMED lifecycle so a backgrounded
+ * screen isn't woken for nothing (battery); the [delay] runs *before* the first tick, so a
+ * return to the foreground doesn't double-fetch with [refreshOnForeground]. Extracted so
+ * the cadence is unit-testable off a device.
+ */
+internal suspend fun autoRefresh(
+    lifecycle: Lifecycle,
+    intervalMillis: Long = AUTO_REFRESH_MILLIS,
+    isRefreshing: () -> Boolean = { false },
+    onTick: () -> Unit,
+) {
+    lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+        while (true) {
+            delay(intervalMillis)
+            // Skip a tick while a refresh is still running. refresh() cancels the in-flight
+            // fetch, so ticking during a slow refresh — several TfL requests timing out past
+            // one interval — would repeatedly cancel it, starving a cold load at Loading or
+            // keeping an aged screen from ever reaching its "couldn't refresh" state (Codex).
+            // A skipped tick simply waits for the next interval, by which point the refresh
+            // has settled and its result (fresh, or the failure banner) is on screen.
+            if (!isRefreshing()) onTick()
+        }
+    }
+}
+
+/**
+ * How often the on-screen view re-fetches (SPEC D5). One minute keeps TfL predictions
+ * (which update roughly every ~30 s) fresh enough for a glance surface while staying a tiny
+ * fraction of the keyless per-IP rate budget — the intended targets are home users and a
+ * kiosk display, where the request volume is low. Reversible: one constant, pinned by
+ * [app.trackmo.AutoRefreshTest].
+ */
+internal const val AUTO_REFRESH_MILLIS = 60_000L
+
+/** Drives [autoRefresh] from the activity's lifecycle. */
+@Composable
+private fun AutoRefresh(viewModel: MainViewModel) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        autoRefresh(
+            lifecycleOwner.lifecycle,
+            isRefreshing = { viewModel.refreshing.value },
+        ) { viewModel.refresh() }
     }
 }
 
