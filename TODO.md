@@ -235,10 +235,10 @@ exercises the whole spine the widget later renders from.
       distinct destinations with a departure inside the window, and fall back to only the
       single next departure when the window is empty, so a quiet stop still shows
       something. An alternative to a fixed "next few per row"; explore from real use.
-- [ ] (Later, open call) **Line-name chip readability** — improve the line pill's
-      contrast and legibility. Candidate: show the first three letters of the line name
-      and give every chip the same fixed width, so the pills form a tidy column instead of
-      ragged-width blobs. Explore on a device against the current full-name pill.
+- [ ] (Later, open call) **Fixed-width line pills** — the pill now shows the line's
+      three-letter code (shipped); the remaining idea is to give every pill the same fixed
+      width so they form a tidy column instead of ragged-width blobs. Validate the codes
+      and the width on a device.
 - [ ] (Later, open call) **Configurable font size** — the user likes the current dense
       layout; make the text size a setting, with a slightly larger default a candidate.
       (Raised while starting the location work.)

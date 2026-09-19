@@ -185,10 +185,13 @@ class MainScreenScreenshotTest {
         capture("main-line-colors.png") {
             MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
         }
+        // Pills show the short line code; the full name stays the accessible label.
         composeRule.onNodeWithText("DLR").assertExists()
-        composeRule.onNodeWithText("Elizabeth line").assertExists()
-        composeRule.onNodeWithText("Liberty").assertExists()
-        composeRule.onNodeWithText("Tram").assertExists()
+        composeRule.onNodeWithText("ELI").assertExists()
+        composeRule.onNodeWithText("LIB").assertExists()
+        composeRule.onNodeWithText("TRA").assertExists()
+        composeRule.onNodeWithContentDescription("Elizabeth line").assertExists()
+        composeRule.onNodeWithContentDescription("Liberty").assertExists()
     }
 
     @Test
@@ -366,11 +369,13 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        // The pill must not exceed half the card: capped it measures ~157dp, uncapped ~243dp,
-        // so 180dp fails the regression (the timed path missing the cap) and passes the fix.
-        val pillBounds = composeRule.onNodeWithText("Hammersmith & City").getUnclippedBoundsInRoot()
+        // The pill shows the short line code, so even a long line name ("Hammersmith &
+        // City" → "HAM") leaves the pill narrow and the countdown its room at a large font.
+        // (The width cap on the pill modifier stays as a backstop, but the code alone keeps
+        // it well under half the card.)
+        val pillBounds = composeRule.onNodeWithText("HAM").getUnclippedBoundsInRoot()
         val pillWidth = pillBounds.right - pillBounds.left
-        assertTrue("line pill should be capped, was $pillWidth", pillWidth <= 180.dp)
+        assertTrue("line pill should stay narrow, was $pillWidth", pillWidth <= 180.dp)
         // The full merged countdown keeps substantial reserved width (it leads with the
         // soonest times and ellipsizes only its tail if even the whole line is too short),
         // rather than collapsing to zero behind the pill.
