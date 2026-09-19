@@ -23,8 +23,9 @@ import app.trackmo.domain.lineCode
 /**
  * Official TfL line colors for the traditional Underground lines, keyed by TfL's
  * `lineId` — the long-stable colors (Northern black, Central red, Piccadilly dark blue,
- * …). Single-color *modes* (bus, DLR, Elizabeth, Overground, tram) resolve by mode
- * instead (see [modeColors]), since they share one color across every line of the mode.
+ * …). Single-color *modes* (bus, DLR, Elizabeth, tram) resolve by mode instead (see
+ * [modeColors]); the six named Overground lines resolve by id too but render as a hollow
+ * pill (see [overgroundLineColors]).
  */
 private val tubeLineColors: Map<String, Color> = mapOf(
     "bakerloo" to Color(0xFFB36305),
@@ -41,14 +42,36 @@ private val tubeLineColors: Map<String, Color> = mapOf(
 )
 
 /**
+ * The six named Overground lines (TfL's 2024 renaming), keyed by `lineId`, each in its own
+ * line color. Unlike the tube these are drawn as a **hollow** pill — the card surface shows
+ * through, with the line color as the border and label (see [LinePill]) — both because
+ * several of these colors sit close to a tube line's (Windrush red ≈ Central; Mildmay ≈ a
+ * tube blue) and because TfL itself draws the Overground as hollow/parallel lines, so the
+ * hollow shape reads as "Overground, not tube" even where the color collides. A named line
+ * therefore has no *fill* ([lineFillColor] returns null for it); an Overground service whose
+ * id isn't one of these (legacy `london-overground`) falls back to the single mode orange.
+ *
+ * Hex values are TfL's official 2024 Overground line colors, confirmed against TfL's own
+ * published values (the "London Overground" reference, citing TfL's colour standard); the
+ * colour-standard PDF for the named lines is not reachable from CI, so the confirmation was
+ * done from that TfL-cited source when egress was opened for the check.
+ */
+private val overgroundLineColors: Map<String, Color> = mapOf(
+    "lioness" to Color(0xFFEF9600),
+    "mildmay" to Color(0xFF2774AE),
+    "windrush" to Color(0xFFD22730),
+    "weaver" to Color(0xFF893B67),
+    "suffragette" to Color(0xFF5BA763),
+    "liberty" to Color(0xFF606667),
+)
+
+/**
  * Single-color modes, keyed by TfL's `modeName` — every line of the mode shares the color,
  * so these resolve by mode rather than by line id. Buses are TfL's roundel red; DLR
  * turquoise, the Elizabeth line purple, and London Trams green are their TfL line colors.
- *
- * **Overground is a deliberate placeholder**: since the 2024 renaming each named Overground
- * line has its own color *and* a two-tone scheme the single-fill pill can't render, so every
- * Overground line shows the legacy single orange until a two-color pill lands (see SPEC /
- * TODO). Anything not here (e.g. national rail) falls back to a neutral pill.
+ * `overground` is the legacy single orange, a fallback for an Overground service whose line
+ * id isn't one of the six named ones (see [overgroundLineColors]); anything not here (e.g.
+ * national rail) falls back to a neutral pill.
  */
 private val modeColors: Map<String, Color> = mapOf(
     "bus" to Color(0xFFDC241F),
@@ -60,13 +83,24 @@ private val modeColors: Map<String, Color> = mapOf(
 )
 
 /**
- * The pill fill color for a service, or `null` when its line/mode has no defined color yet
- * (so the caller shows a neutral pill). A tube line resolves by [lineId]; a single-color
- * mode (bus, DLR, Elizabeth, Overground, tram) resolves by [mode]; everything else is
- * unmapped for now.
+ * The **solid** pill fill color for a service, or `null` when its line/mode has no solid
+ * fill (so the caller shows a neutral pill or, for a named Overground line, the hollow
+ * treatment). A tube line resolves by [lineId]; a named Overground line has no fill (it is
+ * hollow — see [overgroundAccentColor]); a single-color mode (bus, DLR, Elizabeth, legacy
+ * Overground, tram) resolves by [mode]; everything else is unmapped for now.
  */
-fun lineFillColor(lineId: String, mode: String): Color? =
-    tubeLineColors[lineId] ?: modeColors[mode.lowercase()]
+fun lineFillColor(lineId: String, mode: String): Color? {
+    tubeLineColors[lineId]?.let { return it }
+    if (overgroundLineColors.containsKey(lineId)) return null
+    return modeColors[mode.lowercase()]
+}
+
+/**
+ * The accent color for a named Overground line, or `null` for anything else. A non-null
+ * result means [LinePill] renders a **hollow** pill (surface fill, this color as border and
+ * label) rather than a solid one.
+ */
+fun overgroundAccentColor(lineId: String): Color? = overgroundLineColors[lineId]
 
 /**
  * Black or white text, whichever **APCA** rates as higher-contrast on [fill]. APCA (the
@@ -87,7 +121,7 @@ fun textColorOn(fill: Color): Color {
  * APCA screen luminance for a color: a plain 2.4-power of each sRGB channel (APCA's own
  * transfer curve, not WCAG's piecewise one), weighted by the same coefficients.
  */
-private fun apcaLuminance(color: Color): Double =
+internal fun apcaLuminance(color: Color): Double =
     0.2126 * Math.pow(color.red.toDouble(), 2.4) +
         0.7152 * Math.pow(color.green.toDouble(), 2.4) +
         0.0722 * Math.pow(color.blue.toDouble(), 2.4)
@@ -98,10 +132,9 @@ private val WHITE_APCA_Y = apcaLuminance(Color.White)
 /**
  * Absolute APCA lightness contrast (Lc, 0–~108) of a text luminance on a background
  * luminance — the W3 APCA-0.1.9 constants: a soft black clamp, polarity-aware exponents,
- * and the low-contrast clip. Magnitude only, since [textColorOn] just compares the two
- * candidates; higher is more readable.
+ * and the low-contrast clip. Magnitude only; higher is more readable.
  */
-private fun apcaLc(textLuminance: Double, backgroundLuminance: Double): Double {
+internal fun apcaLc(textLuminance: Double, backgroundLuminance: Double): Double {
     fun clamp(y: Double) = if (y < 0.022) y + Math.pow(0.022 - y, 1.414) else y
     val txt = clamp(textLuminance)
     val bg = clamp(backgroundLuminance)
@@ -142,27 +175,76 @@ fun borderColorOn(fill: Color): Color = lerp(fill, textColorOn(fill), BORDER_BLE
 private const val BORDER_BLEND = 0.4f
 
 /**
- * The line's short [lineCode] (VIC, BAK, …) in its line's color — a filled pill, so the
- * list scans by line at a glance while leaving the row's width for the countdown. The full
- * [lineName] is set as the pill's accessible label, so a screen reader announces "Victoria"
- * rather than the code. An outline defines every pill and, in particular, keeps a black
- * Northern pill
- * visible against the dark theme's near-black surface; the text color flips to stay
- * legible on the fill, with a halo lifting it off the mid-luminance fills where the
- * contrast is tightest (Bakerloo brown, where WCAG makes black-vs-white a near-tie). The
- * label is bold, and the outline is the line's own color nudged for contrast (see
- * [borderColorOn]) so it reads as part of the line. A line/mode with no defined color (see
- * [lineFillColor]) shows a neutral pill rather than an invented one — a neutral theme
- * outline and no halo, since the theme already guarantees its contrast.
+ * A line color adjusted to read on [surface] — for the hollow Overground pill, whose label
+ * and border ARE the line color rather than black/white on a fill. The accent is blended
+ * toward the surface's own contrasting pole (black on a light card, white on a dark one)
+ * only as far as it takes to clear [minLc] APCA — so Mildmay blue reads as-is on white, a
+ * dark accent brightens on the dark card, and Lioness yellow darkens into a legible amber on
+ * white rather than washing out. A fully-blended accent (target pole) is the floor.
+ */
+private fun accentOnSurface(accent: Color, surface: Color, minLc: Double): Color {
+    val target = textColorOn(surface)
+    val bg = apcaLuminance(surface)
+    var t = 0f
+    while (t <= 1f) {
+        val candidate = lerp(accent, target, t)
+        if (apcaLc(textLuminance = apcaLuminance(candidate), backgroundLuminance = bg) >= minLc) {
+            return candidate
+        }
+        t += ACCENT_BLEND_STEP
+    }
+    return target
+}
+
+/** The hollow pill's **label** color: the line accent, legible as text on the surface. */
+fun accentInkOn(accent: Color, surface: Color): Color = accentOnSurface(accent, surface, ACCENT_TEXT_MIN_LC)
+
+/** The hollow pill's **border** color: the line accent, at a lower floor than the label so
+ *  it stays closer to the true line color while still defining the edge. */
+fun accentEdgeOn(accent: Color, surface: Color): Color = accentOnSurface(accent, surface, ACCENT_BORDER_MIN_LC)
+
+private const val ACCENT_BLEND_STEP = 0.1f
+private const val ACCENT_TEXT_MIN_LC = 60.0
+private const val ACCENT_BORDER_MIN_LC = 30.0
+
+/**
+ * The line's short [lineCode] (VIC, BAK, …) in its line's color. Three shapes:
+ * - a **tube/single-color-mode** line is a filled pill — the code in black/white ([textColorOn]),
+ *   the fill the official color, a halo lifting the label on the tightest mid-luminance fills;
+ * - a **named Overground** line is a **hollow** pill — the card surface shows through, with the
+ *   line accent as the border and the label ([accentInkOn]/[accentEdgeOn], nudged to stay
+ *   legible on the surface), so it reads as Overground even where its color is near a tube
+ *   line's;
+ * - a line/mode with **no defined color** is a neutral pill — theme colors, which already
+ *   guarantee their own contrast, so no halo.
+ *
+ * The full [lineName] is the pill's accessible label, so a screen reader announces "Victoria"
+ * rather than "VIC". The label is bold and ellipsizes; the caller caps the width so a long
+ * name doesn't starve the countdown.
  */
 @Composable
 fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier = Modifier) {
-    val fill = lineFillColor(lineId, mode)
-    val background = fill ?: MaterialTheme.colorScheme.surfaceVariant
-    val content = if (fill == null) MaterialTheme.colorScheme.onSurfaceVariant else textColorOn(fill)
-    val borderColor = if (fill == null) MaterialTheme.colorScheme.outlineVariant else borderColorOn(fill)
-    // Zero-offset blurred shadow = a symmetric glow around the glyphs. Only for a defined
-    // fill; the neutral pill's theme colors are already contrast-safe.
+    val accent = overgroundAccentColor(lineId)
+    val fill = if (accent == null) lineFillColor(lineId, mode) else null
+    val surface = MaterialTheme.colorScheme.surface
+
+    val background = when {
+        accent != null -> Color.Transparent
+        fill != null -> fill
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val content = when {
+        accent != null -> accentInkOn(accent, surface)
+        fill != null -> textColorOn(fill)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val borderColor = when {
+        accent != null -> accentEdgeOn(accent, surface)
+        fill != null -> borderColorOn(fill)
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
+    // Zero-offset blurred shadow = a symmetric glow around the glyphs. Only for a solid fill;
+    // the hollow and neutral pills read their color off the surface and need no halo.
     val haloBlurPx = with(LocalDensity.current) { 2.dp.toPx() }
     val textStyle = MaterialTheme.typography.labelLarge.let { base ->
         if (fill != null) base.copy(shadow = Shadow(haloFor(content), Offset.Zero, haloBlurPx))

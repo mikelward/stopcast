@@ -366,11 +366,13 @@ exercises the whole spine the widget later renders from.
       (service, stop, direction) (D8) — every row then names a single unambiguous
       destination (and handles a blank `direction` via `towards`), at the cost of more
       rows for a branching line. Explore against the shipped keying from real use.
-- [ ] (Later) **Two-tone Overground pill.** The 2024 named Overground lines (Lioness,
-      Mildmay, Windrush, Weaver, Suffragette, Liberty) use a two-color banded scheme the
-      single-fill pill can't render, so every Overground line currently shows one
-      placeholder color by mode (SPEC). Needs a two-color pill and a line→colors map to
-      color each named line correctly.
+- [x] **Per-line Overground pills.** The 2024 named Overground lines (Lioness, Mildmay,
+      Windrush, Weaver, Suffragette, Liberty) each show in their own line color, rendered as
+      a **hollow** pill (surface fill, line-color border + label, nudged for contrast on the
+      surface) — this supersedes the earlier two-color banded idea: the hollow shape tells
+      Overground apart from a same-color tube line and matches how TfL draws it (PR #42,
+      SPEC). Follow-up: confirm the six hex values against TfL's colour standard (it isn't
+      reachable from the build environment).
 - [ ] (Later, open call) **Show every destination departing in the next ~30 min, else
       just the next** (D8) — a time-window rule for what a row/list shows: surface all
       distinct destinations with a departure inside the window, and fall back to only the

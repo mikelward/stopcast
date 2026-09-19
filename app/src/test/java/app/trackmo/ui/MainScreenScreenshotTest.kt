@@ -194,6 +194,44 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithContentDescription("Liberty").assertExists()
     }
 
+    // The six named Overground lines (TfL's 2024 renaming), each a hollow pill in its own
+    // line color — the card surface shows through, the accent is the border and label. Public
+    // line/destination names only (SPEC *Privacy*).
+    private fun overgroundStop() = StopArrivals(
+        "910GOVGRND",
+        "Overground",
+        listOf(
+            dep("lioness", "Lioness", "outbound", "Watford Junction", 60, "", mode = "overground"),
+            dep("mildmay", "Mildmay", "outbound", "Stratford", 120, "", mode = "overground"),
+            dep("windrush", "Windrush", "outbound", "West Croydon", 180, "", mode = "overground"),
+            dep("weaver", "Weaver", "outbound", "Chingford", 240, "", mode = "overground"),
+            dep("suffragette", "Suffragette", "outbound", "Barking Riverside", 300, "", mode = "overground"),
+            dep("liberty", "Liberty", "outbound", "Upminster", 360, "", mode = "overground"),
+        ),
+        fetchedAt = now.minusSeconds(60),
+    )
+
+    @Test
+    fun `overground line pills, light`() {
+        capture("main-overground.png") {
+            MainScreen(DeparturesUiState.Loaded(listOf(overgroundStop()), now.minusSeconds(60)), now, {})
+        }
+        // Each named line shows its own hollow pill by its short code.
+        listOf("LIO", "MIL", "WIN", "WEA", "SUF", "LIB").forEach {
+            composeRule.onNodeWithText(it).assertExists()
+        }
+        // The full names stay the accessible labels.
+        composeRule.onNodeWithContentDescription("Mildmay").assertExists()
+        composeRule.onNodeWithContentDescription("Windrush").assertExists()
+    }
+
+    @Test
+    fun `overground line pills, dark`() {
+        capture("main-overground-dark.png", dark = true) {
+            MainScreen(DeparturesUiState.Loaded(listOf(overgroundStop()), now.minusSeconds(60)), now, {})
+        }
+    }
+
     @Test
     fun `mixed age, one stop fresh and one stale`() {
         capture("main-mixed-age.png") {
