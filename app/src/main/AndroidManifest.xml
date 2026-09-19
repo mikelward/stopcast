@@ -27,6 +27,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The home-screen (and, where the OS allows, lock-screen) widget. Glance's receiver
+             handles the APPWIDGET_UPDATE plumbing; the provider meta-data points at the sizing
+             and category config. exported=true because the launcher/host binds it. -->
+        <receiver
+            android:name=".widget.TrackmoWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/trackmo_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

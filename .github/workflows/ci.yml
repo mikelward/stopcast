@@ -92,6 +92,8 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.ui.MainScreenScreenshotTest" -Proborazzi.test.record=true
       - name: Run LocationGate screenshot tests
         run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.ui.LocationGateScreenshotTest" -Proborazzi.test.record=true
+      - name: Run Widget screenshot tests
+        run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.widget.WidgetScreenshotTest" -Proborazzi.test.record=true
       - name: Upload Roborazzi screenshots
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

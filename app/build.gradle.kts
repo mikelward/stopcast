@@ -161,8 +161,15 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore)
+    // Glance: the home-screen (and, where the OS allows, lock-screen) widget. It renders
+    // the persisted departures snapshot; GlanceTheme (glance core) gives light/dark colors.
+    implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // WorkManager schedules the widget's one-shot staleness-boundary redraw (SPEC D4): a single
+    // deferrable wake per snapshot flips a widget left untouched after the app closes to the
+    // stale treatment, since updatePeriodMillis="0" means the host never re-renders it.
+    implementation(libs.androidx.work.runtime)
 
     // The shared on-device debug log, mikelward/androidlog — resolved from the
     // Maven repository declared in settings.gradle.kts. `logging-android`
@@ -184,6 +191,8 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.mock)
+    // Drives the widget staleness-redraw scheduler test on an in-memory WorkManager.
+    testImplementation(libs.androidx.work.testing)
 
     // Robolectric + Roborazzi drive the Compose screenshot tests (SPEC *Testing*):
     // they render MainScreen in each state to a PNG on the JVM, no emulator.
@@ -191,6 +200,12 @@ dependencies {
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.robolectric)
     testImplementation(libs.roborazzi)
+    // Glance widget coverage, two complementary forms: the glance-testing harness asserts
+    // the emitted layout nodes (text, structure) per state (WidgetContentTest), and Roborazzi
+    // pixel-captures the widget by rendering it to RemoteViews and inflating them to a View
+    // (WidgetScreenshotTest), catching clipping/sizing/color the node assertions can't see.
+    testImplementation(libs.androidx.glance.testing)
+    testImplementation(libs.androidx.glance.appwidget.testing)
     // Declares the activity `createAndroidComposeRule<ComponentActivity>` launches.
     // Debug-only, and safe because unit tests run on the debug variant alone here.
     debugImplementation(libs.androidx.compose.ui.test.manifest)

@@ -26,4 +26,19 @@ class StalenessTest {
         assertTrue(Staleness.isStale(5.minutes))
         assertTrue(Staleness.isStale(10.minutes))
     }
+
+    @Test
+    fun `remaining until stale counts down from the threshold`() {
+        // The delay a caller schedules a one-shot staleness redraw after (SPEC D4).
+        assertEquals(5.minutes, Staleness.remainingUntilStale(0.seconds))
+        assertEquals(1.minutes, Staleness.remainingUntilStale(4.minutes))
+        assertEquals(1.seconds, Staleness.remainingUntilStale(4.minutes + 59.seconds))
+    }
+
+    @Test
+    fun `remaining until stale is zero once at or past the threshold`() {
+        // Nothing left to flip, so the caller schedules nothing (or cancels a pending wake).
+        assertEquals(kotlin.time.Duration.ZERO, Staleness.remainingUntilStale(5.minutes))
+        assertEquals(kotlin.time.Duration.ZERO, Staleness.remainingUntilStale(20.minutes))
+    }
 }

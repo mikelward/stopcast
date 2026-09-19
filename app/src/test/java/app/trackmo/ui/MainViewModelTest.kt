@@ -1110,6 +1110,66 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `toggleStar re-renders the widget via redrawWidget`() = runTest(dispatcher) {
+        // The widget pins starred rows from the persisted state, so a star change must poke it
+        // to re-render at once rather than waiting for the next fetch (SPEC D8).
+        var pokes = 0
+        val vm = MainViewModel(
+            FakeClient(emptyMap()),
+            seedStops = emptyList(),
+            clock = { now },
+            io = dispatcher,
+            starredStore = FakeStarredStore(),
+            redrawWidget = { pokes++ },
+        )
+        advanceUntilIdle()
+        vm.toggleStar(row("940GZZLUKSX", "victoria", "southbound"))
+        advanceUntilIdle()
+        assertEquals("a star change pokes the widget to re-render", 1, pokes)
+    }
+
+    @Test
+    fun `a widget redraw failure after a star change does not report a star-write failure`() =
+        runTest(dispatcher) {
+            // The pin persisted and the in-app list re-ordered off the starred flow; the widget is
+            // a secondary surface. A redraw failure is logged only — it must not raise the
+            // write-failed flag ("couldn't save your pin"), which is reserved for a store failure.
+            val store = FakeStarredStore()
+            val victoria = app.trackmo.domain.StarredRow("940GZZLUKSX", "victoria", "southbound")
+            val vm = MainViewModel(
+                FakeClient(emptyMap()),
+                seedStops = emptyList(),
+                clock = { now },
+                io = dispatcher,
+                starredStore = store,
+                redrawWidget = { throw java.io.IOException("widget host unavailable") },
+            )
+            advanceUntilIdle()
+            vm.toggleStar(row("940GZZLUKSX", "victoria", "southbound"))
+            advanceUntilIdle()
+            assertTrue("the star still persisted", vm.starred.value.contains(victoria))
+            assertFalse("a redraw failure is not a star-write failure", vm.starWriteFailed.value)
+        }
+
+    @Test
+    fun `a refresh that saves nothing still pokes a widget redraw`() = runTest(dispatcher) {
+        // A failed refresh keeps the aged last-good and does NOT save, so nothing pokes the widget
+        // via the snapshot store. The widget's RemoteViews are static, so without a redraw its age
+        // and countdowns freeze at the last save (SPEC D4). The ViewModel must poke a best-effort
+        // redraw on the no-save path so the widget recomputes and withholds stale times.
+        var pokes = 0
+        val vm = MainViewModel(
+            FakeClient(mapOf("940GZZLUKSX" to Result.failure(TflException.Offline(null)))),
+            seedStops = listOf(StopRef("940GZZLUKSX", "King's Cross St. Pancras")),
+            clock = { now },
+            io = dispatcher,
+            redrawWidget = { pokes++ },
+        )
+        advanceUntilIdle()
+        assertTrue("a completed refresh with nothing to save redraws the widget", pokes >= 1)
+    }
+
+    @Test
     fun `an already-starred set is exposed on the starred flow at once`() = runTest(dispatcher) {
         val victoria = app.trackmo.domain.StarredRow("940GZZLUKSX", "victoria", "southbound")
         val vm = MainViewModel(

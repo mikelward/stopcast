@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -43,6 +44,9 @@ import app.trackmo.ui.MainViewModel
 import app.trackmo.ui.NearbyStopsViewModel
 import app.trackmo.ui.StopRef
 import app.trackmo.ui.theme.TrackmoTheme
+import app.trackmo.widget.TrackmoWidget
+import app.trackmo.widget.WidgetSnapshotStore
+import androidx.glance.appwidget.updateAll
 import java.time.Instant
 import kotlinx.coroutines.delay
 
@@ -144,13 +148,15 @@ class MainActivity : ComponentActivity() {
      * clears the previous one (cancelling its in-flight fetch) when the set changes, rather
      * than reusing a stale one or accumulating them.
      *
-     * No persisted snapshot for this interim nearby set (`SnapshotStore.NONE`, the default):
-     * the store holds one process-wide snapshot, but the watched set here is derived from
-     * location and changes as the user moves, so restoring it would show a previous
-     * location's departures under the newly-resolved stops — and cards omit the stop name,
-     * so those rows would look like the new stops' (Codex). Proper per-set persistence (and
-     * offline last-good) returns with Phase 2's user-chosen watched stops; until then the
-     * view resolves fresh each open.
+     * The [WidgetSnapshotStore] here is save-only: it writes each authoritative snapshot to
+     * the file the widget reads (and pokes the widget to re-render) but its `load` returns
+     * null, so the in-app view does **not** restore it. That asymmetry is deliberate — the
+     * watched set here is derived from location and changes as the user moves, so restoring
+     * it in-app would show a previous location's departures under the newly-resolved stops,
+     * and cards omit the stop name so those rows would look like the new stops' (Codex).
+     * The widget wants the same last-good the app just fetched, so it gets it; the in-app
+     * view still resolves fresh each open. Proper per-set persistence (and in-app offline
+     * last-good) returns with Phase 2's user-chosen watched stops.
      */
     @Composable
     private fun DeparturesForStops(
@@ -169,6 +175,11 @@ class MainActivity : ComponentActivity() {
         // ownerFor] clears every *other* set's store, cancelling a moved-away set's in-flight
         // fetch. A plain `remember`-created owner did neither: it was recreated on every
         // configuration change, forcing a reload and a fresh TfL fetch on each rotation (Codex).
+        // Capture the application context once so callbacks stored on the retained ViewModel
+        // (onStarsChanged below) close over it rather than over this Activity. The ViewModel
+        // survives configuration changes, so a lambda that resolved `applicationContext` on the
+        // Activity would keep the destroyed Activity reachable until the ViewModel is cleared.
+        val appContext = applicationContext
         val stopsKey = remember(stops) { stops.joinToString(",") { it.id } }
         val stores: NearbyDeparturesStores = viewModel()
         val storeOwner = remember(stopsKey) { stores.ownerFor(stopsKey) }
@@ -179,11 +190,20 @@ class MainActivity : ComponentActivity() {
                         MainViewModel(
                             client = KtorTflClient(httpClient),
                             seedStops = stops,
+                            // Save-only snapshot store: the app writes each fresh snapshot for
+                            // the widget to render, but this nearby set is not restored in-app
+                            // (its load() returns null) — a previous location's stops must not
+                            // resurface under a newly-resolved set.
+                            snapshotStore = WidgetSnapshotStore(applicationContext),
                             // Starring is persisted per row across every nearby set (it's keyed
                             // by row identity, not tied to this stop set), so the store is the
                             // shared process-wide one, not scoped to this ViewModel's key.
-                            starredStore = DataStoreStarredRowsStore.from(applicationContext, warn = ::logStarWarning),
+                            starredStore = DataStoreStarredRowsStore.from(appContext, warn = ::logStarWarning),
                             warn = ::logDepartureWarning,
+                            // Re-render the widget when a star changes (its pinned order — SPEC
+                            // D8) or after a refresh that didn't save, so its age/staleness stays
+                            // current rather than frozen at the last save (SPEC D4).
+                            redrawWidget = { TrackmoWidget().updateAll(appContext) },
                         )
                     }
                 },

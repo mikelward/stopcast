@@ -404,22 +404,11 @@ private fun DepartureRowCard(
             // soonest-first: the soonest group leads, and a branching direction (same line,
             // same direction) keeps each destination — and each via-branch of one terminus —
             // on its own line with its own merged countdown, so a countdown is never read
-            // under the wrong destination or the wrong branch (SPEC D8). The branch is in the
-            // key because one terminus can be reached by two trunks (Edgware via Bank and via
-            // Charing Cross), and merging those would show the later train's countdown under
-            // the first train's branch. Take before grouping so the card shows a bounded few
-            // times total. Each line renders identically — the leading one is not styled as a
+            // under the wrong destination or the wrong branch (SPEC D8). The grouping is the
+            // shared `destinationLines` (the widget uses the same one, so the two surfaces
+            // can't drift); each line renders identically — the leading one is not styled as a
             // bigger "headline" — so a multi-line card reads as a parallel set.
-            val grouped = row.upcoming.take(MAX_TIMES).groupBy { it.destination to it.branch }
-            // The soonest group first (it holds the soonest departure), then the rest in their
-            // soonest-first encounter order.
-            val leadKey = row.upcoming.firstOrNull()?.let { it.destination to it.branch }
-            val destinationLines = buildList {
-                leadKey?.let { key -> grouped[key]?.let { add(Triple(key.first, key.second, it)) } }
-                grouped.forEach { (key, times) ->
-                    if (key != leadKey) add(Triple(key.first, key.second, times))
-                }
-            }
+            val destinationLines = DepartureRows.destinationLines(row, MAX_TIMES)
 
             // The pill sits to the left of the destination line(s). A single-destination
             // card centers the pill against its one line so pill and destination sit level
@@ -432,20 +421,20 @@ private fun DepartureRowCard(
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = pillAlignment) {
                 LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
                 Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                    destinationLines.forEachIndexed { index, (destination, branch, times) ->
+                    destinationLines.forEachIndexed { index, group ->
                         DestinationLine(
                             // The destination, or the direction key (direction word, else
                             // platform) as a cue when TfL gives no destination, so cards TfL
                             // keeps distinct stay distinguishable (SPEC principle 1).
-                            label = DepartureLabels.destinationLabel(destination, row.directionKey)
+                            label = DepartureLabels.destinationLabel(group.destination, row.directionKey)
                                 ?: stringResource(R.string.destination_unknown),
-                            times = times,
+                            times = group.times,
                             stale = stale,
                             now = now,
-                            // The branch is now part of the group key, so every time in this
-                            // group shares it — the line's branch names this group, not just
-                            // its first departure.
-                            branch = branch,
+                            // The branch is part of the group key, so every time in this group
+                            // shares it — the line's branch names this group, not just its
+                            // first departure.
+                            branch = group.branch,
                             // Space the lines of a branching card apart; the first hugs the
                             // pill's top.
                             modifier = if (index == 0) Modifier else Modifier.padding(top = 8.dp),

@@ -91,6 +91,30 @@ object DepartureRows {
         }.sortedWith(rowOrder)
 
     /**
+     * Split [row]'s upcoming departures into per-(destination, branch) lines for rendering,
+     * soonest group first, with each line's countdowns capped to the next [maxTimes] so a card
+     * or widget shows a bounded few *per destination*. A non-branching row yields a single group.
+     *
+     * **Group first, cap within a group** — [maxTimes] bounds the countdowns on each line, not
+     * the flat list before grouping. Capping first would drop a divergent destination whose
+     * soonest train is beyond the first [maxTimes] overall (three imminent Morden trains then a
+     * Battersea): the Battersea line would vanish though it's a valid service (SPEC D8). Every
+     * (destination, branch) group therefore survives; only the times *within* each are bounded.
+     *
+     * Groups come back soonest-first: [row]'s upcoming is soonest-first and `groupBy` keeps
+     * first-encounter order, so the soonest departure's group leads and the rest follow by their
+     * own soonest. The **branch is part of the key** because one terminus can be reached by two
+     * trunks (Edgware via Bank and via Charing Cross), and merging those would label the later
+     * train's countdown with the first train's branch — a countdown must never sit under the
+     * wrong destination *or* branch (SPEC D8). Shared by the in-app card and the widget so the
+     * two surfaces group a branching row identically and neither can drift from the other.
+     */
+    fun destinationLines(row: DepartureRow, maxTimes: Int): List<DestinationGroup> =
+        row.upcoming
+            .groupBy { it.destination to it.branch }
+            .map { (key, times) -> DestinationGroup(key.first, key.second, times.take(maxTimes)) }
+
+    /**
      * Collapse the "near me now" rows so a **(line, direction)** appears once — from the
      * **nearest** stop serving it — instead of once per adjacent stop it passes (SPEC
      * *Finding stops → Near me now*): a bus route stopping three times within the radius
@@ -389,4 +413,17 @@ data class StopArrivals(
     val lines: List<LineRef> = emptyList(),
     val disruptions: List<StopDisruption> = emptyList(),
     val arrivalsFresh: Boolean = true,
+)
+
+/**
+ * One rendered line of a (service, stop, direction) row (see [DepartureRows.destinationLines]):
+ * a single [destination] reached via a single [branch] (TfL's via-trunk, null for most
+ * services), with that group's own soonest-first [times]. A branching row yields several of
+ * these; the soonest leads. Rendered per-surface — the in-app card measures how the branch
+ * fits, the widget shows a compact form — but grouped identically by the shared function.
+ */
+data class DestinationGroup(
+    val destination: String,
+    val branch: String?,
+    val times: List<Departure>,
 )
