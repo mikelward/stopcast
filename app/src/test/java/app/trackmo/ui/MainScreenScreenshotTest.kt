@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -66,6 +67,7 @@ class MainScreenScreenshotTest {
         offsetSeconds: Long,
         platform: String,
         mode: String = "tube",
+        branch: String? = null,
     ) = Departure(
         lineId = lineId,
         lineName = lineName,
@@ -74,6 +76,7 @@ class MainScreenScreenshotTest {
         platform = platform,
         expectedArrival = now.plusSeconds(offsetSeconds),
         mode = mode,
+        branch = branch,
     )
 
     // Each stop is stamped independently: the two default to the same age, but a caller can
@@ -151,6 +154,73 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithContentDescription("No departures").assertExists()
         // Oxford Circus has a stop-level disruption, shown as a stop-status row.
         composeRule.onNodeWithText("Station closed until further notice").assertExists()
+    }
+
+    @Test
+    fun `via branch shown in parens`() {
+        // The Northern line's branch (TfL's `towards` "via Charing Cross") shows parenthesized
+        // after the terminus, so a rider can pick the train by its central trunk (SPEC
+        // destination-label). Canned public line/place names only (SPEC *Privacy*).
+        // Two cards, so the layout shows both behaviors: a short destination lets the branch
+        // sit fully beside it (Morden (Bank)), while a long one keeps the branch (the trunk
+        // cue) by shortening it to the board's own form and truncating the destination to make
+        // room (Batter… (Charing X)) — the branch outranks the terminus (SPEC destination-label).
+        val euston = StopArrivals(
+            "940GZZLUEUS",
+            "Euston",
+            listOf(
+                dep("northern", "Northern", "southbound", "Battersea Power", 120, "Platform 1", branch = "Charing Cross"),
+                dep("northern", "Northern", "southbound", "Battersea Power", 480, "Platform 1", branch = "Charing Cross"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        val kennington = StopArrivals(
+            "940GZZLUKNG",
+            "Kennington",
+            listOf(
+                dep("northern", "Northern", "southbound", "Morden", 180, "Platform 3", branch = "Bank"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        capture("main-via-branch.png") {
+            MainScreen(DeparturesUiState.Loaded(listOf(euston, kennington), now.minusSeconds(60)), now, {})
+        }
+        // The destination's semantic text stays the full "Battersea Power" even where it's
+        // visually truncated; the branch shortens to the board's form where the row is tight,
+        // and stays full where it fits.
+        composeRule.onNodeWithText("Battersea Power").assertExists()
+        composeRule.onNodeWithText("(Charing X)").assertExists()
+        composeRule.onNodeWithText("Morden").assertExists()
+        composeRule.onNodeWithText("(Bank)").assertExists()
+    }
+
+    @Test
+    fun `two branches of one terminus keep separate lines`() {
+        // Same line, same direction, same terminus, two trunks — Northern to Edgware via
+        // Bank and via Charing Cross. They must NOT merge onto one line: a merged countdown
+        // would show the later train under the first train's branch, defeating the
+        // disambiguation (Codex P1; AGENTS.md grouping). Public line/place names only.
+        val stop = StopArrivals(
+            "940GZZLUKNG",
+            "Kennington",
+            listOf(
+                dep("northern", "Northern", "northbound", "Edgware", 120, "Platform 1", branch = "Bank"),
+                dep("northern", "Northern", "northbound", "Edgware", 540, "Platform 2", branch = "Charing Cross"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            TrackmoTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // Two Edgware lines, one per branch — a single merged line would show "Edgware" once.
+        composeRule.onAllNodesWithText("Edgware").assertCountEquals(2)
+        // Each line carries its own branch cue (Bank is short, so it's never abbreviated).
+        composeRule.onNodeWithText("(Bank)").assertExists()
     }
 
     @Test

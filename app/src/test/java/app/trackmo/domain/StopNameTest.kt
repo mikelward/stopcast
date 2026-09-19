@@ -1,6 +1,7 @@
 package app.trackmo.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class StopNameTest {
@@ -41,5 +42,38 @@ class StopNameTest {
     @Test
     fun `trims surrounding whitespace`() {
         assertEquals("Victoria", cleanStopName("  Victoria Underground Station  "))
+    }
+
+    @Test
+    fun `branchOf pulls the via trunk from towards`() {
+        assertEquals("Charing Cross", branchOf("Battersea Power Station via Charing Cross"))
+        assertEquals("Bank", branchOf("Edgware via Bank"))
+    }
+
+    @Test
+    fun `branchOf is null without a via`() {
+        assertNull(branchOf(null))
+        assertNull(branchOf("Walthamstow Central"))
+        // A bus-style comma tail is not a branch.
+        assertNull(branchOf("Pimlico, Grosvenor Road"))
+    }
+
+    @Test
+    fun `branchOf drops a comma tail after the via`() {
+        assertEquals("Bank", branchOf("Morden via Bank, Kennington"))
+    }
+
+    @Test
+    fun `abbreviateBranch shortens Cross and the compass words a board shortens`() {
+        assertEquals("Charing X", abbreviateBranch("Charing Cross"))
+        assertEquals("Kings X", abbreviateBranch("Kings Cross"))
+        assertEquals("E. Ham", abbreviateBranch("East Ham"))
+        assertEquals("W. Croydon", abbreviateBranch("West Croydon"))
+    }
+
+    @Test
+    fun `abbreviateBranch leaves a branch with nothing safe to shorten unchanged`() {
+        assertEquals("Bank", abbreviateBranch("Bank"))
+        assertEquals("Battersea", abbreviateBranch("Battersea"))
     }
 }

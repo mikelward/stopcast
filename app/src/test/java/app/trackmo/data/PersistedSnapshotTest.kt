@@ -95,6 +95,29 @@ class PersistedSnapshotTest {
     }
 
     @Test
+    fun `the via branch survives the round trip`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                StopArrivals(
+                    stopId = "940GZZLUEUS",
+                    stopName = "Euston",
+                    departures = listOf(
+                        Departure(
+                            "northern", "Northern", "outbound", "Battersea Power",
+                            null, now.plusSeconds(120), "tube", branch = "Charing Cross",
+                        ),
+                    ),
+                    fetchedAt = now,
+                ),
+            ),
+            fetchedAt = now,
+        )
+        val restored = snapshot.toPersisted().toDomain()!!
+        assertEquals("Charing Cross", restored.stops.single().departures.single().branch)
+        assertEquals(snapshot, restored)
+    }
+
+    @Test
     fun `an unknown format version is discarded rather than mis-read`() {
         val fromFuture = sample().toPersisted().copy(version = PersistedSnapshot.CURRENT_VERSION + 1)
         assertNull(fromFuture.toDomain())

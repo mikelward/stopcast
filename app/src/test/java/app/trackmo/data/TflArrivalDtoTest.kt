@@ -1,6 +1,7 @@
 package app.trackmo.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -35,13 +36,40 @@ class TflArrivalDtoTest {
     }
 
     @Test
-    fun `leaves a plain destination and a multi-part towards unchanged`() {
+    fun `leaves a plain destination unchanged`() {
         assertEquals("Walthamstow Central", dto(destinationName = "Walthamstow Central").toDeparture().destination)
-        // A "towards" can list interchange points; suffix-only cleaning must not touch it.
-        assertEquals(
-            "Pimlico, Grosvenor Road",
-            dto(towards = "Pimlico, Grosvenor Road").toDeparture().destination,
-        )
+    }
+
+    @Test
+    fun `drops a bus towards' comma tail as noise`() {
+        // A London bus `towards` lists an interchange point after the terminus
+        // ("Pimlico, Grosvenor Road"); the tail is noise on a departures board, so the
+        // destination is just the terminus (maintainer, 2026-09-19).
+        assertEquals("Pimlico", dto(towards = "Pimlico, Grosvenor Road").toDeparture().destination)
+    }
+
+    @Test
+    fun `splits the via branch off the destination`() {
+        // TfL names the Northern line's central trunk in `towards`; the destination is the
+        // terminus only, the branch is carried separately (shown parenthesized on the card).
+        val withName = dto(
+            destinationName = "Battersea Power Station",
+            towards = "Battersea Power Station via Charing Cross",
+        ).toDeparture()
+        assertEquals("Battersea Power", withName.destination)
+        assertEquals("Charing Cross", withName.branch)
+
+        // No destinationName: the terminus is `towards` before " via ", the branch after it.
+        val fromTowards = dto(towards = "Edgware via Bank").toDeparture()
+        assertEquals("Edgware", fromTowards.destination)
+        assertEquals("Bank", fromTowards.branch)
+    }
+
+    @Test
+    fun `a towards with no via has a null branch`() {
+        assertNull(dto(destinationName = "Brixton Underground Station").toDeparture().branch)
+        assertNull(dto(towards = "Pimlico, Grosvenor Road").toDeparture().branch)
+        assertNull(dto().toDeparture().branch)
     }
 
     @Test

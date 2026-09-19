@@ -335,10 +335,11 @@ exercises the whole spine the widget later renders from.
       destinations** — the user names where they're going (or picks a saved favorite) and
       trackmo surfaces the rows that get them there, complementing starring. Scope it to
       **on-device matching** against each row's retained destination text, so the
-      destination is never sent to any network service. (Matching richer strings — raw
-      `towards` like "Pimlico, Grosvenor Road", or the branch/interchange label below —
-      means retaining those fields when that work lands; today only the resolved
-      destination is kept, so scope the first cut to that.) Saved favorites persist like
+      destination is never sent to any network service. (The resolved destination and now
+      the via-branch (`Departure.branch`) are both retained, so matching can key on either;
+      the raw `towards` — the comma tail of a bus destination like "Pimlico, Grosvenor
+      Road", or the downstream branch/interchange label below — is still not kept, so a cut
+      that needs those must retain them first.) Saved favorites persist like
       the rest of the user's config and so ride the platform backup/transfer — the
       platform channel, not an app-initiated send, and already covered by SPEC *Privacy*'s
       backup note. An
@@ -381,6 +382,18 @@ exercises the whole spine the widget later renders from.
       ("towards Highgate") instead of TfL's terminus. Key constraint: only a genuine
       branch or interchange counts — a stop merely shared with an unrelated route is not a
       junction. Replaces the terminus label the MVP ships with.
+- [x] **Show the via branch beside the destination** — TfL's `towards` "via" trunk
+      ("Battersea Power (Charing Cross)") shown parenthesized after the terminus, so a
+      rider can pick a branching-line train (Northern most visibly). The branch
+      **participates in grouping**: within a direction a line splits per terminus *and*
+      branch, so two trains to one terminus via different trunks each get their own line
+      and countdown (a countdown never sits under the wrong branch). The **branch outranks
+      the terminus for space**: where the pair won't
+      fit, the destination truncates and the branch shortens to the board's own form
+      (Cross → X, East → E. &c.), measured against the row so the full branch still shows
+      where it fits — "Batter… (Charing X)" in the tight case (SPEC). Follow-ups: **eyeball
+      on a device** the truncation balance and the abbreviations, and whether `spaced-slash`
+      ("Battersea Power / Charing Cross") reads better than parens — an open alternative.
 - [ ] (Later, open call) **One row per destination** as an alternative grouping to
       (service, stop, direction) (D8) — every row then names a single unambiguous
       destination (and handles a blank `direction` via `towards`), at the cost of more

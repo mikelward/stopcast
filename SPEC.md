@@ -156,6 +156,29 @@ keeps two directions of the same line distinct (never mislabel a countdown). Tha
 is the reason the platform and direction stay in the model; it is a safeguard, not a
 reversal of dropping them when a real destination exists.
 
+On a **branching line** (the Northern most visibly) two trains to the same terminus can
+run via different central trunks, and TfL names the trunk in `towards` ("Battersea Power
+Station via Charing Cross") — the cue a rider uses to pick their train. So when `towards`
+carries a "via", the branch is shown **parenthesized after the destination** ("Battersea
+Power (Charing Cross)"). The branch **participates in grouping**: within a direction, a
+line is split not just per destination (D8) but per terminus-and-branch, so two trains to
+one terminus via different trunks (Edgware via Bank and via Charing Cross) each get their
+own line and their own merged countdown. Merging across branches would label the later
+train's countdown with the first train's branch, defeating the disambiguation — the
+countdown must never sit under the wrong branch any more than under the wrong
+destination.
+
+The **branch outranks the terminus for space**, because on a branching line the trunk is
+what tells two otherwise-identical trains apart — losing it defeats the row. So where the
+full pair won't fit, the branch is kept and the **destination truncates** to make room
+("Batter… (Charing Cross)"); and before the destination is crushed too far, the branch
+itself shortens to the form a departures board uses — the compass words and "Cross"
+abbreviated ("Charing Cross" → "Charing X", "East Ham" → "E. Ham") — so a tight row reads
+"Batter… (Charing X)" rather than one unreadable stub plus a long branch. The full branch
+still shows wherever the row can fit it (the abbreviation is measured, not unconditional);
+a branch with no shortenable word stays whole and the destination simply truncates
+further.
+
 The row set is not purely prediction-derived: a watched stop or line with a **known
 disruption** but **zero predictions** still contributes a row — a status row (for the
 stop, or for that service at the stop) carrying the disruption and no countdown,
@@ -180,11 +203,12 @@ compact **(service, stop) card that swipes between directions** is the leading c
 to iterate toward once the flat list has been used on a device — it collapses a two-way
 service to one card but hides the other direction behind a gesture the widget host owns,
 so it is a later call, not a prerequisite (**D8**). The direction label is the resolved
-destination the domain carries (`destinationName`, else `towards`); a branching direction
-already keeps **one line per destination** (each with its own countdown). One refinement
-is recorded to explore (`TODO.md` Phase 2): labeling a direction by the **next branch or
-interchange point** downstream rather than the terminus, feeding letting users set
-**favorite destinations** to filter or rank by.
+terminus the domain carries (`destinationName`, else `towards` before its " via "), plus
+the via-branch alongside it where TfL gives one (see the branching-line paragraph above); a
+branching direction keeps **one line per terminus and branch** (each with its own
+countdown). One refinement is recorded to explore (`TODO.md` Phase 2): labeling a direction
+by the **next branch or interchange point** downstream rather than the terminus, feeding
+letting users set **favorite destinations** to filter or rank by.
 
 TfL's endpoint is named "Arrivals"; for a bus stop these are departures *from* that
 stop, which is what a rider wants. Trackmo calls them departures throughout the UI.
@@ -474,8 +498,9 @@ Mirrors the sibling fleet:
   can't be reconstructed from destination/platform in general); when TfL omits it, grouping
   falls back to platform then destination as a best-effort discriminator, and an all-blank
   prediction shares one "unknown" row. A branching direction merges only the headline
-  destination's times; each divergent destination keeps its own line and countdown, so
-  none is mislabeled. One refinement remains recorded to explore (`TODO.md` Phase 2):
+  destination's times; each divergent destination — and each via-branch of one terminus —
+  keeps its own line and countdown, so none is mislabeled. One refinement remains recorded
+  to explore (`TODO.md` Phase 2):
   labeling a direction by the next branch/interchange point downstream rather than the
   terminus, feeding user-set favorite destinations. Supersedes the earlier open question;
   the flat-list-vs-swipe-card choice is the remaining open call, to settle from real use.

@@ -24,6 +24,14 @@ import java.time.Instant
  * `tram`, …), kept so a surface can present a service in its mode's identity — a tube
  * line in its own color, a bus in London-bus red — without re-deriving the mode from
  * the line id. Empty when TfL omits it.
+ *
+ * [branch] is the "via" branch TfL names in its `towards` field — "Charing Cross" /
+ * "Bank" on the Northern line — the same string its platform boards show to tell a line's
+ * two central trunks apart (a rider picks the train by it, not just the terminus). Null
+ * when TfL gives no "via" (most services, and buses). Not part of the domain's own
+ * direction key, but a display surface groups by terminus *and* branch, so two trains to
+ * one terminus via different trunks keep separate countdown lines (a countdown must not sit
+ * under the wrong branch). See [branchOf].
  */
 data class Departure(
     val lineId: String,
@@ -33,4 +41,5 @@ data class Departure(
     val platform: String?,
     val expectedArrival: Instant,
     val mode: String,
+    val branch: String? = null,
 )
