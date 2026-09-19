@@ -419,4 +419,160 @@ class DepartureRowsTest {
 
         assertEquals(emptyList<DepartureRow>(), DepartureRows.across(listOf(stop), now))
     }
+
+    // --- nearbyDeduped: the "near me now" collapse (SPEC Finding stops → Near me now) ---
+
+    private fun rowsFor(stopId: String, stopName: String, vararg departures: Departure): List<DepartureRow> =
+        DepartureRows.forStop(stopId, stopName, departures.toList(), now)
+
+    private fun stopStatusRow(stopId: String, stopName: String) = DepartureRow(
+        stopId = stopId,
+        stopName = stopName,
+        lineId = "",
+        lineName = "",
+        direction = "",
+        directionKey = STOP_STATUS_DIRECTION_KEY,
+        destination = "",
+        mode = "",
+        upcoming = emptyList(),
+        fetchedAt = now,
+        stopDisruption = "Stop closed",
+    )
+
+    @Test
+    fun `nearbyDeduped collapses a line across adjacent stops to the nearest`() {
+        // The same bus route, same direction, at three stops within the radius. The nearest
+        // wins even though a farther stop's departure is sooner — you'd walk to the nearest.
+        val near = rowsFor("A", "Stop A", departure("55", "55", "outbound", "Bakerloo", 120, mode = "bus"))
+        val mid = rowsFor("B", "Stop B", departure("55", "55", "outbound", "Bakerloo", 60, mode = "bus"))
+        val far = rowsFor("C", "Stop C", departure("55", "55", "outbound", "Bakerloo", 30, mode = "bus"))
+
+        val deduped = DepartureRows.nearbyDeduped(
+            near + mid + far,
+            stopDistanceMeters = mapOf("A" to 100.0, "B" to 300.0, "C" to 500.0),
+        )
+
+        assertEquals(1, deduped.size)
+        assertEquals("A", deduped[0].stopId)
+    }
+
+    @Test
+    fun `nearbyDeduped keeps both directions of a line`() {
+        val out = rowsFor("A", "Stop A", departure("55", "55", "outbound", "Bakerloo", 120, mode = "bus"))
+        val inbound = rowsFor("B", "Stop B", departure("55", "55", "inbound", "Walthamstow", 90, mode = "bus"))
+
+        val deduped = DepartureRows.nearbyDeduped(out + inbound, mapOf("A" to 100.0, "B" to 120.0))
+
+        assertEquals(2, deduped.size)
+        assertEquals(setOf("outbound", "inbound"), deduped.map { it.direction }.toSet())
+    }
+
+    @Test
+    fun `nearbyDeduped keeps fully unresolved opposite directions at separate stops`() {
+        // TfL gave neither direction nor destination; only the (stop-local) platform told the
+        // two apart. Keyed on a blank cross-stop direction they would collapse and drop the
+        // farther direction — so a fully-unresolved row stays stop-specific and both survive.
+        val a = rowsFor("A", "Stop A", departure("55", "55", "", "", 120, platform = "Stop A", mode = "bus"))
+        val b = rowsFor("B", "Stop B", departure("55", "55", "", "", 60, platform = "Stop B", mode = "bus"))
+
+        val deduped = DepartureRows.nearbyDeduped(a + b, mapOf("A" to 100.0, "B" to 400.0))
+
+        assertEquals(2, deduped.size)
+        assertEquals(setOf("A", "B"), deduped.map { it.stopId }.toSet())
+    }
+
+    @Test
+    fun `nearbyDeduped never crowds out a lone farther mode`() {
+        // Many nearby bus lines and one farther Tube line. With no count cap, every distinct
+        // line survives — the Tube is not evicted for being farther than the buses.
+        val bus1 = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 60, mode = "bus"))
+        val bus2 = rowsFor("A2", "Stop A2", departure("12", "12", "outbound", "Y", 90, mode = "bus"))
+        val bus3 = rowsFor("A3", "Stop A3", departure("36", "36", "outbound", "Z", 120, mode = "bus"))
+        val tube = rowsFor("T", "Tube", departure("victoria", "Victoria", "inbound", "Brixton", 300, mode = "tube"))
+
+        val deduped = DepartureRows.nearbyDeduped(
+            bus1 + bus2 + bus3 + tube,
+            mapOf("A" to 100.0, "A2" to 150.0, "A3" to 200.0, "T" to 800.0),
+        )
+
+        assertEquals(4, deduped.size)
+        assertTrue(deduped.any { it.lineId == "victoria" })
+    }
+
+    @Test
+    fun `nearbyDeduped leaves stop-status rows untouched`() {
+        // Two different closed stops: each closure is about its own stop, so both are kept —
+        // collapsing them by their blank line id would drop a real warning.
+        val deduped = DepartureRows.nearbyDeduped(
+            listOf(stopStatusRow("A", "Stop A"), stopStatusRow("B", "Stop B")),
+            mapOf("A" to 100.0, "B" to 200.0),
+        )
+
+        assertEquals(2, deduped.size)
+        assertEquals(setOf("A", "B"), deduped.map { it.stopId }.toSet())
+    }
+
+    @Test
+    fun `nearbyDeduped keeps blank-direction rows stop-specific even with a shared destination`() {
+        // TfL omits `direction`, so there is no cross-stop direction identity. Two opposite
+        // one-way stops of a line can share a destination, and `destination` can't reconstruct
+        // a direction (SPEC), so blank-`direction` rows are never merged across stops — the
+        // safe over-show (a same-direction service may then show at both adjacent stops)
+        // against ever collapsing two opposite directions into one row (maintainer). Both
+        // stops' rows survive; the earlier destination-based collapse is gone.
+        val near = rowsFor("A", "Stop A", departure("55", "55", "", "Bakerloo", 120, platform = "Stop A / 1", mode = "bus"))
+        val far = rowsFor("B", "Stop B", departure("55", "55", "", "Bakerloo", 60, platform = "Stop B / 2", mode = "bus"))
+
+        val deduped = DepartureRows.nearbyDeduped(near + far, mapOf("A" to 100.0, "B" to 400.0))
+
+        assertEquals(2, deduped.size)
+        assertEquals(setOf("A", "B"), deduped.map { it.stopId }.toSet())
+    }
+
+    @Test
+    fun `nearbyDeduped keeps blank-lineId rows stop-specific even with a shared direction`() {
+        // TfL omits `lineId` on some predictions; `lineName` alone can name a different route.
+        // Two unrelated routes at adjacent stops that share a nonblank `direction` must not
+        // collapse onto one `(blank lineId, direction)` key and drop the farther one — a blank
+        // line has no cross-stop identity, so the row stays stop-specific (Codex).
+        val near = rowsFor("A", "Stop A", departure("", "N55", "inbound", "Aldwych", 120, mode = "bus"))
+        val far = rowsFor("B", "Stop B", departure("", "24", "inbound", "Pimlico", 60, mode = "bus"))
+
+        val deduped = DepartureRows.nearbyDeduped(near + far, mapOf("A" to 100.0, "B" to 400.0))
+
+        assertEquals(2, deduped.size)
+        assertEquals(setOf("A", "B"), deduped.map { it.stopId }.toSet())
+    }
+
+    @Test
+    fun `nearbyDeduped keeps both platforms of one service at a single stop`() {
+        // Two platforms of the same line and destination at ONE stop are distinct rows there;
+        // the collapse is across stops, so it must not drop the second platform's departures.
+        val rows = DepartureRows.forStop(
+            "A", "Stop A",
+            listOf(
+                departure("55", "55", "", "Bakerloo", 120, platform = "Platform 1", mode = "bus"),
+                departure("55", "55", "", "Bakerloo", 60, platform = "Platform 2", mode = "bus"),
+            ),
+            now,
+        )
+        assertEquals("the stop itself has two platform rows", 2, rows.size)
+
+        val deduped = DepartureRows.nearbyDeduped(rows, mapOf("A" to 100.0))
+
+        assertEquals(2, deduped.size)
+        assertEquals(setOf("Platform 1", "Platform 2"), deduped.map { it.directionKey }.toSet())
+    }
+
+    @Test
+    fun `nearbyDeduped treats a stop missing from the distance map as farthest`() {
+        val known = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 120, mode = "bus"))
+        val unknown = rowsFor("B", "Stop B", departure("55", "55", "outbound", "X", 60, mode = "bus"))
+
+        // B is absent from the map, so it sorts behind A's known distance rather than winning.
+        val deduped = DepartureRows.nearbyDeduped(known + unknown, mapOf("A" to 500.0))
+
+        assertEquals(1, deduped.size)
+        assertEquals("A", deduped[0].stopId)
+    }
 }

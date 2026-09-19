@@ -80,6 +80,13 @@ class NearbyStopsViewModelTest {
         assertEquals(listOf("near", "mid", "far"), ready.stops.map { it.id })
         // The stop's served lines are carried through so a suspended line still surfaces.
         assertEquals(listOf(LineRef("victoria", "Victoria", "tube")), ready.stops.first().lines)
+        // Distance from the fix is carried (in memory) so the departures list can collapse a
+        // line served by adjacent stops down to its nearest: the stop at the fix is ~0 m, the
+        // others farther, in the same nearest-first order.
+        assertEquals(setOf("near", "mid", "far"), ready.distanceMeters.keys)
+        assertEquals(0.0, ready.distanceMeters.getValue("near"), 1.0)
+        assertTrue(ready.distanceMeters.getValue("near") < ready.distanceMeters.getValue("mid"))
+        assertTrue(ready.distanceMeters.getValue("mid") < ready.distanceMeters.getValue("far"))
         // The device fix was the query point.
         assertEquals(0.0, finder.lastLatitude!!, 0.0)
     }

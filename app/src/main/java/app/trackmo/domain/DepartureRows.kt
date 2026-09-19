@@ -91,6 +91,102 @@ object DepartureRows {
         }.sortedWith(rowOrder)
 
     /**
+     * Collapse the "near me now" rows so a **(line, direction)** appears once — from the
+     * **nearest** stop serving it — instead of once per adjacent stop it passes (SPEC
+     * *Finding stops → Near me now*): a bus route stopping three times within the radius
+     * should read as one service, not three. Both directions survive (they are distinct
+     * `(lineId, directionKey)`), and nothing is dropped by a count cap — the result is
+     * distance-shaped, so a mode with only one nearby stop (the lone Tube among many bus
+     * stops) is never crowded out.
+     *
+     * Distance is the nearby flow's input, not a row's business — [across] stays
+     * location-free (D1) — so it arrives as [stopDistanceMeters] (`stopId` → meters). A
+     * stop missing from the map sorts last, and equal distances break by `stopId`, so the
+     * kept stop never depends on input order. **Stop-level status rows pass through
+     * untouched**: a closure is about one stop, not a line repeated across stops, so
+     * collapsing two closed stops into one would drop a real warning. Line rows (timed and
+     * line-status) are the ones deduped. Survivors are re-sorted by the same soonest-first
+     * [rowOrder].
+     *
+     * The dedupe identity is **cross-stop**: line + TfL's `direction`, *not* the row's
+     * [DepartureRow.directionKey], which for a timed row can be the stop-local platform
+     * ([directionKeyOf]) — the same line and direction at adjacent stops would then get
+     * different keys and both survive, defeating the collapse (Codex). A row whose
+     * `direction` is blank has no cross-stop identity and stays stop-specific (see
+     * [dedupeKeyOf]); a status row keeps its cross-stop-stable sentinel key. Every row of the
+     * *nearest* stop for a key is kept — not just one — so a single stop with two platforms
+     * of one service (distinct rows at that stop) keeps both, while a farther stop's
+     * duplicate is dropped.
+     */
+    fun nearbyDeduped(
+        rows: List<DepartureRow>,
+        stopDistanceMeters: Map<String, Double>,
+    ): List<DepartureRow> {
+        fun distanceOf(stopId: String): Double = stopDistanceMeters[stopId] ?: Double.MAX_VALUE
+        val (stopStatus, lineRows) = rows.partition { it.stopDisruption != null }
+        // The nearest stop serving each cross-stop (line, direction) key.
+        val nearestStopByKey = HashMap<RowKey, String>()
+        for (row in lineRows) {
+            val key = dedupeKeyOf(row)
+            val incumbent = nearestStopByKey[key]
+            if (incumbent == null || isCloserStop(row.stopId, incumbent, ::distanceOf)) {
+                nearestStopByKey[key] = row.stopId
+            }
+        }
+        // Keep every row from the nearest stop for its key, so two platforms of one service
+        // at a single stop both survive; a farther stop's same-service row is dropped.
+        val kept = lineRows.filter { nearestStopByKey[dedupeKeyOf(it)] == it.stopId }
+        return (stopStatus + kept).sortedWith(rowOrder)
+    }
+
+    /**
+     * The cross-stop dedupe identity for [nearbyDeduped]: line + direction-of-travel.
+     *
+     * A timed row deduplicates across stops **only with a real cross-stop identity** — both a
+     * `lineId` and TfL's own `direction`. When `direction` is blank there is no reliable
+     * cross-stop discriminator: the platform is stop-local, and per `SPEC.md` a `destination`
+     * cannot reconstruct a direction (opposite one-way stops can share a destination). A blank
+     * `lineId` is the same problem for the line itself — TfL omits it on some predictions, and
+     * `lineName` alone can name a different route — so merging on it would drop an unrelated
+     * service at an adjacent stop. In either case the row stays **stop-specific** — keyed on its
+     * own stop + stop-scoped [directionKey] — and is never merged across stops. That over-shows
+     * a same-direction
+     * service at adjacent stops in the direction-less case, which is the safe trade
+     * (SPEC principle 1) against ever collapsing two opposite directions into one row and
+     * mislabeling a countdown (maintainer, 2026-09-19). Earlier revisions also keyed on
+     * `destination` when `direction` was blank; that produced a run of edge-case collisions
+     * (blank direction + shared destination at opposite stops), so the whole `destination`
+     * fallback is dropped here rather than special-cased further.
+     *
+     * A status row (no countdown) keeps its sentinel [DepartureRow.directionKey], which is
+     * cross-stop stable and keeps it from colliding with a timed row of the same line.
+     */
+    private fun dedupeKeyOf(row: DepartureRow): RowKey {
+        if (row.upcoming.isEmpty()) return RowKey(row.lineId, row.directionKey)
+        // Dedupe across stops only with a real cross-stop identity — both a line and TfL's
+        // direction. A blank `lineId` (TfL omits it on some predictions, and `lineName` alone
+        // can name a different route) or a blank `direction` has no cross-stop discriminator, so
+        // the row stays stop-specific — keyed on its own stop — and is never merged across stops,
+        // rather than colliding with an unrelated route (blank line) or the opposite direction
+        // (blank direction) at an adjacent stop and silently dropping the farther one (Codex).
+        if (row.lineId.isBlank() || row.direction.isBlank()) {
+            return RowKey(row.lineId, "\u0000${row.stopId}:${row.directionKey}")
+        }
+        return RowKey(row.lineId, row.direction)
+    }
+
+    /** True when [stopId] is nearer than [incumbent]; equal distances break by stopId. */
+    private fun isCloserStop(
+        stopId: String,
+        incumbent: String,
+        distanceOf: (String) -> Double,
+    ): Boolean {
+        val here = distanceOf(stopId)
+        val there = distanceOf(incumbent)
+        return here < there || (here == there && stopId < incumbent)
+    }
+
+    /**
      * A stop-level status row for a stop with its own disruption(s) — a closure or moved
      * stop — so it isn't shown as if its departures were catchable (SPEC *Disruptions*).
      * One row per stop, its descriptions joined; the stop's timed rows are kept (marked,

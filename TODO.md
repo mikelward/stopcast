@@ -266,6 +266,13 @@ exercises the whole spine the widget later renders from.
       the same recipient and data category as the first fix, not a new off-device channel — so
       £0, negligible against the keyless rate budget for a user-initiated tap, and a small
       per-fix battery cost.
+  - [ ] **Nearby per-mode coverage (crowd-out).** The nearby list now shows a line once
+        from its nearest stop (dedupe shipped, PR #36), but it still only shows lines from
+        the nearest few stops fetched, so a denser mode can crowd out another — the one Tube
+        within reach can fall outside the nearest bus stops and never surface. Ensure each
+        mode's nearest in-reach stop is fetched/shown, distance-shaped, without a fixed
+        count cap (SPEC *Finding stops → Near me now*; the cap stays parked). Weigh the
+        fetch cost (an arrivals call per stop) — try distance-shaped on a device first.
 - [ ] Per-stop line/direction filters (D2).
 - [ ] **Filter or rank by a destination the user enters, and let them save favorite
       destinations** — the user names where they're going (or picks a saved favorite) and
