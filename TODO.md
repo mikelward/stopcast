@@ -108,6 +108,14 @@ exercises the whole spine the widget later renders from.
       Phase 1 introduces the logger and Phase 0 the deploy pipeline, so a build carrying
       the log can reach testers now, and AGENTS.md requires the disclosure to exist before
       the log ships.
+  - [ ] **Wire the shared on-device logger into both DataStore corruption handlers**
+        (`DataStoreSnapshotStore` and `DataStoreWatchedStopsStore`) when it lands, so a
+        discarded snapshot or watched-stop set is never silent (SPEC principle 2 / *never
+        fail silently*). Today both default `warn` to a no-op — the seam is there but the
+        shared logger isn't yet — so on genuine corruption the file is discarded without a
+        diagnostic. The **watched-set** discard is the higher-stakes one: it loses the
+        user's own config, not a re-fetchable cache (though the set also rides Android
+        backup, so it isn't the only copy). Codex P2 on PR #26.
 - [x] **Persist the last-good snapshot; show a stamped placeholder at once and fill it
       in when the async read completes** (SPEC snapshot-render — never block the first
       frame on the DataStore read; the intro says the first deliverable exercises
@@ -154,7 +162,19 @@ exercises the whole spine the widget later renders from.
 
 - [ ] Add/remove **watched stops** (the source of truth for what's shown) — added from
       search or nearby discovery, removed explicitly; persist the set. Distinct from
-      starring; removing a multi-line stop drops all its rows.
+      starring; removing a multi-line stop drops all its rows. **[store landed, PR #26]**
+      `WatchedStop`/`WatchedStops`/`WatchedStopsStore` + `DataStoreWatchedStopsStore`
+      (reactive `watched()`, add/remove; a newer-schema file reads as `Unavailable` and is
+      preserved, never overwritten). Still to wire into `MainViewModel` as the departures
+      source and build the add/remove UI.
+  - [ ] **Version-envelope read before a future incompatible schema bump** (Codex P2 on
+        PR #26, deferred). The store preserves a newer file that still *decodes*, but a
+        future schema that changes an existing field's shape would fail to decode and be
+        discarded as corruption — silently deleting the set on a downgrade. Before shipping
+        any schema **v2+**, add a stable version-envelope read (parse `version` alone; keep
+        unknown-version raw bytes rather than treating a decode failure as corruption).
+        Best built *with* that v2 (its shape is needed to build and test it); v1 is the only
+        schema today, so a decode failure now is genuine corruption and correctly discarded.
 - [ ] **Restore the stop name to the departure card when the list spans more than one
       stop.** The compact-card redesign dropped it (too much clutter, and implicit on a
       single-stop widget), but the current seed is already multi-stop (Oxford Circus +
