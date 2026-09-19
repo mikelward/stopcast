@@ -16,16 +16,21 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -115,7 +120,7 @@ class MainActivity : ComponentActivity() {
 
                 when (val state = nearby) {
                     is NearbyStopsViewModel.State.Ready ->
-                        DeparturesForStops(state.stops, state.distanceMeters)
+                        DeparturesForStops(state.stops, state.distanceMeters, nearbyViewModel::locate)
                     else -> LocationGate(
                         state = state,
                         permanentlyDenied = permissionPermanentlyDenied,
@@ -134,8 +139,9 @@ class MainActivity : ComponentActivity() {
     /**
      * The departures view for a resolved nearby set. The [MainViewModel] is created here —
      * not as an activity field — because its watched stops aren't known until location
-     * resolves; it's keyed on the stop ids so a different nearby set gets its own instance
-     * rather than reusing a stale one.
+     * resolves; each nearby set gets its own instance, scoped to a per-set store owner that
+     * clears the previous one (cancelling its in-flight fetch) when the set changes, rather
+     * than reusing a stale one or accumulating them.
      *
      * No persisted snapshot for this interim nearby set (`SnapshotStore.NONE`, the default):
      * the store holds one process-wide snapshot, but the watched set here is derived from
@@ -146,33 +152,53 @@ class MainActivity : ComponentActivity() {
      * view resolves fresh each open.
      */
     @Composable
-    private fun DeparturesForStops(stops: List<StopRef>, stopDistanceMeters: Map<String, Double>) {
-        val viewModel: MainViewModel = viewModel(
-            key = "departures:" + stops.joinToString(",") { it.id },
-            factory = viewModelFactory {
-                initializer {
-                    MainViewModel(
-                        client = KtorTflClient(httpClient),
-                        seedStops = stops,
-                        warn = ::logDepartureWarning,
-                    )
-                }
-            },
-        )
-        val state by viewModel.state.collectAsStateWithLifecycle()
-        val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
-        RefreshOnForeground(viewModel)
-        AutoRefresh(viewModel)
-        MainScreen(
-            state = state,
-            now = tickingNow(),
-            onRefresh = viewModel::refresh,
-            refreshing = refreshing,
-            // From "near me now": collapse a line served by several adjacent nearby stops to
-            // its nearest stop (SPEC *Finding stops → Near me now*). Empty for a location-free
-            // list (a watched-stops view), which is shown as-is.
-            stopDistanceMeters = stopDistanceMeters,
-        )
+    private fun DeparturesForStops(
+        stops: List<StopRef>,
+        stopDistanceMeters: Map<String, Double>,
+        onLocateHere: () -> Unit,
+    ) {
+        // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
+        // the set changes (the user moved and re-located) rather than left keyed in the
+        // activity's store: relocating repeatedly would otherwise pile up view models and
+        // leave an old location's in-flight fetch running after its screen is gone (Codex).
+        //
+        // The per-set ViewModelStore lives in [NearbyDeparturesStores], an activity-scoped
+        // holder that survives configuration changes — so a rotation reuses the same store and
+        // its MainViewModel (no reload, no duplicate fetch) — while [NearbyDeparturesStores.
+        // ownerFor] clears every *other* set's store, cancelling a moved-away set's in-flight
+        // fetch. A plain `remember`-created owner did neither: it was recreated on every
+        // configuration change, forcing a reload and a fresh TfL fetch on each rotation (Codex).
+        val stopsKey = remember(stops) { stops.joinToString(",") { it.id } }
+        val stores: NearbyDeparturesStores = viewModel()
+        val storeOwner = remember(stopsKey) { stores.ownerFor(stopsKey) }
+        CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
+            val viewModel: MainViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        MainViewModel(
+                            client = KtorTflClient(httpClient),
+                            seedStops = stops,
+                            warn = ::logDepartureWarning,
+                        )
+                    }
+                },
+            )
+            val state by viewModel.state.collectAsStateWithLifecycle()
+            val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+            RefreshOnForeground(viewModel)
+            AutoRefresh(viewModel)
+            MainScreen(
+                state = state,
+                now = tickingNow(),
+                onRefresh = viewModel::refresh,
+                refreshing = refreshing,
+                // From "near me now": collapse a line served by several adjacent nearby stops
+                // to its nearest stop (SPEC *Finding stops → Near me now*). Empty for a
+                // location-free list (a watched-stops view), which is shown as-is.
+                stopDistanceMeters = stopDistanceMeters,
+                onLocateHere = onLocateHere,
+            )
+        }
     }
 
     // Either grant is enough to find stops; precise (FINE) is preferred and requested first.
@@ -224,6 +250,36 @@ class MainActivity : ComponentActivity() {
         // single long-lived client is OkHttp's own recommended shape; it lives for the
         // process and dies with it.
         private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
+    }
+}
+
+/**
+ * An activity-scoped holder of the per-nearby-set [ViewModelStore]s, so the departures
+ * [MainViewModel] for the current set survives a configuration change (a rotation reuses the
+ * same store rather than rebuilding it and re-fetching), while a set the user has moved away
+ * from is cleared — cancelling its in-flight fetch — rather than piling up (Codex, PR #43).
+ *
+ * Being a [ViewModel] is what buys the config-change survival: the activity keeps the same
+ * instance across recreation. [ownerFor] returns the store for [key] (creating it once) and
+ * clears every other key, since only one nearby set is shown at a time; [onCleared] clears
+ * them all when the activity is finished for good.
+ */
+internal class NearbyDeparturesStores : androidx.lifecycle.ViewModel() {
+    private val stores = mutableMapOf<String, ViewModelStore>()
+
+    /** The retained store for [key], clearing any other set's store first. */
+    fun ownerFor(key: String): ViewModelStoreOwner {
+        val stale = stores.keys.filter { it != key }
+        for (k in stale) stores.remove(k)?.clear()
+        val store = stores.getOrPut(key) { ViewModelStore() }
+        return object : ViewModelStoreOwner {
+            override val viewModelStore = store
+        }
+    }
+
+    override fun onCleared() {
+        stores.values.forEach { it.clear() }
+        stores.clear()
     }
 }
 
