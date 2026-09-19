@@ -289,6 +289,14 @@ exercises the whole spine the widget later renders from.
       destination to TfL and is a **separate product + privacy decision** (SPEC declares
       the Journey API a non-goal; it would change the Play Data Safety answers), not
       assumed by this item.
+- [ ] **Working hours / trip windows** (requested 2026-09-19, on-device). Let the user say
+      when they commute (a morning window toward work, an evening one home), so trackmo can
+      emphasize the relevant direction at the relevant time and scope commute announcements
+      (Phase 3) to those windows. Matching stays on-device, tied to favorite destinations
+      above; the windows persist with the rest of the config and so ride Android backup /
+      device-to-device transfer — the platform channel covered by SPEC *Privacy*'s backup
+      note, not an app-initiated send (so not "on-device only"). Design the model and where
+      it surfaces before building.
 - [ ] Optional user `app_key` in settings (D7).
 - [ ] Extend the persisted snapshot (from Phase 1) to cover the watched-stop set,
       filters, and key. **This is what re-enables persistence for the location view**: the
@@ -344,6 +352,27 @@ exercises the whole spine the widget later renders from.
       a chosen speed/margin; make the speed and whether it's on a setting. Explore from
       real use — a too-aggressive filter that hides a train the user could have jogged for
       is worse than showing it (SPEC principle 1).
+- [ ] **Tap a card to open a detail view** (requested 2026-09-19, on-device). The compact
+      card drops platform, full direction, and any longer disruption text to stay glanceable
+      (SPEC *Departures*); a tap opens the fuller picture — platform and direction (already in
+      the domain), longer disruption text, and, if a source exists, **accessibility** info
+      (step-free, lifts out of service). Open design questions to settle before building — not
+      specified here: where accessibility data comes from (today's TfL surface — arrivals,
+      line status, free-text stop disruptions — distinguishes no lift/step-free state, so a
+      source has to be found, or the feature drops it); how the view renders honestly
+      (from state already in memory, not a tap-time fetch) and how each source's freshness is
+      tracked, since arrivals, disruption, and any accessibility data age independently and a
+      safety-relevant lift outage must never read as current when it isn't (D4 / principle 1).
+- [ ] **Hand off to a navigation app** (requested 2026-09-19, on-device). From a stop (likely
+      the detail view above), let the user open the stop in Google Maps or their default nav
+      app — a geo/maps intent to the stop's coordinates or name. No new dependency (a plain
+      platform intent), but **it does cross a privacy boundary**: the receiving app is
+      user-chosen and usually cloud-backed, so the stop's coordinates/name reach that third
+      party — a **Play Data Safety** consideration (a new recipient of location-adjacent data),
+      at **$0** cost with the reliability/behavior of whatever app the user picked. Because
+      the user explicitly initiates the hand-off to an app of their choosing it's a
+      lighter-weight decision than a silent send, but the Data Safety consequence is named
+      here rather than assumed away. Decide the intent shape and entry point.
 
 ## Phase 3 — Full disruptions
 
@@ -353,6 +382,34 @@ Builds on Phase 1's minimal line-status marking.
       and cancellations of specific services where TfL exposes them.
 - [ ] Rich in-app disruption text; mark a disrupted line/stop even when predictions look
       normal (D3). Domain summarization JVM-tested.
+- [ ] **Classify disruption kind, and judge relevance** (reported 2026-09-19, on-device). A
+      small diversion currently surfaces as "Special Service" where a rider expects "Detour"
+      or "Diversion". Open design point for when it's built: today's label is the generic
+      `/Line/{ids}/Status` `statusSeverityDescription`, which carries no discriminator for the
+      cause, so a rider-readable kind needs a detailed source (`/Line/{ids}/Disruption` or
+      similar) — settle the source, mapping, and fixtures then. And decide **whether to show a
+      disruption at all** when it's not relevant to most journeys through the stop (the observed
+      case was a detour miles away), with any relevance test still erring toward showing over
+      hiding (SPEC principle 1 — a wrongly-hidden real disruption is worse than an extra one).
+- [ ] **Commute disruption announcements, without being noisy** (requested 2026-09-19,
+      on-device). Notify the user of a disruption to *their* commute — a watched line/stop on
+      the routes they take — but only when it matters: scoped to their working-hours / trip
+      windows (Phase 2 favorite-destinations item) and de-duplicated so an ongoing disruption
+      doesn't re-notify. The whole design turns on not crying wolf; a notification is a battery
+      and attention cost, so this is a product + battery decision, not a quiet add (SPEC *Cost
+      and reliability*). **It also needs a background-refresh mechanism the current model
+      doesn't have**: SPEC only polls while the app is open (plus opportunistic widget
+      refresh), so a closed-app trip window can't discover a new disruption to announce.
+      Designing that means naming the periodic worker (e.g. `WorkManager`), its wakeup/request
+      cadence, the added TfL rate-limit pressure, and the stale/error behavior — record those
+      before implementing, so this doesn't ship as either a nonfunctional alert or unplanned
+      background polling. **Cost £0** (the worker's TfL polls carry the same watched stop/line
+      IDs to the same recipient, no new service or key), so likely **no Play Data Safety change**
+      — same recipient and data categories as the on-demand departures fetch — confirmed when
+      built; the real costs are battery and TfL quota, above. It also needs the runtime **notification permission** (Android 14+):
+      an opt-in request and an explicit denied-state behavior — don't run the worker (burning
+      battery and TfL quota) while every alert is invisible — with the permission behavior
+      recorded in SPEC.
 - [ ] (Later, open call) **National Rail / Thameslink departures** (recorded 2026-09-19;
       the maintainer asked to note it and not build it now). TfL's Unified API arrivals
       cover tube, Overground, Elizabeth line, DLR, tram, bus and river bus only — **not**
@@ -385,6 +442,11 @@ Builds on Phase 1's minimal line-status marking.
 ## Phase 5 — Distribution and polish
 
 - [ ] Play internal-track deploy proven end to end; signing keystore via secrets.
+- [ ] **Peer-parity sweep** (requested 2026-09-19, on-device): confirm nothing peer-standard
+      from the sibling apps is missing before release. The already-tracked peer features are
+      the shareable debug-log export (its own item below), Settings (Phase 2), the
+      licenses/About screen (above and Phase 0), and the Play internal track (above) — this
+      bullet is only the check for anything else the peers have that fits here.
 - [ ] Fail a **release** build when the git-derived versionCode/SHA fell back (a
       source-archive or no-git build): Play rejects a non-incrementing versionCode, so a
       silent fallback of `1` is wrong for a shipped artifact. The derivation logs a
@@ -397,7 +459,10 @@ Builds on Phase 1's minimal line-status marking.
       device, so the export **redacts travel data** (stop IDs, line ids) — a shared file
       is subject to the same rule as any other artifact that leaves the machine
       (`AGENTS.md` *Privacy*). `docs/PRIVACY.md` already commits to this redaction; this is
-      the item that implements it.
+      the item that implements it. **Cost £0** (a user-initiated share via the platform
+      sheet, no service trackmo runs); the hand-off is a **Play Data Safety** consideration —
+      a new off-device channel even after redaction — so the redaction is what keeps it a
+      no-op for the declaration rather than a new data type collected, confirmed when built.
 - [ ] Finalize the store-facing privacy disclosure (location, watched stops, the TfL
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
@@ -436,6 +501,16 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
       the feeds, the client-only-vs-backend-vs-aggregator fork, why London stays on the
       TfL Unified API, live-vs-scheduled and its UI treatment — is in
       `dev-docs/multi-city-gtfs.md`.**
+- [ ] (Later, open call) **Smart-home integration** (recorded 2026-09-19 at the maintainer's
+      request). Surface the next departures on a smart-home surface — a routine, a display, a
+      voice assistant — so "when's my bus?" is answered without opening the phone. It means a
+      new integration surface (Assistant/Home APIs or a local hub) with materially different
+      cost and failure modes, and a **Play Data Safety** consequence (departures and possibly
+      the watched set crossing to another system), and it changes what trackmo *is* beyond the
+      London MVP. Direction only; needs the maintainer's go-ahead and its own scoping — which
+      must record the chosen surface's **dollar cost** (hosted API vs. a local hub differ
+      sharply; marked unknown until the surface is picked) and its degraded/offline behavior
+      before implementation, per *Cost and reliability*.
 
 ## Decisions needing review
 
