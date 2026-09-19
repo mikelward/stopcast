@@ -136,7 +136,11 @@ class MainActivity : ComponentActivity() {
             key = "departures:" + stops.joinToString(",") { it.id },
             factory = viewModelFactory {
                 initializer {
-                    MainViewModel(client = KtorTflClient(httpClient), seedStops = stops)
+                    MainViewModel(
+                        client = KtorTflClient(httpClient),
+                        seedStops = stops,
+                        warn = ::logDepartureWarning,
+                    )
                 }
             },
         )
@@ -165,14 +169,6 @@ class MainActivity : ComponentActivity() {
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
     }
-
-    /**
-     * The production sink for the location seam's warnings: the messages are already coarse
-     * and carry no coordinate or key (SPEC *Privacy*), so a diagnosis of a misfiring fix
-     * isn't discarded in the shipped app. Logcat only — not the persisted, shareable debug
-     * log, which lands with its `docs/PRIVACY.md` disclosure in the Phase 5 logging work.
-     */
-    private fun logLocationWarning(message: String) = Log.w("Trackmo.Location", message)
 
     companion object {
         // Process-scoped: one OkHttp engine and connection pool shared by every ViewModel
@@ -304,3 +300,27 @@ private fun tickingNow(): Instant {
     }
     return now
 }
+
+/**
+ * The production sink for the location seam's warnings: coarse messages carrying no
+ * coordinate or key (SPEC *Privacy*), so a diagnosis of a misfiring fix isn't discarded in
+ * the shipped app. Logcat only — not the persisted, shareable debug log, which lands with
+ * its `docs/PRIVACY.md` disclosure in the Phase 5 logging work.
+ *
+ * Top-level, not an Activity method: a `MainActivity::` method reference is held by the
+ * ViewModels it's passed to, and an activity-scoped ViewModel outlives the Activity across
+ * configuration changes — so a bound reference would pin each destroyed Activity in the
+ * ViewModel store (Codex). A top-level function captures nothing.
+ */
+private fun logLocationWarning(message: String) = Log.w("Trackmo.Location", message)
+
+/**
+ * The production sink for the departures/disruption seam's warnings. Without it wired,
+ * `MainViewModel`'s `warn` defaulted to a no-op, so a persistent "couldn't check for
+ * disruptions" left nothing in logcat to explain which line or lookup was unknown. The
+ * messages are coarse — a count, a line id, an HTTP reason — with no coordinate, stop-set,
+ * or key (SPEC *Privacy*: line ids are allowed). Logcat only, like [logLocationWarning];
+ * the persisted, shareable debug log lands in the Phase 5 work. Top-level for the same
+ * no-Activity-capture reason as [logLocationWarning].
+ */
+private fun logDepartureWarning(message: String) = Log.w("Trackmo.Departures", message)
