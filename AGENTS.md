@@ -77,10 +77,12 @@ the shortest phrasing that stays unambiguous; justify a longer form in the PR.
 
 ## Line pill colors
 
-Line pills take the official TfL line color (tube by id, other modes by mode) and pick the
-label's black-or-white color with APCA, not the WCAG-2 ratio — a failing WCAG-2 AA number
-on a pill is a flag, not a veto. Add a line color only as a confirmed TfL hex. SPEC has the
-full scheme and rationale.
+Line pills take the official TfL line color (tube by id, other single-color modes by mode)
+and pick the label's black-or-white color with APCA, not the WCAG-2 ratio — a failing WCAG-2
+AA number on a pill is a flag, not a veto. The six named Overground lines resolve by id too
+but render as a **hollow** pill (surface fill, line-color border + label, accent nudged for
+contrast on the surface), since their colors collide with tube lines. Add a line color only
+as a confirmed TfL hex. SPEC has the full scheme and rationale.
 
 ## Privacy
 

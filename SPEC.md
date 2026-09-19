@@ -170,17 +170,24 @@ for the countdown, while the list still scans by line the way the network map do
 full line name is the pill's accessible label, so a screen reader announces "Victoria",
 not "VIC". Tube
 lines take their color by line (Northern black, Central red, …); bus, DLR, the Elizabeth
-line, Overground and trams take one color per mode. The label's black-or-white color is
+line and trams take one color per mode; the six named Overground lines take their color by
+line too, rendered as a hollow pill (below). The label's black-or-white color is
 chosen by **APCA**, the perceptual contrast model headed into WCAG 3, rather than the
 WCAG-2 luminance ratio: WCAG-2 is luminance-only and misreads white on saturated
 mid-tones (Victoria, DLR, Bakerloo), rating black higher where white is plainly more
 readable, so a pill can sit below the WCAG-2 AA number and still be the right, readable
 choice. The color is decorative — the identity is always text (the code, plus the full name as the
 accessible label), never color-only.
-Overground shows a single legacy-orange placeholder for every line because its 2024
-named lines use a two-tone scheme the single-fill pill can't yet render; a mode still
-without a defined color (national rail) falls back to a neutral pill rather than an
-invented shade, a cosmetic gap, not a correctness failure.
+The six named Overground lines (TfL's 2024 renaming) each take their own line color, but as
+a **hollow pill** — the card surface shows through, the line color is the border and the
+label — rather than a solid fill. Two reasons: several of the Overground colors sit close to
+a tube line's (Windrush red ≈ Central, Mildmay ≈ a tube blue), so a solid pill would read as
+that tube line; and TfL itself draws the Overground as hollow/parallel lines — so the hollow
+shape says "Overground, not tube" even where the color collides. The accent is nudged to
+stay legible on the surface (darker on the light card, brighter on the dark one). An
+Overground service whose id isn't one of the six (legacy `london-overground`) falls back to
+the single mode orange; a mode still without a defined color (national rail) falls back to a
+neutral pill rather than an invented shade — a cosmetic gap, not a correctness failure.
 
 ### Disruptions
 

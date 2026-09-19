@@ -8,8 +8,10 @@ import org.junit.Test
 
 /**
  * The line-pill color rules, as pure functions: a tube line resolves to its official
- * TfL color by id, any bus to London-bus red by mode, everything else to no color (a
- * neutral pill), and the text flips black/white to stay legible on the fill.
+ * TfL color by id, a named Overground line to its own accent (a hollow pill), any bus to
+ * London-bus red by mode, everything else to no color (a neutral pill). The filled pill's
+ * text flips black/white to stay legible on the fill; the hollow pill's accent is nudged to
+ * stay legible on the surface.
  */
 class LinePillTest {
     @Test
@@ -31,10 +33,42 @@ class LinePillTest {
         assertEquals(Color(0xFF00A4A7), lineFillColor("dlr", "dlr")) // DLR turquoise
         assertEquals(Color(0xFF6950A1), lineFillColor("elizabeth", "elizabeth-line")) // Elizabeth purple
         assertEquals(Color(0xFF84B817), lineFillColor("tram", "tram")) // Trams green
-        // Every named Overground line shows the legacy single orange placeholder until the
-        // two-tone scheme lands (SPEC / TODO), regardless of which named line it is.
-        assertEquals(Color(0xFFEE7C0E), lineFillColor("liberty", "overground"))
-        assertEquals(Color(0xFFEE7C0E), lineFillColor("mildmay", "overground"))
+        // An Overground service whose id isn't one of the six named lines (legacy
+        // "london-overground") falls back to the single mode orange.
+        assertEquals(Color(0xFFEE7C0E), lineFillColor("london-overground", "overground"))
+    }
+
+    @Test
+    fun `named Overground lines resolve to their own accent and have no solid fill`() {
+        // Each named line has its own accent (for the hollow pill) and NO fill, so LinePill
+        // renders it hollow rather than as a solid orange.
+        assertEquals(Color(0xFFEF9600), overgroundAccentColor("lioness"))
+        assertEquals(Color(0xFF2774AE), overgroundAccentColor("mildmay"))
+        assertEquals(Color(0xFFD22730), overgroundAccentColor("windrush"))
+        assertEquals(Color(0xFF893B67), overgroundAccentColor("weaver"))
+        assertEquals(Color(0xFF5BA763), overgroundAccentColor("suffragette"))
+        assertEquals(Color(0xFF606667), overgroundAccentColor("liberty"))
+        assertNull(lineFillColor("mildmay", "overground"))
+        assertNull(lineFillColor("lioness", "overground"))
+        // Tube lines and unknown ids are not Overground accents.
+        assertNull(overgroundAccentColor("central"))
+        assertNull(overgroundAccentColor("london-overground"))
+    }
+
+    @Test
+    fun `a hollow accent stays legible on both the light and dark surface`() {
+        val light = Color.White
+        val dark = Color(0xFF141218) // a typical Material 3 dark surface
+        // Lioness yellow is the stress case (low contrast on white as-is); Mildmay blue and
+        // Liberty gray round it out. The label clears the text floor and the border the
+        // (lower) border floor on both surfaces.
+        listOf(Color(0xFFEF9600), Color(0xFF2774AE), Color(0xFF606667)).forEach { accent ->
+            listOf(light, dark).forEach { surface ->
+                val bg = apcaLuminance(surface)
+                assertTrue(apcaLc(apcaLuminance(accentInkOn(accent, surface)), bg) >= 60.0)
+                assertTrue(apcaLc(apcaLuminance(accentEdgeOn(accent, surface)), bg) >= 30.0)
+            }
+        }
     }
 
     @Test
