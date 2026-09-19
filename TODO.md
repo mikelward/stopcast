@@ -688,19 +688,18 @@ and these carry the rest as their own PRs:
       distances (or a widget-ready deduplicated selection) alongside the snapshot — a
       selection/schema decision, and moot once Phase 2's watched stops replace the interim
       nearby source. Until then adjacent stops can double up a line/direction in the six slots.
-- [ ] **Scope the widget snapshot to its nearby set (own PR, Codex P1 on #44).** The widget
-      snapshot is written only on an *authoritative* arrivals cycle, so if the user moves and
-      the new set's fetch fails (offline/rate-limited), the previous location's departures stay
-      on the widget — and because the widget shows no stop name, they read as live for the new
-      context until the stamp ages them stale. An empty nearby resolution never mounts
-      `DeparturesForStops` at all, so it can't clear either. Fix: scope/clear the persisted
-      snapshot when the resolved nearby set changes (or resolves empty) and push a widget
-      update. Same interim-nearby-source family as the dedupe bullet — the snapshot carries the
-      stop *set*, so a fix is app-side (clear-if-different-set + `updateAll`), not a schema
-      reversal, but it's throwaway surgery on the interim source and needs a device to verify
-      the `updateAll`/blank-flicker behavior. Moot once Phase 2's stable watched stops replace
-      the location-derived set (the set then changes only when the user edits it). The aging
-      stamp is the honesty floor until then.
+- [x] **Scope the widget snapshot to its nearby set (own PR, Codex P1 on #44).** When the app
+      resolves a nearby set whose ids differ from the persisted snapshot's — or resolves to no
+      stops — it clears the snapshot and pushes a widget update, so a previous location's
+      departures can't linger on the nameless widget reading as live. The compare and clear are
+      one atomic DataStore transaction (`DataStoreSnapshotStore.clearIfStopSetNot`, via
+      `WidgetSnapshotStore.clearForNewStopSet`) so a concurrent authoritative save of the new set
+      isn't clobbered, and a failed redraw falls back to the retrying staleness worker
+      (`shouldClearWidgetSnapshot` is the rule; wired in `MainActivity` off the resolved
+      `NearbyStopsViewModel.State`, covering the empty resolution the departures view never
+      mounts for). Pure decision JVM-tested; the `updateAll`/blank behavior still wants a
+      device check. Interim, moot once Phase 2's stable watched stops replace the
+      location-derived set.
 - [ ] **Size-aware row cap (own PR, Codex P2 on #44).** The fixed 6-row cap can clip at the
       110dp minimum height; derive the count from `LocalSize`. The node-assertion harness that
       landed can't verify "doesn't clip" (it asserts nodes, not pixels), so this waits on

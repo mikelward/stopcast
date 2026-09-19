@@ -9,6 +9,7 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStoreFile
 import app.trackmo.domain.DeparturesSnapshot
 import app.trackmo.domain.SnapshotStore
+import app.trackmo.domain.shouldClearWidgetSnapshot
 import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.flow.first
@@ -35,6 +36,28 @@ class DataStoreSnapshotStore internal constructor(
 
     override suspend fun save(snapshot: DeparturesSnapshot) {
         dataStore.updateData { snapshot.toPersisted() }
+    }
+
+    /**
+     * Atomically clears the snapshot iff the stored one describes a different stop set than
+     * [resolvedStopIds] (or resolves empty); returns whether it cleared. The compare and the
+     * clear are one `updateData` transaction, so a concurrent authoritative `save` of the new
+     * set — which starts the moment the same `Ready` state composes — can't be read then
+     * deleted: if that save lands first, the transform sees the new set and keeps it (Codex).
+     * [shouldClearWidgetSnapshot] is the rule, applied to the *current* persisted value here
+     * rather than to a stale earlier read. `updateData` runs the transform once and writes the
+     * result atomically, so the captured [cleared] reflects what was committed.
+     */
+    suspend fun clearIfStopSetNot(resolvedStopIds: Set<String>): Boolean {
+        var cleared = false
+        dataStore.updateData { current ->
+            val persistedIds = current?.toDomain()?.stops?.map { it.stopId }?.toSet().orEmpty()
+            cleared = shouldClearWidgetSnapshot(persistedIds, resolvedStopIds)
+            // writeTo(null) empties the file, which readFrom takes as "nothing saved" (a fresh
+            // install), so the next load returns null; keeping `current` is a no-op write.
+            if (cleared) null else current
+        }
+        return cleared
     }
 
     companion object {

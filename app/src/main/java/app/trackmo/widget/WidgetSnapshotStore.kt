@@ -26,6 +26,44 @@ class WidgetSnapshotStore(context: Context) : SnapshotStore {
 
     override suspend fun load(): DeparturesSnapshot? = null
 
+    /**
+     * Scopes the widget to the current nearby set: atomically clears the persisted snapshot when
+     * it describes a different set than [resolvedStopIds] (or the location resolved to no stops),
+     * then redraws the widget so it goes blank rather than showing a previous area's departures as
+     * if live (SPEC principle 1). A no-op when the set is unchanged, so returning to it doesn't
+     * flicker. The compare-and-clear is one DataStore transaction (see
+     * [DataStoreSnapshotStore.clearIfStopSetNot]) so a concurrent authoritative save of the new
+     * set isn't clobbered.
+     */
+    suspend fun clearForNewStopSet(resolvedStopIds: Set<String>) {
+        // Whole thing is best-effort: the caller invokes this straight from a LaunchedEffect, so
+        // a DataStore read/write failure here must not escape and cancel composition or crash the
+        // app — scoping the widget is secondary to showing the app (Codex). Rethrow cancellation;
+        // log anything else sanitized and leave the widget as-is (it re-renders on the next
+        // successful save or host rebind).
+        val cleared = try {
+            delegate.clearIfStopSetNot(resolvedStopIds)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logWidgetSnapshotWarning("widget snapshot clear check failed: ${e::class.simpleName}")
+            return
+        }
+        if (!cleared) return
+        // The snapshot is already cleared, so a redraw failure can't surface as anything — but it
+        // also can't be dropped, or the previous area's RemoteViews stay visible with no
+        // self-repair (a later load sees null and won't re-clear). Log sanitized and hand the
+        // redraw to the retrying worker so the blank isn't lost.
+        try {
+            TrackmoWidget().updateAll(appContext)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logWidgetSnapshotWarning("widget redraw after snapshot clear failed: ${e::class.simpleName}")
+            enqueueWidgetRedrawNow(appContext)
+        }
+    }
+
     override suspend fun save(snapshot: DeparturesSnapshot) {
         // The primary operation: persist the last-good snapshot. Its failure propagates to the
         // caller, which reports it as a real save failure.

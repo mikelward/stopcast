@@ -76,6 +76,22 @@ internal fun cancelWidgetStalenessRedraw(context: Context) {
 }
 
 /**
+ * Enqueues an immediate render-only redraw with the same retry backstop as the boundary redraw.
+ * Used after clearing the snapshot for a new nearby set: if the inline `updateAll` throws, the
+ * previous area's RemoteViews would otherwise stay visible with no self-repair (a later load sees
+ * the cleared null and won't re-clear), so [WidgetStalenessWorker] re-renders the now-empty
+ * snapshot and retries on WorkManager's backoff. REPLACEs any pending boundary redraw — after a
+ * clear the old snapshot's staleness boundary is moot.
+ */
+internal fun enqueueWidgetRedrawNow(context: Context) {
+    WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+        WIDGET_STALENESS_WORK,
+        ExistingWorkPolicy.REPLACE,
+        OneTimeWorkRequestBuilder<WidgetStalenessWorker>().build(),
+    )
+}
+
+/**
  * Re-renders the widget from the unchanged persisted snapshot; `provideGlance` recomputes the age
  * against the current clock, so a boundary crossing now shows the stale treatment (`?`, "tap to
  * refresh"). Render-only — reads no network and writes no snapshot.

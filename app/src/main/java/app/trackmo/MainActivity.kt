@@ -47,7 +47,6 @@ import app.trackmo.ui.StopRef
 import app.trackmo.ui.theme.TrackmoTheme
 import app.trackmo.widget.TrackmoWidget
 import app.trackmo.widget.WidgetSnapshotStore
-import androidx.glance.appwidget.updateAll
 import java.time.Instant
 import kotlinx.coroutines.delay
 
@@ -122,6 +121,32 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
+
+                // Scope the widget's persisted snapshot to the current nearby set. The widget
+                // shows no stop name, so a snapshot left over from a previous location reads as
+                // live for the new one until its stamp ages it; and the snapshot is only
+                // rewritten on an authoritative arrivals cycle, so a moved-to set whose fetch
+                // fails — or a location that resolves to no stops — never overwrites it. Clearing
+                // on the set change (or an empty resolution) makes the widget go blank rather
+                // than show another place's trains (SPEC principle 1). Runs on the resolved set
+                // only (Ready → its stops, Empty → none); other gate states aren't a resolved
+                // set and leave the last-good alone. Interim, until Phase 2's watched stops make
+                // the set change only on an explicit edit; the updateAll/blank behavior still
+                // wants a device check.
+                val resolvedStopIds: Set<String>? = when (val s = nearby) {
+                    is NearbyStopsViewModel.State.Ready -> s.stops.map { it.id }.toSet()
+                    NearbyStopsViewModel.State.Empty -> emptySet()
+                    else -> null
+                }
+                val appCtx = applicationContext
+                LaunchedEffect(resolvedStopIds) {
+                    val ids = resolvedStopIds ?: return@LaunchedEffect
+                    // Atomic compare-and-clear + best-effort retrying redraw, through the store
+                    // that carries the sanitized warn sink — so this effect being the first
+                    // process-wide snapshot-store touch (when the first state is Empty, before
+                    // any departures view mounts) still initializes it with a real logger.
+                    WidgetSnapshotStore(appCtx).clearForNewStopSet(ids)
                 }
 
                 // The licenses screen is hosted here, above the location gate — not inside the

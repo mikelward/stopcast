@@ -399,7 +399,15 @@ polling cadence, and not a data refresh (fetching new data while the app isn't d
 widget stays deferred, D5). **Interim data source**: until Phase 2's user-chosen watched stops exist, the
 widget shows the last *nearby* set the app fetched — "the stops near where you last
 opened the app". Phase 2 replaces that with the watched stops; a live-refresh cadence for
-the widget when the app isn't driving it is deferred (D5).
+the widget when the app isn't driving it is deferred (D5). Because that interim set is
+location-derived and the widget shows no stop name, the app **clears the snapshot when it
+holds a stop that isn't in the newly-resolved set** — i.e. it's from a different area (an
+empty resolution clears it too). A snapshot that is a subset of the current set is kept: a
+multi-stop resolution where only some stops came back the first time is still this area's
+last-good, not another place's. A snapshot from where you last opened the app must not
+linger on the widget as if it were live for where you are now, so the widget goes blank
+until the new set's own fetch repopulates it (principle 1). Phase 2's stable watched stops,
+which change only on an explicit edit, make this scoping moot.
 
 ## Privacy
 
