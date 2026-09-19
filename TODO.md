@@ -196,7 +196,12 @@ exercises the whole spine the widget later renders from.
       assumed by this item.
 - [ ] Optional user `app_key` in settings (D7).
 - [ ] Extend the persisted snapshot (from Phase 1) to cover the watched-stop set,
-      filters, and key.
+      filters, and key. **This is what re-enables persistence for the location view**: the
+      interim nearby view (PR #21) uses no persisted snapshot, because one process-wide
+      snapshot can't represent a set that changes as the user moves (restoring it would show
+      a previous location's departures under the newly-resolved stops). Keying the snapshot
+      by stop set brings back the instant first frame and gives the offline/failed state
+      last-good departures to show instead of only the gate (Codex, PR #21).
 - [ ] (Later) Smarter row selection beyond starring — Home/Work "show whichever you're
       *not* near", direction by time of day — heuristic- and location-dependent, and the
       widget is location-free at refresh (D1), so a wrong guess is its own quietly-wrong
