@@ -266,7 +266,13 @@ exercises the whole spine the widget later renders from.
       and the Play Data Safety answers account for it when this ships. Requested 2026-09-19.
 - [ ] **Re-locate the "near me now" list on demand, not just on first open.** Today the
       nearby flow locates once; a user who has moved is stuck on the old position until
-      something else re-triggers it. **First deliverable: an explicit "Update location"
+      something else re-triggers it. **The toolbar button shipped in PR #43** (the crosshair
+      "Stops near me" action, left of Refresh), but it calls the plain `locate()` path — so
+      it still needs the **force-fresh** mode below. Codex flagged this on #43
+      (`discussion_r4053414081`, deferred here 2026-09-19): tapped within ~2 min of an
+      accurate fix it re-queries TfL with the *cached* (old) coordinates via
+      `FixSelection.resolve()`, the very staleness this item exists to fix. **First
+      deliverable: an explicit "Update location"
       toolbar button** — the standard my-location glyph (crosshairs / GPS arrow) — that
       re-runs the fix and the nearby lookup. Keep re-location behind that deliberate
       near-me action (and other explicit near-me moments, e.g. returning to the discovery
@@ -380,6 +386,24 @@ exercises the whole spine the widget later renders from.
       three-letter code (shipped); the remaining idea is to give every pill the same fixed
       width so they form a tidy column instead of ragged-width blobs. Validate the codes
       and the width on a device.
+- [ ] (Later, open call) **Colors and codes for National Rail services.** When rail
+      departures land (National Rail / Thameslink item below — TfL's feed doesn't carry them
+      today), give each operator its own pill instead of the neutral fallback (Google Maps,
+      for one, shows Southern as a green fill with yellow text). And rethink the abbreviation:
+      the shipped first-three-letters code collides for multi-word operators (Southern and
+      Southeastern both → "SOU"), so use the official two-letter TOC (train operating
+      company) codes for National Rail operators — SN Southern, SE Southeastern, SW South
+      Western, TL Thameslink, GN Great Northern, GX Gatwick Express. National Rail only: the
+      Elizabeth line and Overground keep their current pills — their TOC codes (XR, LO) read
+      worse than what they already show ("ELI", and the named-line hollow pills).
+- [ ] (Later, open call) **Revisit auto-locate-on-open and the location states.** Trackmo
+      resolves location once on open (a `LaunchedEffect` gated on `PermissionRequired`) and
+      the nearby set never re-resolves afterward except via the temporary crosshair button.
+      Work out the intended behavior across the states — first open, permission
+      granted / approximate-only / denied / permanently-denied, returning after moving,
+      returning from Settings, a stale fix — and whether re-locating should be automatic (on
+      resume, on a significant move) rather than a manual tap. The crosshair button is a
+      stopgap for on-device radius testing until this is settled.
 - [ ] (Later, open call) **Configurable font size** — the user likes the current dense
       layout; make the text size a setting, with a slightly larger default a candidate.
       (Raised while starting the location work.)
