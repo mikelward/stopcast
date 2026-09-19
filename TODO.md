@@ -387,6 +387,17 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   local and CI rendering can differ and the refresh apparatus isn't wired. The
   drift-refresh + visual-diff-comment follow-up is tracked under Phase 0. Reversible —
   adding the gate is additive.
+- **Brand accent = red, and Material You (dynamic color) off by default** (maintainer
+  "let's try red", 2026-09-19). `TrackmoTheme` now seeds a red `primary` (with its
+  container/secondary/tertiary partners) so red reads as an accent on buttons and the
+  refresh/progress indicators over neutral surfaces — deliberately *not* the app-bar
+  container, to keep it an accent not a wash. Dynamic color is off so the wallpaper can't
+  override the brand (leaving it on was why the app read as a neutral charcoal on-device).
+  This is a **first pass at the color** the maintainer asked to try, not a settled brand:
+  the exact red (`0xFFB3261E` light) and whether to accent the app bar are both open, and
+  reversible — the scheme is two colour tables plus one default flag in `Theme.kt`, and
+  flipping `dynamicColor` back on restores Material You. Promote to `SPEC.md` once the
+  colour is confirmed on a device.
 
 ## Decisions
 
