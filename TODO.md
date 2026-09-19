@@ -164,6 +164,53 @@ exercises the whole spine the widget later renders from.
 - [ ] Unit tests for the domain; Robolectric + Roborazzi screenshot tests for the
       screen and its empty/offline/disrupted states, wired into the CI allow-list.
 
+### Phase 1 — corrections to shipped departure-label rendering (follow-up)
+
+Corrections to the departure label the card already ships (the via-branch and the
+tight-width abbreviation); the Phase 4 widget mirrors the same shared rendering, so each
+fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
+
+- [ ] **Only show the via-branch when the trunk diverges downstream of this stop, in this
+      direction.** The shipped via-branch (#48) shows TfL's `towards` "via X" whenever TfL
+      gives one, which is meaningless when the trunk is *behind* the rider — e.g. "High
+      Barnet via Bank" northbound, where Bank is south of the junction. Maintainer's rule:
+      the via matters at Highgate *southbound* (towards Morden / Charing Cross / Kennington /
+      Battersea — the Camden Town trunk choice is ahead) but **not northbound** (towards High
+      Barnet — behind you). **Approach: start cheap** (maintainer, 2026-09-19) — a
+      data-driven heuristic: show the branch on a line only when the same (line, direction,
+      **terminus**) at this stop actually has **≥2 distinct branches** in the shown departures
+      (i.e. it disambiguates two trains *to the same terminus* you could catch). Different
+      termini are already distinguished by the destination, so they get **no** via — Mill Hill
+      East vs High Barnet needs no "(via …)", only same-terminus trunk splits (Morden via Bank
+      vs via Charing Cross) do (maintainer, 2026-09-19). Do **not** build the route-sequence
+      topology version (`/Line/{id}/Route/Sequence`) — even that wouldn't match TfL's own
+      practice. Put the relevance filter in whatever shared per-(destination, branch)
+      grouping the card and widget both render from, so they can't diverge — today that
+      grouping is a local value in `MainScreen`; PR #44 promotes it to a pure domain helper
+      (`DepartureRows.destinationLines`) the widget reuses. If this lands before that helper
+      exists, add it as the pure domain function the app uses now and any later widget must
+      reuse (don't leave it card-only). Supersedes the naive unconditional display.
+- [ ] **Branch truncation: abbreviate across both halves, keep one full word in each**
+      (maintainer, 2026-09-19). Rendering "Destination (Branch)" at decreasing width, don't
+      spend the space keeping one half fully spelled while gutting the other; instead
+      abbreviate words across both and **preserve at least one full (unabbreviated) word per
+      half**. So "Battersea (Charing X)" — "Battersea" whole in the destination, "Charing"
+      whole in the branch with only "Cross"→"X" — beats both "Battersea Power (CX)" (branch
+      gutted) and "B.P.S. (Charing Cross)" (destination gutted). Branch word-replacements are
+      per `abbreviateBranch` ("Cross"→"X", "East"→"E.", "North"→"N.", "Central"→"C."); "Charing
+      X" is the friendly form and beats "Charing…", so word-abbreviate before any ellipsis, and
+      the "CX" initialism (both words gone) is only a last resort "if necessary" when even one
+      full word per half won't fit. This is close to shipped (full-or-word-abbreviate; the
+      widget always abbreviates since it can't measure) — the follow-up is the
+      one-full-word-per-half allocation on the in-app card, the CX/ellipsis last-resort rung,
+      and a real-width device check. (An earlier note said "prefer plain ellipsis" — backwards.)
+      Names with no mappable word (High Barnet, Walthamstow Central once "Central"→"C." is
+      spent, Battersea Power Station) can only ellipsize, keeping the most recognizable word.
+      **On-device confirmation (2026-09-19, maintainer screenshot):** the shipped card renders
+      "Battersea Power S… (CX)" where it should render "Battersea… (Charing X)", and
+      "High Barnet (CX)" where "High Barnet (Charing X)" fits — i.e. it currently keeps the
+      full destination and initialises the branch, the exact inversion this item fixes.
+
 ## Phase 2 — Watched stops and settings
 
 - [ ] Add/remove **watched stops** (the source of truth for what's shown) — added from
@@ -478,10 +525,14 @@ Builds on Phase 1's minimal line-status marking.
       or "Diversion". Open design point for when it's built: today's label is the generic
       `/Line/{ids}/Status` `statusSeverityDescription`, which carries no discriminator for the
       cause, so a rider-readable kind needs a detailed source (`/Line/{ids}/Disruption` or
-      similar) — settle the source, mapping, and fixtures then. And decide **whether to show a
-      disruption at all** when it's not relevant to most journeys through the stop (the observed
-      case was a detour miles away), with any relevance test still erring toward showing over
-      hiding (SPEC principle 1 — a wrongly-hidden real disruption is worse than an extra one).
+      similar) — settle the source, mapping, and fixtures then. This also decides the wording
+      question the maintainer raised (2026-09-19): "Special Service" (severity 0) and "Diverted"
+      (15) are distinct TfL statuses shown verbatim, so a small severity→copy map can't tell a
+      real diversion from an unrelated special service — relabeling terse statuses into clearer
+      rider copy needs the same detailed source, not a severity guess. And decide **whether to
+      show a disruption at all** when it's not relevant to most journeys through the stop (the
+      observed case was a detour miles away), with any relevance test still erring toward showing
+      over hiding (SPEC principle 1 — a wrongly-hidden real disruption is worse than an extra one).
 - [ ] **Commute disruption announcements, without being noisy** (requested 2026-09-19,
       on-device). Notify the user of a disruption to *their* commute — a watched line/stop on
       the routes they take — but only when it matters: scoped to their working-hours / trip
