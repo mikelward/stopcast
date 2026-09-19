@@ -56,16 +56,25 @@ class NearbyStopsViewModelTest {
         }
     }
 
-    private fun vm(location: LocationProvider, finder: StopFinder, limit: Int = 5) =
-        NearbyStopsViewModel(location = location, finder = finder, limit = limit, io = dispatcher)
+    private fun vm(location: LocationProvider, finder: StopFinder) =
+        NearbyStopsViewModel(location = location, finder = finder, io = dispatcher)
+
+    // A stop [meters] due north of the origin (lon 0), so distance is controllable in meters.
+    private fun stop(id: String, meters: Double, mode: String) = StopLocation(
+        id = id,
+        name = id,
+        latitude = meters / 111_320.0, // ~meters per degree of latitude
+        longitude = 0.0,
+        lines = listOf(LineRef("$mode-$id", id, mode)),
+    )
 
     @Test
-    fun `resolves the nearest stops, ranked and mapped to StopRefs`() = runTest {
+    fun `shows the nearby stops within the rings, nearest-first with lines carried through`() = runTest {
         val stops = listOf(
-            // Deliberately out of distance order; the closest is the last one.
-            StopLocation("far", "Far", 0.0, 0.02),
-            StopLocation("mid", "Mid", 0.0, 0.01),
-            StopLocation("near", "Near", 0.0, 0.0, lines = listOf(LineRef("victoria", "Victoria", "tube"))),
+            // Out of order; a bus stop beyond the ~1 mi outer ring is excluded.
+            stop("far", 2000.0, "bus"),
+            stop("b2", 200.0, "bus"),
+            stop("b1", 50.0, "bus"),
         )
         val finder = FakeFinder { stops }
         val model = vm(FakeLocation(origin), finder)
@@ -73,35 +82,35 @@ class NearbyStopsViewModelTest {
         model.locate()
         advanceUntilIdle()
 
-        val state = model.state.value
-        assertTrue(state is NearbyStopsViewModel.State.Ready)
-        val ready = state as NearbyStopsViewModel.State.Ready
-        // Ranked nearest-first from the fix, not left in input order.
-        assertEquals(listOf("near", "mid", "far"), ready.stops.map { it.id })
-        // The stop's served lines are carried through so a suspended line still surfaces.
-        assertEquals(listOf(LineRef("victoria", "Victoria", "tube")), ready.stops.first().lines)
-        // Distance from the fix is carried (in memory) so the departures list can collapse a
-        // line served by adjacent stops down to its nearest: the stop at the fix is ~0 m, the
-        // others farther, in the same nearest-first order.
-        assertEquals(setOf("near", "mid", "far"), ready.distanceMeters.keys)
-        assertEquals(0.0, ready.distanceMeters.getValue("near"), 1.0)
-        assertTrue(ready.distanceMeters.getValue("near") < ready.distanceMeters.getValue("mid"))
-        assertTrue(ready.distanceMeters.getValue("mid") < ready.distanceMeters.getValue("far"))
-        // The device fix was the query point.
+        val ready = model.state.value as NearbyStopsViewModel.State.Ready
+        // Both inner-ring bus stops, nearest-first; the 2 km one is out of range.
+        assertEquals(listOf("b1", "b2"), ready.stops.map { it.id })
+        assertEquals(listOf(LineRef("bus-b1", "b1", "bus")), ready.stops.first().lines)
+        // Distance from the fix is carried (in memory, from #36) so the departures list can
+        // collapse a line served by adjacent stops down to its nearest.
+        assertEquals(setOf("b1", "b2"), ready.distanceMeters.keys)
+        assertTrue(ready.distanceMeters.getValue("b1") < ready.distanceMeters.getValue("b2"))
         assertEquals(0.0, finder.lastLatitude!!, 0.0)
     }
 
     @Test
-    fun `caps the result at the limit`() = runTest {
-        val stops = (1..8).map { StopLocation("s$it", "Stop $it", 0.0, it * 0.001) }
-        val model = vm(FakeLocation(origin), FakeFinder { stops }, limit = 3)
+    fun `a farther mode is not crowded out by nearer stops of another mode`() = runTest {
+        // The reported bug: many near bus stops and one Tube station a little farther. The
+        // Tube must still appear — per-mode coverage reserves it (SPEC Finding stops).
+        val stops = listOf(
+            stop("bus1", 40.0, "bus"),
+            stop("bus2", 90.0, "bus"),
+            stop("bus3", 150.0, "bus"),
+            stop("tube", 700.0, "tube"), // beyond the inner ring, within the outer
+        )
+        val model = vm(FakeLocation(origin), FakeFinder { stops })
 
         model.locate()
         advanceUntilIdle()
 
         val ready = model.state.value as NearbyStopsViewModel.State.Ready
-        assertEquals(3, ready.stops.size)
-        assertEquals(listOf("s1", "s2", "s3"), ready.stops.map { it.id })
+        assertTrue("the Tube stop survives the near buses", ready.stops.any { it.id == "tube" })
+        assertTrue("the near buses are still shown", ready.stops.any { it.id == "bus1" })
     }
 
     @Test

@@ -200,10 +200,13 @@ exercises the whole spine the widget later renders from.
       land together. Like the rest of
       the persisted config, stars ride Android backup/transfer — covered by SPEC
       *Privacy*'s backup note, not an app-initiated send.
-- [ ] "Near me now" discovery (on-demand location, nearby `/StopPoint` lookup ranked by
-      `NearestStops`) with one-tap add-to-watched; stop search. Distance ranking lives
+- [ ] "Near me now" discovery (on-demand location, nearby `/StopPoint` lookup selected by
+      `NearbySelection`) with one-tap add-to-watched; stop search. Distance ranking lives
       here — for *finding* stops to watch — not in ordering the watched list, which stays
-      location-free so the view works with location denied (D1).
+      location-free so the view works with location denied (D1). Stop **selection** (all
+      services within ~0.2 mi + the nearest stop of each mode within ~1 mi, distance-sorted,
+      no count cap) is implemented in `NearbySelection` (PR #39); one-tap add-to-watched and
+      stop search are still to build.
   - [ ] **Nearby selection — the still-being-shaped policy toward SPEC's constraints.** The
         *settled* product constraints — a line appears once (not per stop it passes), no dense
         mode crowds out another, bounded within reach, by line with both directions, closed
@@ -230,14 +233,26 @@ exercises the whole spine the widget later renders from.
       **collapse above a per-mode threshold behind an expander** — e.g. "Tap to see 5 more buses"
       — so a busy junction stays scannable but every option is still one tap away, nothing
       hidden. Just a direction to try later, not decided.
-    - **One canonical distance unit:** miles (the maintainer's numbers are in miles) — nominal
-      cap ~1 mile (~1.6 km), inner ring ~0.2 mi. Like SPEC, ~1 mile is nominal, not a hard
-      ceiling: the set reaches beyond it only when nothing is within it (the same expand-if-empty
-      rule as the 0.2 mi ring). The current resolver's 1000 m is a placeholder to reconcile to
-      the chosen cap when implemented, so code and acceptance tests encode one distance, not two.
+    - **One canonical distance unit:** miles (the maintainer's numbers are in miles) — the
+      current outer ring is ~1 mile (~1609 m) and the inner ring ~0.2 mi (~322 m). The ~1 mile
+      is the TfL query's own radius (the hard reach for one lookup); the expand-if-empty rule
+      applies to the *inner* ring — when nothing is within ~0.2 mi the selection keeps the
+      nearest stop that is still within the ~1 mile query. **These radii are provisional
+      — the maintainer has not tested them on a device — so nothing here is settled; the numbers
+      are what `NearbySelection` currently uses, to be tuned once tried in the field.**
     - The natural unit may be a "mode-stop" (all services at a nearby stop); how stops /
       mode-stops / directions map onto the TfL model and API is an **implementation** question
       left open here — this bullet is the policy, not the settled shape (which is in SPEC).
+  - **Near-me-now display order — decided floor, rest open.** The stop *selection* is
+    distance-sorted, but the displayed rows still re-sort **soonest-first**
+    (`DepartureRows.across`, the location-free watched-list order, D1). **Decided (maintainer,
+    2026-09-19): the mode-coverage rows — the stops mixed in from beyond ~0.2 mi to keep a
+    mode represented — render BELOW the inner-ring (~0.2 mi) rows**, so a far river-boat pier
+    or Tube reserved for coverage never floats to the top on a soon countdown. **Still open:**
+    the order *within* each band — pure distance vs soonest-first. Within a card the merged
+    countdowns stay soonest-first regardless. **The current soonest-first display is probably
+    fine for now** (maintainer) — revisit when convenient; implementing the band split needs
+    the per-stop distance in the display layer (now available, #36).
 - [ ] **Search for a stop by name or line, and pin it.** Beyond nearby discovery, let the
       user type a **stop/station name** (TfL `/StopPoint/Search`) *or* a **line**
       (`/Line/Search/{query}` — the query is a path segment, not a `?query=` parameter like the
@@ -266,13 +281,23 @@ exercises the whole spine the widget later renders from.
       the same recipient and data category as the first fix, not a new off-device channel — so
       £0, negligible against the keyless rate budget for a user-initiated tap, and a small
       per-fix battery cost.
-  - [ ] **Nearby per-mode coverage (crowd-out).** The nearby list now shows a line once
-        from its nearest stop (dedupe shipped, PR #36), but it still only shows lines from
-        the nearest few stops fetched, so a denser mode can crowd out another — the one Tube
-        within reach can fall outside the nearest bus stops and never surface. Ensure each
-        mode's nearest in-reach stop is fetched/shown, distance-shaped, without a fixed
-        count cap (SPEC *Finding stops → Near me now*; the cap stays parked). Weigh the
-        fetch cost (an arrivals call per stop) — try distance-shaped on a device first.
+  - [x] **Nearby per-mode coverage (crowd-out)** — landed, PR #39. The nearby list shows a
+        line once from its nearest stop (dedupe, PR #36) and now mixes in the nearest stop of
+        each mode within ~1 mi so a denser mode can't crowd out another — the one Tube within
+        reach no longer falls outside the nearest bus stops and vanishes. Distance-shaped, no
+        fixed count cap (SPEC *Finding stops → Near me now*; the cap stays parked in
+        `NearbySelection`).
+  - [ ] Bound the nearby request burst at a **dense interchange** without a count cap.
+        `MainViewModel.refresh()` fetches arrivals per selected stop (~2 requests each) plus a
+        line-status call, every minute; with 25+ stops in the ~0.2 mi inner ring that can
+        approach TfL's ~50 req/min keyless budget and get persistently rate-limited (Codex,
+        PR #39). Left uncapped for now — the maintainer's no-count-cap decision stands (a cap
+        silently hides options, SPEC principle 2), and a typical locate is a handful of stops;
+        keyless degrades honestly on 429. Revisit only if a real dense interchange proves a
+        problem on-device, and then without dropping services silently: options are a soft
+        stop-fetch budget that reserves the per-mode entries first, scaling the refresh
+        interval with the set size (a staleness trade), or leaning on the optional user
+        `app_key` (D7, ~500/min) for dense areas.
   - [ ] Use measured `Location.accuracy`, not just provider name, on **both** the cached
         fast-path and the fresh-fix waterfall. `AndroidLocationProvider` classifies a fix as
         accurate by provider (GPS/fused, PR #38), which is a proxy: a fused fix derived from

@@ -3,6 +3,7 @@ package app.trackmo.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.trackmo.domain.LocationProvider
+import app.trackmo.domain.NearbySelection
 import app.trackmo.domain.NearestStops
 import app.trackmo.domain.StopFinder
 import app.trackmo.domain.TflException
@@ -39,8 +40,8 @@ import kotlinx.coroutines.withContext
 class NearbyStopsViewModel(
     private val location: LocationProvider,
     private val finder: StopFinder,
-    private val radiusMeters: Int = DEFAULT_RADIUS_METERS,
-    private val limit: Int = DEFAULT_LIMIT,
+    private val radiusMeters: Int = NearbySelection.OUTER_RADIUS_METERS,
+    private val innerRadiusMeters: Int = NearbySelection.INNER_RADIUS_METERS,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val warn: (String) -> Unit = {},
 ) : ViewModel() {
@@ -113,7 +114,9 @@ class NearbyStopsViewModel(
                 _state.value = State.Failed(kindOf(e))
                 return@launch
             }
-            val nearest = NearestStops.nearest(found, fix.latitude, fix.longitude, limit)
+            val nearest = NearbySelection.select(
+                found, fix.latitude, fix.longitude, innerRadiusMeters, radiusMeters,
+            )
             _state.value =
                 if (nearest.isEmpty()) {
                     State.Empty
@@ -138,18 +141,5 @@ class NearbyStopsViewModel(
         is TflException.Offline -> DeparturesUiState.Error.Kind.OFFLINE
         is TflException.RateLimited -> DeparturesUiState.Error.Kind.RATE_LIMITED
         else -> DeparturesUiState.Error.Kind.UNREACHABLE
-    }
-
-    companion object {
-        /**
-         * Search radius for the nearby lookup. 1 km comfortably covers walking distance to a
-         * stop in London's dense network without pulling in a sprawl of far-off ones; the
-         * ranking then keeps only the nearest [DEFAULT_LIMIT]. Reversible — one constant.
-         */
-        const val DEFAULT_RADIUS_METERS = 1000
-
-        /** How many nearby stops to watch at once — enough to be useful, few enough to keep
-         *  the list scannable and the departures fetch cheap. Reversible — one constant. */
-        const val DEFAULT_LIMIT = 5
     }
 }
