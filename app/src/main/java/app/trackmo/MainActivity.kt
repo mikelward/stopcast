@@ -13,12 +13,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -56,7 +59,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            TrackmoTheme {
+            TrackmoAppRoot {
                 val nearby by nearbyViewModel.state.collectAsStateWithLifecycle()
 
                 // True once a request has come back denied with the rationale suppressed —
@@ -178,6 +181,24 @@ class MainActivity : ComponentActivity() {
         // single long-lived client is OkHttp's own recommended shape; it lives for the
         // process and dies with it.
         private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
+    }
+}
+
+/**
+ * The app's composition root: the theme plus a single full-size themed [Surface]. A screen
+ * without its own background — the location gate is a bare `Column`; only `MainScreen` brings
+ * a `Scaffold` — then paints on `colorScheme.surface` and inherits `onSurface` as its content
+ * color. Without the Surface the gate rendered over the raw window background with a black
+ * default content color, unreadable in dark mode (charcoal ground, black title).
+ *
+ * Extracted from `onCreate` so the wrapper is unit-testable: `TrackmoAppRootTest` asserts the
+ * content color inside it is `onSurface`, which fails if the Surface is dropped — the existing
+ * `LocationGateScreenshotTest` can't catch that, since it installs its own Surface.
+ */
+@Composable
+internal fun TrackmoAppRoot(content: @Composable () -> Unit) {
+    TrackmoTheme {
+        Surface(modifier = Modifier.fillMaxSize()) { content() }
     }
 }
 
