@@ -258,6 +258,24 @@ Builds on Phase 1's minimal line-status marking.
       and cancellations of specific services where TfL exposes them.
 - [ ] Rich in-app disruption text; mark a disrupted line/stop even when predictions look
       normal (D3). Domain summarization JVM-tested.
+- [ ] (Later, open call) **National Rail / Thameslink departures** (recorded 2026-09-19;
+      the maintainer asked to note it and not build it now). TfL's Unified API arrivals
+      cover tube, Overground, Elizabeth line, DLR, tram, bus and river bus only — **not**
+      National Rail or Thameslink heavy-rail services. Showing those means a **second,
+      separate data source** (National Rail's Darwin feed), which is a new external
+      dependency **and** a Play Data Safety change (a new off-device request), so it's a
+      distribution + product-scope decision, not an implementation detail. The fitting
+      interface is **OpenLDBWS** — request/response, so it slots into trackmo's existing
+      poll-on-demand snapshot/refresh model (D5) with no extra runtime cost beyond the
+      request itself. **Cost: £0** — OpenLDBWS is free with registration (National Rail
+      open data), rate-limited. Reliability: a new point of failure and added latency vs.
+      TfL alone, and a separate token to keep valid. (The **Darwin push port** streams
+      continuously and does **not** fit this model — it would need an always-connected
+      on-device consumer, with its own wakeup/battery cost, or a relay service, with
+      hosting cost, another dependency, and added privacy exposure; so it is not the £0
+      path and not the default here.) Awaiting the maintainer's go-ahead before any build
+      work; confirm the current OpenLDBWS registration terms and limits when it's picked
+      up.
 
 ## Phase 4 — Widget
 
