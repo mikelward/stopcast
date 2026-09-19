@@ -2,6 +2,7 @@ package app.trackmo.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -16,6 +17,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.trackmo.domain.lineCode
@@ -246,6 +248,14 @@ fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier 
     // Zero-offset blurred shadow = a symmetric glow around the glyphs. Only for a solid fill;
     // the hollow and neutral pills read their color off the surface and need no halo.
     val haloBlurPx = with(LocalDensity.current) { 2.dp.toPx() }
+    // A fixed label width so every pill is exactly the same size down the column — uniform
+    // by construction, not just "no narrower than a floor": a two-digit bus number, a
+    // three-letter tube code, and a four-character bus route all render in the same box.
+    // The width holds the *widest* code this app shows (see [LINE_PILL_LABEL_WIDTH]), so
+    // nothing truncates — a shorter code just gets more centering room. Scaled by the font
+    // scale so it still holds those codes at a large accessibility text size rather than
+    // clipping them.
+    val labelWidth = LINE_PILL_LABEL_WIDTH * LocalDensity.current.fontScale
     val textStyle = MaterialTheme.typography.labelLarge.let { base ->
         if (fill != null) base.copy(shadow = Shadow(haloFor(content), Offset.Zero, haloBlurPx))
         else base
@@ -265,11 +275,26 @@ fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier 
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            // Fixed width + centered, so every pill is exactly the same width down the column
+            // (see [labelWidth]) — a two-digit bus number and a three-letter code sit in the
+            // same box instead of stepping ragged.
+            textAlign = TextAlign.Center,
             // The visible label is the short code; the accessible label stays the full line
             // name so a screen reader announces "Victoria", not "VIC".
             modifier = Modifier
                 .padding(horizontal = 8.dp, vertical = 4.dp)
+                .width(labelWidth)
                 .semantics { contentDescription = lineName },
         )
     }
 }
+
+/**
+ * The fixed label width every pill shares at the default font scale, before [LinePill] scales
+ * it by the current font scale. Sized to the *widest* code [lineCode] produces — a
+ * four-character bus route (`N550`, `SL10`), which is wider than any three-letter tube code
+ * (VIC, HAM) or three-digit route — so every supported code renders complete; a shorter code
+ * just centers with more room. `LinePillWidthTest` pins that a four-character code neither
+ * clips nor widens the column past the others.
+ */
+private val LINE_PILL_LABEL_WIDTH = 48.dp

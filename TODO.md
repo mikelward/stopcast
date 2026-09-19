@@ -384,10 +384,11 @@ exercises the whole spine the widget later renders from.
       distinct destinations with a departure inside the window, and fall back to only the
       single next departure when the window is empty, so a quiet stop still shows
       something. An alternative to a fixed "next few per row"; explore from real use.
-- [ ] (Later, open call) **Fixed-width line pills** — the pill now shows the line's
-      three-letter code (shipped); the remaining idea is to give every pill the same fixed
-      width so they form a tidy column instead of ragged-width blobs. Validate the codes
-      and the width on a device.
+- [x] **Fixed-width line pills** — every pill now shares one fixed label width, sized to
+      the widest code (a four-character bus route), so they form a tidy column instead of
+      ragged-width blobs (equal-width-line-chips). Follow-up: eyeball the column and the
+      widest codes on a device — the width is verified by unit test but not yet seen on
+      real hardware.
 - [ ] (Later, open call) **Colors and codes for National Rail services.** When rail
       departures land (National Rail / Thameslink item below — TfL's feed doesn't carry them
       today), give each operator its own pill instead of the neutral fallback (Google Maps,

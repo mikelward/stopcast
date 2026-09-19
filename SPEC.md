@@ -182,7 +182,11 @@ stop, which is what a rider wants. Trackmo calls them departures throughout the 
 Each service wears its line's identity: a pill filled with the line's official TfL color
 carries the line's **three-letter code** (its first three letters, uppercased — VIC, BAK,
 ELI; a bus keeps its route number), so the pill stays narrow and the row keeps its width
-for the countdown, while the list still scans by line the way the network map does. The
+for the countdown, while the list still scans by line the way the network map does. **Every
+pill shares one fixed width**, sized to the widest code shown (a four-character bus route),
+so the codes form a tidy left column the eye runs straight down a card list, rather than a
+ragged edge that steps in and out as each code's length changes; a shorter code centers in
+the shared box, and the width holds the widest code complete rather than truncating it. The
 full line name is the pill's accessible label, so a screen reader announces "Victoria",
 not "VIC". Tube
 lines take their color by line (Northern black, Central red, …); bus, DLR, the Elizabeth
