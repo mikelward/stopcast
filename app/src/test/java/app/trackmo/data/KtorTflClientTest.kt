@@ -360,7 +360,7 @@ class KtorTflClientTest {
         assertEquals("-0.12", req.url.parameters["lon"])
         assertEquals("350", req.url.parameters["radius"])
         assertEquals(
-            "NaptanMetroStation,NaptanRailStation,NaptanPublicBusCoachTram",
+            "NaptanMetroStation,NaptanRailStation,NaptanPublicBusCoachTram,NaptanFerryPort",
             req.url.parameters["stopTypes"],
         )
         // Without this the search returns line-less stops, so a suspended no-prediction line

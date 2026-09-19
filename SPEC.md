@@ -68,10 +68,12 @@ The app finds stops two ways:
     when several stops of another mode are closer, as long as it's within reach (so the
     nearest Tube shows even where bus stops dominate the immediate area);
   - it is **bounded to within reach** — on the order of a mile — so a far stop never appears
-    just because nothing nearer shares its line. The distance is nominal, not a hard ceiling —
-    the set reaches beyond it only when nothing is nearer. Whether the list *also* needs a hard
-    count cap to stay scannable at a dense interchange is **not yet decided** and lives as an
-    open question in `TODO.md`, not settled here;
+    just because nothing nearer shares its line. That reach is the TfL lookup's own radius; when
+    the immediate ~0.2 mi around the user is empty the selection still keeps the single nearest
+    stop within that reach, and a London locate effectively always has a stop within a mile — if
+    somehow none does, an honest "couldn't find stops" beats reaching arbitrarily far. The
+    current implementation imposes **no count cap**; whether a bound is ever needed to stay
+    scannable at a dense interchange is undecided and tracked in `TODO.md`, not a cap imposed here;
   - it is **by line, both directions shown** for now — paired stops across a road serve a line
     in opposite directions, so neither direction is dropped; narrowing by direction or
     destination is a later refinement tied to *favorite destinations*;
@@ -89,6 +91,16 @@ The app finds stops two ways:
   your location" rather than showing a previous location's stops as current (a user who has
   traveled would be misled). A failure to get a fix is always logged, so a misfire is
   diagnosable.
+
+  The **current implementation** is distance-shaped rather than a fixed count — an inner ring
+  of stops close by, plus the nearest stop of each *mode* a little farther out that the inner
+  ring doesn't already cover, so a denser mode (London's bus stops) can't crowd out a sparser
+  one (the nearest Tube or rail station still appears), with no overall count cap. **The radii
+  are provisional and not yet validated on a device** — the illustrative values and the open
+  questions (whether a dense interchange needs a scannability bound, how the list is ordered)
+  live in `TODO.md`; what is durable is the constraints above, not the specific numbers. (How
+  the *services* a line repeats across adjacent stops collapse to one row is *Departures*;
+  this is only which stops are looked up.)
 - **Search** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run).
 

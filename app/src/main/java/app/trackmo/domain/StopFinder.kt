@@ -27,13 +27,16 @@ interface StopFinder {
     companion object {
         /**
          * The default NaPTAN stop types for [nearbyStops]: tube/DLR/Overground metro
-         * stations, national-rail stations, and bus/coach/tram stops — the modes trackmo
-         * shows departures for. Callers can narrow it (e.g. a rail-only search).
+         * stations, national-rail stations, bus/coach/tram stops, and river-bus piers
+         * (`NaptanFerryPort`) — the modes trackmo shows departures for (river bus is in
+         * TfL's arrivals coverage, SPEC). The port level, not a berth/entrance. Callers can
+         * narrow it (e.g. a rail-only search).
          */
         val DEFAULT_NEARBY_STOP_TYPES: List<String> = listOf(
             "NaptanMetroStation",
             "NaptanRailStation",
             "NaptanPublicBusCoachTram",
+            "NaptanFerryPort",
         )
     }
 }
