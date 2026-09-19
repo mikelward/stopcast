@@ -69,6 +69,8 @@ class StopNameTest {
         assertEquals("Kings X", abbreviateBranch("Kings Cross"))
         assertEquals("E. Ham", abbreviateBranch("East Ham"))
         assertEquals("W. Croydon", abbreviateBranch("West Croydon"))
+        assertEquals("Walthamstow C.", abbreviateBranch("Walthamstow Central"))
+        assertEquals("N. Greenwich", abbreviateBranch("North Greenwich"))
     }
 
     @Test

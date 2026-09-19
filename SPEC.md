@@ -172,8 +172,9 @@ The **branch outranks the terminus for space**, because on a branching line the 
 what tells two otherwise-identical trains apart — losing it defeats the row. So where the
 full pair won't fit, the branch is kept and the **destination truncates** to make room
 ("Batter… (Charing Cross)"); and before the destination is crushed too far, the branch
-itself shortens to the form a departures board uses — the compass words and "Cross"
-abbreviated ("Charing Cross" → "Charing X", "East Ham" → "E. Ham") — so a tight row reads
+itself shortens to the form a departures board uses — the compass words, "Cross", and
+"Central" abbreviated ("Charing Cross" → "Charing X", "East Ham" → "E. Ham",
+"Walthamstow Central" → "Walthamstow C.") — so a tight row reads
 "Batter… (Charing X)" rather than one unreadable stub plus a long branch. The full branch
 still shows wherever the row can fit it (the abbreviation is measured, not unconditional);
 a branch with no shortenable word stays whole and the destination simply truncates
