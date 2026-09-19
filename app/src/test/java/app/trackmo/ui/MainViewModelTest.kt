@@ -128,6 +128,9 @@ class MainViewModelTest {
                     "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
                     "940GZZLUKSX" to Result.failure(TflException.Offline(null)),
                 ),
+                // Victoria comes back good so the surviving stop's status is fully determined —
+                // the only warning is the failed stop's arrivals, which is what this pins.
+                statuses = Result.success(listOf(status("victoria", LineStatus.GOOD_SERVICE, "Good Service"))),
             ),
             warn = { warnings += it },
         )
@@ -217,6 +220,7 @@ class MainViewModelTest {
 
     @Test
     fun `a line TfL returned no status for is treated as unknown, not clean`() = runTest(dispatcher) {
+        val warnings = mutableListOf<String>()
         val vm = viewModel(
             FakeClient(
                 mapOf(
@@ -228,6 +232,7 @@ class MainViewModelTest {
                 // screen "status unknown" rather than let Northern read as verified-clean.
                 statuses = Result.success(listOf(status("victoria", 6, "Severe Delays"))),
             ),
+            warn = { warnings += it },
         )
         advanceUntilIdle()
 
@@ -236,6 +241,12 @@ class MainViewModelTest {
         state as DeparturesUiState.Loaded
         assertEquals(setOf("victoria"), state.lineStatuses.keys)
         assertTrue(state.disruptionUnknown)
+        // The reason is logged and names the undetermined line, so a persistent
+        // "couldn't check for disruptions" is diagnosable from logcat.
+        assertTrue(
+            "the undetermined line is named in the log",
+            warnings.any { it.contains("no status") && it.contains("northern") },
+        )
     }
 
     @Test
@@ -276,6 +287,7 @@ class MainViewModelTest {
 
     @Test
     fun `a departure with a blank line id leaves the disruption state unknown`() = runTest(dispatcher) {
+        val warnings = mutableListOf<String>()
         val vm = viewModel(
             FakeClient(
                 mapOf(
@@ -287,6 +299,7 @@ class MainViewModelTest {
                 // Victoria comes back good, so the only reason for unknown is the blank id.
                 statuses = Result.success(listOf(status("victoria", LineStatus.GOOD_SERVICE, "Good Service"))),
             ),
+            warn = { warnings += it },
         )
         advanceUntilIdle()
 
@@ -295,6 +308,11 @@ class MainViewModelTest {
         state as DeparturesUiState.Loaded
         assertTrue(state.lineStatuses.isEmpty())
         assertTrue(state.disruptionUnknown)
+        // The blank-line-id reason is logged, so this cause is distinguishable in logcat.
+        assertTrue(
+            "the blank-line-id reason is logged",
+            warnings.any { it.contains("no line id") },
+        )
     }
 
     @Test

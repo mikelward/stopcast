@@ -213,7 +213,13 @@ class MainViewModel(
                 // status checked, so its presence alone leaves the disruption state
                 // unknown — never shown as verified-clean (SPEC principle 1). This also
                 // covers the all-blank case, where no status request is made at all.
-                if (predictedLineIds.any { it.isBlank() }) disruptionUnknown = true
+                val blankLineIdCount = predictedLineIds.count { it.isBlank() }
+                if (blankLineIdCount > 0) {
+                    disruptionUnknown = true
+                    // Name the reason so a persistent "couldn't check for disruptions" is
+                    // diagnosable: a count of unidentifiable predictions, no user data.
+                    warn("disruption status unknown: $blankLineIdCount prediction(s) had no line id to check")
+                }
                 if (lineIds.isNotEmpty()) {
                     try {
                         val statuses = withContext(io) { client.lineStatuses(lineIds) }
@@ -222,7 +228,14 @@ class MainViewModel(
                         // clean — flag it so those rows aren't shown as verified-clean
                         // (the client drops such lines, so they're absent here).
                         val determined = statuses.mapTo(mutableSetOf()) { it.lineId }
-                        if (lineIds.any { it !in determined }) disruptionUnknown = true
+                        val undetermined = lineIds.filterNot { it in determined }
+                        if (undetermined.isNotEmpty()) {
+                            disruptionUnknown = true
+                            // Name the specific lines so a persistent "couldn't check for
+                            // disruptions" is diagnosable — a line id is a canned identifier,
+                            // not user data (SPEC *Privacy*: line ids are allowed in the log).
+                            warn("disruption status unknown: TfL returned no status for line(s) ${undetermined.joinToString(",")}")
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
