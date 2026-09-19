@@ -124,4 +124,41 @@ class ArrivalsGroupingTest {
         assertEquals("Brixton", outbound.destination)
         assertEquals(null, outbound.upcoming.single().platform)
     }
+
+    // TfL suffixes the station type onto a terminus in the recorded shape — "Brixton
+    // Underground Station" — which is decoded and mapped exactly as the client does, so the
+    // destination-cleaning is exercised against the real serialized string rather than a
+    // hand-built value. "Walthamstow Central" (no suffix) is left whole in the same payload.
+    private val suffixedDestinationsJson =
+        """
+        [
+          {
+            "lineId": "victoria",
+            "lineName": "Victoria",
+            "direction": "outbound",
+            "destinationName": "Brixton Underground Station",
+            "expectedArrival": "2026-09-18T08:05:00Z"
+          },
+          {
+            "lineId": "victoria",
+            "lineName": "Victoria",
+            "direction": "inbound",
+            "destinationName": "Walthamstow Central",
+            "expectedArrival": "2026-09-18T08:06:00Z"
+          }
+        ]
+        """.trimIndent()
+
+    @Test
+    fun `station-type suffixes are stripped from the destination through the mapping`() {
+        val departures =
+            json
+                .decodeFromString(ListSerializer(TflArrivalDto.serializer()), suffixedDestinationsJson)
+                .map { it.toDeparture() }
+
+        assertEquals(
+            listOf("Brixton", "Walthamstow Central"),
+            departures.map { it.destination },
+        )
+    }
 }
