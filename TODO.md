@@ -104,10 +104,16 @@ exercises the whole spine the widget later renders from.
     (a banner) rather than presenting them as verified-clean (SPEC *Disruptions*). Keeping
     the *aged last-good* disruption state instead rides with the persisted snapshot (a
     later Phase 1 item — there's no persisted last-good to fall back to yet).
-- [ ] **`docs/PRIVACY.md` describing the debug log's contents** — moved up from Phase 5:
+- [x] **`docs/PRIVACY.md` describing the debug log's contents** — moved up from Phase 5:
       Phase 1 introduces the logger and Phase 0 the deploy pipeline, so a build carrying
       the log can reach testers now, and AGENTS.md requires the disclosure to exist before
-      the log ships.
+      the log ships. Landed: `docs/PRIVACY.md` is the source of truth for what leaves the
+      device (the TfL requests the product needs, the optional user `app_key` → TfL if set,
+      and the platform backup/transfer channel that carries persisted config including the
+      key — no off-device channel trackmo adds beyond TfL), what the on-device log carries
+      (coarse stop/line IDs, HTTP status, location fix outcomes — never a coordinate or
+      key), and that a shareable export redacts travel data. See the doc for the precise,
+      canonical wording — this line is a pointer, not a second inventory to keep in sync.
   - [ ] **Wire the shared on-device logger into both DataStore corruption handlers**
         (`DataStoreSnapshotStore` and `DataStoreWatchedStopsStore`) when it lands, so a
         discarded snapshot or watched-stop set is never silent (SPEC principle 2 / *never
@@ -316,6 +322,13 @@ Builds on Phase 1's minimal line-status marking.
       warning now; the hard release-side guard lands here with the deploy job that makes
       release integrity meaningful (Codex, PR #4).
 - [ ] Licenses / About screen finalized.
+- [ ] **Shareable bug-report export of the on-device log, with travel data redacted.**
+      A user-shareable export of the diagnostic log so a bug report can carry it. The
+      on-device logging exception does **not** extend to an artifact that leaves the
+      device, so the export **redacts travel data** (stop IDs, line ids) — a shared file
+      is subject to the same rule as any other artifact that leaves the machine
+      (`AGENTS.md` *Privacy*). `docs/PRIVACY.md` already commits to this redaction; this is
+      the item that implements it.
 - [ ] Finalize the store-facing privacy disclosure (location, watched stops, the TfL
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
