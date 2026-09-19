@@ -225,6 +225,22 @@ exercises the whole spine the widget later renders from.
       distinct destinations with a departure inside the window, and fall back to only the
       single next departure when the window is empty, so a quiet stop still shows
       something. An alternative to a fixed "next few per row"; explore from real use.
+- [ ] (Later, open call) **Line-pill readability on the mid-tone fills** — Bakerloo and
+      Victoria read muddy with black text (Bakerloo barely clears AA at 4.70:1). Colors
+      only, two directions: lighten just those two a hair *away from the text color* (BAK
+      `#B36305 → #C0700F`, VIC `#0098D4 → #2FA8DE`), or instead darken Bakerloo and flip it
+      to white text. Jubilee was tried and dropped — its black text is already ~8.4:1 and
+      any nudge takes it off-brand for no real gain, so leave it official. The bold label,
+      halo and line-colored border already shipped (PR #19); this is the leftover fill
+      question, and the mock's current-vs-nudged win was marginal — parked for a
+      real-device look before committing.
+- [ ] **Add the missing official line colors to `tubeLineColors`.** The **Elizabeth line
+      (`#6950A1`)** and **DLR (`#00A4A7`)** have settled TfL standards and can go in first
+      (currently both fall through to the neutral gray pill); **London Trams** likewise.
+      The **named Overground lines are the hard case**: since the 2024 renaming each has its
+      own color *and* a new two-tone scheme, which the single-fill pill can't render as-is —
+      needs a pill that can carry two colors (or a chosen representative single color) plus
+      a real-device look before shipping, so it stays on the neutral fallback until then.
 
 ## Phase 3 — Full disruptions
 
