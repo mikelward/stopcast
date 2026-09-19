@@ -363,7 +363,10 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
       unknown until one is chosen — GTFS feeds are commonly free/open, but confirmed per
       city, not assumed. **This records the direction and the shape of the work, not an
       exhaustive feed or contract inventory** — the full scoping is done when the item is
-      picked up. Product decision; not on the roadmap.
+      picked up. Product decision; not on the roadmap. **The full write-up —
+      the feeds, the client-only-vs-backend-vs-aggregator fork, why London stays on the
+      TfL Unified API, live-vs-scheduled and its UI treatment — is in
+      `dev-docs/multi-city-gtfs.md`.**
 
 ## Decisions needing review
 
