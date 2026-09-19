@@ -34,7 +34,11 @@ exercises the whole spine the widget later renders from.
       the uploaded artifact, and CI does not yet gate on pixel drift.
 - [ ] Deploy job (Play internal track, release notes from commit subjects) — Phase 5,
       needs the signing secrets.
-- [ ] `AboutLibraries` licenses export + Licenses screen scaffolding.
+- [x] `AboutLibraries` licenses export + Licenses screen scaffolding. The plugin exports
+      the transitive dependency graph to `res/raw/aboutlibraries.json` (committed;
+      regenerated with `./gradlew :app:exportBundledLicenses`, since AGP 9 can't wire the
+      resource at build time), and a `LicensesScreen` renders it — reached from an About
+      dialog behind the top-bar overflow menu. Roborazzi-covered.
 
 ## Phase 1 — In-app departures view (first deliverable)
 
@@ -785,6 +789,21 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
 
 ## Decisions needing review
 
+- **About/Licenses entry point is an overflow menu → About dialog → full-screen Licenses
+  overlay, reachable from every state** (autopilot, licenses-screen PR). Trackmo has no nav
+  graph and, until now, no About/Settings surface, so the licenses screen needed a home.
+  Chosen: a `MoreVert` overflow in the departures top bar, **and** an "About" button on the
+  location gate, both open the shared About dialog (app name + version); its one action opens
+  the licenses list. The licenses route is hosted at the activity top level, above the
+  gate/departures switch, as a `rememberSaveable`-gated overlay (system Back closes it via the
+  screen's `BackHandler`). Hosting it above the gate (rather than inside the departures view)
+  is what makes the legally-required attribution reachable when location is denied, and takes
+  the departures refresh out of composition while it's open (both Codex P2s on the first
+  cut). Alternatives weighed: a dedicated Settings screen (premature), or a nav library (a
+  dependency for one destination). Reversible — a menu item, a gate button, a shared dialog,
+  and a boolean swap in `MainActivity`. **Wants a maintainer look** at putting an About
+  affordance on the permission-gate screen and at the overflow placement — a real Settings
+  surface later would subsume both.
 - **Widget staleness redraw uses `WorkManager`, one-shot at the boundary, armed from the render
   path** (autopilot, #44, maintainer said "no opinion" on implement-now vs defer). The
   app-closed honesty gap (Codex P1, raised twice) is closed by a single render-only `WorkManager`

@@ -1,5 +1,8 @@
 plugins {
     alias(libs.plugins.android.application) apply false
+    // Applied by :app to export the open-source attribution graph. Declared here
+    // so its classpath is pinned once for the build.
+    alias(libs.plugins.aboutlibraries) apply false
     // Never applied, but its presence pins the Kotlin Gradle Plugin AGP's
     // built-in Kotlin compiles with, so the Compose compiler plugin (pinned to
     // the same `kotlin` version) can't drift from the baseline AGP would pick.

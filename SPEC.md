@@ -308,6 +308,23 @@ rate limit is hit, or location is denied, the surface says which ("offline", "ca
 reach TfL", "location off") and shows the last good data stamped with its age, rather
 than an empty box or unlabeled stale numbers.
 
+### About and open-source licenses
+
+An overflow menu in the departures top bar opens an About dialog naming the app and its
+installed version. Its one action is the open-source licenses screen — the transitive
+dependency graph, and for each component its version, authors, and license identity —
+which trackmo ships to meet those licenses' attribution terms (Apache-2.0 §4 among them).
+That attribution is exported at build time and bundled, so the list itself renders with no
+network. The full license *text* is not bundled (following the sibling repos' export, which
+omits it): each license links out to its canonical text, one tap to the browser. There is
+no Settings surface yet; About is reached through the menu, not a navigation graph.
+
+About — and so the license attribution — is reachable in **every** state, including the
+location gate when permission is denied and departures never resolve: it is hosted above the
+gate, not inside the departures view, so a user who never grants location can still open it.
+Opening it also takes the departures view (and its background refresh) out of the picture, so
+nothing polls TfL behind the static screen.
+
 ## Architecture
 
 - **Kotlin + Jetpack Compose**, a single `:app` module (mirroring simmo and Type

@@ -8,7 +8,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -40,7 +45,13 @@ fun LocationGate(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     permanentlyDenied: Boolean = false,
+    // Open the About dialog (version + the open-source licenses screen). Reachable here too, not
+    // only past the gate, so the license attribution isn't stranded when location is denied and
+    // departures never resolve (Codex). Default no-op so a screenshot test renders without it.
+    onOpenLicenses: () -> Unit = {},
 ) {
+    // Saved so an open About dialog survives rotation on the gate.
+    var showAbout by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier = modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -83,6 +94,20 @@ fun LocationGate(
             // Ready is the caller's cue to show the departures screen, not the gate.
             is NearbyStopsViewModel.State.Ready -> Unit
         }
+        // Always present, below the state's own action: the one way to reach the app version and
+        // open-source attribution while stuck on the gate.
+        TextButton(onClick = { showAbout = true }, modifier = Modifier.padding(top = 24.dp)) {
+            Text(stringResource(R.string.menu_about))
+        }
+    }
+    if (showAbout) {
+        AboutDialog(
+            onOpenLicenses = {
+                showAbout = false
+                onOpenLicenses()
+            },
+            onDismiss = { showAbout = false },
+        )
     }
 }
 
