@@ -249,6 +249,23 @@ exercises the whole spine the widget later renders from.
       **Privacy:** the typed query is sent to TfL's search endpoints — a new off-device input
       beyond today's coordinates/stop-IDs, so SPEC *Privacy* is updated to disclose it (done)
       and the Play Data Safety answers account for it when this ships. Requested 2026-09-19.
+- [ ] **Re-locate the "near me now" list on demand, not just on first open.** Today the
+      nearby flow locates once; a user who has moved is stuck on the old position until
+      something else re-triggers it. **First deliverable: an explicit "Update location"
+      toolbar button** — the standard my-location glyph (crosshairs / GPS arrow) — that
+      re-runs the fix and the nearby lookup. Keep re-location behind that deliberate
+      near-me action (and other explicit near-me moments, e.g. returning to the discovery
+      screen after a gap) — **not** folded into the departures **refresh** path: D1 keeps
+      location off every refresh, and the `StopFinder`/`TflClient` split enforces that
+      boundary. It reuses the `AndroidLocationProvider` path but needs an **explicit-update
+      mode that forces a fresh fix**: `FixSelection`'s fast path returns a cached fix up to
+      `FRESH_ENOUGH_MILLIS` (~2 min) old without calling `freshFix`, so a plain re-run tapped
+      within that window would reuse the old coordinates — the very staleness this item fixes.
+      The Update-location action must attempt a fresh fix first, applying the bounded cached
+      fallback only if that fails. Each re-location is another on-demand coordinate to TfL —
+      the same recipient and data category as the first fix, not a new off-device channel — so
+      £0, negligible against the keyless rate budget for a user-initiated tap, and a small
+      per-fix battery cost.
 - [ ] Per-stop line/direction filters (D2).
 - [ ] **Filter or rank by a destination the user enters, and let them save favorite
       destinations** — the user names where they're going (or picks a saved favorite) and
