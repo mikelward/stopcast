@@ -300,6 +300,38 @@ Builds on Phase 1's minimal line-status marking.
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
 
+## Beyond MVP (not planned)
+
+Directions that would change what trackmo *is*, not steps in the London MVP. Recorded so
+they aren't re-derived; none is scheduled, and each needs the maintainer's go-ahead.
+
+- [ ] (Later, open call) **Other cities beyond London** (recorded 2026-09-19 at the
+      maintainer's request). Trackmo is TfL-specific today: the data layer talks only to
+      the TfL Unified API, and line colors/codes are TfL's. The **domain layer**
+      (`app.trackmo.domain` — stops, departures, staleness) is *shaped* around one
+      departures model much of a multi-city version would reuse, but it is **not already
+      provider-agnostic**: it carries TfL-specific contracts a second provider would have
+      to **normalize or redesign, not just adapt behind an interface** — `TflClient` /
+      `TflException`, `StopFinder`'s NaPTAN stop-type defaults, `LineStatus`'s TfL
+      `statusSeverity` semantics, and `Departure`'s TfL direction/mode semantics. (Pill
+      rendering is in the UI layer, `app.trackmo.ui.LinePill`, not the domain.) So the
+      pathway is more than an adapter behind the data layer: the TfL contracts above are
+      normalized, and a real-time provider is added. **GTFS** is the common denominator,
+      which in practice is three feeds, not one — the static **Schedule** (the stop/route/
+      trip catalog nearby-stop discovery and labels need), **Realtime trip updates** (live
+      times keyed by the Schedule's IDs), and a **disruption source** (GTFS-Realtime
+      *Service Alerts*, which are optional and sometimes a separate operator API): trackmo's
+      honesty floor warns about a closed line or stop even with no predictions (SPEC
+      principle 1; `lineStatuses`/`stopDisruptions`), so a provider lacking an alerts feed
+      needs an honest fallback, never unverified-shown-as-clean. Plus per-city line styling
+      and branding (the name reads as TfL-flavored). It's a scope expansion, not a refactor:
+      **N data sources**, each with its own cost, rate limits, reliability, and **Play Data
+      Safety** answer, and an app identity/branding question. Costs are per-provider and
+      unknown until one is chosen — GTFS feeds are commonly free/open, but confirmed per
+      city, not assumed. **This records the direction and the shape of the work, not an
+      exhaustive feed or contract inventory** — the full scoping is done when the item is
+      picked up. Product decision; not on the roadmap.
+
 ## Decisions needing review
 
 - **Staleness threshold = 5 minutes** (`Staleness.THRESHOLD`, Phase 1 domain). The one
