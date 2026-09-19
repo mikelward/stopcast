@@ -2,11 +2,15 @@ package app.trackmo.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.trackmo.domain.DepartureRow
 import app.trackmo.domain.DeparturesSnapshot
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
 import app.trackmo.domain.Snapshot
 import app.trackmo.domain.SnapshotStore
+import app.trackmo.domain.StarredRow
+import app.trackmo.domain.StarredRowSet
+import app.trackmo.domain.StarredRowsStore
 import app.trackmo.domain.StopArrivals
 import app.trackmo.domain.TflClient
 import app.trackmo.domain.TflException
@@ -49,6 +53,9 @@ class MainViewModel(
     // Persists the last-good snapshot across sessions and to the widget. No-op by default so
     // tests and an unwired build run identically minus the restore.
     private val snapshotStore: SnapshotStore = SnapshotStore.NONE,
+    // Persists which rows the user has starred (the ranking overlay). No-op by default, so
+    // tests and an unwired build run identically minus starring.
+    private val starredStore: StarredRowsStore = StarredRowsStore.NONE,
     // No-op by default: the shared on-device logger is deferred until `docs/PRIVACY.md`
     // describes what it carries (both are their own Phase 1 items), so nothing is logged
     // in production until then. The seam stays for tests and that later wiring.
@@ -61,9 +68,66 @@ class MainViewModel(
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
+    // The starred set the screen pins to the top (SPEC D8). Collected from the store so a
+    // toggle re-orders the list at once; an Unavailable set (a newer-version file this build
+    // can't read) pins nothing rather than guessing — the stars are preserved on disk.
+    private val _starred = MutableStateFlow<Set<StarredRow>>(emptySet())
+    val starred: StateFlow<Set<StarredRow>> = _starred.asStateFlow()
+
+    // Whether the star control should be offered at all. Starts false — the store's first
+    // read hasn't arrived, so we don't yet know which rows are starred; enabling the control
+    // before then would show a persisted-starred row as unstarred with a "Pin to top" action,
+    // and a tap in that window would toggle the real persisted membership *off* (SPEC
+    // principle 2). It turns true on the first [StarredRowSet.Loaded]. It stays false when the
+    // stored set is a newer-schema file this build can't read ([StarredRowSet.Unavailable]) or
+    // when the read flow fails: the stars exist (or their state is unknown) but we can't show
+    // which rows are starred, so the screen hides the control rather than rendering every star
+    // unfilled — the false "nothing is starred" claim [StarredRowSet.Unavailable] exists to
+    // prevent — on a control whose taps would be a no-op or unsafe anyway.
+    private val _starringAvailable = MutableStateFlow(false)
+    val starringAvailable: StateFlow<Boolean> = _starringAvailable.asStateFlow()
+
+    // Set when a star write failed (storage full, an IO error) so the screen can show a
+    // transient message — a tap that didn't take otherwise reads as the app being broken
+    // (SPEC principle 2: do the safe thing and say so). An *acknowledged* StateFlow, not a
+    // one-shot event: the ViewModel outlives a configuration change, so the flag survives a
+    // rotation that happens between the failed tap and the screen showing the message (a
+    // replay-0 event would be lost in that gap). The screen calls [starWriteFailureShown]
+    // once it has surfaced it, which clears the flag so it isn't shown again.
+    private val _starWriteFailed = MutableStateFlow(false)
+    val starWriteFailed: StateFlow<Boolean> = _starWriteFailed.asStateFlow()
+
     private var fetchJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            // A read failure (DataStore IOException, a non-corruption disk error) must not
+            // escape and crash the departures screen as it starts. Handle it explicitly:
+            // rethrow cancellation (structured concurrency), log sanitized, and leave starring
+            // in an honest unavailable state (control hidden, nothing pinned) — the same shape
+            // as an Unavailable set, since a failed read equally means we can't say which rows
+            // are starred (SPEC principle 2 / error-handling rule).
+            try {
+                starredStore.starred().collect { set ->
+                    when (set) {
+                        is StarredRowSet.Loaded -> {
+                            _starred.value = set.starred
+                            _starringAvailable.value = true
+                        }
+                        StarredRowSet.Unavailable -> {
+                            _starred.value = emptySet()
+                            _starringAvailable.value = false
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _starred.value = emptySet()
+                _starringAvailable.value = false
+                warn("starred set read failed: ${reason(e)}")
+            }
+        }
         // Show the persisted last-good at once (a stamped placeholder, aged), then refresh.
         // The read is off the main thread and the first frame is already the Loading
         // placeholder, so nothing blocks on the DataStore read (SPEC snapshot-render). The
@@ -314,6 +378,32 @@ class MainViewModel(
         // Clear the in-flight flag only when this job settles — a job superseded by a
         // newer refresh doesn't clear the newer one's indicator.
         job.invokeOnCompletion { if (fetchJob === job) _refreshing.value = false }
+    }
+
+    /**
+     * Flip [row]'s star (SPEC D8) — pin it to the top of the list, or unpin it — and persist
+     * the change. Off the main thread; the [starred] flow re-emits from the store, so the list
+     * re-orders without this touching UI state directly. Best-effort: a write failure is logged
+     * and the set is unchanged (a preserved [StarredRowSet.Unavailable] is a no-op in the store).
+     */
+    fun toggleStar(row: DepartureRow) {
+        viewModelScope.launch {
+            try {
+                withContext(io) { starredStore.toggle(StarredRow.of(row)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                warn("star toggle failed: ${reason(e)}")
+                // The write didn't take and the store won't re-emit, so the star silently
+                // stays as it was — tell the user rather than let the tap look broken.
+                _starWriteFailed.value = true
+            }
+        }
+    }
+
+    /** Called by the screen once it has surfaced the star-write failure, so it isn't shown again. */
+    fun starWriteFailureShown() {
+        _starWriteFailed.value = false
     }
 
     /**

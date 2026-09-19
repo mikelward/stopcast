@@ -140,6 +140,32 @@ object DepartureRows {
     }
 
     /**
+     * Reorder [rows] so the user's **starred** services sit at the top — ranking only, not
+     * membership (SPEC D8): a star pins its row above the unstarred ones, it does not add or
+     * remove anything. Applied after [across]/[nearbyDeduped], so the rows are already in
+     * soonest-first order and this only lifts the starred ones.
+     *
+     * **Warning rows stay on top of everything**, above even a starred service: a stop-closure
+     * or a no-departure line-status row is a warning the user must see, and pinning a starred
+     * service above it would push a closure down the list (SPEC principle 2 — never hide a
+     * warning). So a starred *service that is itself currently a warning row* (a starred line
+     * gone suspended, now a no-prediction status row) stays in the warning band too — its star
+     * re-pins it the moment it has departures again. The sort is stable, so within each band the
+     * soonest-first order carries through unchanged; an empty [starred] set returns [rows] as-is.
+     */
+    fun pinStarred(rows: List<DepartureRow>, starred: Set<StarredRow>): List<DepartureRow> {
+        if (starred.isEmpty()) return rows
+        return rows.sortedBy { row ->
+            when {
+                // Warnings (closures, no-prediction status) lead, whether starred or not.
+                row.stopDisruption != null || row.upcoming.isEmpty() -> 0
+                StarredRow.of(row) in starred -> 1
+                else -> 2
+            }
+        }
+    }
+
+    /**
      * The cross-stop dedupe identity for [nearbyDeduped]: line + direction-of-travel.
      *
      * A timed row deduplicates across stops **only with a real cross-stop identity** — both a

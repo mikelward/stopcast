@@ -160,9 +160,13 @@ closed stop is surfaced, not silently dropped for want of a departure to build a
 The list shows the **watched stops'** rows (D1) — trackmo renders the stops the user
 chose ahead of time, not "nearest to me" — ordered **location-free** so the view works
 with location denied: soonest-first, with **starred** rows pinned to the top. Starring is
-ranking only, separate from which stops are watched (add/remove membership). Distance
-ranking belongs to *finding* stops (near-me discovery, *Finding stops*), not to ordering
-the watched list.
+ranking only, separate from which stops are watched (add/remove membership). A star keys on
+the row's `(stop, service, resolved direction key)` identity, so it restores to exactly one
+row and survives restart. **Warning rows still lead**, above even a starred service — a stop
+closure or a no-prediction line-status row is something the user must see, and pinning a
+starred service above it would push a warning down the list (principle 2). Distance ranking
+belongs to *finding* stops (near-me discovery, *Finding stops*), not to ordering the watched
+list.
 
 **The final display model, and how a direction is labeled, are still open.** The flat
 list ships first because it is the simplest thing that is fully glanceable. A more
