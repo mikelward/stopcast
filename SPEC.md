@@ -50,12 +50,34 @@ The app finds stops two ways:
 
 - **Near me now** — with location permission, trackmo lists the stops nearest the
   user's current position (TfL `/StopPoint` by coordinates) so pinning the right ones
-  is one tap. This is an in-app, on-demand action, never a background one. To keep it
-  fast and honest: a recent cached position is used at once; if a fresh fix is slow or
-  absent, a *somewhat-stale* cached one substitutes for it rather than making the user
-  wait or fail — but only within a bounded age, past which trackmo reports "couldn't get
-  your location" rather than showing a previous location's stops as current (a user who
-  has traveled would be misled). A failure to get a fix is always logged, so a misfire is
+  is one tap. This is an in-app, on-demand action, never a background one. The list is a
+  **useful, scannable spread, not a raw nearest-N**:
+  - a **line appears once**, not once per stop it passes — a raw nearest-N repeats the same
+    bus route several times, one per adjacent stop, which reads as noise;
+  - a **denser mode doesn't crowd out another** — the nearest station of a mode surfaces even
+    when several stops of another mode are closer, as long as it's within reach (so the
+    nearest Tube shows even where bus stops dominate the immediate area);
+  - it is **bounded to within reach** — on the order of a mile — so a far stop never appears
+    just because nothing nearer shares its line. The distance is nominal, not a hard ceiling —
+    the set reaches beyond it only when nothing is nearer. Whether the list *also* needs a hard
+    count cap to stay scannable at a dense interchange is **not yet decided** and lives as an
+    open question in `TODO.md`, not settled here;
+  - it is **by line, both directions shown** for now — paired stops across a road serve a line
+    in opposite directions, so neither direction is dropped; narrowing by direction or
+    destination is a later refinement tied to *favorite destinations*;
+  - a **closer closed stop is surfaced honestly** — its status is shown rather than silently
+    routing the user to a farther open stop with no explanation.
+
+  The exact selection policy (radii, per-mode counts, whether an overall count cap is needed,
+  how "mode-stop" maps onto the TfL model) is still being shaped on-device and lives in
+  `TODO.md`, but the constraints above are the settled product intent the implementation must
+  satisfy.
+
+  To keep the lookup fast and honest: a recent cached position is used at once; if a fresh fix
+  is slow or absent, a *somewhat-stale* cached one substitutes for it rather than making the
+  user wait or fail — but only within a bounded age, past which trackmo reports "couldn't get
+  your location" rather than showing a previous location's stops as current (a user who has
+  traveled would be misled). A failure to get a fix is always logged, so a misfire is
   diagnosable.
 - **Search** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run).
@@ -242,8 +264,10 @@ than an empty box or unlabeled stale numbers.
 Trackmo's one external dependency is the **TfL Unified API** — free and public.
 
 - Endpoints: `/StopPoint` (nearby by lat/lon + stop types + radius) and `/StopPoint/
-  Search` for finding stops; `/StopPoint/{id}/Arrivals` for departures; `/StopPoint/
-  {id}/Disruption`, `/Line/{ids}/Status` and `/Line/{ids}/Disruption` for disruptions.
+  Search` for finding stops by name, plus `/Line/Search/{query}` then `/Line/{id}/
+  StopPoints` for finding a stop by line (Phase 2); `/StopPoint/{id}/Arrivals` for
+  departures; `/StopPoint/{id}/Disruption`, `/Line/{ids}/Status` and `/Line/{ids}/
+  Disruption` for disruptions.
 - **Cost: £0.** Anonymous access is limited to ~50 requests/min; a free, user-supplied
   `app_key` raises it to ~500/min.
 - **D7 — trackmo ships no baked-in key.** It works keyless out of the box, and a user
@@ -271,8 +295,9 @@ to offer it.
 Trackmo handles location and the set of stops the user watches — which together reveal
 where they live, work, and travel. Trackmo itself sends none of it anywhere except the
 TfL requests that *are* the product: a nearby-stops lookup necessarily sends coordinates
-to TfL, and a departures lookup necessarily sends the watched stop IDs. That is inherent
-and disclosed.
+to TfL, and a departures lookup necessarily sends the watched stop IDs. Stop **search**
+(Phase 2) likewise sends the typed stop-name or line query to TfL's search endpoints. That
+is inherent to each feature and disclosed.
 
 All of trackmo's persisted config — watched stops, per-stop filters, row stars, any saved
 favorite destinations, the user's `app_key` — and the last-good snapshot travel through
