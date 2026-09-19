@@ -50,7 +50,17 @@ The app finds stops two ways:
 
 - **Near me now** — with location permission, trackmo lists the stops nearest the
   user's current position (TfL `/StopPoint` by coordinates) so pinning the right ones
-  is one tap. This is an in-app, on-demand action, never a background one. The list is a
+  is one tap. It asks for **precise location** (`ACCESS_FINE_LOCATION`): a coarse fix
+  can be off by up to ~1 km, enough to read a stop half a mile away as the nearest, so
+  precise is what makes "nearest" mean nearest. An *approximate*-only grant still works,
+  degraded, rather than dead-ending. So the fix sent to TfL on demand is precise when the
+  user grants precise **and an accurate fix is available** — it prefers GPS/fused, but falls
+  back to an approximate (network/passive, or an approximate cached) fix when no accurate one
+  can be obtained, so even under a precise grant the fix sent is occasionally approximate;
+  under an approximate-only grant it is always approximate. Precise location is the Play Data
+  Safety type the action **may collect** and so declares, not a claim that every fix is
+  precise; either way it is never a background send. This is an in-app,
+  on-demand action, never a background one. The list is a
   **useful, scannable spread, not a raw nearest-N**:
   - a **line appears once**, not once per stop it passes — a raw nearest-N repeats the same
     bus route several times, one per adjacent stop, which reads as noise;
@@ -295,9 +305,13 @@ to offer it.
 Trackmo handles location and the set of stops the user watches — which together reveal
 where they live, work, and travel. Trackmo itself sends none of it anywhere except the
 TfL requests that *are* the product: a nearby-stops lookup necessarily sends coordinates
-to TfL, and a departures lookup necessarily sends the watched stop IDs. Stop **search**
-(Phase 2) likewise sends the typed stop-name or line query to TfL's search endpoints. That
-is inherent to each feature and disclosed.
+to TfL — **precise** where the user granted precise and an accurate fix is available,
+approximate under an approximate-only grant or when no accurate fix can be obtained (see
+*Finding stops*) — and a departures lookup necessarily sends the watched stop
+IDs. Stop **search** (Phase 2) likewise sends the typed stop-name or line query to TfL's
+search endpoints. That is inherent to each feature and disclosed; precise location is the
+Play Data Safety type the nearby action may collect (and so declares), not a claim that
+every fix sent is precise.
 
 All of trackmo's persisted config — watched stops, per-stop filters, row stars, any saved
 favorite destinations, the user's `app_key` — and the last-good snapshot travel through

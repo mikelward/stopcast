@@ -69,20 +69,25 @@ class MainActivity : ComponentActivity() {
                 var permissionPermanentlyDenied by rememberSaveable { mutableStateOf(false) }
 
                 val permissionLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestPermission(),
-                ) { granted ->
-                    if (granted) {
+                    ActivityResultContracts.RequestMultiplePermissions(),
+                ) { grants ->
+                    // The precise request has now been shown, whichever way it was answered —
+                    // so an upgraded coarse-only user isn't prompted again on every open.
+                    markPrecisePrompted()
+                    // Request both so the runtime dialog offers the precise/approximate choice;
+                    // either grant finds stops (precise preferred — see AndroidLocationProvider).
+                    if (grants.values.any { it }) {
                         permissionPermanentlyDenied = false
                         nearbyViewModel.locate()
                     } else {
                         // A denial with no rationale allowed means the system won't prompt
                         // again — route the user to Settings rather than a dead re-request.
                         permissionPermanentlyDenied =
-                            !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_COARSE_LOCATION)
+                            !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)
                     }
                 }
 
-                // Resolve when the coarse-location permission is held and nothing has resolved
+                // Resolve when a location permission is held and nothing has resolved
                 // yet: on open if already granted, and again on returning from Settings with a
                 // fresh grant. Guarded on the still-unresolved PermissionRequired state so a
                 // configuration change — which recreates the activity and re-runs this, while
@@ -91,10 +96,19 @@ class MainActivity : ComponentActivity() {
                 val lifecycleOwner = LocalLifecycleOwner.current
                 LaunchedEffect(lifecycleOwner) {
                     lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                        if (nearbyViewModel.state.value is NearbyStopsViewModel.State.PermissionRequired &&
-                            hasCoarseLocation()
-                        ) {
-                            nearbyViewModel.locate()
+                        if (nearbyViewModel.state.value is NearbyStopsViewModel.State.PermissionRequired) {
+                            when (
+                                nearbyPermissionAction(
+                                    hasFine = hasFineLocation(),
+                                    hasAnyLocation = hasLocationPermission(),
+                                    precisePrompted = precisePrompted(),
+                                )
+                            ) {
+                                NearbyPermissionAction.LOCATE -> nearbyViewModel.locate()
+                                NearbyPermissionAction.REQUEST_PRECISE ->
+                                    permissionLauncher.launch(locationPermissions)
+                                NearbyPermissionAction.WAIT -> {}
+                            }
                         }
                     }
                 }
@@ -105,10 +119,10 @@ class MainActivity : ComponentActivity() {
                     else -> LocationGate(
                         state = state,
                         permanentlyDenied = permissionPermanentlyDenied,
-                        onAllow = { permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
+                        onAllow = { permissionLauncher.launch(locationPermissions) },
                         onRetry = {
-                            if (hasCoarseLocation()) nearbyViewModel.locate()
-                            else permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                            if (hasLocationPermission()) nearbyViewModel.locate()
+                            else permissionLauncher.launch(locationPermissions)
                         },
                         onOpenSettings = ::openAppSettings,
                     )
@@ -161,9 +175,28 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun hasCoarseLocation(): Boolean =
-        checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
+    // Either grant is enough to find stops; precise (FINE) is preferred and requested first.
+    private fun hasLocationPermission(): Boolean =
+        hasFineLocation() ||
+            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private fun hasFineLocation(): Boolean =
+        checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    // Whether the precise-location request has been shown at least once. Persisted so an
+    // existing coarse-only install (upgraded from before FINE was requested) is prompted for
+    // precise exactly once — adding FINE to the manifest does not upgrade a live coarse grant,
+    // so without this such a user would silently keep the inaccurate coarse behavior (Codex).
+    // A completed approximate choice sets it too, so the user isn't nagged every open.
+    private val locationPrefs by lazy {
+        getSharedPreferences("trackmo.location", MODE_PRIVATE)
+    }
+
+    private fun precisePrompted(): Boolean = locationPrefs.getBoolean(KEY_PRECISE_PROMPTED, false)
+
+    private fun markPrecisePrompted() {
+        locationPrefs.edit().putBoolean(KEY_PRECISE_PROMPTED, true).apply()
+    }
 
     /** Opens this app's system settings so the user can grant a permanently-denied permission. */
     private fun openAppSettings() {
@@ -176,6 +209,15 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        // FINE first so the runtime dialog leads with precise; COARSE alongside so the dialog
+        // offers the approximate choice and an approximate grant still finds stops.
+        private val locationPermissions = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
+
+        private const val KEY_PRECISE_PROMPTED = "precise_prompted"
+
         // Process-scoped: one OkHttp engine and connection pool shared by every ViewModel
         // the process creates, rather than a fresh client leaked per ViewModel (nothing
         // closes a Ktor client, so a per-launch one accumulates engine/pool resources). A
@@ -183,6 +225,38 @@ class MainActivity : ComponentActivity() {
         // process and dies with it.
         private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
     }
+}
+
+/** What the nearby gate should do for the current location-permission state (see [nearbyPermissionAction]). */
+internal enum class NearbyPermissionAction { LOCATE, REQUEST_PRECISE, WAIT }
+
+/**
+ * The nearby gate's action for a held (or absent) location permission, from the three facts the
+ * runtime exposes: whether precise (FINE) is granted, whether *any* location permission is
+ * granted, and whether the precise request has already been shown once (persisted).
+ *
+ * Extracted pure so the coarse-only-upgrade path is unit-testable off a device — the reported
+ * bug was an install predating FINE keeping a live coarse grant, which the manifest change does
+ * not upgrade, so it must be offered precise exactly once (AGENTS testing rule: a bug fix gets a
+ * regression test). The [MainActivity] `LaunchedEffect` only supplies the three booleans and
+ * carries out the returned action.
+ *
+ * - **precise held** → [LOCATE]: the accurate fix is available.
+ * - **coarse held, precise already prompted** → [LOCATE]: the user's approximate choice stands;
+ *   re-prompting every open would nag.
+ * - **coarse held, precise never prompted** → [REQUEST_PRECISE]: the upgrade case — offer precise
+ *   once rather than silently keeping the inaccurate coarse fix.
+ * - **no location permission** → [WAIT]: the gate shows its Allow button; nothing auto-fires.
+ */
+internal fun nearbyPermissionAction(
+    hasFine: Boolean,
+    hasAnyLocation: Boolean,
+    precisePrompted: Boolean,
+): NearbyPermissionAction = when {
+    hasFine -> NearbyPermissionAction.LOCATE
+    hasAnyLocation && precisePrompted -> NearbyPermissionAction.LOCATE
+    hasAnyLocation -> NearbyPermissionAction.REQUEST_PRECISE
+    else -> NearbyPermissionAction.WAIT
 }
 
 /**

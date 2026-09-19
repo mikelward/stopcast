@@ -273,6 +273,19 @@ exercises the whole spine the widget later renders from.
         mode's nearest in-reach stop is fetched/shown, distance-shaped, without a fixed
         count cap (SPEC *Finding stops → Near me now*; the cap stays parked). Weigh the
         fetch cost (an arrivals call per stop) — try distance-shaped on a device first.
+  - [ ] Use measured `Location.accuracy`, not just provider name, on **both** the cached
+        fast-path and the fresh-fix waterfall. `AndroidLocationProvider` classifies a fix as
+        accurate by provider (GPS/fused, PR #38), which is a proxy: a fused fix derived from
+        Wi-Fi/cell can be less accurate than an older GPS fix. So on the cached fast-path a
+        recent fused fix can short-circuit, and on the fresh waterfall a prompt fused fix is
+        accepted, both without preferring a more accurate GPS fix (Codex, PR #38, both paths).
+        Deferred because it is below the resolution the fix targets — #38 exists to stop a
+        ~1 km network fix reading a stop half a mile away as nearest, and a fused fix is tens
+        of meters, ample for the nearest stop — and choosing an accuracy threshold (what
+        counts as "insufficient", whether to wait for GPS and how long) is device-tuning the
+        sandbox can't validate and a change to the maintainer-approved provider-name design.
+        Preserve `Location.accuracy` through both paths and prefer the most accurate fix;
+        settle the threshold and the latency trade on a device.
 - [ ] Per-stop line/direction filters (D2).
 - [ ] **Filter or rank by a destination the user enters, and let them save favorite
       destinations** — the user names where they're going (or picks a saved favorite) and
