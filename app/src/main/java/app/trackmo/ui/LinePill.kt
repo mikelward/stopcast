@@ -12,19 +12,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
- * Official TfL Color Standard hexes for the traditional Underground lines, keyed by
- * TfL's `lineId`. These are the long-stable line colors (Northern black, Central red,
- * Piccadilly dark blue, …). Newer or multi-color modes — the Elizabeth line, the
- * individually-named Overground lines, trams, DLR — are deliberately absent: they fall
- * back to a neutral pill rather than ship a shade this isn't sure of, and get added
- * here once their exact hex is confirmed against TfL's standard.
+ * Official TfL line colors for the traditional Underground lines, keyed by TfL's
+ * `lineId` — the long-stable colors (Northern black, Central red, Piccadilly dark blue,
+ * …). Single-color *modes* (bus, DLR, Elizabeth, Overground, tram) resolve by mode
+ * instead (see [modeColors]), since they share one color across every line of the mode.
  */
 private val tubeLineColors: Map<String, Color> = mapOf(
     "bakerloo" to Color(0xFFB36305),
@@ -40,29 +37,80 @@ private val tubeLineColors: Map<String, Color> = mapOf(
     "waterloo-city" to Color(0xFF95CDBA),
 )
 
-/** London buses are red — TfL's corporate/roundel red. */
-private val londonBusRed = Color(0xFFDC241F)
+/**
+ * Single-color modes, keyed by TfL's `modeName` — every line of the mode shares the color,
+ * so these resolve by mode rather than by line id. Buses are TfL's roundel red; DLR
+ * turquoise, the Elizabeth line purple, and London Trams green are their TfL line colors.
+ *
+ * **Overground is a deliberate placeholder**: since the 2024 renaming each named Overground
+ * line has its own color *and* a two-tone scheme the single-fill pill can't render, so every
+ * Overground line shows the legacy single orange until a two-color pill lands (see SPEC /
+ * TODO). Anything not here (e.g. national rail) falls back to a neutral pill.
+ */
+private val modeColors: Map<String, Color> = mapOf(
+    "bus" to Color(0xFFDC241F),
+    "dlr" to Color(0xFF00A4A7),
+    "elizabeth-line" to Color(0xFF6950A1),
+    "overground" to Color(0xFFEE7C0E),
+    "tram" to Color(0xFF84B817),
+    "trams" to Color(0xFF84B817),
+)
 
 /**
- * The pill fill color for a service, or `null` when its line/mode has no defined color
- * yet (so the caller shows a neutral pill). A tube line resolves by [lineId]; any bus
- * resolves to London-bus red by [mode]; everything else is unmapped for now.
+ * The pill fill color for a service, or `null` when its line/mode has no defined color yet
+ * (so the caller shows a neutral pill). A tube line resolves by [lineId]; a single-color
+ * mode (bus, DLR, Elizabeth, Overground, tram) resolves by [mode]; everything else is
+ * unmapped for now.
  */
 fun lineFillColor(lineId: String, mode: String): Color? =
-    tubeLineColors[lineId] ?: londonBusRed.takeIf { mode.equals("bus", ignoreCase = true) }
+    tubeLineColors[lineId] ?: modeColors[mode.lowercase()]
 
 /**
- * Black or white text, whichever has the higher WCAG contrast ratio against [fill]. A
- * plain 0.5 luminance split picks white too eagerly — a mid-luminance fill like Victoria
- * blue or Jubilee gray then drops below the 4.5:1 floor on white when black clears it —
- * so this compares the two directly: contrast to black is `(L + 0.05) / 0.05`, to white
- * `1.05 / (L + 0.05)`, and black wins from about L = 0.179 up.
+ * Black or white text, whichever **APCA** rates as higher-contrast on [fill]. APCA (the
+ * perceptual model headed into WCAG 3) is used instead of the WCAG-2 contrast ratio
+ * because that ratio is luminance-only and misreads white on saturated mid-tones: it puts
+ * black on Victoria blue, DLR turquoise and Bakerloo brown, where white is clearly the more
+ * readable choice to the eye. APCA models polarity and lightness and agrees with the eye on
+ * those. The chosen picks are recorded in `AGENTS.md` / `SPEC.md`; the bold weight and halo
+ * add real margin neither model credits. Ties (near-neutral fills) fall to black.
  */
 fun textColorOn(fill: Color): Color {
-    val l = fill.luminance()
-    val contrastToBlack = (l + 0.05f) / 0.05f
-    val contrastToWhite = 1.05f / (l + 0.05f)
-    return if (contrastToBlack >= contrastToWhite) Color.Black else Color.White
+    val onBlack = apcaLc(textLuminance = BLACK_APCA_Y, backgroundLuminance = apcaLuminance(fill))
+    val onWhite = apcaLc(textLuminance = WHITE_APCA_Y, backgroundLuminance = apcaLuminance(fill))
+    return if (onBlack >= onWhite) Color.Black else Color.White
+}
+
+/**
+ * APCA screen luminance for a color: a plain 2.4-power of each sRGB channel (APCA's own
+ * transfer curve, not WCAG's piecewise one), weighted by the same coefficients.
+ */
+private fun apcaLuminance(color: Color): Double =
+    0.2126 * Math.pow(color.red.toDouble(), 2.4) +
+        0.7152 * Math.pow(color.green.toDouble(), 2.4) +
+        0.0722 * Math.pow(color.blue.toDouble(), 2.4)
+
+private val BLACK_APCA_Y = apcaLuminance(Color.Black)
+private val WHITE_APCA_Y = apcaLuminance(Color.White)
+
+/**
+ * Absolute APCA lightness contrast (Lc, 0–~108) of a text luminance on a background
+ * luminance — the W3 APCA-0.1.9 constants: a soft black clamp, polarity-aware exponents,
+ * and the low-contrast clip. Magnitude only, since [textColorOn] just compares the two
+ * candidates; higher is more readable.
+ */
+private fun apcaLc(textLuminance: Double, backgroundLuminance: Double): Double {
+    fun clamp(y: Double) = if (y < 0.022) y + Math.pow(0.022 - y, 1.414) else y
+    val txt = clamp(textLuminance)
+    val bg = clamp(backgroundLuminance)
+    if (Math.abs(bg - txt) < 0.0005) return 0.0
+    val contrast = if (bg > txt) {
+        val sapc = (Math.pow(bg, 0.56) - Math.pow(txt, 0.57)) * 1.14
+        if (sapc < 0.1) 0.0 else sapc - 0.027
+    } else {
+        val sapc = (Math.pow(bg, 0.65) - Math.pow(txt, 0.62)) * 1.14
+        if (sapc > -0.1) 0.0 else sapc + 0.027
+    }
+    return Math.abs(contrast * 100)
 }
 
 /**
