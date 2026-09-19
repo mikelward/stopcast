@@ -13,9 +13,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.trackmo.domain.lineCode
 
 /**
  * Official TfL line colors for the traditional Underground lines, keyed by TfL's
@@ -139,8 +142,11 @@ fun borderColorOn(fill: Color): Color = lerp(fill, textColorOn(fill), BORDER_BLE
 private const val BORDER_BLEND = 0.4f
 
 /**
- * The line name in its line's color — a filled pill, so the list scans by line at a
- * glance. An outline defines every pill and, in particular, keeps a black Northern pill
+ * The line's short [lineCode] (VIC, BAK, …) in its line's color — a filled pill, so the
+ * list scans by line at a glance while leaving the row's width for the countdown. The full
+ * [lineName] is set as the pill's accessible label, so a screen reader announces "Victoria"
+ * rather than the code. An outline defines every pill and, in particular, keeps a black
+ * Northern pill
  * visible against the dark theme's near-black surface; the text color flips to stay
  * legible on the fill, with a halo lifting it off the mid-luminance fills where the
  * contrast is tightest (Bakerloo brown, where WCAG makes black-vs-white a near-tie). The
@@ -172,12 +178,16 @@ fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier 
         modifier = modifier,
     ) {
         Text(
-            text = lineName,
+            text = lineCode(lineName, mode),
             style = textStyle,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            // The visible label is the short code; the accessible label stays the full line
+            // name so a screen reader announces "Victoria", not "VIC".
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .semantics { contentDescription = lineName },
         )
     }
 }
