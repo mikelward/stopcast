@@ -1,38 +1,52 @@
 package app.trackmo
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import app.trackmo.data.DataStoreSnapshotStore
+import app.trackmo.data.AndroidLocationProvider
 import app.trackmo.data.KtorTflClient
-import app.trackmo.domain.LineRef
+import app.trackmo.ui.LocationGate
 import app.trackmo.ui.MainScreen
 import app.trackmo.ui.MainViewModel
+import app.trackmo.ui.NearbyStopsViewModel
 import app.trackmo.ui.StopRef
 import app.trackmo.ui.theme.TrackmoTheme
 import java.time.Instant
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
-    private val viewModel: MainViewModel by viewModels {
+    // The location gate: resolves the nearby stops (an on-demand, location-sending action)
+    // before the departures view, which then refreshes those stops location-free.
+    private val nearbyViewModel: NearbyStopsViewModel by viewModels {
         viewModelFactory {
             initializer {
-                MainViewModel(
-                    client = KtorTflClient(httpClient),
-                    seedStops = SEED_STOPS,
-                    snapshotStore = DataStoreSnapshotStore.from(applicationContext),
+                NearbyStopsViewModel(
+                    location = AndroidLocationProvider(applicationContext, warn = ::logLocationWarning),
+                    finder = KtorTflClient(httpClient),
+                    warn = ::logLocationWarning,
                 )
             }
         }
@@ -43,57 +57,126 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             TrackmoTheme {
-                val state by viewModel.state.collectAsStateWithLifecycle()
-                val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
-                RefreshOnForeground(viewModel)
-                MainScreen(
-                    state = state,
-                    now = tickingNow(),
-                    onRefresh = viewModel::refresh,
-                    refreshing = refreshing,
-                )
+                val nearby by nearbyViewModel.state.collectAsStateWithLifecycle()
+
+                // True once a request has come back denied with the rationale suppressed —
+                // Android's "don't ask again" / permanently-denied signal. Then re-requesting
+                // only re-denies, so the gate offers Settings instead (Codex). Survives
+                // configuration change so a rotation doesn't drop back to the Allow button.
+                var permissionPermanentlyDenied by rememberSaveable { mutableStateOf(false) }
+
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission(),
+                ) { granted ->
+                    if (granted) {
+                        permissionPermanentlyDenied = false
+                        nearbyViewModel.locate()
+                    } else {
+                        // A denial with no rationale allowed means the system won't prompt
+                        // again — route the user to Settings rather than a dead re-request.
+                        permissionPermanentlyDenied =
+                            !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_COARSE_LOCATION)
+                    }
+                }
+
+                // Resolve when the coarse-location permission is held and nothing has resolved
+                // yet: on open if already granted, and again on returning from Settings with a
+                // fresh grant. Guarded on the still-unresolved PermissionRequired state so a
+                // configuration change — which recreates the activity and re-runs this, while
+                // the ViewModel and its resolved state survive — doesn't relocate over a
+                // working (or in-flight) result and re-hit TfL (Codex).
+                val lifecycleOwner = LocalLifecycleOwner.current
+                LaunchedEffect(lifecycleOwner) {
+                    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        if (nearbyViewModel.state.value is NearbyStopsViewModel.State.PermissionRequired &&
+                            hasCoarseLocation()
+                        ) {
+                            nearbyViewModel.locate()
+                        }
+                    }
+                }
+
+                when (val state = nearby) {
+                    is NearbyStopsViewModel.State.Ready -> DeparturesForStops(state.stops)
+                    else -> LocationGate(
+                        state = state,
+                        permanentlyDenied = permissionPermanentlyDenied,
+                        onAllow = { permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
+                        onRetry = {
+                            if (hasCoarseLocation()) nearbyViewModel.locate()
+                            else permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                        },
+                        onOpenSettings = ::openAppSettings,
+                    )
+                }
             }
         }
     }
 
-    companion object {
-        // Process-scoped: one OkHttp engine and connection pool shared by every
-        // MainViewModel the process creates, rather than a fresh client leaked per
-        // ViewModel (nothing closes a Ktor client, so a per-launch one accumulates
-        // engine/pool resources). A single long-lived client is OkHttp's own
-        // recommended shape; it lives for the process and dies with it.
-        private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
-
-        // A temporary public-station seed until Phase 2 adds watched stops the user
-        // chooses (SPEC D1). Public infrastructure, not anyone's saved route. The `lines`
-        // are the stations' served tube lines (public facts), carried so a suspended line
-        // that returns no arrivals still surfaces as a status row (SPEC *Departures*);
-        // Phase 2's watched stops will carry this from TfL's own stop→line data.
-        private fun tube(id: String, name: String) = LineRef(id = id, name = name, mode = "tube")
-
-        private val SEED_STOPS = listOf(
-            StopRef(
-                id = "940GZZLUOXC",
-                name = "Oxford Circus",
-                lines = listOf(
-                    tube("bakerloo", "Bakerloo"),
-                    tube("central", "Central"),
-                    tube("victoria", "Victoria"),
-                ),
-            ),
-            StopRef(
-                id = "940GZZLUKSX",
-                name = "King's Cross St. Pancras",
-                lines = listOf(
-                    tube("circle", "Circle"),
-                    tube("hammersmith-city", "Hammersmith & City"),
-                    tube("metropolitan", "Metropolitan"),
-                    tube("northern", "Northern"),
-                    tube("piccadilly", "Piccadilly"),
-                    tube("victoria", "Victoria"),
-                ),
-            ),
+    /**
+     * The departures view for a resolved nearby set. The [MainViewModel] is created here —
+     * not as an activity field — because its watched stops aren't known until location
+     * resolves; it's keyed on the stop ids so a different nearby set gets its own instance
+     * rather than reusing a stale one.
+     *
+     * No persisted snapshot for this interim nearby set (`SnapshotStore.NONE`, the default):
+     * the store holds one process-wide snapshot, but the watched set here is derived from
+     * location and changes as the user moves, so restoring it would show a previous
+     * location's departures under the newly-resolved stops — and cards omit the stop name,
+     * so those rows would look like the new stops' (Codex). Proper per-set persistence (and
+     * offline last-good) returns with Phase 2's user-chosen watched stops; until then the
+     * view resolves fresh each open.
+     */
+    @Composable
+    private fun DeparturesForStops(stops: List<StopRef>) {
+        val viewModel: MainViewModel = viewModel(
+            key = "departures:" + stops.joinToString(",") { it.id },
+            factory = viewModelFactory {
+                initializer {
+                    MainViewModel(client = KtorTflClient(httpClient), seedStops = stops)
+                }
+            },
         )
+        val state by viewModel.state.collectAsStateWithLifecycle()
+        val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+        RefreshOnForeground(viewModel)
+        MainScreen(
+            state = state,
+            now = tickingNow(),
+            onRefresh = viewModel::refresh,
+            refreshing = refreshing,
+        )
+    }
+
+    private fun hasCoarseLocation(): Boolean =
+        checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /** Opens this app's system settings so the user can grant a permanently-denied permission. */
+    private fun openAppSettings() {
+        startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", packageName, null),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
+    /**
+     * The production sink for the location seam's warnings: the messages are already coarse
+     * and carry no coordinate or key (SPEC *Privacy*), so a diagnosis of a misfiring fix
+     * isn't discarded in the shipped app. Logcat only — not the persisted, shareable debug
+     * log, which lands with its `docs/PRIVACY.md` disclosure in the Phase 5 logging work.
+     */
+    private fun logLocationWarning(message: String) = Log.w("Trackmo.Location", message)
+
+    companion object {
+        // Process-scoped: one OkHttp engine and connection pool shared by every ViewModel
+        // the process creates, rather than a fresh client leaked per ViewModel (nothing
+        // closes a Ktor client, so a per-launch one accumulates engine/pool resources). A
+        // single long-lived client is OkHttp's own recommended shape; it lives for the
+        // process and dies with it.
+        private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
     }
 }
 
@@ -137,7 +220,7 @@ internal suspend fun refreshOnForeground(lifecycle: Lifecycle, onForeground: () 
 @Composable
 private fun tickingNow(): Instant {
     val lifecycleOwner = LocalLifecycleOwner.current
-    val now by produceState(initialValue = Instant.now(), lifecycleOwner) {
+    val now by androidx.compose.runtime.produceState(initialValue = Instant.now(), lifecycleOwner) {
         val scope = this
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
