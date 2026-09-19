@@ -38,6 +38,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import app.trackmo.data.AndroidLocationProvider
 import app.trackmo.data.DataStoreStarredRowsStore
 import app.trackmo.data.KtorTflClient
+import app.trackmo.ui.LicensesScreen
 import app.trackmo.ui.LocationGate
 import app.trackmo.ui.MainScreen
 import app.trackmo.ui.MainViewModel
@@ -123,19 +124,38 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                when (val state = nearby) {
-                    is NearbyStopsViewModel.State.Ready ->
-                        DeparturesForStops(state.stops, state.distanceMeters, nearbyViewModel::locate)
-                    else -> LocationGate(
-                        state = state,
-                        permanentlyDenied = permissionPermanentlyDenied,
-                        onAllow = { permissionLauncher.launch(locationPermissions) },
-                        onRetry = {
-                            if (hasLocationPermission()) nearbyViewModel.locate()
-                            else permissionLauncher.launch(locationPermissions)
-                        },
-                        onOpenSettings = ::openAppSettings,
-                    )
+                // The licenses screen is hosted here, above the location gate — not inside the
+                // departures view — so the open-source attribution (and the app version) stay
+                // reachable in every state, including a permission-denied gate where departures
+                // never resolve (Codex). It also means departures and their background refresh
+                // leave composition while licenses is open, rather than polling TfL behind a
+                // static screen. Saved so it survives rotation and process death; each screen's
+                // own Back closes it.
+                var licensesOpen by rememberSaveable { mutableStateOf(false) }
+                val openLicenses = { licensesOpen = true }
+                if (licensesOpen) {
+                    LicensesScreen(onBack = { licensesOpen = false })
+                } else {
+                    when (val state = nearby) {
+                        is NearbyStopsViewModel.State.Ready ->
+                            DeparturesForStops(
+                                state.stops,
+                                state.distanceMeters,
+                                nearbyViewModel::locate,
+                                onOpenLicenses = openLicenses,
+                            )
+                        else -> LocationGate(
+                            state = state,
+                            permanentlyDenied = permissionPermanentlyDenied,
+                            onAllow = { permissionLauncher.launch(locationPermissions) },
+                            onRetry = {
+                                if (hasLocationPermission()) nearbyViewModel.locate()
+                                else permissionLauncher.launch(locationPermissions)
+                            },
+                            onOpenSettings = ::openAppSettings,
+                            onOpenLicenses = openLicenses,
+                        )
+                    }
                 }
             }
         }
@@ -163,6 +183,7 @@ class MainActivity : ComponentActivity() {
         stops: List<StopRef>,
         stopDistanceMeters: Map<String, Double>,
         onLocateHere: () -> Unit,
+        onOpenLicenses: () -> Unit,
     ) {
         // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
         // the set changes (the user moved and re-located) rather than left keyed in the
@@ -213,6 +234,9 @@ class MainActivity : ComponentActivity() {
             val starred by viewModel.starred.collectAsStateWithLifecycle()
             val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
             val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
+            // These background refreshes are composed only while the departures view is shown:
+            // the licenses screen is hosted above this subtree (see onCreate), so opening it
+            // removes DeparturesForStops from composition and stops the polling (Codex).
             RefreshOnForeground(viewModel)
             AutoRefresh(viewModel)
             MainScreen(
@@ -230,6 +254,7 @@ class MainActivity : ComponentActivity() {
                 starringAvailable = starringAvailable,
                 starWriteFailed = starWriteFailed,
                 onStarWriteFailureShown = viewModel::starWriteFailureShown,
+                onOpenLicenses = onOpenLicenses,
             )
         }
     }

@@ -19,10 +19,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,7 +40,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -106,8 +113,14 @@ fun MainScreen(
     // default so an unwired build/test renders no snackbar.
     starWriteFailed: Boolean = false,
     onStarWriteFailureShown: () -> Unit = {},
+    // Open the open-source licenses screen (from the About dialog). Default no-op so an
+    // unwired build/test renders the screen without a licenses destination.
+    onOpenLicenses: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    // Overflow-menu and About-dialog visibility. Saved so an open dialog survives rotation.
+    var menuExpanded by rememberSaveable { mutableStateOf(false) }
+    var showAbout by rememberSaveable { mutableStateOf(false) }
     val starWriteFailedMessage = stringResource(R.string.star_write_failed)
     LaunchedEffect(starWriteFailed) {
         if (starWriteFailed) {
@@ -134,6 +147,18 @@ fun MainScreen(
                     }
                     IconButton(onClick = onRefresh) {
                         Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
+                    }
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.menu_about))
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.menu_about)) },
+                            onClick = {
+                                menuExpanded = false
+                                showAbout = true
+                            },
+                        )
                     }
                 },
             )
@@ -170,6 +195,15 @@ fun MainScreen(
                     }
                 }
         }
+    }
+    if (showAbout) {
+        AboutDialog(
+            onOpenLicenses = {
+                showAbout = false
+                onOpenLicenses()
+            },
+            onDismiss = { showAbout = false },
+        )
     }
 }
 
