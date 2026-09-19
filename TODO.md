@@ -204,6 +204,51 @@ exercises the whole spine the widget later renders from.
       `NearestStops`) with one-tap add-to-watched; stop search. Distance ranking lives
       here — for *finding* stops to watch — not in ordering the watched list, which stays
       location-free so the view works with location denied (D1).
+  - [ ] **Nearby selection — the still-being-shaped policy toward SPEC's constraints.** The
+        *settled* product constraints — a line appears once (not per stop it passes), no dense
+        mode crowds out another, bounded within reach, by line with both directions, closed
+        stops surfaced honestly — now live in **SPEC *Finding stops → Near me now*** as the
+        product intent the implementation must satisfy. This item is only the experimental
+        policy that meets them (maintainer, on-device 2026-09-19). The symptom that started it:
+        the current "nearest N stops" set repeats the same bus line several times, one per stop
+        it passes.
+    - Current lean (maintainer): **all services within ~0.2 mi, plus at least one stop per
+      mode that has a stop within ~1 mi**, expanding the 0.2 mi radius if nothing falls
+      inside it. A fixed total (an earlier "nearest ~8 services" idea) is de-emphasized in
+      favor of this distance-shaped rule. Still illustrative, not settled — try and see.
+    - **Open: does the list need a hard count cap at all?** Not decided (maintainer,
+      2026-09-19 — "that's what a to-do means"), and the lean is **away from an arbitrary cap**.
+      The worry against one: at a busy junction a count cap would **silently hide options** the
+      user might want — which is exactly SPEC principle 2's "never hide options quietly," so an
+      arbitrary numeric cap is the wrong default. Plan: **try the distance-shaped rule on a real
+      device first** and see whether a dense interchange actually produces an unscannable list;
+      only reach for some bound if it does, and even then not a bare number that drops services
+      with no signal. If any bound is added it must **reserve the per-mode entries first** (the
+      crowd-out rule) and not silently discard relevant nearby services. Whether-and-how is part
+      of the on-device shaping, not settled here or in SPEC.
+    - Candidate that avoids silent hiding (maintainer, 2026-09-19): rather than dropping rows,
+      **collapse above a per-mode threshold behind an expander** — e.g. "Tap to see 5 more buses"
+      — so a busy junction stays scannable but every option is still one tap away, nothing
+      hidden. Just a direction to try later, not decided.
+    - **One canonical distance unit:** miles (the maintainer's numbers are in miles) — nominal
+      cap ~1 mile (~1.6 km), inner ring ~0.2 mi. Like SPEC, ~1 mile is nominal, not a hard
+      ceiling: the set reaches beyond it only when nothing is within it (the same expand-if-empty
+      rule as the 0.2 mi ring). The current resolver's 1000 m is a placeholder to reconcile to
+      the chosen cap when implemented, so code and acceptance tests encode one distance, not two.
+    - The natural unit may be a "mode-stop" (all services at a nearby stop); how stops /
+      mode-stops / directions map onto the TfL model and API is an **implementation** question
+      left open here — this bullet is the policy, not the settled shape (which is in SPEC).
+- [ ] **Search for a stop by name or line, and pin it.** Beyond nearby discovery, let the
+      user type a **stop/station name** (TfL `/StopPoint/Search`) *or* a **line**
+      (`/Line/Search/{query}` — the query is a path segment, not a `?query=` parameter like the
+      stop search — then that line's stops via `/Line/{id}/StopPoints`) — SPEC *Finding stops*
+      requires both
+      discovery paths, so a user who knows the line but not a stop name isn't stuck. Pick from
+      the matches and add to watched — for stops they care about that aren't near them now
+      (home, work, a regular destination). Complements "near me now" and star-to-pin.
+      **Privacy:** the typed query is sent to TfL's search endpoints — a new off-device input
+      beyond today's coordinates/stop-IDs, so SPEC *Privacy* is updated to disclose it (done)
+      and the Play Data Safety answers account for it when this ships. Requested 2026-09-19.
 - [ ] Per-stop line/direction filters (D2).
 - [ ] **Filter or rank by a destination the user enters, and let them save favorite
       destinations** — the user names where they're going (or picks a saved favorite) and
