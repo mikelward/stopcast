@@ -35,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.trackmo.data.AndroidLocationProvider
+import app.trackmo.data.DataStoreStarredRowsStore
 import app.trackmo.data.KtorTflClient
 import app.trackmo.ui.LocationGate
 import app.trackmo.ui.MainScreen
@@ -178,6 +179,10 @@ class MainActivity : ComponentActivity() {
                         MainViewModel(
                             client = KtorTflClient(httpClient),
                             seedStops = stops,
+                            // Starring is persisted per row across every nearby set (it's keyed
+                            // by row identity, not tied to this stop set), so the store is the
+                            // shared process-wide one, not scoped to this ViewModel's key.
+                            starredStore = DataStoreStarredRowsStore.from(applicationContext, warn = ::logStarWarning),
                             warn = ::logDepartureWarning,
                         )
                     }
@@ -185,6 +190,9 @@ class MainActivity : ComponentActivity() {
             )
             val state by viewModel.state.collectAsStateWithLifecycle()
             val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+            val starred by viewModel.starred.collectAsStateWithLifecycle()
+            val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
+            val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
             RefreshOnForeground(viewModel)
             AutoRefresh(viewModel)
             MainScreen(
@@ -197,6 +205,11 @@ class MainActivity : ComponentActivity() {
                 // location-free list (a watched-stops view), which is shown as-is.
                 stopDistanceMeters = stopDistanceMeters,
                 onLocateHere = onLocateHere,
+                starred = starred,
+                onToggleStar = viewModel::toggleStar,
+                starringAvailable = starringAvailable,
+                starWriteFailed = starWriteFailed,
+                onStarWriteFailureShown = viewModel::starWriteFailureShown,
             )
         }
     }
@@ -459,3 +472,12 @@ private fun logLocationWarning(message: String) = Log.w("Trackmo.Location", mess
  * no-Activity-capture reason as [logLocationWarning].
  */
 private fun logDepartureWarning(message: String) = Log.w("Trackmo.Departures", message)
+
+/**
+ * The production sink for the starred-rows store's warnings — a discarded corrupt star file,
+ * or a preserved newer-schema file. Without it wired the store defaulted to a no-op, so those
+ * recovery paths left nothing in logcat. The messages are coarse facts (no stop/line id is
+ * needed and none is logged); Logcat only, like [logLocationWarning], for the same
+ * no-Activity-capture reason.
+ */
+private fun logStarWarning(message: String) = Log.w("Trackmo.Stars", message)

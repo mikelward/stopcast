@@ -1,6 +1,7 @@
 package app.trackmo.ui
 
 import app.trackmo.domain.Departure
+import app.trackmo.domain.DepartureRow
 import app.trackmo.domain.DeparturesSnapshot
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
@@ -1054,5 +1055,170 @@ class MainViewModelTest {
         assertTrue(vm.state.value is DeparturesUiState.Loaded)
         val saved = store.saves.last()
         assertTrue(saved.stops.isEmpty())
+    }
+
+    private class FakeStarredStore(
+        initial: Set<app.trackmo.domain.StarredRow> = emptySet(),
+    ) : app.trackmo.domain.StarredRowsStore {
+        private val state =
+            kotlinx.coroutines.flow.MutableStateFlow<app.trackmo.domain.StarredRowSet>(
+                app.trackmo.domain.StarredRowSet.Loaded(initial),
+            )
+        override fun starred() = state
+        override suspend fun toggle(row: app.trackmo.domain.StarredRow) {
+            val current = (state.value as app.trackmo.domain.StarredRowSet.Loaded).starred
+            state.value = app.trackmo.domain.StarredRowSet.Loaded(
+                app.trackmo.domain.Starred.toggle(current, row),
+            )
+        }
+    }
+
+    private fun row(stopId: String, lineId: String, directionKey: String) = DepartureRow(
+        stopId = stopId,
+        stopName = "Stop $stopId",
+        lineId = lineId,
+        lineName = lineId,
+        direction = directionKey,
+        directionKey = directionKey,
+        destination = "Somewhere",
+        mode = "tube",
+        upcoming = emptyList(),
+        fetchedAt = now,
+    )
+
+    @Test
+    fun `toggleStar stars then unstars a row, reflected in the starred flow`() = runTest(dispatcher) {
+        val starredStore = FakeStarredStore()
+        val vm = MainViewModel(
+            FakeClient(emptyMap()),
+            seedStops = emptyList(),
+            clock = { now },
+            io = dispatcher,
+            starredStore = starredStore,
+        )
+        advanceUntilIdle()
+        assertTrue(vm.starred.value.isEmpty())
+
+        val victoria = row("940GZZLUKSX", "victoria", "southbound")
+        vm.toggleStar(victoria)
+        advanceUntilIdle()
+        assertEquals(setOf(app.trackmo.domain.StarredRow.of(victoria)), vm.starred.value)
+
+        vm.toggleStar(victoria)
+        advanceUntilIdle()
+        assertTrue(vm.starred.value.isEmpty())
+    }
+
+    @Test
+    fun `an already-starred set is exposed on the starred flow at once`() = runTest(dispatcher) {
+        val victoria = app.trackmo.domain.StarredRow("940GZZLUKSX", "victoria", "southbound")
+        val vm = MainViewModel(
+            FakeClient(emptyMap()),
+            seedStops = emptyList(),
+            clock = { now },
+            io = dispatcher,
+            starredStore = FakeStarredStore(setOf(victoria)),
+        )
+        advanceUntilIdle()
+        assertEquals(setOf(victoria), vm.starred.value)
+        assertTrue(vm.starringAvailable.value)
+    }
+
+    @Test
+    fun `an unavailable star set reports starring unavailable, not an empty set`() = runTest(dispatcher) {
+        val unavailableStore = object : app.trackmo.domain.StarredRowsStore {
+            override fun starred() =
+                kotlinx.coroutines.flow.flowOf(app.trackmo.domain.StarredRowSet.Unavailable)
+            override suspend fun toggle(row: app.trackmo.domain.StarredRow) {}
+        }
+        val vm = MainViewModel(
+            FakeClient(emptyMap()),
+            seedStops = emptyList(),
+            clock = { now },
+            io = dispatcher,
+            starredStore = unavailableStore,
+        )
+        advanceUntilIdle()
+        // No stars to pin (we can't read them), and the flag is false so the screen hides the
+        // control rather than showing every row unfilled (a false "nothing starred" claim).
+        assertTrue(vm.starred.value.isEmpty())
+        assertFalse(vm.starringAvailable.value)
+    }
+
+    @Test
+    fun `a failed star toggle sets the write-failed flag until it is acknowledged`() = runTest(dispatcher) {
+        // A DataStore write failure (storage full, IO error) leaves the star unchanged and the
+        // store won't re-emit, so the tap silently no-ops — the ViewModel raises an acknowledged
+        // flag the screen turns into a transient message (SPEC principle 2). Acknowledged, not a
+        // one-shot event, so it survives a rotation between the failed tap and the message.
+        val failingToggle = object : app.trackmo.domain.StarredRowsStore {
+            override fun starred() = kotlinx.coroutines.flow.flowOf(
+                app.trackmo.domain.StarredRowSet.Loaded(emptySet()),
+            )
+            override suspend fun toggle(row: app.trackmo.domain.StarredRow) {
+                throw java.io.IOException("disk full")
+            }
+        }
+        val vm = MainViewModel(
+            FakeClient(emptyMap()),
+            seedStops = emptyList(),
+            clock = { now },
+            io = dispatcher,
+            starredStore = failingToggle,
+        )
+        advanceUntilIdle()
+        assertFalse(vm.starWriteFailed.value)
+        vm.toggleStar(row("940GZZLUKSX", "victoria", "southbound"))
+        advanceUntilIdle()
+        assertTrue("a failed write raises the flag", vm.starWriteFailed.value)
+        vm.starWriteFailureShown()
+        assertFalse("acknowledging clears it", vm.starWriteFailed.value)
+    }
+
+    @Test
+    fun `starring is unavailable until the store reports a loaded set`() = runTest(dispatcher) {
+        // A store whose flow never emits a set (no read has completed) must leave starring
+        // unavailable — enabling it early would show a persisted-starred row as unstarred with
+        // a "Pin to top" action, and a tap would toggle the real membership off.
+        val neverLoads = object : app.trackmo.domain.StarredRowsStore {
+            override fun starred() =
+                kotlinx.coroutines.flow.emptyFlow<app.trackmo.domain.StarredRowSet>()
+            override suspend fun toggle(row: app.trackmo.domain.StarredRow) {}
+        }
+        val vm = MainViewModel(
+            FakeClient(emptyMap()),
+            seedStops = emptyList(),
+            clock = { now },
+            io = dispatcher,
+            starredStore = neverLoads,
+        )
+        advanceUntilIdle()
+        assertFalse(vm.starringAvailable.value)
+        assertTrue(vm.starred.value.isEmpty())
+    }
+
+    @Test
+    fun `a failed starred read leaves starring unavailable and is logged`() = runTest(dispatcher) {
+        // A DataStore read failure must not escape the collect and crash the departures screen;
+        // it leaves starring in an honest unavailable state (control hidden, nothing pinned)
+        // and logs a sanitized reason.
+        val warnings = mutableListOf<String>()
+        val failingStore = object : app.trackmo.domain.StarredRowsStore {
+            override fun starred(): kotlinx.coroutines.flow.Flow<app.trackmo.domain.StarredRowSet> =
+                kotlinx.coroutines.flow.flow { throw java.io.IOException("disk read failed") }
+            override suspend fun toggle(row: app.trackmo.domain.StarredRow) {}
+        }
+        val vm = MainViewModel(
+            FakeClient(emptyMap()),
+            seedStops = emptyList(),
+            clock = { now },
+            io = dispatcher,
+            starredStore = failingStore,
+            warn = { warnings += it },
+        )
+        advanceUntilIdle()
+        assertFalse(vm.starringAvailable.value)
+        assertTrue(vm.starred.value.isEmpty())
+        assertTrue(warnings.any { it.contains("starred set read failed") })
     }
 }

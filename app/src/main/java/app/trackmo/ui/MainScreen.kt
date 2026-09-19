@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,11 +28,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +56,7 @@ import app.trackmo.domain.DepartureRow
 import app.trackmo.domain.DepartureRows
 import app.trackmo.domain.RelativeTime
 import app.trackmo.domain.Staleness
+import app.trackmo.domain.StarredRow
 import java.time.Duration
 import java.time.Instant
 import kotlin.time.toKotlinDuration
@@ -82,9 +87,36 @@ fun MainScreen(
     // "near me now" context; a watched-stops view (Phase 2) omits it. Temporary — a manual
     // re-locate for on-device testing of the nearby radius (TODO: auto-locate-on-open UX).
     onLocateHere: (() -> Unit)? = null,
+    // The rows the user has starred (SPEC D8): pinned to the top, and their star filled.
+    // Empty by default so an unwired build/test renders the plain soonest-first list.
+    starred: Set<StarredRow> = emptySet(),
+    onToggleStar: (DepartureRow) -> Unit = {},
+    // False only when the stored star set is a newer-schema file this build can't read: the
+    // star control is then hidden rather than shown unfilled (which would falsely read as
+    // "nothing starred"). Defaults true, the normal case.
+    starringAvailable: Boolean = true,
+    // True while a star write has failed and not yet been surfaced (SPEC principle 2): the
+    // screen shows a transient snackbar so a tap that didn't take isn't swallowed silently,
+    // then calls [onStarWriteFailureShown] to clear it. Acknowledged state, not a one-shot
+    // event, so a rotation between the failed tap and the snackbar doesn't drop it. False by
+    // default so an unwired build/test renders no snackbar.
+    starWriteFailed: Boolean = false,
+    onStarWriteFailureShown: () -> Unit = {},
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val starWriteFailedMessage = stringResource(R.string.star_write_failed)
+    LaunchedEffect(starWriteFailed) {
+        if (starWriteFailed) {
+            // Clear first, then show: clearing before the (suspending) showSnackbar means a
+            // rotation while the snackbar is visible doesn't re-trigger it, while the flag
+            // having survived until now covers a rotation that happened before this ran.
+            onStarWriteFailureShown()
+            snackbarHostState.showSnackbar(starWriteFailedMessage)
+        }
+    }
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
@@ -116,7 +148,10 @@ fun MainScreen(
             }
 
             is DeparturesUiState.Loaded ->
-                LoadedContent(state, now, onRefresh, refreshing, content, stopDistanceMeters)
+                LoadedContent(
+                    state, now, onRefresh, refreshing, content, stopDistanceMeters,
+                    starred, onToggleStar, starringAvailable,
+                )
 
             is DeparturesUiState.Error ->
                 // Under the pull box with a scrollable child so a downward swipe refreshes
@@ -142,6 +177,9 @@ private fun LoadedContent(
     refreshing: Boolean,
     modifier: Modifier,
     stopDistanceMeters: Map<String, Double> = emptyMap(),
+    starred: Set<StarredRow> = emptySet(),
+    onToggleStar: (DepartureRow) -> Unit = {},
+    starringAvailable: Boolean = true,
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -163,13 +201,16 @@ private fun LoadedContent(
     // Group against the live clock, not fetch time, so departed services leave the list
     // and the order advances between fetches (SPEC D4). Line statuses stamp each row so a
     // disrupted line is marked (SPEC D3). Cheap and pure.
-    val rows = remember(state.stops, state.lineStatuses, now, stopDistanceMeters) {
+    val rows = remember(state.stops, state.lineStatuses, now, stopDistanceMeters, starred) {
         val across = DepartureRows.across(state.stops, now, state.lineStatuses)
         // A "near me now" list (distances present) shows a line once, from its nearest stop,
         // instead of once per adjacent stop it passes (SPEC *Finding stops → Near me now*).
         // A location-free list has no distances and is shown as grouped.
-        if (stopDistanceMeters.isEmpty()) across
-        else DepartureRows.nearbyDeduped(across, stopDistanceMeters)
+        val deduped =
+            if (stopDistanceMeters.isEmpty()) across
+            else DepartureRows.nearbyDeduped(across, stopDistanceMeters)
+        // Lift the user's starred services to the top (SPEC D8), warnings still leading.
+        DepartureRows.pinStarred(deduped, starred)
     }
 
     // Pull-to-refresh over the whole loaded surface (SPEC D6).
@@ -210,7 +251,7 @@ private fun LoadedContent(
                     RefreshButton(onRefresh, Modifier.padding(top = 16.dp))
                 }
             } else {
-                DepartureList(rows, now, Modifier.fillMaxSize())
+                DepartureList(rows, now, starred, onToggleStar, starringAvailable, Modifier.fillMaxSize())
             }
         }
     }
@@ -258,20 +299,39 @@ private fun Banner(text: String) {
 }
 
 @Composable
-private fun DepartureList(rows: List<DepartureRow>, now: Instant, modifier: Modifier) {
+private fun DepartureList(
+    rows: List<DepartureRow>,
+    now: Instant,
+    starred: Set<StarredRow>,
+    onToggleStar: (DepartureRow) -> Unit,
+    starringAvailable: Boolean,
+    modifier: Modifier,
+) {
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(rows, key = { "${it.stopId}|${it.lineId}|${it.directionKey}" }) { row ->
-            DepartureRowCard(row, now)
+            DepartureRowCard(
+                row,
+                now,
+                isStarred = StarredRow.of(row) in starred,
+                onToggleStar = { onToggleStar(row) },
+                starAvailable = starringAvailable,
+            )
         }
     }
 }
 
 @Composable
-private fun DepartureRowCard(row: DepartureRow, now: Instant) {
+private fun DepartureRowCard(
+    row: DepartureRow,
+    now: Instant,
+    isStarred: Boolean = false,
+    onToggleStar: () -> Unit = {},
+    starAvailable: Boolean = true,
+) {
     // Staleness is per row, from this row's own stop age: a stop that failed to refresh
     // withholds its countdowns ("—") while a fresh stop beside it stays live (SPEC D4).
     val stale = remember(row.fetchedAt, now) {
@@ -373,6 +433,15 @@ private fun DepartureRowCard(row: DepartureRow, now: Instant) {
                             modifier = if (index == 0) Modifier else Modifier.padding(top = 8.dp),
                         )
                     }
+                }
+                // Trailing star pins this service to the top (SPEC D8). Filled + primary when
+                // starred, the vendored outline in a low-emphasis tone when not, so the two
+                // states read at a glance. The countdown inside the column is unweighted and
+                // measured first, so it keeps its width; the destination ellipsizes instead.
+                // Hidden entirely when starring is unavailable (a newer-schema star file this
+                // build can't read), so no pill falsely reads as "not starred".
+                if (starAvailable) {
+                    StarButton(isStarred = isStarred, onToggleStar = onToggleStar)
                 }
             }
             // A disrupted line is flagged below the departures, left-aligned with the pill,
@@ -504,6 +573,26 @@ private fun DisruptionChip(description: String, modifier: Modifier = Modifier) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
+/**
+ * The per-card star toggle (SPEC D8): pins the service to the top of the list when on. Filled
+ * `Star` in the theme's primary tint for the starred state, the vendored [StarBorderIcon]
+ * outline in a low-emphasis tone for the unstarred one, so the two states read at a glance. The
+ * `IconButton` is a 48dp target (above the 44dp touch floor); its content description flips so a
+ * screen reader announces the action, not just "star".
+ */
+@Composable
+private fun StarButton(isStarred: Boolean, onToggleStar: () -> Unit) {
+    IconButton(onClick = onToggleStar) {
+        Icon(
+            imageVector = if (isStarred) Icons.Filled.Star else StarBorderIcon,
+            contentDescription = stringResource(if (isStarred) R.string.unstar else R.string.star),
+            tint =
+                if (isStarred) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

@@ -189,17 +189,19 @@ exercises the whole spine the widget later renders from.
       limitation on the demo seed (maintainer, ship-MVP call); once real watched stops
       land, show the stop (a subline, or only when >1 distinct stop is on screen) so
       cards stay unambiguous. Codex P1 on PR #17 (`discussion_r4049648510`).
-- [ ] **Star** rows to reorder them to the top — ranking only, not membership; persisted
-      via DataStore so a star survives restart (D8). Key the star by the full
-      **`(stop, service, resolved direction key)`** identity — the same three parts that
-      identify a row — with the **resolved direction key** (`DepartureRow.directionKey`:
-      direction, else platform, else destination) as the third part in place of raw
-      `direction`, so a star restores to exactly one row: stop and service disambiguate
-      across rows, and the resolved key keeps blank-`direction` fallback siblings at one
-      stop apart. This is where star-to-pin's control *and* its persistence
-      land together. Like the rest of
-      the persisted config, stars ride Android backup/transfer — covered by SPEC
-      *Privacy*'s backup note, not an app-initiated send.
+- [x] **Star** rows to reorder them to the top — ranking only, not membership; persisted
+      via DataStore so a star survives restart (D8). Keyed by the full
+      **`(stop, service, resolved direction key)`** identity (`DepartureRow.directionKey`:
+      direction, else platform, else destination), so a star restores to exactly one row.
+      Landed: `StarredRow`/`Starred` + `DepartureRows.pinStarred` (warnings still lead —
+      a starred service never jumps above a closure or a no-prediction status row),
+      `StarredRowsStore` + `DataStoreStarredRowsStore` (reactive `starred()`, toggle; a
+      newer-schema file reads as `Unavailable` and is preserved, never overwritten), the
+      per-card star control (filled `Star` in primary when on, the vendored `StarBorderIcon`
+      outline when off), and `MainViewModel.toggleStar`/`starred` wired through `MainScreen`
+      and `MainActivity`. Stars ride Android backup/transfer (SPEC *Privacy* backup note),
+      not an app-initiated send. The control shows only on timed cards — a star restores its
+      pin the moment a starred, currently-suspended line has departures again.
 - [ ] "Near me now" discovery (on-demand location, nearby `/StopPoint` lookup selected by
       `NearbySelection`) with one-tap add-to-watched; stop search. Distance ranking lives
       here — for *finding* stops to watch — not in ordering the watched list, which stays

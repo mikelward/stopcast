@@ -20,6 +20,13 @@
     <!-- Top-bar action left of refresh: re-find stops at the current location; the
          accessible label for the crosshair icon. Temporary (on-device radius testing). -->
     <string name="locate_here">Stops near me</string>
+    <!-- Star toggle on a departure card: pins the service to the top of the list. The label
+         names the action, so it flips with the state (a screen reader hears what a tap does). -->
+    <string name="star">Pin to top</string>
+    <string name="unstar">Unpin from top</string>
+    <!-- Transient snackbar when saving a pin/unpin fails (storage full, an IO error), so a
+         tap that didn't take isn't silent. -->
+    <string name="star_write_failed">Couldn\'t save your pin</string>
     <!-- Shown when some watched stops refreshed but at least one failed. -->
     <string name="partial_refresh">Some stops couldn\'t be refreshed</string>
     <!-- Shown when arrivals loaded but the disruption lookup failed, so these times'
