@@ -45,22 +45,26 @@ fun branchOf(towards: String?): String? {
     return towards.substring(idx + VIA.length).substringBefore(",").trim().ifBlank { null }
 }
 
-// The compass words and "Cross" a departures board itself shortens ("Charing X",
-// "E. Ham"). Applied per word, so a word not here is left alone; only these are safe to
-// shorten without losing which branch is meant (maintainer: Cross→X, and East→E. &c.).
+// The compass words, "Cross", and "Central" a departures board itself shortens ("Charing X",
+// "E. Ham", "Walthamstow C."). Applied per word, so a word not here is left alone; only these
+// are safe to shorten without losing which branch is meant (maintainer: Cross→X, East→E. &c.,
+// and Central→C.). This is the branch/destination *word* map, not the line-pill abbreviation:
+// the Central line's pill stays "CEN" (a separate mechanism), and this never touches it.
 private val BRANCH_ABBREVIATIONS = mapOf(
     "Cross" to "X",
     "North" to "N.",
     "South" to "S.",
     "East" to "E.",
     "West" to "W.",
+    "Central" to "C.",
 )
 
 /**
  * A shorter form of a branch for a row too narrow to fit the full one — "Charing Cross" →
- * "Charing X", "East Ham" → "E. Ham" — abbreviating only the compass words and "Cross" a
- * board itself shortens, so which branch is meant stays clear. A branch with no such word
- * comes back unchanged (there is nothing safe to drop), and the caller then ellipsizes.
+ * "Charing X", "East Ham" → "E. Ham", "Walthamstow Central" → "Walthamstow C." —
+ * abbreviating only the compass words, "Cross", and "Central" a board itself shortens, so
+ * which branch is meant stays clear. A branch with no such word comes back unchanged (there
+ * is nothing safe to drop), and the caller then ellipsizes.
  * Kept off the value stored in [branchOf] so the full name shows wherever it fits; the UI
  * measures and falls back to this only when it must.
  */
