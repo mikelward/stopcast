@@ -126,12 +126,18 @@ TfL's endpoint is named "Arrivals"; for a bus stop these are departures *from* t
 stop, which is what a rider wants. Trackmo calls them departures throughout the UI.
 
 Each service wears its line's identity: the line name sits in a pill filled with its
-official TfL line color (Northern black, Central red, …), a bus in London-bus red, so
-the list scans by line the way the network map does. The color is decorative — the line
-name is always text, never color-only — and a mode with no defined color (the Elizabeth
-line, the individually-named Overground lines, trams) falls back to a neutral pill rather
-than an invented shade, since a missing color is a cosmetic gap, not a correctness
-failure.
+official TfL line color, so the list scans by line the way the network map does. Tube
+lines take their color by line (Northern black, Central red, …); bus, DLR, the Elizabeth
+line, Overground and trams take one color per mode. The label's black-or-white color is
+chosen by **APCA**, the perceptual contrast model headed into WCAG 3, rather than the
+WCAG-2 luminance ratio: WCAG-2 is luminance-only and misreads white on saturated
+mid-tones (Victoria, DLR, Bakerloo), rating black higher where white is plainly more
+readable, so a pill can sit below the WCAG-2 AA number and still be the right, readable
+choice. The color is decorative — the line name is always text, never color-only.
+Overground shows a single legacy-orange placeholder for every line because its 2024
+named lines use a two-tone scheme the single-fill pill can't yet render; a mode still
+without a defined color (national rail) falls back to a neutral pill rather than an
+invented shade, a cosmetic gap, not a correctness failure.
 
 ### Disruptions
 

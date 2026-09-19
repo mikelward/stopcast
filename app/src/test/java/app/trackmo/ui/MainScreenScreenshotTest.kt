@@ -164,6 +164,34 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `line colors across modes`() {
+        // One card per line across the colored modes, so the new fills (DLR, Elizabeth,
+        // Overground, Trams) and the APCA text picks render on real pills. Victoria and
+        // Bakerloo are here too because APCA flips their text to white where WCAG-2 chose
+        // black. Public line/destination names only (SPEC *Privacy*).
+        val stop = StopArrivals(
+            "940GZZLUMOD",
+            "Modes",
+            listOf(
+                dep("victoria", "Victoria", "southbound", "Brixton", 60, "Platform 1"),
+                dep("bakerloo", "Bakerloo", "northbound", "Elephant & Castle", 120, "Platform 2"),
+                dep("dlr", "DLR", "outbound", "Bank", 180, "", mode = "dlr"),
+                dep("elizabeth", "Elizabeth line", "eastbound", "Abbey Wood", 240, "", mode = "elizabeth-line"),
+                dep("liberty", "Liberty", "outbound", "Upminster", 300, "", mode = "overground"),
+                dep("tram", "Tram", "outbound", "Wimbledon", 360, "", mode = "tram"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        capture("main-line-colors.png") {
+            MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
+        }
+        composeRule.onNodeWithText("DLR").assertExists()
+        composeRule.onNodeWithText("Elizabeth line").assertExists()
+        composeRule.onNodeWithText("Liberty").assertExists()
+        composeRule.onNodeWithText("Tram").assertExists()
+    }
+
+    @Test
     fun `mixed age, one stop fresh and one stale`() {
         capture("main-mixed-age.png") {
             MainScreen(

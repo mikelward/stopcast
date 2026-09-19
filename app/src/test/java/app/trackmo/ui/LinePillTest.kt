@@ -27,8 +27,19 @@ class LinePillTest {
     }
 
     @Test
+    fun `single-color modes resolve by mode, whatever the line id`() {
+        assertEquals(Color(0xFF00A4A7), lineFillColor("dlr", "dlr")) // DLR turquoise
+        assertEquals(Color(0xFF6950A1), lineFillColor("elizabeth", "elizabeth-line")) // Elizabeth purple
+        assertEquals(Color(0xFF84B817), lineFillColor("tram", "tram")) // Trams green
+        // Every named Overground line shows the legacy single orange placeholder until the
+        // two-tone scheme lands (SPEC / TODO), regardless of which named line it is.
+        assertEquals(Color(0xFFEE7C0E), lineFillColor("liberty", "overground"))
+        assertEquals(Color(0xFFEE7C0E), lineFillColor("mildmay", "overground"))
+    }
+
+    @Test
     fun `an unmapped line or mode has no color, so the caller falls back to neutral`() {
-        assertNull(lineFillColor("elizabeth", "elizabeth-line"))
+        assertNull(lineFillColor("thameslink", "national-rail"))
         assertNull(lineFillColor("", ""))
     }
 
@@ -52,12 +63,22 @@ class LinePillTest {
     }
 
     @Test
-    fun `text picks the higher-contrast black or white for the fill`() {
-        assertEquals(Color.White, textColorOn(Color(0xFFE32017))) // Central red (dark)
+    fun `text picks the higher-contrast black or white by APCA`() {
+        // Dark fills → white.
         assertEquals(Color.White, textColorOn(Color(0xFF000000))) // Northern black
-        assertEquals(Color.Black, textColorOn(Color(0xFFFFD300))) // Circle yellow (pale)
-        // Mid-luminance fills take black, where a 0.5 split would wrongly pick white.
-        assertEquals(Color.Black, textColorOn(Color(0xFF0098D4))) // Victoria blue
-        assertEquals(Color.Black, textColorOn(Color(0xFFA0A5A9))) // Jubilee gray
+        assertEquals(Color.White, textColorOn(Color(0xFFE32017))) // Central red
+        assertEquals(Color.White, textColorOn(Color(0xFF6950A1))) // Elizabeth purple
+        assertEquals(Color.White, textColorOn(Color(0xFF003688))) // Piccadilly navy
+        // Pale fills → black.
+        assertEquals(Color.Black, textColorOn(Color(0xFFFFD300))) // Circle yellow
+        assertEquals(Color.Black, textColorOn(Color(0xFFA0A5A9))) // Jubilee silver
+        assertEquals(Color.Black, textColorOn(Color(0xFF84B817))) // Trams green
+        assertEquals(Color.Black, textColorOn(Color(0xFFF3A9BB))) // Hammersmith & City pink
+        // Saturated mid-tones: WCAG-2's ratio wrongly picks black on these, APCA picks
+        // white — the case this switch exists for (Victoria, DLR, Bakerloo, Overground).
+        assertEquals(Color.White, textColorOn(Color(0xFF0098D4))) // Victoria blue
+        assertEquals(Color.White, textColorOn(Color(0xFF00A4A7))) // DLR turquoise
+        assertEquals(Color.White, textColorOn(Color(0xFFB36305))) // Bakerloo brown
+        assertEquals(Color.White, textColorOn(Color(0xFFEE7C0E))) // Overground orange
     }
 }
