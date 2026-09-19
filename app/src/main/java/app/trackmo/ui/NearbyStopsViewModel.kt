@@ -26,8 +26,8 @@ import kotlinx.coroutines.withContext
  *
  * Location is resolved **once per screen open** ([locate]), not on every departures refresh:
  * SPEC D1 uses location on demand only, and a fixed nearby set per instance keeps the
- * departures snapshot/persistence assumptions intact. [locate] is called when the coarse-
- * location permission is first held and again after a grant or a retry; moving and re-finding
+ * departures snapshot/persistence assumptions intact. [locate] is called when the location
+ * permission is first held and again after a grant or a retry; moving and re-finding
  * is a later, explicit action.
  *
  * Every non-happy outcome is a distinct, honest state rather than an empty list (SPEC
@@ -45,7 +45,7 @@ class NearbyStopsViewModel(
     private val warn: (String) -> Unit = {},
 ) : ViewModel() {
     sealed interface State {
-        /** The coarse-location permission isn't held yet — the screen asks for it. */
+        /** The location permission isn't held yet — the screen asks for it. */
         data object PermissionRequired : State
 
         /** Resolving: a fix and the nearby lookup are in flight — show a placeholder. */
@@ -81,7 +81,7 @@ class NearbyStopsViewModel(
     private var locateJob: Job? = null
 
     /**
-     * Resolve the nearby stops. Call once the coarse-location permission is held (on open if
+     * Resolve the nearby stops. Call once the location permission is held (on open if
      * already granted, or straight after the user grants it), and again for a retry. Safe to
      * call repeatedly — each call cancels any in-flight resolve and supersedes the last state.
      */

@@ -2,9 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Coarse only: the nearby-stops search needs approximate position, not a precise fix,
-         and it's the one place the user's location is used — on demand, sent to TfL to find
-         stops, never on a background refresh (SPEC Finding stops / Privacy). -->
+    <!-- Precise location for the nearby-stops search: a coarse fix put the nearest stop up to
+         ~1 km off (a stop half a mile away read as nearest), so trackmo requests FINE and uses
+         it when granted (maintainer, 2026-09-19). COARSE stays declared so the runtime dialog
+         offers the precise/approximate choice and an approximate grant still finds stops,
+         degraded. Location is used on demand only — sent to TfL to find stops, never on a
+         background refresh (SPEC Finding stops / Privacy). -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application

@@ -10,8 +10,10 @@ truth those answers are built from.
 
 Trackmo is a **client-only** app. Everything it sends over the network goes to one place —
 **Transport for London's Unified API** — and only ever what a request needs to answer your
-question about departures: the details of what you're looking up (your location for "near
-me now", or the stop or line you're after) and, if you've set an optional TfL API key
+question about departures: the details of what you're looking up (your location for "near me
+now" — **precise** if you grant precise and a precise fix is available, otherwise approximate
+(if you grant only approximate, or if no precise fix can be obtained) — or the
+stop or line you're after) and, if you've set an optional TfL API key
 (`app_key`), that key as your own credential, sent with your own TfL calls and nowhere
 else. Location is used **only on demand**, never in the background.
 

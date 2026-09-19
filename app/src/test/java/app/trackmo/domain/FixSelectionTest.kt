@@ -180,6 +180,59 @@ class FixSelectionTest {
     }
 
     @Test
+    fun `preferAccurate declines the fast path for a recent coarse cached fix and requests a fresh one`() = runTest {
+        // Precise granted, and the recent cached fix is coarse (network) — it must not preempt
+        // the fresh precise attempt, or precise access is defeated by a slightly newer coarse fix.
+        var freshRequested = false
+        val result = FixSelection.resolve(
+            lastKnown = cached,
+            lastKnownAgeMillis = 30_000L, // recent — would fast-path if it were accurate
+            lastKnownIsAccurate = false,
+            preferAccurate = true,
+            freshEnoughMillis = freshEnough,
+            maxFallbackAgeMillis = maxFallback,
+            timeoutMillis = timeout,
+            warn = {},
+        ) { freshRequested = true; fresh }
+        assertEquals(fresh, result)
+        assertEquals("a recent coarse fix does not skip the fresh precise request", true, freshRequested)
+    }
+
+    @Test
+    fun `preferAccurate still fast-paths a recent accurate cached fix`() = runTest {
+        var freshRequested = false
+        val result = FixSelection.resolve(
+            lastKnown = cached,
+            lastKnownAgeMillis = 30_000L,
+            lastKnownIsAccurate = true,
+            preferAccurate = true,
+            freshEnoughMillis = freshEnough,
+            maxFallbackAgeMillis = maxFallback,
+            timeoutMillis = timeout,
+            warn = {},
+        ) { freshRequested = true; fresh }
+        assertEquals(cached, result)
+        assertEquals("a recent accurate fix is used at once", false, freshRequested)
+    }
+
+    @Test
+    fun `preferAccurate falls back to the recent coarse cached fix when the fresh fix fails`() = runTest {
+        // Declined the fast path (coarse under precise), the fresh fix then returns nothing —
+        // the coarse cached fix is still a valid fallback within the cap rather than a failure.
+        val result = FixSelection.resolve(
+            lastKnown = cached,
+            lastKnownAgeMillis = 30_000L,
+            lastKnownIsAccurate = false,
+            preferAccurate = true,
+            freshEnoughMillis = freshEnough,
+            maxFallbackAgeMillis = maxFallback,
+            timeoutMillis = timeout,
+            warn = {},
+        ) { null }
+        assertEquals(cached, result)
+    }
+
+    @Test
     fun `a revoked permission is not backfilled with a cached fix`() = runTest {
         // Permission revoked mid-flow: the fresh fix returns null (its SecurityException was
         // swallowed), and the cached fix is within the cap — but access is gone, so no

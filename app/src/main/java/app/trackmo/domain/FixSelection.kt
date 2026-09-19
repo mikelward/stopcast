@@ -43,6 +43,15 @@ object FixSelection {
     const val FRESH_FIX_TIMEOUT_MILLIS = 10_000L
 
     /**
+     * How long to wait on any one provider before moving to the next in the accurate-first
+     * list (fused, GPS, network, passive). Without a per-provider bound a fused provider that
+     * accepts the request but never calls back would consume the whole [FRESH_FIX_TIMEOUT_MILLIS]
+     * and GPS — which may have a fix — would never be asked (Codex). Smaller than the overall
+     * timeout, which still caps the sum. Reversible — one constant.
+     */
+    const val FRESH_FIX_PER_PROVIDER_TIMEOUT_MILLIS = 4_000L
+
+    /**
      * The oldest a cached fix may be to serve as a *fallback* when no fresh fix is
      * available. Larger than [FRESH_ENOUGH_MILLIS] (which gates the instant fast path) —
      * a somewhat-old fix beats failing outright — but bounded, because the user may have
@@ -60,6 +69,16 @@ object FixSelection {
     suspend fun resolve(
         lastKnown: Coordinates?,
         lastKnownAgeMillis: Long?,
+        // Whether the cached fix came from an accurate (GPS/fused) provider. Only consulted
+        // when [preferAccurate] is on: a recent *coarse* cached fix then does not take the
+        // instant fast path (it stays a fallback below), so precise access isn't defeated by a
+        // slightly newer network fix (Codex). Default true keeps the fast path unchanged when
+        // the caller doesn't care about accuracy.
+        lastKnownIsAccurate: Boolean = true,
+        // On when precise (fine) location is granted: prefer an accurate fix over a quick coarse
+        // one. Gates the fast path above; the fresh-fix side (accurate providers first) is the
+        // caller's. Default off preserves the coarse-only behavior.
+        preferAccurate: Boolean = false,
         freshEnoughMillis: Long = FRESH_ENOUGH_MILLIS,
         maxFallbackAgeMillis: Long = MAX_FALLBACK_AGE_MILLIS,
         timeoutMillis: Long = FRESH_FIX_TIMEOUT_MILLIS,
@@ -79,7 +98,14 @@ object FixSelection {
         hasPermission: () -> Boolean = { true },
         freshFix: suspend () -> Coordinates?,
     ): Coordinates? {
-        if (lastKnown != null && lastKnownAgeMillis != null && lastKnownAgeMillis <= freshEnoughMillis) {
+        // The instant fast path returns a recent cached fix without waiting — but when the
+        // caller wants precision, a recent *coarse* cached fix must not preempt the fresh
+        // precise attempt, or precise access is defeated by a slightly newer network fix
+        // (Codex). Such a coarse fix stays a fallback below if the fresh fix fails; it just no
+        // longer short-circuits it. With preferAccurate off, any recent cached fix short-circuits.
+        if (lastKnown != null && lastKnownAgeMillis != null && lastKnownAgeMillis <= freshEnoughMillis &&
+            (lastKnownIsAccurate || !preferAccurate)
+        ) {
             if (!hasPermission()) return permissionRevoked(warn)
             return lastKnown
         }
