@@ -140,6 +140,46 @@ object DepartureRows {
     }
 
     /**
+     * Reorder the "near me now" rows **closest stop first** — the nearest stop's services at
+     * the top, down to the farthest (SPEC *Finding stops → Near me now*). Distance is the sort;
+     * rows at the **same stop** (several lines at one stop, or both directions of one line — all
+     * identical distance) can't be ordered by distance, so they break the tie **soonest-first**,
+     * which never moves a near stop below a far one. Two *distinct* stops that compute an equal
+     * distance are kept grouped by stop id (before arrival time), so soonest-first stays a
+     * strictly same-stop tiebreak and their rows never interleave. A stop missing from
+     * [stopDistanceMeters] sorts last (`Double.MAX_VALUE`).
+     *
+     * **Warnings still lead** (by [rank], above the distance sort — a closure the user must see
+     * isn't buried under nearer departures); **starred rows are lifted afterward by [pinStarred]**,
+     * whose sort is stable so this closest-first order carries through within each band. Applied
+     * only on the near-me path (distances present); the location-free watched list keeps its
+     * soonest-first [across] order (D1 — distance ranking is for *finding* stops, not the watched
+     * list). Distance arrives as [stopDistanceMeters] (`stopId` → meters), the nearby flow's input.
+     *
+     * This is the current near-me display experiment (closest-first, soonest same-stop tiebreak),
+     * to be judged on a device against the earlier two-band lean — see `TODO.md`.
+     */
+    fun byStopDistance(
+        rows: List<DepartureRow>,
+        stopDistanceMeters: Map<String, Double>,
+    ): List<DepartureRow> {
+        fun distanceOf(stopId: String): Double = stopDistanceMeters[stopId] ?: Double.MAX_VALUE
+        return rows.sortedWith(
+            compareBy<DepartureRow> { rank(it) }
+                .thenBy { distanceOf(it.stopId) }
+                // Group two *distinct* stops that compute an equal distance (e.g. StopPoints
+                // sharing coordinates) by stop identity BEFORE arrival time, so their rows don't
+                // interleave (A, B, A) — soonest-first stays a strictly same-stop tiebreak.
+                .thenBy { it.stopId }
+                .thenBy { it.upcoming.firstOrNull()?.expectedArrival ?: Instant.MIN }
+                .thenBy { it.lineName }
+                .thenBy { it.direction }
+                .thenBy { it.directionKey }
+                .thenBy { it.stopName },
+        )
+    }
+
+    /**
      * Reorder [rows] so the user's **starred** services sit at the top — ranking only, not
      * membership (SPEC D8): a star pins its row above the unstarred ones, it does not add or
      * remove anything. Applied after [across]/[nearbyDeduped], so the rows are already in

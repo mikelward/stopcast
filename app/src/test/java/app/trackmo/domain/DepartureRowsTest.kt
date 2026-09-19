@@ -575,4 +575,70 @@ class DepartureRowsTest {
         assertEquals(1, deduped.size)
         assertEquals("A", deduped[0].stopId)
     }
+
+    // --- byStopDistance: the near-me display order (closest stop first, soonest same-stop tie) ---
+
+    @Test
+    fun `byStopDistance puts the closest stop first even when a farther stop leaves sooner`() {
+        // Stop A is nearer; stop B is farther but its bus leaves sooner. Closest-first means the
+        // near stop leads — you'd walk to the one at your feet, not chase the far sooner one.
+        val near = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 600, mode = "bus"))
+        val far = rowsFor("B", "Stop B", departure("134", "134", "outbound", "Y", 60, mode = "bus"))
+
+        val ordered = DepartureRows.byStopDistance(near + far, mapOf("A" to 100.0, "B" to 400.0))
+
+        assertEquals(listOf("A", "B"), ordered.map { it.stopId })
+    }
+
+    @Test
+    fun `byStopDistance breaks a same-stop tie soonest-first`() {
+        // Two lines at ONE stop (identical distance): distance can't order them, so the sooner
+        // service leads. Order them into the list farther-first to prove the sort, not input order.
+        val laterAtStop = rowsFor("A", "Stop A", departure("134", "134", "outbound", "Y", 540, mode = "bus"))
+        val soonerAtStop = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 120, mode = "bus"))
+
+        val ordered = DepartureRows.byStopDistance(laterAtStop + soonerAtStop, mapOf("A" to 100.0))
+
+        assertEquals(listOf("55", "134"), ordered.map { it.lineId })
+    }
+
+    @Test
+    fun `byStopDistance sorts a stop missing from the distance map last`() {
+        val known = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 600, mode = "bus"))
+        val unknown = rowsFor("B", "Stop B", departure("134", "134", "outbound", "Y", 60, mode = "bus"))
+
+        // B is absent from the map → farthest, so it trails A despite leaving sooner.
+        val ordered = DepartureRows.byStopDistance(known + unknown, mapOf("A" to 500.0))
+
+        assertEquals(listOf("A", "B"), ordered.map { it.stopId })
+    }
+
+    @Test
+    fun `byStopDistance keeps equidistant distinct stops grouped, not time-interleaved`() {
+        // Two distinct stops that compute the same distance (e.g. StopPoints sharing
+        // coordinates). Stop A has a soon and a late departure; stop B one in between. By
+        // distance→time alone the order would interleave A(soon), B(mid), A(late); grouping by
+        // stop id first keeps each stop's rows together (soonest is a same-stop tiebreak only).
+        val aSoon = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 60, mode = "bus"))
+        val aLate = rowsFor("A", "Stop A", departure("134", "134", "outbound", "Y", 600, mode = "bus"))
+        val bMid = rowsFor("B", "Stop B", departure("43", "43", "outbound", "Z", 120, mode = "bus"))
+
+        val ordered = DepartureRows.byStopDistance(aSoon + aLate + bMid, mapOf("A" to 100.0, "B" to 100.0))
+
+        // A's two rows are adjacent (grouped), not split by B's row.
+        assertEquals(listOf("A", "A", "B"), ordered.map { it.stopId })
+    }
+
+    @Test
+    fun `byStopDistance keeps a warning leading above a nearer timed row`() {
+        // A closure at a FAR stop must still lead above a NEAR stop's departures — a warning the
+        // user must see isn't buried under closer catchable rows (SPEC principle 2).
+        val nearTimed = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 120, mode = "bus"))
+        val farClosure = listOf(stopStatusRow("Z", "Stop Z"))
+
+        val ordered = DepartureRows.byStopDistance(nearTimed + farClosure, mapOf("A" to 100.0, "Z" to 900.0))
+
+        assertEquals("Z", ordered.first().stopId)
+        assertTrue("the closure leads", ordered.first().stopDisruption != null)
+    }
 }

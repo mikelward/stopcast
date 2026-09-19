@@ -97,10 +97,16 @@ The app finds stops two ways:
   ring doesn't already cover, so a denser mode (London's bus stops) can't crowd out a sparser
   one (the nearest Tube or rail station still appears), with no overall count cap. **The radii
   are provisional and not yet validated on a device** — the illustrative values and the open
-  questions (whether a dense interchange needs a scannability bound, how the list is ordered)
-  live in `TODO.md`; what is durable is the constraints above, not the specific numbers. (How
-  the *services* a line repeats across adjacent stops collapse to one row is *Departures*;
-  this is only which stops are looked up.)
+  question of whether a dense interchange needs a scannability bound live in `TODO.md`; what
+  is durable is the constraints above, not the specific numbers. **The near-me list is ordered
+  closest stop first**, with soonest-first breaking a same-stop tie (a stop's several services
+  are equidistant); warnings still lead and starred rows are still pinned above it. Distance
+  orders only this location-derived list — never the location-free watched list, which stays
+  soonest-first (D1). That order is a provisional starting point to judge on a device (it keeps
+  what's nearest on top and cuts reshuffles, at the cost of the closest stop leading even when
+  nothing leaves it soon); the reasoning and alternatives live in `TODO.md`. (How the
+  *services* a line repeats across adjacent stops collapse to one row is *Departures*; this is
+  only which stops are looked up.)
 - **Search** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run).
 
