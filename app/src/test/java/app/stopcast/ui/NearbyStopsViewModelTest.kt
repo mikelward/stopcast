@@ -32,7 +32,18 @@ class NearbyStopsViewModelTest {
 
     /** A location provider that hands back a fixed fix (or null for "no fix"). */
     private class FakeLocation(private val fix: Coordinates?) : LocationProvider {
-        override suspend fun current(): Coordinates? = fix
+        override suspend fun current(forceFresh: Boolean): Coordinates? = fix
+    }
+
+    /** A location provider whose fix can change between calls — for re-locate on refresh. It
+     *  records the last [forceFresh] it was asked for, so a test can assert relocate forces a
+     *  fresh fix (a cached one would re-resolve for the previous position). */
+    private class MutableLocation(var fix: Coordinates?) : LocationProvider {
+        var lastForceFresh: Boolean? = null
+        override suspend fun current(forceFresh: Boolean): Coordinates? {
+            lastForceFresh = forceFresh
+            return fix
+        }
     }
 
     /** A finder that returns a fixed list, or throws, and records the query it was given. */
@@ -177,5 +188,135 @@ class NearbyStopsViewModelTest {
             NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.OFFLINE),
             model.state.value,
         )
+    }
+
+    @Test
+    fun `relocate swaps in the new nearby set (walked to the next stop)`() = runTest {
+        var stops = listOf(stop("a", 50.0, "bus"))
+        val model = vm(MutableLocation(origin), FakeFinder { stops })
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(listOf("a"), (model.state.value as NearbyStopsViewModel.State.Ready).stops.map { it.id })
+
+        // Refresh after walking on: a different nearby set resolves and replaces the old one.
+        stops = listOf(stop("b", 60.0, "tube"))
+        model.relocate()
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("b"),
+            (model.state.value as NearbyStopsViewModel.State.Ready).stops.map { it.id },
+        )
+    }
+
+    @Test
+    fun `relocate surfaces a failed fix honestly, not the stale set`() = runTest {
+        val location = MutableLocation(origin)
+        val model = vm(location, FakeFinder { listOf(stop("a", 50.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        assertTrue(model.state.value is NearbyStopsViewModel.State.Ready)
+
+        // A refresh whose fix can't be obtained must not leave the previous location's stops on
+        // screen as if current (SPEC principles 1–2) — it reports NoLocation.
+        location.fix = null
+        model.relocate()
+        advanceUntilIdle()
+
+        assertEquals(NearbyStopsViewModel.State.NoLocation, model.state.value)
+    }
+
+    @Test
+    fun `relocate surfaces an out-of-range result as Empty, not the stale set`() = runTest {
+        var stops = listOf(stop("a", 50.0, "bus"))
+        val model = vm(MutableLocation(origin), FakeFinder { stops })
+        model.locate()
+        advanceUntilIdle()
+        assertTrue(model.state.value is NearbyStopsViewModel.State.Ready)
+
+        // Walked out of range: the lookup succeeds but finds nothing, so the honest "no stops
+        // nearby" replaces the old set rather than showing a previous location's stops.
+        stops = emptyList()
+        model.relocate()
+        advanceUntilIdle()
+
+        assertEquals(NearbyStopsViewModel.State.Empty, model.state.value)
+    }
+
+    @Test
+    fun `relocating is true while the fresh fix is in flight and false once it resolves`() = runTest {
+        val model = vm(MutableLocation(origin), FakeFinder { listOf(stop("a", 50.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        // locate() uses the Locating gate, not the in-place indicator.
+        assertEquals(false, model.relocating.value)
+
+        // relocate flips the indicator on synchronously (before the fix runs) so the departures
+        // screen's refresh spinner stays up for the whole re-locate, and clears once it resolves.
+        model.relocate()
+        assertEquals(true, model.relocating.value)
+        advanceUntilIdle()
+        assertEquals(false, model.relocating.value)
+    }
+
+    @Test
+    fun `a locate that supersedes a relocate clears the in-flight indicator`() = runTest {
+        val model = vm(MutableLocation(origin), FakeFinder { listOf(stop("a", 50.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+
+        model.relocate()
+        assertEquals(true, model.relocating.value)
+        // A locate (e.g. a permission retry) cancels the relocate and shows its own gate, so the
+        // in-place indicator must not stay stuck on.
+        model.locate()
+        assertEquals(false, model.relocating.value)
+        advanceUntilIdle()
+        assertEquals(false, model.relocating.value)
+    }
+
+    @Test
+    fun `relocate applies fresh distances when the stop set is unchanged`() = runTest {
+        val location = MutableLocation(origin)
+        val model = vm(location, FakeFinder { listOf(stop("a", 50.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        val before = model.state.value as NearbyStopsViewModel.State.Ready
+        val beforeDistance = before.distanceMeters.getValue("a")
+
+        // The rider moves ~10 m toward the stop; the stop ID is unchanged (same set), but the
+        // distance changed — and the list picks each line's nearest stop and orders rows by
+        // distanceMeters, so the fresh distance must be applied, not the previous position's.
+        location.fix = Coordinates(10.0 / 111_320.0, 0.0)
+        var refreshed = false
+        model.relocate(onSameSet = { refreshed = true })
+        advanceUntilIdle()
+
+        val after = model.state.value as NearbyStopsViewModel.State.Ready
+        assertEquals(listOf("a"), after.stops.map { it.id })
+        assertTrue("same set still refreshes departures in place", refreshed)
+        assertTrue("the fresh, nearer distance replaces the old one", after.distanceMeters.getValue("a") < beforeDistance)
+    }
+
+    @Test
+    fun `relocate refreshes the same set in place and forces a fresh fix`() = runTest {
+        val location = MutableLocation(origin)
+        val model = vm(location, FakeFinder { listOf(stop("a", 50.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        // A first open may use the recent-cache fast path.
+        assertEquals(false, location.lastForceFresh)
+        val before = model.state.value as NearbyStopsViewModel.State.Ready
+
+        // The fix confirms the same stops, so the callback (the departures refresh) fires and
+        // the state is not re-emitted — the refresh is sequenced after the fix, not parallel.
+        var refreshed = false
+        model.relocate(onSameSet = { refreshed = true })
+        advanceUntilIdle()
+
+        // A re-locate forces a fresh fix (a cached one could re-resolve for the old position).
+        assertEquals(true, location.lastForceFresh)
+        assertTrue("same set → departures refreshed in place", refreshed)
+        assertEquals(before, model.state.value)
     }
 }

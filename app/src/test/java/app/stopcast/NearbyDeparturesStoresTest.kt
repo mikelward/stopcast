@@ -39,4 +39,21 @@ class NearbyDeparturesStoresTest {
         holder.ownerFor("b")
         assertTrue(vm.cleared)
     }
+
+    @Test
+    fun `clearAll drops every store so a recovered set rebuilds its model`() {
+        val holder = NearbyDeparturesStores()
+        val ownerA = holder.ownerFor("a")
+        val storeA = ownerA.viewModelStore
+        val vm = ViewModelProvider(ownerA, ViewModelProvider.NewInstanceFactory())[SentinelViewModel::class.java]
+
+        // The gate shows (a failed/empty relocate): clearAll drops the retained store and
+        // cancels its in-flight fetch, so recovering to the same key can't reuse a stale model.
+        holder.clearAll()
+        assertTrue("the retained model is cleared", vm.cleared)
+
+        // Recovering to the same key ("Try again" → same stops) rebuilds a fresh store, so the
+        // MainViewModel's init re-runs and re-fetches rather than serving the pre-gate rows.
+        assertFalse("the recovered set gets a new store", holder.ownerFor("a").viewModelStore === storeA)
+    }
 }

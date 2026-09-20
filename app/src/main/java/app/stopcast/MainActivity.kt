@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,7 @@ import androidx.glance.appwidget.updateAll
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -209,21 +211,35 @@ class MainActivity : ComponentActivity() {
                             DeparturesForStops(
                                 state.stops,
                                 state.distanceMeters,
-                                nearbyViewModel::locate,
+                                relocate = { onSameSet -> nearbyViewModel.relocate(onSameSet) },
+                                relocating = nearbyViewModel.relocating,
                                 onOpenLicenses = openLicenses,
                                 onOpenSettings = { settingsOpen = true },
                             )
-                        else -> LocationGate(
-                            state = state,
-                            permanentlyDenied = permissionPermanentlyDenied,
-                            onAllow = { permissionLauncher.launch(locationPermissions) },
-                            onRetry = {
-                                if (hasLocationPermission()) nearbyViewModel.locate()
-                                else permissionLauncher.launch(locationPermissions)
-                            },
-                            onOpenSettings = ::openAppSettings,
-                            onOpenLicenses = openLicenses,
-                        )
+                        else -> {
+                            // While the gate is up (a failed/empty relocate, or a retry), drop
+                            // any departures store retained from the pre-gate set, so recovering
+                            // to the same stop IDs rebuilds the ViewModel and re-fetches instead
+                            // of showing the pre-gate departures until the next auto-refresh
+                            // (Codex). Ready never enters this branch, so a same-set relocate is
+                            // untouched. Runs once on gate entry (keyed Unit).
+                            val stores: NearbyDeparturesStores = viewModel()
+                            DisposableEffect(Unit) {
+                                stores.clearAll()
+                                onDispose {}
+                            }
+                            LocationGate(
+                                state = state,
+                                permanentlyDenied = permissionPermanentlyDenied,
+                                onAllow = { permissionLauncher.launch(locationPermissions) },
+                                onRetry = {
+                                    if (hasLocationPermission()) nearbyViewModel.locate()
+                                    else permissionLauncher.launch(locationPermissions)
+                                },
+                                onOpenSettings = ::openAppSettings,
+                                onOpenLicenses = openLicenses,
+                            )
+                        }
                     }
                 }
             }
@@ -251,7 +267,17 @@ class MainActivity : ComponentActivity() {
     private fun DeparturesForStops(
         stops: List<StopRef>,
         stopDistanceMeters: Map<String, Double>,
-        onLocateHere: () -> Unit,
+        // A refresh (button or pull) re-resolves the nearby set (a fresh fix) as well as
+        // re-fetching departures — so walking to the next stop and refreshing updates both.
+        // Called with the departures-refresh action, which relocate runs only when the fix
+        // confirms the *same* set (a moved-to set gets a fresh ViewModel that fetches on init;
+        // a failed/empty relocation shows the honest gate) — so a refresh never re-fetches the
+        // previous location's stops in parallel with the fix (see relocate).
+        relocate: (onSameSet: () -> Unit) -> Unit,
+        // True while a relocate's fresh fix is in flight (the departures screen stays up). ORed
+        // into the refresh indicator so pull-to-refresh doesn't retract the instant the fetch
+        // is enqueued, leaving the fix to change the set under a screen that reads as settled.
+        relocating: StateFlow<Boolean>,
         onOpenLicenses: () -> Unit,
         onOpenSettings: () -> Unit,
     ) {
@@ -300,15 +326,19 @@ class MainActivity : ComponentActivity() {
                 },
             )
             val state by viewModel.state.collectAsStateWithLifecycle()
-            val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+            val departuresRefreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+            // A relocate holds the indicator on for the whole fresh fix, not just the departures
+            // fetch that follows a same-set confirmation.
+            val relocatingNow by relocating.collectAsStateWithLifecycle()
+            val refreshing = departuresRefreshing || relocatingNow
             val starred by viewModel.starred.collectAsStateWithLifecycle()
             val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
             val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
             // These background refreshes are composed only while the departures view is shown:
             // the licenses screen is hosted above this subtree (see onCreate), so opening it
             // removes DeparturesForStops from composition and stops the polling (Codex).
-            RefreshOnForeground(viewModel)
-            AutoRefresh(viewModel)
+            RefreshOnForeground(viewModel, relocating)
+            AutoRefresh(viewModel, relocating)
             // Provide the branch topology so the card groups a branching row the way the widget
             // does — equivalent trunks merged, the label kept only where the trunk is a choice
             // ahead of the stop (see DepartureRows.destinationLines).
@@ -316,13 +346,18 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     state = state,
                     now = tickingNow(),
-                    onRefresh = viewModel::refresh,
+                    // Refresh re-locates first; the departures re-fetch is sequenced inside
+                    // relocate and runs only for the confirmed same set (a moved-to set's new
+                    // ViewModel fetches on its own init), so we never fetch the old set in
+                    // parallel with the fix. Cancel any fetch already in flight (initial,
+                    // foreground, or timed) before the fix starts, so it can't finish first and
+                    // save a fresh snapshot for the old set during the fix window (Codex).
+                    onRefresh = { viewModel.cancelFetch(); relocate { viewModel.refresh() } },
                     refreshing = refreshing,
                     // From "near me now": collapse a line served by several adjacent nearby stops
                     // to its nearest stop (SPEC *Finding stops → Near me now*). Empty for a
                     // location-free list (a watched-stops view), which is shown as-is.
                     stopDistanceMeters = stopDistanceMeters,
-                    onLocateHere = onLocateHere,
                     starred = starred,
                     onToggleStar = viewModel::toggleStar,
                     starringAvailable = starringAvailable,
@@ -411,10 +446,20 @@ internal class NearbyDeparturesStores : androidx.lifecycle.ViewModel() {
         }
     }
 
-    override fun onCleared() {
+    /**
+     * Drop every retained per-set store, canceling any in-flight departures fetch. Called when
+     * the departures view is replaced by the location gate (a failed/empty re-locate, or a
+     * retry): otherwise a recovery to the same stop IDs would reuse the retained [MainViewModel],
+     * whose `init` doesn't re-run and whose [RefreshOnForeground] skips its first foreground, so
+     * the pre-gate departures would return without the re-fetch the user asked for, stale until
+     * the next auto-refresh (Codex).
+     */
+    fun clearAll() {
         stores.values.forEach { it.clear() }
         stores.clear()
     }
+
+    override fun onCleared() = clearAll()
 }
 
 /** What the nearby gate should do for the current location-permission state (see [nearbyPermissionAction]). */
@@ -474,12 +519,23 @@ internal fun StopCastAppRoot(content: @Composable () -> Unit) {
  * so the **first** foreground per activity instance is skipped — only a genuine return
  * from the background triggers a re-fetch, never a duplicate of the initial request nor
  * a refetch on rotation. (Lifecycle wiring: verified by inspection, wants a device check.)
+ *
+ * [relocating] joins the busy gate (as it does for [AutoRefresh]): a foreground return while a
+ * manual re-locate's fix is in flight must not refresh the current (soon-to-be-previous) set and
+ * save it as a fresh snapshot before the fix resolves — the relocate's own resolution refreshes
+ * the confirmed set, replaces a moved-to one, or shows the gate (Codex).
  */
 @Composable
-private fun RefreshOnForeground(viewModel: MainViewModel) {
+private fun RefreshOnForeground(viewModel: MainViewModel, relocating: StateFlow<Boolean>) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        refreshOnForeground(lifecycleOwner.lifecycle) { viewModel.refresh() }
+    // Keyed on [viewModel], not just the lifecycle owner: a moved-to relocate swaps in a fresh
+    // per-set MainViewModel while this composable stays composed (DeparturesForStops recomposes
+    // in place — no key() wrapper), so an effect keyed on the lifecycle alone would keep calling
+    // refresh() on the cleared previous model while the new set never got a foreground refresh
+    // (Codex). Re-keying restarts the effect against the replacement model — and resets its
+    // first-foreground skip, which the new set's own init fetch stands in for.
+    LaunchedEffect(lifecycleOwner, viewModel) {
+        refreshOnForeground(lifecycleOwner.lifecycle, isBusy = { relocating.value }) { viewModel.refresh() }
     }
 }
 
@@ -491,10 +547,14 @@ private fun RefreshOnForeground(viewModel: MainViewModel) {
  * background does refresh (SPEC D6). Extracted so the skip-first/return-again rule is
  * unit-testable off a device.
  */
-internal suspend fun refreshOnForeground(lifecycle: Lifecycle, onForeground: () -> Unit) {
+internal suspend fun refreshOnForeground(
+    lifecycle: Lifecycle,
+    isBusy: () -> Boolean = { false },
+    onForeground: () -> Unit,
+) {
     var firstForeground = true
     lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-        if (firstForeground) firstForeground = false else onForeground()
+        if (firstForeground) firstForeground = false else if (!isBusy()) onForeground()
     }
 }
 
@@ -537,14 +597,23 @@ internal suspend fun autoRefresh(
  */
 internal const val AUTO_REFRESH_MILLIS = 60_000L
 
-/** Drives [autoRefresh] from the activity's lifecycle. */
+/**
+ * Drives [autoRefresh] from the activity's lifecycle. [relocating] joins the busy gate so the
+ * one-minute tick doesn't fire `refresh()` on the current (soon-to-be-previous) set while a
+ * manual re-locate's fix is still in flight — which would fetch and re-stamp the old location's
+ * departures in parallel with the fix, exactly the parallel-fetch the manual path already avoids
+ * (Codex). Once the relocate resolves the same-set refresh (or a new set's own fetch) takes over.
+ */
 @Composable
-private fun AutoRefresh(viewModel: MainViewModel) {
+private fun AutoRefresh(viewModel: MainViewModel, relocating: StateFlow<Boolean>) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
+    // Keyed on [viewModel] too (see RefreshOnForeground): a moved-to relocate replaces the per-set
+    // model under this still-composed effect, and a lifecycle-only key would leave the timer
+    // ticking the cleared old model while the new set never auto-refreshed and went stale (Codex).
+    LaunchedEffect(lifecycleOwner, viewModel) {
         autoRefresh(
             lifecycleOwner.lifecycle,
-            isRefreshing = { viewModel.refreshing.value },
+            isRefreshing = { viewModel.refreshing.value || relocating.value },
         ) { viewModel.refresh() }
     }
 }

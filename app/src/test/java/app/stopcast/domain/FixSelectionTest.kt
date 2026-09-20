@@ -41,6 +41,58 @@ class FixSelectionTest {
     }
 
     @Test
+    fun `forceFresh requests a new fix even with a recent cached one`() = runTest {
+        // A re-locate on refresh passes forceFresh so a recent cached fix can't short-circuit —
+        // otherwise walking to a new stop and refreshing would re-resolve for the previous
+        // position. The cached fix stays only a bounded fallback.
+        var freshRequested = false
+        val result = FixSelection.resolve(
+            lastKnown = cached,
+            lastKnownAgeMillis = 30_000L, // recent — would have taken the fast path normally
+            forceFresh = true,
+            maxFallbackAgeMillis = maxFallback,
+            timeoutMillis = timeout,
+            warn = {},
+        ) { freshRequested = true; fresh }
+        assertEquals(fresh, result)
+        assertTrue("force-fresh requests a new fix despite a recent cache", freshRequested)
+    }
+
+    @Test
+    fun `forceFresh bypasses the cache even for a zero-age fix`() = runTest {
+        // The boundary the old `freshEnoughMillis = 0` sentinel missed: an age that truncates to
+        // 0ms satisfied `age <= 0` and took the fast path, so forceFresh must be represented
+        // explicitly rather than as a threshold. A brand-new cached fix must still not short-
+        // circuit a forced re-locate.
+        var freshRequested = false
+        val result = FixSelection.resolve(
+            lastKnown = cached,
+            lastKnownAgeMillis = 0L,
+            forceFresh = true,
+            maxFallbackAgeMillis = maxFallback,
+            timeoutMillis = timeout,
+            warn = {},
+        ) { freshRequested = true; fresh }
+        assertEquals(fresh, result)
+        assertTrue("force-fresh requests a new fix even for a zero-age cache", freshRequested)
+    }
+
+    @Test
+    fun `forceFresh still falls back to a recent cached fix when the fresh fix fails`() = runTest {
+        // Bypassing the fast path doesn't discard the cache: if the forced fresh fix returns
+        // nothing, a within-cap cached fix is still a valid fallback rather than a hard failure.
+        val result = FixSelection.resolve(
+            lastKnown = cached,
+            lastKnownAgeMillis = 30_000L,
+            forceFresh = true,
+            maxFallbackAgeMillis = maxFallback,
+            timeoutMillis = timeout,
+            warn = {},
+        ) { null }
+        assertEquals(cached, result)
+    }
+
+    @Test
     fun `a stale cached fix waits for a fresh fix and uses it`() = runTest {
         val result = FixSelection.resolve(
             lastKnown = cached,
