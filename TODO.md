@@ -743,6 +743,14 @@ and these carry the rest as their own PRs:
 ## Phase 5 — Distribution and polish
 
 - [ ] Play internal-track deploy proven end to end; signing keystore via secrets.
+- [ ] Consider a CI check that keeps `docs/play-store/icon-512.png` in step with the icon
+      drawables. Measured on the siblings: **folding the assertion into an existing
+      screenshot class is near-free; a dedicated Roborazzi step ≈ 8–9s/run** (the ~90s
+      Robolectric cold start is paid once by the first screenshot step, so later steps run
+      warm). Prefer folding over a dedicated step. Bigger CI-time lever, if it ever
+      matters: batch the screenshot job's single-class steps the way simmo did (9→4 saved
+      ~3min there) — the icon steps are not the cost. The 512 landed without a check for
+      now, script-rendered via `scripts/render-store-icon.py`.
 - [ ] **Peer-parity sweep** (requested 2026-09-19, on-device): confirm nothing peer-standard
       from the sibling apps is missing before release. The already-tracked peer features are
       the shareable debug-log export (its own item below), Settings (Phase 2), the
