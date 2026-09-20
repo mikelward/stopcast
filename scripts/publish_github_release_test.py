@@ -95,7 +95,7 @@ def run_case(name, *, release_exists, asset_state, commits=7, latest_code=0):
             RELEASE_NOTES="• Refresh the widget every minute",
             RUNNER_TEMP=str(runner_temp),
             AAB_PATH=str(aab),
-            ASSET_BASE="trackmo",
+            ASSET_BASE="stopcast",
             STUB_RELEASE_EXISTS="1" if release_exists else "0",
             STUB_ASSET_STATE=asset_state,
             STUB_LATEST_CODE=str(latest_code),
@@ -143,7 +143,7 @@ def case_new_release():
     if creates:
         c = creates[0]
         check("tags by versionCode", " v7 " in f" {c} ", c)
-        check("attaches the bundle", "trackmo-7.aab" in c, c)
+        check("attaches the bundle", "stopcast-7.aab" in c, c)
         check("marks it a prerelease", "--prerelease" in c, c)
         check("targets the head commit", "--target 0123456789abcdef" in c, c)
         check("titles it by versionCode", "--title versionCode 7" in c, c)
@@ -212,7 +212,7 @@ def case_count_tracks_history():
     check("exits zero", rc == 0)
     creates = [l for l in lines if l.startswith("release create")]
     check("tags v41 in a 41-commit tree", creates and " v41 " in f" {creates[0]} ", lines)
-    check("asset name follows too", creates and "trackmo-41.aab" in creates[0], lines)
+    check("asset name follows too", creates and "stopcast-41.aab" in creates[0], lines)
     check("notes name versionCode 41", "versionCode 41," in notes, notes)
 
 

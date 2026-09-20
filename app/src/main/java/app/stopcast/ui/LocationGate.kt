@@ -1,0 +1,143 @@
+package app.stopcast.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import app.stopcast.R
+
+/**
+ * The screen shown until the nearby-stops search resolves (SPEC *Finding stops*): the
+ * location gate in front of the departures view. It renders every [NearbyStopsViewModel.State]
+ * except [NearbyStopsViewModel.State.Ready] — Ready hands off to `MainScreen` — so each
+ * non-happy outcome is an honest, actionable screen rather than a blank or a fake list
+ * (SPEC principles 1–2):
+ *
+ * - [PermissionRequired][NearbyStopsViewModel.State.PermissionRequired] — the rationale
+ *   (honest that the position is sent to TfL) and an **Allow location** button.
+ * - [Locating][NearbyStopsViewModel.State.Locating] — a spinner, shown at once (SPEC 5).
+ * - [NoLocation][NearbyStopsViewModel.State.NoLocation] / [Empty][NearbyStopsViewModel.State.Empty]
+ *   / [Failed][NearbyStopsViewModel.State.Failed] — the reason and a **Try again**.
+ *
+ * Pure: renders only [state], with no I/O, so the same function drives the app and the
+ * screenshot tests.
+ */
+@Composable
+fun LocationGate(
+    state: NearbyStopsViewModel.State,
+    onAllow: () -> Unit,
+    onRetry: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+    permanentlyDenied: Boolean = false,
+    // Open the About dialog (version + the open-source licenses screen). Reachable here too, not
+    // only past the gate, so the license attribution isn't stranded when location is denied and
+    // departures never resolve (Codex). Default no-op so a screenshot test renders without it.
+    onOpenLicenses: () -> Unit = {},
+) {
+    // Saved so an open About dialog survives rotation on the gate.
+    var showAbout by rememberSaveable { mutableStateOf(false) }
+    Column(
+        modifier = modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        when (state) {
+            NearbyStopsViewModel.State.PermissionRequired -> {
+                Title(stringResource(R.string.location_title))
+                if (permanentlyDenied) {
+                    // Re-requesting only re-denies, so send the user to Settings instead of
+                    // stranding them on a button that can't grant the permission.
+                    Body(stringResource(R.string.location_denied))
+                    Action(stringResource(R.string.open_settings), onOpenSettings)
+                } else {
+                    Body(stringResource(R.string.location_rationale))
+                    Action(stringResource(R.string.location_allow), onAllow)
+                }
+            }
+
+            NearbyStopsViewModel.State.Locating -> {
+                CircularProgressIndicator()
+                Body(stringResource(R.string.location_finding))
+            }
+
+            NearbyStopsViewModel.State.NoLocation -> {
+                Body(stringResource(R.string.location_no_fix))
+                Action(stringResource(R.string.try_again), onRetry)
+            }
+
+            NearbyStopsViewModel.State.Empty -> {
+                Body(stringResource(R.string.location_no_stops))
+                Action(stringResource(R.string.try_again), onRetry)
+            }
+
+            is NearbyStopsViewModel.State.Failed -> {
+                Body(stringResource(failureMessage(state.kind)))
+                Action(stringResource(R.string.try_again), onRetry)
+            }
+
+            // Ready is the caller's cue to show the departures screen, not the gate.
+            is NearbyStopsViewModel.State.Ready -> Unit
+        }
+        // Always present, below the state's own action: the one way to reach the app version and
+        // open-source attribution while stuck on the gate.
+        TextButton(onClick = { showAbout = true }, modifier = Modifier.padding(top = 24.dp)) {
+            Text(stringResource(R.string.menu_about))
+        }
+    }
+    if (showAbout) {
+        AboutDialog(
+            onOpenLicenses = {
+                showAbout = false
+                onOpenLicenses()
+            },
+            onDismiss = { showAbout = false },
+        )
+    }
+}
+
+@Composable
+private fun Title(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleLarge,
+        textAlign = TextAlign.Center,
+    )
+}
+
+@Composable
+private fun Body(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.padding(top = 16.dp),
+    )
+}
+
+@Composable
+private fun Action(text: String, onClick: () -> Unit) {
+    Button(onClick = onClick, modifier = Modifier.padding(top = 24.dp)) { Text(text) }
+}
+
+private fun failureMessage(kind: DeparturesUiState.Error.Kind): Int = when (kind) {
+    DeparturesUiState.Error.Kind.OFFLINE -> R.string.error_offline
+    DeparturesUiState.Error.Kind.RATE_LIMITED -> R.string.error_rate_limited
+    DeparturesUiState.Error.Kind.UNREACHABLE -> R.string.error_unreachable
+}

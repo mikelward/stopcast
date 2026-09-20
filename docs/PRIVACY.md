@@ -1,6 +1,6 @@
-# Trackmo — privacy
+# StopCast — privacy
 
-This describes what trackmo keeps, what leaves the device, and — in detail — what its
+This describes what stopcast keeps, what leaves the device, and — in detail — what its
 on-device diagnostic log carries. It is the disclosure `AGENTS.md` requires to exist
 before any on-device logging ships. The full store-facing Play Data Safety statement is
 finalized at release (see `TODO.md` Phase 5); this document is the engineering-level
@@ -8,7 +8,7 @@ truth those answers are built from.
 
 ## What leaves the device
 
-Trackmo is a **client-only** app. Everything it sends over the network goes to one place —
+StopCast is a **client-only** app. Everything it sends over the network goes to one place —
 **Transport for London's Unified API** — and only ever what a request needs to answer your
 question about departures: the details of what you're looking up (your location for "near me
 now" — **precise** if you grant precise and a precise fix is available, otherwise approximate
@@ -17,20 +17,20 @@ stop or line you're after) and, if you've set an optional TfL API key
 (`app_key`), that key as your own credential, sent with your own TfL calls and nowhere
 else. Location is used **only on demand**, never in the background.
 
-Nothing else leaves the device *to trackmo*: no analytics, no crash reporter, no
-third-party tracker, and no server of trackmo's own.
+Nothing else leaves the device *to stopcast*: no analytics, no crash reporter, no
+third-party tracker, and no server of stopcast's own.
 
 The only other thing that leaves the device is **your own Android backup and
 device-to-device transfer**, if you have it enabled: like any app's data, your saved
-trackmo data (your settings and its last-good departures snapshot) rides it, so a phone
+stopcast data (your settings and its last-good departures snapshot) rides it, so a phone
 swap keeps your setup. That is Android's channel, under your control and tied to your
-Google account — not something trackmo sends. So the guarantee is precise rather than
-absolute: **trackmo itself sends nothing off the device but its TfL requests**, and
+Google account — not something stopcast sends. So the guarantee is precise rather than
+absolute: **stopcast itself sends nothing off the device but its TfL requests**, and
 Android's backup carries your saved data under your control.
 
 ## The on-device diagnostic log
 
-Trackmo keeps a diagnostic log on the device so a misbehaving routing or departure
+StopCast keeps a diagnostic log on the device so a misbehaving routing or departure
 decision can be explained — for example, why "couldn't get your location" appeared, or
 why a line showed "couldn't check for disruptions". Diagnosing those needs a record of
 what the app saw, so the log carries **coarse state and reasons**, and nothing more:

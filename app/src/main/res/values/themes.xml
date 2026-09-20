@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Compose draws everything (see TrackmoTheme); this platform theme only
+    <!-- Compose draws everything (see StopCastTheme); this platform theme only
          styles the launch window. Framework theme, so no
          com.google.android.material dependency is pulled in. -->
-    <style name="Theme.Trackmo" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.StopCast" parent="android:Theme.Material.NoActionBar" />
 </resources>

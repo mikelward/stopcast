@@ -46,7 +46,7 @@ exercises the whole spine the widget later renders from.
       tests, `workflow_dispatch` deploy-force, and `dev-docs/play-store-internal-track.md`. No
       Firebase (dropped every google-services/Crashlytics step). **Human setup still owed
       before a build actually ships** (all in `dev-docs/play-store-internal-track.md`): generate
-      the upload keystore; create the `app.trackmo` app on Play Console and seed the internal
+      the upload keystore; create the `app.stopcast` app on Play Console and seed the internal
       track with one manual upload; create the Play service account; add the five secrets
       (`RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_PASSWORD`,
       `RELEASE_KEY_ALIAS`, `PLAY_SERVICE_ACCOUNT_JSON`) to a `production` environment
@@ -115,7 +115,7 @@ exercises the whole spine the widget later renders from.
   - `/StopPoint/{id}/Disruption` for the watched stops: **[landed, PR #15]** a stop's own
     disruption surfaces as a stop-level status row (sorted above the line-status and timed
     rows) even when its lines' status is normal, so a closed stop isn't shown with
-    valid-looking departures. Trackmo **marks** (keeps the departures, adds the row) rather
+    valid-looking departures. StopCast **marks** (keeps the departures, adds the row) rather
     than suppresses — TfL's closure data is coarse and often absent, so hiding departures on
     it would risk dropping valid ones; and it surfaces **any** stop disruption rather than
     classifying closures (that's Phase 3). A closed stop with zero predictions still surfaces
@@ -132,7 +132,7 @@ exercises the whole spine the widget later renders from.
       the log ships. Landed: `docs/PRIVACY.md` is the source of truth for what leaves the
       device (the TfL requests the product needs, the optional user `app_key` → TfL if set,
       and the platform backup/transfer channel that carries persisted config including the
-      key — no off-device channel trackmo adds beyond TfL), what the on-device log carries
+      key — no off-device channel stopcast adds beyond TfL), what the on-device log carries
       (coarse stop/line IDs, HTTP status, location fix outcomes — never a coordinate or
       key), and that a shareable export redacts travel data. See the doc for the precise,
       canonical wording — this line is a pointer, not a second inventory to keep in sync.
@@ -432,7 +432,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
 - [ ] Per-stop line/direction filters (D2).
 - [ ] **Filter or rank by a destination the user enters, and let them save favorite
       destinations** — the user names where they're going (or picks a saved favorite) and
-      trackmo surfaces the rows that get them there, complementing starring. Scope it to
+      stopcast surfaces the rows that get them there, complementing starring. Scope it to
       **on-device matching** against each row's retained destination text, so the
       destination is never sent to any network service. (The resolved destination and now
       the via-branch (`Departure.branch`) are both retained, so matching can key on either;
@@ -447,7 +447,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       the Journey API a non-goal; it would change the Play Data Safety answers), not
       assumed by this item.
 - [ ] **Working hours / trip windows** (requested 2026-09-19, on-device). Let the user say
-      when they commute (a morning window toward work, an evening one home), so trackmo can
+      when they commute (a morning window toward work, an evening one home), so stopcast can
       emphasize the relevant direction at the relevant time and scope commute announcements
       (Phase 3) to those windows. Matching stays on-device, tied to favorite destinations
       above; the windows persist with the rest of the config and so ride Android backup /
@@ -526,7 +526,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       Western, TL Thameslink, GN Great Northern, GX Gatwick Express. National Rail only: the
       Elizabeth line and Overground keep their current pills — their TOC codes (XR, LO) read
       worse than what they already show ("ELI", and the named-line hollow pills).
-- [ ] (Later) **Revisit auto-locate-on-open and the location states.** Trackmo
+- [ ] (Later) **Revisit auto-locate-on-open and the location states.** StopCast
       resolves location once on open (a `LaunchedEffect` gated on `PermissionRequired`) and
       the nearby set never re-resolves afterward except via the temporary crosshair button.
       Work out the intended behavior across the states — first open, permission
@@ -539,7 +539,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       check location on open, then re-check periodically and on a location-change event while
       the app is open. This deliberately **supersedes** `SPEC.md`'s on-demand-location promise
       (§62-63, D1) and the "keep re-location behind a deliberate near-me action" requirement
-      above (`TODO.md:376-379`): update `SPEC.md` to state that trackmo uses live/automatic
+      above (`TODO.md:376-379`): update `SPEC.md` to state that stopcast uses live/automatic
       location, and disclose it fully — the **Play Data Safety** declaration plus clear
       user-facing wording that location is used continuously while open (a coordinate goes to
       TfL automatically and more often, not only on a manual tap). Then the build work: design
@@ -682,7 +682,7 @@ Builds on Phase 1's minimal line-status marking.
       separate data source** (National Rail's Darwin feed), which is a new external
       dependency **and** a Play Data Safety change (a new off-device request), so it's a
       distribution + product-scope decision, not an implementation detail. The fitting
-      interface is **OpenLDBWS** — request/response, so it slots into trackmo's existing
+      interface is **OpenLDBWS** — request/response, so it slots into stopcast's existing
       poll-on-demand snapshot/refresh model (D5) with no extra runtime cost beyond the
       request itself. **Cost: £0** — OpenLDBWS is free with registration (National Rail
       open data), rate-limited. Reliability: a new point of failure and added latency vs.
@@ -859,7 +859,7 @@ and these carry the rest as their own PRs:
       now, script-rendered via `scripts/render-store-icon.py`.
 - [ ] **Fan out the release-notes-walk hardenings to the siblings** (Codex, PR #58): the
       "Build release notes" walk in `ci.yml`'s `deploy` job — copied verbatim from the
-      sibling Android repos — carried several latent bugs that trackmo's copy now fixes
+      sibling Android repos — carried several latent bugs that stopcast's copy now fixes
       and simmo / snoozemo / typelauncher / clothescast still have: (1) both the outer
       workflow-runs query and the per-run jobs query used `… || true`, masking an API
       failure as "no runs / not published" and risking a wrong range base (dropped or
@@ -900,7 +900,7 @@ and these carry the rest as their own PRs:
       is subject to the same rule as any other artifact that leaves the machine
       (`AGENTS.md` *Privacy*). `docs/PRIVACY.md` already commits to this redaction; this is
       the item that implements it. **Cost £0** (a user-initiated share via the platform
-      sheet, no service trackmo runs); the hand-off is a **Play Data Safety** consideration —
+      sheet, no service stopcast runs); the hand-off is a **Play Data Safety** consideration —
       a new off-device channel even after redaction — so the redaction is what keeps it a
       no-op for the declaration rather than a new data type collected, confirmed when built.
       **Note (maintainer, 2026-09-20):** removing the stop/line IDs does keep this export
@@ -924,32 +924,32 @@ and these carry the rest as their own PRs:
       where you are; the consent screen says plainly that it shares the location and the
       screenshot. `docs/PRIVACY.md` is updated to describe this channel in those honest terms
       rather than implying any shared report is location-free. Cost £0 (a user-initiated
-      platform share, no service trackmo runs).
+      platform share, no service stopcast runs).
 - [ ] Finalize the store-facing privacy disclosure (location, watched stops, the TfL
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
 
 ## Beyond MVP (not planned)
 
-Directions that would change what trackmo *is*, not steps in the London MVP. Recorded so
+Directions that would change what stopcast *is*, not steps in the London MVP. Recorded so
 they aren't re-derived; none is scheduled, and each needs the maintainer's go-ahead.
 
 - [ ] (Later, open call) **Other cities beyond London** (recorded 2026-09-19 at the
-      maintainer's request). Trackmo is TfL-specific today: the data layer talks only to
+      maintainer's request). StopCast is TfL-specific today: the data layer talks only to
       the TfL Unified API, and line colors/codes are TfL's. The **domain layer**
-      (`app.trackmo.domain` — stops, departures, staleness) is *shaped* around one
+      (`app.stopcast.domain` — stops, departures, staleness) is *shaped* around one
       departures model much of a multi-city version would reuse, but it is **not already
       provider-agnostic**: it carries TfL-specific contracts a second provider would have
       to **normalize or redesign, not just adapt behind an interface** — `TflClient` /
       `TflException`, `StopFinder`'s NaPTAN stop-type defaults, `LineStatus`'s TfL
       `statusSeverity` semantics, and `Departure`'s TfL direction/mode semantics. (Pill
-      rendering is in the UI layer, `app.trackmo.ui.LinePill`, not the domain.) So the
+      rendering is in the UI layer, `app.stopcast.ui.LinePill`, not the domain.) So the
       pathway is more than an adapter behind the data layer: the TfL contracts above are
       normalized, and a real-time provider is added. **GTFS** is the common denominator,
       which in practice is three feeds, not one — the static **Schedule** (the stop/route/
       trip catalog nearby-stop discovery and labels need), **Realtime trip updates** (live
       times keyed by the Schedule's IDs), and a **disruption source** (GTFS-Realtime
-      *Service Alerts*, which are optional and sometimes a separate operator API): trackmo's
+      *Service Alerts*, which are optional and sometimes a separate operator API): stopcast's
       honesty floor warns about a closed line or stop even with no predictions (SPEC
       principle 1; `lineStatuses`/`stopDisruptions`), so a provider lacking an alerts feed
       needs an honest fallback, never unverified-shown-as-clean. Plus per-city line styling
@@ -968,7 +968,7 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
       voice assistant — so "when's my bus?" is answered without opening the phone. It means a
       new integration surface (Assistant/Home APIs or a local hub) with materially different
       cost and failure modes, and a **Play Data Safety** consequence (departures and possibly
-      the watched set crossing to another system), and it changes what trackmo *is* beyond the
+      the watched set crossing to another system), and it changes what stopcast *is* beyond the
       London MVP. Direction only; needs the maintainer's go-ahead and its own scoping — which
       must record the chosen surface's **dollar cost** (hosted API vs. a local hub differ
       sharply; marked unknown until the surface is picked) and its degraded/offline behavior
@@ -987,8 +987,8 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   clear; retained writer saving after an Empty-path clear; cancellation mid-`updateAll`
   skipping the retry). The same shape recurring — this activity-effect clear racing the
   concurrent per-set writer lifecycle — is evidence about the design rather than seven separate
-  bugs (the sibling repos' AGENTS.md codify that as a rule; trackmo's own does not, so this is
-  the escalation's reasoning, not a trackmo policy citation). A design change is the
+  bugs (the sibling repos' AGENTS.md codify that as a rule; stopcast's own does not, so this is
+  the escalation's reasoning, not a stopcast policy citation). A design change is the
   maintainer's call — so this is escalated rather than patched an eighth time. The three
   options, cheapest-to-revisit first:
   - **Defer (chosen).** Close #53, keep the per-row withhold + aging stamp as the honesty
@@ -1021,7 +1021,7 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   render-time compare against an independently-persisted watched set) stays worthwhile even
   then, not fully mooted (Codex P1). **Maintainer's call.**
 - **About/Licenses entry point is an overflow menu → About dialog → full-screen Licenses
-  overlay, reachable from every state** (autopilot, licenses-screen PR). Trackmo has no nav
+  overlay, reachable from every state** (autopilot, licenses-screen PR). StopCast has no nav
   graph and, until now, no About/Settings surface, so the licenses screen needed a home.
   Chosen: a `MoreVert` overflow in the departures top bar, **and** an "About" button on the
   location gate, both open the shared About dialog (app name + version); its one action opens
@@ -1102,7 +1102,7 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   the required `lanes` gate until `repo setup` provisions `CI_COMMIT_ARTIFACT_TOKEN`
   post-merge, so its bootstrap failure doesn't block that PR.
 - **Brand accent = red, and Material You (dynamic color) off by default** (maintainer
-  "let's try red", 2026-09-19). `TrackmoTheme` now seeds a red `primary` (with its
+  "let's try red", 2026-09-19). `StopCastTheme` now seeds a red `primary` (with its
   container/secondary/tertiary partners) so red reads as an accent on buttons and the
   refresh/progress indicators over neutral surfaces — deliberately *not* the app-bar
   container, to keep it an accent not a wash. Dynamic color is off so the wallpaper can't
@@ -1147,5 +1147,5 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   never-leaves-the-device wording). **Not MVP-scope work**: there is nothing to
   implement — the platform default already backs up and transfers, so no data-extraction
   rules and no `allowBackup=false`. Cost £0; no Play Data Safety change (Android Auto
-  Backup is a platform feature, not data trackmo collects or transmits). Recorded in
+  Backup is a platform feature, not data stopcast collects or transmits). Recorded in
   SPEC *Privacy*.
