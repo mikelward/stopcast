@@ -547,9 +547,28 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       the battery cost of a periodic fix + a location-change subscription (SPEC *Cost and
       reliability* / §9-style budget), and fold in the location states above. The disclosure is
       the gate, not the direction — the direction is settled.
-- [ ] (Later, open call) **Configurable font size** — the user likes the current dense
-      layout; make the text size a setting, with a slightly larger default a candidate.
-      (Raised while starting the location work.)
+- [ ] **Configurable display scaling / font size, with a pinch gesture** (maintainer,
+      2026-09-20). Make the text/display size a persisted setting on the Settings screen —
+      mirror how snoozemo does it (`mikelward/snoozemo`, its SettingsScreen scale control) —
+      AND let the user **pinch-to-zoom** on the departures view to change it, the two kept in
+      sync through the same stored value. The user likes the current dense layout, so the
+      default stays as-is; scaling is opt-in. Its own PR (not part of the auto-locate work).
+      Cross-check the snoozemo implementation for the store shape and the density clamp before
+      building. (Supersedes the earlier "make text size a setting" note.)
+- [ ] **Truncate the row destination instead of ellipsizing it** (maintainer, 2026-09-20).
+      The user prefers a clean cut to a `…` on the destination, which on a narrow row crushes
+      to a single character plus `…` (observed `B… (Charing X)` for a Northern-line Charing
+      Cross branch) and reads as a glitch. Scope this to the **destination text only** — not
+      the countdown, disruption chip, stop name, or line pill: the countdown deliberately
+      keeps its ellipsis so a cut like `Due · 3 …` stays intelligible rather than being sliced
+      after a separator. **Reconcile with the "Branch truncation" task above** before building:
+      that task deliberately word-abbreviates and keeps ellipsis as the *last* resort
+      (`Battersea… (Charing X)`, not a hard clip), so a hard clip on the destination would
+      *replace* that approach — the two are in tension and it's the maintainer's call which
+      wins (a hard clip is simpler; the word-abbreviation keeps more of the name). Related to
+      the width work below (removing the star button reclaims room); decide together whether
+      the clean-cut destination, the branch-abbreviation plan, or more column width is the fix.
+      Its own PR.
 - [ ] (Later, open call) **Walk-time reachability filter** — hide departures the user
       couldn't physically reach in time. Rough model: ~6 km/h ≈ 100 m/min walking, so a
       stop 200 m away is ~2 min out; drop a departure leaving sooner than the walk time to
@@ -568,6 +587,13 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       (from state already in memory, not a tap-time fetch) and how each source's freshness is
       tracked, since arrivals, disruption, and any accessibility data age independently and a
       safety-relevant lift outage must never read as current when it isn't (D4 / principle 1).
+      **Width follow-up (maintainer, 2026-09-20): temporarily remove the per-row star button
+      — it eats row width and crushes the destination (observed `B… (Charing X)`).** Move
+      starring into this detail view, opened by a card tap and/or a long-press; the row then
+      spends its width on the destination and times. "Temporarily" — it's an experiment to
+      see if the tap/long-press affordance is discoverable enough without a visible star; if
+      not, a lighter-weight star (smaller, or only on the starred ones) is the fallback.
+      Its own PR, after the truncation change above.
 - [ ] **Hand off to a navigation app** (requested 2026-09-19, on-device). From a stop (likely
       the detail view above), let the user open the stop in Google Maps or their default nav
       app — a geo/maps intent to the stop's coordinates or name. No new dependency (a plain
