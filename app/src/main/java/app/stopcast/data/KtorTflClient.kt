@@ -88,7 +88,7 @@ class KtorTflClient(
                 parameter("getFamily", true)
                 parameter("includeRouteBlockedStops", true)
                 if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
-            }.body<List<TflStopDisruptionDto>>().mapNotNull { it.toStopDisruptionOrNull() }
+            }.body<TflDisruptedPointFamilyDto>().allDisruptions()
         }
 
     /**

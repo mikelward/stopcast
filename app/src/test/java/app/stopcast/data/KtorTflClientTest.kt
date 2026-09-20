@@ -137,19 +137,43 @@ class KtorTflClientTest {
         ]
         """.trimIndent()
 
-    // A recorded /StopPoint/{id}/Disruption fixture: a stop-level notice plus a
-    // blank-description entry that must be dropped. Public station text only.
+    // A recorded /StopPoint/{id}/Disruption fixture in the real `getFamily=true` shape:
+    // a DisruptedPointFamily tree, not a flat array (TfL switches to this object whenever
+    // getFamily is set — the shape the client actually receives). The notice lives on a
+    // child platform, not the hub node, so the walk must descend; a blank-description entry
+    // must be dropped; and the same closure repeated on a second child must dedupe to one.
+    // Public station text only.
     private val disruptionJson =
         """
-        [
-          {
-            "${'$'}type": "Tfl.Api.Presentation.Entities.Disruption",
-            "atcoCode": "940GZZLUKSX",
-            "description": "Station closed until further notice.",
-            "closureText": "stationClosed"
-          },
-          { "description": "" }
-        ]
+        {
+          "${'$'}type": "Tfl.Api.Presentation.Entities.DisruptedPointFamily",
+          "naptanId": "HUBKGX",
+          "disruptions": [],
+          "children": [
+            {
+              "${'$'}type": "Tfl.Api.Presentation.Entities.DisruptedPointFamily",
+              "naptanId": "940GZZLUKSX",
+              "disruptions": [
+                {
+                  "${'$'}type": "Tfl.Api.Presentation.Entities.DisruptedPoint",
+                  "atcoCode": "940GZZLUKSX",
+                  "description": "Station closed until further notice.",
+                  "closureText": "stationClosed"
+                },
+                { "description": "" }
+              ],
+              "children": [
+                {
+                  "naptanId": "9400ZZLUKSX1",
+                  "disruptions": [
+                    { "description": "Station closed until further notice." }
+                  ],
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
         """.trimIndent()
 
     // A nearby-search fixture in the shape of a real /StopPoint response, trimmed to the
@@ -332,7 +356,11 @@ class KtorTflClientTest {
     }
 
     @Test
-    fun `parses stop disruptions, dropping blank descriptions`() = runTest {
+    fun `walks the disruption family tree, dropping blanks and deduping`() = runTest {
+        // Regression: getFamily=true returns a DisruptedPointFamily object, so parsing it as
+        // a flat array threw JsonConvertException for every stop and the "couldn't check for
+        // disruptions" notice fired constantly. The walk must descend into children, drop the
+        // blank entry, and collapse the notice repeated on a grandchild to one.
         val disruptions = client(disruptionJson).stopDisruptions("940GZZLUKSX")
 
         assertEquals(1, disruptions.size)
