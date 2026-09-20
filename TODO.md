@@ -526,7 +526,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       Western, TL Thameslink, GN Great Northern, GX Gatwick Express. National Rail only: the
       Elizabeth line and Overground keep their current pills — their TOC codes (XR, LO) read
       worse than what they already show ("ELI", and the named-line hollow pills).
-- [ ] (Later, open call) **Revisit auto-locate-on-open and the location states.** Trackmo
+- [ ] (Later) **Revisit auto-locate-on-open and the location states.** Trackmo
       resolves location once on open (a `LaunchedEffect` gated on `PermissionRequired`) and
       the nearby set never re-resolves afterward except via the temporary crosshair button.
       Work out the intended behavior across the states — first open, permission
@@ -534,6 +534,19 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       returning from Settings, a stale fix — and whether re-locating should be automatic (on
       resume, on a significant move) rather than a manual tap. The crosshair button is a
       stopgap for on-device radius testing until this is settled.
+      **Decided a direction (maintainer, 2026-09-20): live location is a wanted feature — do
+      not let the on-demand-location contract block it; pursue it with full disclosure.** So
+      check location on open, then re-check periodically and on a location-change event while
+      the app is open. This deliberately **supersedes** `SPEC.md`'s on-demand-location promise
+      (§62-63, D1) and the "keep re-location behind a deliberate near-me action" requirement
+      above (`TODO.md:376-379`): update `SPEC.md` to state that trackmo uses live/automatic
+      location, and disclose it fully — the **Play Data Safety** declaration plus clear
+      user-facing wording that location is used continuously while open (a coordinate goes to
+      TfL automatically and more often, not only on a manual tap). Then the build work: design
+      the cadence and significant-move threshold, account for the added request frequency and
+      the battery cost of a periodic fix + a location-change subscription (SPEC *Cost and
+      reliability* / §9-style budget), and fold in the location states above. The disclosure is
+      the gate, not the direction — the direction is settled.
 - [ ] (Later, open call) **Configurable font size** — the user likes the current dense
       layout; make the text size a setting, with a slightly larger default a candidate.
       (Raised while starting the location work.)
@@ -604,6 +617,33 @@ Builds on Phase 1's minimal line-status marking.
         disruption is worse than an extra one).
       - Then **show the full alert text on tapping the card/chip** (requested 2026-09-20), the
         detail surface the compact chip below points at.
+- [ ] **Bug: the "Couldn't check for disruptions" notice appears to fire constantly**
+      (reported 2026-09-20, on-device). The `disruptionUnknown` state shows far more often
+      than a real outage should. Prime suspect: `MainViewModel.refresh()` sets
+      `disruptionUnknown = true` on **any** per-stop `/StopPoint/{id}/Disruption` failure
+      (`MainViewModel.kt:245-253`), and that request runs for every watched stop every
+      refresh — so one endpoint that consistently 4xx/5xx's, or a stop id it rejects, lights
+      the notice on every refresh even when the batched line-status call succeeds. Also
+      check the line-status path (`/Line/{ids}/Status` failing or rate-limited, a line with
+      no status entry, empty/oddly-formed line ids). Fix it so the notice means a genuine
+      "couldn't check", not the normal case (SPEC principle 2: say why, but only when it's
+      true). Add a test over each path that currently yields `disruptionUnknown`.
+- [ ] **Show a chip per disruption condition, not just the single most-severe one**
+      (requested 2026-09-20). Today `mostSevereDisruption` collapses coexisting statuses to
+      one label; the maintainer wants to revisit that — show a chip for each condition a line
+      carries (a diversion *and* minor delays, say). Keep a chip for every *real* condition,
+      including a severe-but-unworded one: that borrows the "Service Alert" label but is
+      `isFallback = false` and keeps its real severity, so it must show its own chip, never be
+      hidden behind a milder named one. Only the true `isFallback` catch-alls (a "Special
+      Service" that named nothing) consolidate into a single "Service Alert" — and only when
+      no real condition remains. `resolveDisruption` already reduces each entry to a
+      `ResolvedDisruption`, but `toLineStatus()` then collapses them via `mostSevereDisruption`
+      and both `LineStatus` and `TflClient.lineStatuses()` expose only that single result — so
+      the discarded conditions can't be recovered downstream. This task therefore has to carry
+      every resolved condition through the data/domain/state layers (a list on `LineStatus`, or
+      similar), not just design the chip layout; the open design is that plumbing plus how many
+      chips to show before they crowd the row and the glance surface, and how it meets the
+      compact-chip item below. Design before building.
 - [ ] **Make the disruption chip lighter-weight than a full row** (requested 2026-09-19,
       on-device). The shipped status chip ("Part Closure", "Suspended", delays) takes a whole
       row, which reads as too heavy for what it conveys — the maintainer suggested a warning
@@ -863,6 +903,28 @@ and these carry the rest as their own PRs:
       sheet, no service trackmo runs); the hand-off is a **Play Data Safety** consideration —
       a new off-device channel even after redaction — so the redaction is what keeps it a
       no-op for the declaration rather than a new data type collected, confirmed when built.
+      **Note (maintainer, 2026-09-20):** removing the stop/line IDs does keep this export
+      location-safe, but it strips exactly the context a routing/location bug is diagnosed
+      from — so for those reports the consent-gated richer report below (which includes the
+      location openly) is the better tool, not this location-redacted one. This item stays as
+      the location-safe option; it is not the one that reveals location.
+- [ ] **A richer shareable bug report — screenshot + exact location — behind a consent gate**
+      (requested 2026-09-20, on-device; **maintainer decided 2026-09-20: include the exact
+      location, gated by a consent dialog**). Deliberately includes a **screenshot** and the
+      **exact location** so a report pins down what the user was looking at and where. Gated by
+      a **consent screen that spells out exactly what is shared** before anything leaves, with
+      a **"don't ask again"** opt-out (the siblings' bug-report sharing is the reference). It's
+      a **Play Data Safety change** — a new off-device channel carrying a coordinate and screen
+      contents — so the consent copy and the Data Safety declaration are part of the
+      deliverable.
+      **The honesty point (maintainer, 2026-09-20):** a bug report that is actually useful for
+      a routing/location issue reveals where the user is — so rather than claim a location-safe
+      share that has to strip the diagnostic context to stay safe (the redacted export above),
+      this report includes the location **openly, under consent**. It never claims to hide
+      where you are; the consent screen says plainly that it shares the location and the
+      screenshot. `docs/PRIVACY.md` is updated to describe this channel in those honest terms
+      rather than implying any shared report is location-free. Cost £0 (a user-initiated
+      platform share, no service trackmo runs).
 - [ ] Finalize the store-facing privacy disclosure (location, watched stops, the TfL
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
