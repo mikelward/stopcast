@@ -57,7 +57,8 @@ class TflArrivalDtoTest {
             towards = "Battersea Power Station via Charing Cross",
         ).toDeparture()
         assertEquals("Battersea Power", withName.destination)
-        assertEquals("Charing Cross", withName.branch)
+        // branchOf folds TfL's inconsistent trunk spellings to one short board label.
+        assertEquals("Charing X", withName.branch)
 
         // No destinationName: the terminus is `towards` before " via ", the branch after it.
         val fromTowards = dto(towards = "Edgware via Bank").toDeparture()

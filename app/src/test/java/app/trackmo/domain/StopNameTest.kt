@@ -46,8 +46,29 @@ class StopNameTest {
 
     @Test
     fun `branchOf pulls the via trunk from towards`() {
-        assertEquals("Charing Cross", branchOf("Battersea Power Station via Charing Cross"))
+        assertEquals("Charing X", branchOf("Battersea Power Station via Charing Cross"))
         assertEquals("Bank", branchOf("Edgware via Bank"))
+    }
+
+    @Test
+    fun `branchOf folds TfL's inconsistent trunk spellings to one short label`() {
+        // TfL's live feed spells the two Northern trunks three ways; all fold to two labels.
+        assertEquals("Charing X", branchOf("Edgware via CX"))
+        assertEquals("Bank", branchOf("Euston via Bank Branch"))
+        // A trailing " Branch" is noise on either trunk.
+        assertEquals("Charing X", branchOf("High Barnet via CX Branch"))
+        assertEquals("Charing X", branchOf("High Barnet via Charing Cross Branch"))
+    }
+
+    @Test
+    fun `normalizeBranch folds a stored branch value to the canonical label`() {
+        // Used on snapshot restore so an older build's raw spelling reads back canonical.
+        assertEquals("Charing X", normalizeBranch("Charing Cross"))
+        assertEquals("Charing X", normalizeBranch("CX"))
+        assertEquals("Bank", normalizeBranch("Bank Branch"))
+        assertEquals("Bank", normalizeBranch("Bank"))
+        assertNull(normalizeBranch(null))
+        assertNull(normalizeBranch(""))
     }
 
     @Test

@@ -232,6 +232,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       "Battersea Power S… (CX)" where it should render "Battersea… (Charing X)", and
       "High Barnet (CX)" where "High Barnet (Charing X)" fits — i.e. it currently keeps the
       full destination and initialises the branch, the exact inversion this item fixes.
+      **PR #59:** the branch label is normalized to the short board form (`Bank`,
+      `Charing X`) — TfL's inconsistent `Bank` / `Bank Branch` / `CX` / `Charing Cross`
+      folded to one spelling per trunk, on fetch and on snapshot restore. The
+      width-adaptive shortening above (one full word per half, the `Charing` / `CX` rungs,
+      truncation rather than elision) stays this item's remaining follow-up.
 
 ## Phase 2 — Watched stops and settings
 
@@ -458,9 +463,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       branch, so two trains to one terminus via different trunks each get their own line
       and countdown (a countdown never sits under the wrong branch). The **branch outranks
       the terminus for space**: where the pair won't
-      fit, the destination truncates and the branch shortens to the board's own form
-      (Cross → X, East → E. &c.), measured against the row so the full branch still shows
-      where it fits — "Batter… (Charing X)" in the tight case (SPEC). Follow-ups: **eyeball
+      fit, the destination gives way and the branch is kept — "Batter… (Charing X)" in the
+      tight case. The branch is normalized to one short board form per trunk ("Charing X")
+      on every surface, up front, not measured against the row; a width-adaptive form that
+      shortens it further under pressure and truncates rather than elides the destination is
+      the tracked follow-up. Follow-ups: **eyeball
       on a device** the truncation balance and the abbreviations, and whether `spaced-slash`
       ("Battersea Power / Charing Cross") reads better than parens — an open alternative.
 - [ ] (Later, open call) **One row per destination** as an alternative grouping to
