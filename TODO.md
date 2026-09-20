@@ -249,6 +249,23 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       folded to one spelling per trunk, on fetch and on snapshot restore. The
       width-adaptive shortening above (one full word per half, the `Charing` / `CX` rungs,
       truncation rather than elision) stays this item's remaining follow-up.
+- [ ] **Show the bus-stop letter (and direction) in the stop name** (maintainer, 2026-09-20).
+      A bus stop's letter and served direction are what disambiguate several "Queens Avenue"
+      stops; explore the format. Candidates: full "Queens Avenue · Stop E · towards Archway";
+      one-line "Queens Ave E (Archway)"; two-line "Queens Avenue [E]" with a "towards Archway"
+      subtitle. Lean: keep the full common name, show the letter as a compact badge, drop
+      "towards" → "(Archway)", pin at the front, and let the name truncate rather than
+      pre-abbreviate (the "Avenue → Ave" shortening is the same lossy word-map trap as the
+      branch-truncation item and only helps bus stops). Must degrade for tube/DLR/rail, which
+      have no letter and often no stop-level direction. **Parked pending the maintainer's own
+      mock exploration** (2026-09-20) — the format (two-line full-name-plus-badge vs. one-line
+      "Queens Ave E (Archway)") is theirs to settle from mocks first; don't build until then.
+- [ ] **Hide services terminating at the current stop by default** (maintainer, 2026-09-20).
+      A train that terminates where you're standing isn't boardable onward, so listing it as
+      an upcoming departure is misleading — filter it out by default (a departure whose
+      terminus is this stop). Leave room for a "show terminating services" option. Watch the
+      edge where an interchange train "terminates" only nominally before continuing under a new
+      id; scope it to genuine terminations.
 
 ## Phase 2 — Watched stops and settings
 
