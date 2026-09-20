@@ -35,9 +35,10 @@ data class TflArrivalDto(
  * (TfL omits destinationName on some services but usually gives `towards`). Anything past a
  * comma is dropped — a London bus `towards` like "Pimlico, Grosvenor Road" has a noise tail
  * — and the station-type suffix is trimmed ([cleanStopName]) the same way stop names are, so
- * "Brixton Underground Station" reads "Brixton" (SPEC *Concise copy*). The "via" branch is
+ * "Brixton Underground Station" reads "Brixton" (SPEC *Concise copy*); the landmark compound
+ * "Power Station" is kept, so "Battersea Power Station" stays whole. The "via" branch is
  * carried separately in [Departure.branch] ([branchOf]), so "Battersea Power Station via
- * Charing Cross" becomes destination "Battersea Power" + branch "Charing X". A blank
+ * Charing Cross" becomes destination "Battersea Power Station" + branch "Charing X". A blank
  * platform becomes null (buses have none).
  * TfL's `direction` (`inbound`/`outbound`, absent on some services) is retained
  * as the grouping key for per-direction rows (SPEC D8) — normalized to "" when

@@ -29,8 +29,16 @@ internal data class PersistedSnapshot(
     val fetchedAtMillis: Long = 0L,
 ) {
     companion object {
-        /** The current on-disk format. Bump when a field's meaning changes incompatibly. */
-        const val CURRENT_VERSION = 1
+        /**
+         * The current on-disk format. Bump when a field's meaning changes incompatibly.
+         *
+         * v2: `destination` now keeps a landmark's full name ("Battersea Power Station") where
+         * v1 stored the shortened "Battersea Power" ([app.trackmo.domain.cleanStopName]). The
+         * stored string is lossy — the dropped " Station" can't be re-derived on restore the way
+         * a branch can ([normalizeBranch]) — so a v1 snapshot is discarded rather than restored
+         * with the stale short name until the next refresh.
+         */
+        const val CURRENT_VERSION = 2
     }
 }
 

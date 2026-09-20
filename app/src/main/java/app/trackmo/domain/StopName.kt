@@ -2,14 +2,20 @@ package app.trackmo.domain
 
 /**
  * Trims TfL's `commonName` down to what a rider reads on a sign. TfL suffixes a stop's
- * type onto the name — "Charing Cross Underground Station", "London Bridge Rail Station",
- * "Canary Wharf DLR Station" — which is noise once the app is already a departures board;
- * dropping it keeps the list glanceable (SPEC *Concise copy*). Suffix-only: a name with
- * no type suffix (most bus stops) is returned unchanged, and a stop literally called
- * "Station" is never emptied.
+ * *type* onto the name — "Charing Cross Underground Station", "London Bridge Rail Station",
+ * "Canary Wharf DLR Station", and a bare "Stratford Station" — which is noise once the app is
+ * already a departures board; dropping it keeps the list glanceable (SPEC *Concise copy*). A
+ * name with no type suffix (most bus stops) is returned unchanged.
  *
- * Order matters — the specific multi-word suffixes are tried before the bare " Station"
- * catch-all, so "X Underground Station" loses the whole phrase, not just "Station".
+ * The one bare " Station" that is *kept* is the compound "Power Station": there "Station" is
+ * part of the landmark's own name, not a transit-type tag, so "Battersea Power Station" reads
+ * in full and the card ellipsizes it when it can't fit, rather than being pre-shortened to
+ * the fragment "Battersea Power" (maintainer, 2026-09-20, reversing the 2026-09-19 catch-all
+ * that shortened it). A stop literally called "Station" is short enough that no suffix strips
+ * it, so it is returned unchanged for free.
+ *
+ * Order matters — the specific multi-word suffixes are tried before the bare " Station", so
+ * "X Underground Station" loses the whole phrase, not just "Station".
  */
 fun cleanStopName(raw: String): String {
     val trimmed = raw.trim()
@@ -21,6 +27,8 @@ fun cleanStopName(raw: String): String {
         " Station",
     )
     for (suffix in suffixes) {
+        // "Power Station" is a landmark compound, not a transit-type tag — keep it whole.
+        if (suffix == " Station" && trimmed.endsWith(" Power Station", ignoreCase = true)) continue
         if (trimmed.length > suffix.length && trimmed.endsWith(suffix, ignoreCase = true)) {
             return trimmed.substring(0, trimmed.length - suffix.length).trim()
         }

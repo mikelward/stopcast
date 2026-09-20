@@ -19,11 +19,16 @@ class StopNameTest {
     }
 
     @Test
-    fun `strips a bare Station suffix only after the specific ones`() {
-        // "Euston Station" → "Euston" via the catch-all; "X Underground Station" loses the
-        // whole phrase, not just "Station", because the specific suffix is tried first.
+    fun `strips a bare Station tag but keeps the Power Station compound`() {
+        // A bare " Station" is a transit-type tag → dropped ("Stratford Station" → "Stratford",
+        // "Euston Station" → "Euston"), tried after the specific multi-word suffixes. The one
+        // exception is the landmark compound "Power Station", where "Station" is part of the
+        // name: "Battersea Power Station" reads in full and the card ellipsizes it, rather than
+        // the fragment "Battersea Power" (maintainer, 2026-09-20).
+        assertEquals("Stratford", cleanStopName("Stratford Station"))
         assertEquals("Euston", cleanStopName("Euston Station"))
         assertEquals("Baker Street", cleanStopName("Baker Street Underground Station"))
+        assertEquals("Battersea Power Station", cleanStopName("Battersea Power Station"))
     }
 
     @Test
@@ -34,8 +39,8 @@ class StopNameTest {
     }
 
     @Test
-    fun `does not empty a name that is only the suffix`() {
-        // Guarded so a stop literally named "Station" survives rather than becoming blank.
+    fun `leaves a name that is only the word Station unchanged`() {
+        // Nothing to strip (no type word), so it comes back whole rather than blank.
         assertEquals("Station", cleanStopName("Station"))
     }
 

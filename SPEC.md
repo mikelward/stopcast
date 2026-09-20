@@ -146,10 +146,14 @@ always stay legible, keeps the room. The platform stays in the domain model for 
 surface (a detail view) but earns no space on the glance card. The destination elides to a
 single line, so a long one ("Harrow & Wealdstone") truncates rather than wrapping the card
 taller or pushing the countdown off the edge. The destination's **station-type suffix is
-trimmed** the way stop names are — TfL's "Brixton Underground Station" shows as "Brixton"
-(*Concise copy*); the bare " Station" is dropped too, so a terminus like "Battersea Power
-Station" reads "Battersea Power" rather than running longer than every other label. **The
-one exception is a destination-less
+trimmed** the way stop names are — TfL's "Brixton Underground Station" shows as "Brixton",
+and a bare "Stratford Station" as "Stratford" (*Concise copy*). The one bare " Station"
+**kept** is the landmark compound "Power Station", where "Station" is part of the name rather
+than a transit-type tag: "Battersea Power Station" shows in full and the card elides it if it
+can't fit, rather than reading the fragment "Battersea Power" (maintainer, 2026-09-20,
+reversing the 2026-09-19 catch-all — a truncated real name reads better than a silently
+shortened one, and the elide already protects the row's width). **The one exception is a
+destination-less
 service**: when TfL gives neither a destination nor a "towards", the direction word — or,
 failing that, the platform — is shown *in the destination's place* as the only cue that
 keeps two directions of the same line distinct (never mislabel a countdown). That fallback
@@ -160,7 +164,8 @@ On a **branching line** (the Northern most visibly) two trains to the same termi
 run via different central trunks, and TfL names the trunk in `towards` ("Battersea Power
 Station via Charing Cross") — the cue a rider uses to pick their train. So when `towards`
 carries a "via", the branch is shown **parenthesized after the destination** ("Battersea
-Power (Charing X)"). The branch **participates in grouping**: within a direction, a
+Power Station (Charing X)", the card eliding it to fit). The branch **participates in
+grouping**: within a direction, a
 line is split not just per destination (D8) but per terminus-and-branch, so two trains to
 one terminus via different trunks (Edgware via Bank and via Charing Cross) each get their
 own line and their own merged countdown. Merging across branches would label the later

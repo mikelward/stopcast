@@ -56,7 +56,7 @@ class TflArrivalDtoTest {
             destinationName = "Battersea Power Station",
             towards = "Battersea Power Station via Charing Cross",
         ).toDeparture()
-        assertEquals("Battersea Power", withName.destination)
+        assertEquals("Battersea Power Station", withName.destination)
         // branchOf folds TfL's inconsistent trunk spellings to one short board label.
         assertEquals("Charing X", withName.branch)
 
@@ -74,13 +74,13 @@ class TflArrivalDtoTest {
     }
 
     @Test
-    fun `truncates a terminus whose own name ends in Station`() {
-        // The bare " Station" catch-all also shortens a proper name like the Northern line's
-        // "Battersea Power Station" to "Battersea Power". Accepted over keeping the full name
-        // (maintainer, 2026-09-19): the full form runs much longer than every other label and
-        // would truncate on the row anyway. Pinned so it isn't "fixed" back.
+    fun `keeps the full name of a terminus whose own name ends in Station`() {
+        // "Power Station" is a landmark compound, not a transit-type tag, so the Northern line's
+        // "Battersea Power Station" is kept in full and the card ellipsizes it if it can't fit,
+        // rather than being pre-shortened to the fragment "Battersea Power" (maintainer,
+        // 2026-09-20, reversing the 2026-09-19 catch-all). Pinned so it isn't "fixed" back.
         assertEquals(
-            "Battersea Power",
+            "Battersea Power Station",
             dto(destinationName = "Battersea Power Station").toDeparture().destination,
         )
     }

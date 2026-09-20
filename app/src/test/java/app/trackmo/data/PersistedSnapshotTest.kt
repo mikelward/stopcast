@@ -154,4 +154,13 @@ class PersistedSnapshotTest {
         val fromFuture = sample().toPersisted().copy(version = PersistedSnapshot.CURRENT_VERSION + 1)
         assertNull(fromFuture.toDomain())
     }
+
+    @Test
+    fun `a v1 snapshot is discarded so the shortened Battersea name is not restored`() {
+        // v1 stored the shortened "Battersea Power"; the dropped " Station" can't be re-derived
+        // on restore, so an upgraded install's old snapshot is discarded (→ refetch) rather than
+        // showing the stale short name until TfL is reachable. Covers process death + offline.
+        val v1 = sample().toPersisted().copy(version = 1)
+        assertNull(v1.toDomain())
+    }
 }
