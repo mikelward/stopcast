@@ -5,6 +5,9 @@ on:
     branches: ["main"]
   pull_request:
     types: [opened, synchronize, reopened, edited]
+  # A maintainer deploy-force on main (no inputs); the deploy job re-checks the
+  # ref, so a dispatch on any other branch does nothing.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -57,6 +60,24 @@ jobs:
         run: |
           ./gradlew :app:exportBundledLicenses --rerun
           git diff --exit-code app/src/main/res/raw/aboutlibraries.json
+      - name: Test the GitHub-release publisher
+        # The only coverage `scripts/publish-github-release.sh` can get:
+        # `deploy` is main-only, so the step that calls it never runs on a
+        # pull request and a regression there would first surface after
+        # reaching `main`. Drives the real script against a stubbed `gh` and a
+        # throwaway git repository, pinning each recovery branch and — the
+        # load-bearing part — that every path which uploads uploads before it
+        # publishes, so a release never becomes visible without its bundle.
+        # Needs only the checkout, so it runs before the Gradle work below.
+        run: python3 scripts/publish_github_release_test.py
+      - name: Test the release-notes deduplication
+        # Same reason: the "Build release notes" step in `deploy` is main-only,
+        # so a regression in it first surfaces as a wrong Play "What's new"
+        # card. Extracts the whole subject-collection block from this file and
+        # runs it against a throwaway git repository, rather than a retyped
+        # copy — testing the helper in isolation would stay green if the loop
+        # stopped calling it.
+        run: python3 scripts/release_notes_dedup_test.py
       - name: Assemble debug APK
         run: ./gradlew assembleDebug
       - name: Upload debug APK
@@ -381,7 +402,7 @@ jobs:
     name: lanes
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [classify, build, screenshot-tests]
+    needs: [classify, build, screenshot-tests, release-apk]
     if: always()
     steps:
       - uses: actions/checkout@v5
@@ -393,4 +414,808 @@ jobs:
           pr: ${{ github.event.pull_request.number }}
           classify-result: ${{ needs.classify.result }}
           base-sha: ${{ needs.classify.outputs.base_sha }}
-          results: build=${{ needs.build.result }} screenshot-tests=${{ needs.screenshot-tests.result }}
+          # `release=` massages the release-apk skip on main into success only
+          # when build succeeded, so the justified skip (a main push, where
+          # `deploy`/`release-build` run R8 in release-apk's place) reads green
+          # rather than as a gate failure. On a PR release-apk actually runs, so
+          # its own result flows through.
+          results: build=${{ needs.build.result }} screenshot-tests=${{ needs.screenshot-tests.result }} release=${{ (needs.release-apk.result == 'skipped' && needs.build.result == 'success') && 'success' || needs.release-apk.result }}
+
+  release-apk:
+    name: Build the release APK
+    # The pull request lane's R8 smoke test: the only thing outside `deploy`
+    # that exercises shrinking, optimization and obfuscation together, which is
+    # what the Play build ships. Without it a release-only R8 failure -- a keep
+    # rule that misses a reflective lookup, an optimizer crash -- passes every
+    # required check and surfaces after merge, when `release-build`'s
+    # bundleRelease is the first thing to run it.
+    #
+    # This was a step inside `build`, in series with the unit tests and lint,
+    # which put its full ~6 min on the critical path for work that depends on
+    # nothing those steps produce and produces nothing they consume. Split out
+    # for the same reason `release-build` was split out of `deploy`, and the
+    # two now sit side by side.
+    #
+    # What main gives up by skipping it is one task: optimizeReleaseResources,
+    # which bundleRelease does not pull in (verified by --dry-run, not assumed).
+    # It is the APK resource path; the AAB handles resources its own way.
+    # Deliberate -- not what ships on main, and the pull request for the same
+    # commit already ran it.
+    #
+    # The condition is `deploy`'s, inverted, exactly as it was on the step: skip
+    # only where `deploy` is guaranteed to build a release variant in this run's
+    # place. That guarantee comes from deploy's "Require a release keystore"
+    # step -- with the secret present it builds the AAB, and without it the run
+    # fails outright, so a green main push always ran R8 somewhere. Forks get no
+    # such guarantee (they are exempt from that step and deploy's build steps
+    # skip on their own conditions), so they keep building the release APK here.
+    #
+    # Fork status rather than the keystore secret, deliberately: this job
+    # declares no `environment`, so whether it could see that secret at all
+    # depends on where the secret is scoped -- gating on it would then work or
+    # silently stop working depending on that scope. Fork status comes from the
+    # `github` context and holds either way.
+    #
+    # `docs_only` is checked here rather than inherited: `needs: classify` alone
+    # would build a release APK for a documentation-only diff.
+    if: |
+      !(github.ref == 'refs/heads/main' &&
+        (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+        github.event.repository.fork != true) &&
+      needs.classify.outputs.docs_only != 'true'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # contents: read only, and no `environment:` -- this job runs the pull
+    # request's own Gradle code, so it must hold nothing a poisoned build script
+    # could reach. See the note on `build`'s permissions block.
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          # Full history, as the `build` checkout this was extracted from has:
+          # app/build.gradle.kts derives versionCode from
+          # `git rev-list --count HEAD`, so a shallow clone would build every
+          # pull request APK as version 1 and hand R8 different
+          # BuildConfig.VERSION_CODE/VERSION_NAME constants than the release
+          # this exists to smoke-test.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2  # v5
+        with:
+          # A malicious PR commit can poison its own branch's cache; lock PRs
+          # to read-only so only main pushes write the shared cache.
+          cache-read-only: ${{ github.event_name != 'push' }}
+
+      - name: Build release APK (runs the full R8 pipeline)
+        # Unsigned: the release signingConfig is only attached when the
+        # RELEASE_KEYSTORE_* variables are set, which `release-build` does and
+        # this job does not. Build-time only; runtime reflection still needs a
+        # device check.
+        run: ./gradlew assembleRelease
+
+  release-build:
+    name: Build the release AAB
+    # The signed AAB, built in parallel with `build` and `screenshot-tests`
+    # rather than after them.
+    #
+    # This used to be a run of steps inside `deploy`, which needs both of those
+    # jobs — so on every push to main the release compile and R8 started only
+    # once the slower of them had finished, adding its full ~6 min to the
+    # critical path for work that depends on nothing they produce. Splitting the
+    # build from the publish lets it overlap them; `deploy` still needs both, so
+    # nothing reaches Play until the tests and screenshots are green.
+    #
+    # Gated as `deploy` is — main-only by `if:`, `environment: production`
+    # because the upload keystore lives there — plus `docs_only`, which `deploy`
+    # gets transitively from its `needs:` and this job would otherwise miss: a
+    # docs-only push would build and sign an AAB that nothing then publishes.
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.classify.outputs.docs_only != 'true'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      HAS_RELEASE_KEYSTORE_SECRET: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+    outputs:
+      # Whether a signed AAB was actually produced. `deploy` gates its publish
+      # steps on this: they used to read `env.RELEASE_KEYSTORE_FILE`, which the
+      # keystore decode writes into *this* job's environment and cannot cross a
+      # job boundary — left as-is, every publish step would have silently
+      # skipped, which is exactly the failure `Require a release keystore`
+      # below exists to make impossible.
+      signed: ${{ steps.bundle.outputs.signed }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # This job never pushes; "Build release notes" reads git history
+          # locally and talks to the GitHub API via its own GH_TOKEN env, not
+          # a persisted credential.
+          persist-credentials: false
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2  # v5
+
+      - name: Require a release keystore
+        # A push to main must end in a signed AAB. Without the keystore secret
+        # every step below skips on its own condition and the job goes green
+        # having built and published nothing -- indistinguishable, from the
+        # outside, from a release that worked. Fail here instead, naming what
+        # is missing, so a secret that was renamed, expired, or lost in a move
+        # to the `production` environment is caught on the push that broke it
+        # rather than the next time someone looks for a build that never came.
+        #
+        # Forks are exempt. They have no secrets by design, and building
+        # unsigned is a supported state here -- failing their main pushes would
+        # turn that into a red build. The `release-apk` job keeps its release
+        # compile in exactly that case, so R8 still runs for them.
+        if: env.HAS_RELEASE_KEYSTORE_SECRET != 'true' && github.event.repository.fork != true
+        run: |
+          echo "::error::A push to main must produce a signed AAB, but RELEASE_KEYSTORE_BASE64 is unset or empty. Set it together with RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS and RELEASE_KEY_PASSWORD, or this release would publish nothing."
+          exit 1
+
+      - name: Materialize release keystore
+        # Decoded whenever the keystore secret is present, independent of
+        # the Play upload secret. This lets the keystore secrets land first
+        # so the signed AAB can be downloaded from CI artifacts for the
+        # one-time manual seed upload Play Console requires, with
+        # PLAY_SERVICE_ACCOUNT_JSON added later to enable the automated
+        # upload. See dev-docs/play-store-internal-track.md.
+        if: env.HAS_RELEASE_KEYSTORE_SECRET == 'true'
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: |
+          missing=""
+          [ -z "$RELEASE_KEYSTORE_PASSWORD" ] && missing="$missing RELEASE_KEYSTORE_PASSWORD"
+          [ -z "$RELEASE_KEY_PASSWORD" ]      && missing="$missing RELEASE_KEY_PASSWORD"
+          [ -z "$RELEASE_KEY_ALIAS" ]         && missing="$missing RELEASE_KEY_ALIAS"
+          if [ -n "$missing" ]; then
+            echo "::error::RELEASE_KEYSTORE_BASE64 is set but these companion secrets are missing or empty:$missing"
+            exit 1
+          fi
+          printf '%s' "${RELEASE_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/release.keystore"
+          if ! keytool -list -keystore "${RUNNER_TEMP}/release.keystore" -storepass "$RELEASE_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::Decoded release keystore is not a valid keystore or RELEASE_KEYSTORE_PASSWORD is wrong."
+            exit 1
+          fi
+          echo "RELEASE_KEYSTORE_FILE=${RUNNER_TEMP}/release.keystore" >> "${GITHUB_ENV}"
+
+      - name: Build release AAB
+        # Gated only on the keystore being present — a signed AAB is useful
+        # on its own (downloadable artifact for the seed upload, before the
+        # Play service account exists). The release signingConfig only
+        # attaches when all four RELEASE_KEYSTORE_* / RELEASE_KEY_* variables
+        # are set (see app/build.gradle.kts), which the decode step above
+        # guarantees whenever it sets RELEASE_KEYSTORE_FILE — it fails first if
+        # any of the other three is empty. Without them Play would reject the
+        # AAB anyway.
+        id: bundle
+        if: env.RELEASE_KEYSTORE_FILE != ''
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: |
+          ./gradlew bundleRelease
+          # Read by `deploy` as needs.release-build.outputs.signed. Set
+          # after the build, so it means "a signed AAB exists" rather
+          # than "the keystore decoded".
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload signed AAB as workflow artifact
+        # Downloadable from the Actions UI for the one-time manual seed
+        # upload to Play Console, and for re-uploading a release by hand.
+        if: env.RELEASE_KEYSTORE_FILE != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+
+  deploy:
+    name: Distribute and release
+    # Production deployment job. Gated three ways:
+    #   1. `if:` — only a push to main or a manual workflow_dispatch that
+    #      targets main (the dispatch UI defaults to main but can pick any
+    #      ref, so `github.ref` is re-checked) — never on PRs.
+    #   2. `environment: production` — the secrets used here live in the
+    #      `production` environment. Configure it in repo Settings →
+    #      Environments → production and restrict deployment branches to
+    #      `main`, so the boundary is enforced by GitHub rather than only by
+    #      the `if:` above.
+    #   3. `needs:` — runs only after build and screenshot-tests both pass,
+    #      so a failing test or screenshot on main blocks the release.
+    #      `release-build` joins them because this job publishes its artifact;
+    #      it builds in parallel with them, and this `needs:` is what keeps an
+    #      untested build from reaching Play.
+    #
+    # The Play secret is optional: its steps gate on the presence flags below
+    # and skip quietly when it isn't configured, so a repo with a keystore but
+    # no Play credentials still gets a green run that builds and archives the
+    # AAB without uploading it.
+    #
+    # The keystore is not optional here any more. A fork without it still skips
+    # quietly, but on this repo a push to `main` that cannot produce a signed
+    # AAB fails in `Require a release keystore` below: every step gating on its
+    # own presence meant a release that silently never happened reported
+    # success, which is indistinguishable from one that worked.
+    # Serializes every run of THIS job across the repo — the only concurrency
+    # this workflow declares (there is no workflow-level group; each push runs
+    # independently). Without it, two pushes to main landing back to back could
+    # both reach "Build release notes" before either's Play upload finished, so
+    # both compute their range base from the same "nothing has published yet"
+    # snapshot: worst case the newer upload lands first and Play rejects the
+    # older push's now-lower versionCode; even in the right order, the newer
+    # release's notes repeat subjects the older one already published.
+    # `cancel-in-progress: false` queues the second run rather than canceling
+    # the first — canceling mid-upload is the one thing this must never do. It
+    # holds one pending slot, so a third back-to-back push can still evict a
+    # queued deploy; that only defers those commits to the next release (the
+    # notes range measures from the last run that published), never a bad
+    # upload.
+    concurrency:
+      group: deploy-main-release
+      cancel-in-progress: false
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [build, screenshot-tests, release-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      # Secret *presence* flags, evaluated at job level. A step's `if:`
+      # cannot read a variable defined in that same step's `env:` block, so
+      # the gates below evaluate these job-level booleans; the secret values
+      # stay scoped to the steps that actually use them.
+      HAS_PLAY_SA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    permissions:
+      # Write, not read, for "Publish a GitHub release" below: it creates
+      # the release and the tag that carries it. Nothing else in this job
+      # writes to the repository, and the checkout below still discards its
+      # credentials.
+      contents: write
+      # Used by "Build release notes" to walk recent main runs of this
+      # workflow and find the last one that actually published.
+      actions: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # This job never pushes; "Build release notes" reads git history
+          # locally and talks to the GitHub API via its own GH_TOKEN env, not
+          # a persisted credential.
+          persist-credentials: false
+
+      - name: Build release notes
+        # Walks every release-worthy commit still queued for release
+        # oldest-first — the range runs from the last run that actually
+        # published, so it can span several pushes (see the range-base walk
+        # below) — and collects the subject of each one worth shipping as a
+        # release note to the Play internal track ("What's new"):
+        #   - skip commits whose subject starts with a non-user-facing
+        #     prefix (`ci:` / `docs:` / `internal:` / `refactor:` /
+        #     `test:` / `tests:`);
+        #   - skip commits whose every changed path is repo housekeeping —
+        #     a `.md` file or any dotfile / dotdir at the repo root.
+        #     `docs/PRIVACY.md` is ordinary docs here too: Play's "What's
+        #     new" is a store-listing field a user installing an update
+        #     never sees, so a wording-only policy change shipping a
+        #     bullet bought no real visibility.
+        # Qualifying subjects are emitted as a "• "-bulleted list,
+        # oldest-first — always bulleted, even for one commit. If no commit
+        # qualifies, RELEASE_NOTES_SKIP=true makes the Play steps below
+        # skip, so housekeeping-only pushes don't ship a redundant release.
+        #
+        # A manual workflow_dispatch is the exception — it's an explicit
+        # "publish the current tip anyway" request, so it falls back to a
+        # generic note instead of skipping.
+        #
+        # The range base is the head SHA of the most recent main run of
+        # this workflow that actually *published* — queried from the
+        # Actions API (ported from Type Launcher / clothescast).
+        # `github.event.before` is only a fallback: if a prior main push
+        # failed before distributing, `before` would be that failed
+        # push's tip and this run's notes would silently omit the
+        # unreleased commits from the failed range. "Published" means the
+        # Play upload *step* concluded success, not merely a green deploy
+        # job: with publication secrets missing every publish step
+        # skips and the deploy still concludes success, and counting such
+        # a run as released would drop its range's commits from the first
+        # real release after the secrets are fixed. This also gives a
+        # manual workflow_dispatch a real range — it has no
+        # `github.event.before`, so it previously only ever considered
+        # the single HEAD commit.
+        #
+        # Play's per-language cap is 500 Unicode characters for the entered
+        # "What's new" text; the truncation budget measures the full
+        # formatted output — "• " bullets, newline separators, and the
+        # "\n…" truncation marker all count. On overflow, trailing subjects
+        # drop (oldest-first preserved at the head) and "\n…" is appended.
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Walk recent main runs of this workflow (newest first) and take
+          # as the range base the head SHA of the first one whose deploy
+          # job succeeded AND actually published — i.e. its Play upload
+          # *step* concluded success, not just the job. A
+          # deploy concludes green while publishing nothing whenever its
+          # publication secrets are missing (every step skips), and also
+          # when RELEASE_NOTES_SKIP suppressed a housekeeping-only push;
+          # treating such a run as "released" would permanently drop its
+          # range's commits from the next real release's notes. Skipped
+          # housekeeping runs are fine to re-walk: their commits re-enter
+          # the range and the prefix/path filter drops them again. The job
+          # and step names below must match the `name:` values in this
+          # workflow verbatim; rename them together. The current run and
+          # re-runs of the same head SHA are skipped. "Published" is keyed on
+          # a successful Play upload step specifically because these notes are
+          # Play's `whatsnew-en-US`: any run that did not put its commits in
+          # front of a Play reader must not become the base, or those commits
+          # drop from Play's record for good. Requiring a Play upload can only
+          # repeat a bullet instead — the trade this pipeline prefers.
+          # How many 100-run pages of main history to search for the last
+          # publication before giving up (see the note after the walk).
+          MAX_RUN_PAGES=5
+
+          # `saw_run` and `oldest_run_head` separate "the query worked but
+          # nothing in the window ever published" from "the query returned
+          # nothing at all" — the two need different bases (see below).
+          # The list is newest-first, so the last head assigned before the
+          # walk ends is the oldest run we examined.
+          prev_sha=""
+          oldest_run_head=""
+          saw_run=false
+          hit_page_cap=false
+          page=1
+          while :; do
+            # Fail closed if the query itself fails, distinct from a
+            # successful query that returns nothing. `|| true` here would turn
+            # an API error into an empty page, read as "no prior runs", falling
+            # back to BEFORE_SHA — which drops an earlier still-queued push's
+            # notes for good once this run publishes and becomes the base
+            # (Codex, PR #58). A skipped release costs a re-run; a wrong range
+            # base loses commits from Play's record.
+            if ! page_rows=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=main&per_page=100&page=${page}" \
+              --jq '.workflow_runs[]? | [.id, .head_sha] | @tsv'); then
+              echo "::error::Could not query main workflow runs (page ${page}) for the release-notes range base; refusing to publish an incomplete release record."
+              exit 1
+            fi
+            # An empty page (a successful query past the end of history) means
+            # the whole run history was walked, so a miss here really is "this
+            # workflow has never published".
+            if [ -z "$page_rows" ]; then
+              break
+            fi
+            while IFS=$'\t' read -r run_id run_head; do
+              [ -z "$run_id" ] && continue
+              saw_run=true
+              oldest_run_head="$run_head"
+              # `filter=all` considers every ATTEMPT of the run, not just the
+              # latest: a re-run keeps the same run id while only the attempt
+              # number increments, so a re-run after an earlier attempt already
+              # published would otherwise hide that publication and let this run
+              # re-use its versionCode (Codex, PR #58). The current run needs no
+              # special skip — its own upload step runs after this one, so its
+              # in-progress attempt is never `success`; an earlier attempt of it
+              # (or an earlier same-SHA workflow_dispatch) that did publish is
+              # exactly what must be found, and the supersession check below then
+              # stands this run down rather than picking an older base. Fail
+              # closed if the jobs query itself fails, matching the outer
+              # workflow-runs query — a masked failure could pick an older base
+              # and repeat or re-upload notes (Codex, PR #58).
+              if ! published=$(gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100&filter=all" \
+                --jq '[.jobs[]
+                       | select(.name == "Distribute and release")
+                       | select(.conclusion == "success")
+                       | .steps[]
+                       | select(.name == "Upload to Play Store internal track")
+                       | .conclusion]
+                      | any(. == "success")'); then
+                echo "::error::Could not query jobs for run ${run_id} while finding the release-notes range base; refusing to publish an incomplete release record."
+                exit 1
+              fi
+              if [ "$published" = "true" ]; then
+                prev_sha="$run_head"
+                break
+              fi
+            done <<< "$page_rows"
+            if [ -n "$prev_sha" ]; then
+              break
+            fi
+            page=$((page + 1))
+            if [ "$page" -gt "$MAX_RUN_PAGES" ]; then
+              hit_page_cap=true
+              break
+            fi
+          done
+          # per_page=100 is the API max, so the common case — the previous
+          # main run published — costs two calls and stops. Paging further
+          # only happens while nothing has published yet, which is also the
+          # only case where the extra calls buy anything: each page costs up
+          # to 100 more per-run job lookups, so this is capped rather than
+          # run with --paginate over the workflow's entire history. If the
+          # cap is reached with no publication found, the base below is the
+          # best available (the parent of the oldest run seen) and commits
+          # older than that are not recovered — a real limit, logged loudly
+          # rather than papered over, and one that needs MAX_RUN_PAGES × 100
+          # consecutive non-publishing main runs to reach.
+
+          # Fallbacks, in order:
+          #   1. The last run that published.
+          #   2. The parent of the oldest run searched, when the query
+          #      worked but *nothing* it returned published — every one of
+          #      those runs built without releasing, so their commits are
+          #      all still queued. BEFORE_SHA would cover only the newest
+          #      push here and, once this run publishes and becomes the
+          #      next base, the earlier queued subjects would be lost for
+          #      good — the exact failure this step exists to prevent, just
+          #      moved one rung down. The parent (not the run head itself)
+          #      so the oldest unpublished commit is inside the range; a
+          #      root commit has no parent, so that guard falls through.
+          #   3. BEFORE_SHA when the query returned nothing at all (fresh
+          #      repo with no prior main run, API hiccup) — except when
+          #      it's all-zeros or unreachable (first push to a branch,
+          #      force-reset orphaning the old tip).
+          #   4. HEAD alone — walking the entire history would be both slow
+          #      and meaningless.
+          # Case 2 is bounded by the page cap, and the 50-subject cap
+          # and 500-char truncation below bound the output; oldest-first is
+          # preserved at the head, so the queued backlog leads the notes and
+          # the tail is dropped with the usual "…". The range walk itself is
+          # deliberately uncapped: `git log --max-count` limits commits
+          # BEFORE `--reverse` applies (git documents --reverse as
+          # reversing the commits already chosen), so a pre-walk cap would
+          # keep the newest N and silently drop the oldest — the exact
+          # commits the oldest-first notes must preserve. The cap lives on
+          # qualifying subjects inside the filter loop below instead; the
+          # per-commit diff-tree cost on a pathologically long range
+          # (release outage) is the accepted trade.
+          # A later push already published everything this run would ship,
+          # so there is nothing left to release and uploading would only
+          # re-use a versionCode Play has already taken.
+          #
+          # Reachable because `main` runs do not queue behind one another:
+          # each keys its own concurrency group, so two can validate at once,
+          # and only `deploy` serializes. Group order is arbitrary -- by when
+          # each job started waiting, not by push order -- so an older push's
+          # deploy can reach the upload after a newer one published a higher
+          # versionCode, and Play rejects it. On this repo that failure costs
+          # a billed run and reads as a broken release rather than a race.
+          #
+          # Checks $prev_sha, never main's raw current tip. `main` can advance
+          # past this run's SHA with nothing having published -- the later
+          # push may classify docs-only and skip every heavy job, or its build
+          # may fail before `deploy` runs -- and skipping on that would strand
+          # this run's releasable commits with nothing left to ship them. The
+          # only signal that this run's work is genuinely already covered is
+          # $prev_sha, the head of a run that actually published, descending
+          # from $AFTER_SHA. `git cat-file -e` first because a shallow or
+          # pruned clone may not hold that object, and `merge-base` on a
+          # missing commit answers no rather than erroring.
+          if [ -n "$prev_sha" ] \
+             && git cat-file -e "$prev_sha" 2>/dev/null \
+             && git merge-base --is-ancestor "$AFTER_SHA" "$prev_sha" 2>/dev/null; then
+            echo "A later push already published (last published SHA ${prev_sha} already includes this run's ${AFTER_SHA}); skipping."
+            echo "RELEASE_NOTES_SKIP=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          base_sha=""
+          if [ -n "$prev_sha" ] && git cat-file -e "$prev_sha" 2>/dev/null; then
+            base_sha="$prev_sha"
+          elif [ "$saw_run" = true ] && [ -n "$oldest_run_head" ] \
+             && git rev-parse --quiet --verify "${oldest_run_head}~1^{commit}" >/dev/null; then
+            base_sha=$(git rev-parse "${oldest_run_head}~1")
+            echo "No published run found; basing notes on the queued backlog from ${base_sha}."
+            if [ "$hit_page_cap" = true ]; then
+              echo "::warning::Searched ${MAX_RUN_PAGES} pages of main runs without finding a publication. Release notes start at ${base_sha}; anything released-worthy older than that is not included."
+            fi
+          elif [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
+             && git rev-parse --quiet --verify "$BEFORE_SHA^{commit}" >/dev/null; then
+            base_sha="$BEFORE_SHA"
+          fi
+
+          if [ -n "$base_sha" ]; then
+            shas=$(git log --reverse --no-merges --format=%H "$base_sha..$AFTER_SHA")
+          else
+            shas=""
+          fi
+          if [ -z "$shas" ]; then
+            shas=$(git log -1 --format=%H "$AFTER_SHA")
+          fi
+
+          subjects=()
+          # ONE bound, on the card: at most 50 DISTINCT subjects. Counting
+          # commits instead lets 50 repeats eat the budget and silently drop
+          # the distinct subject behind them, with the card holding one
+          # bullet and nowhere near the 500-char cap.
+          #
+          # There is deliberately no separate bound on the walk. Repeats no
+          # longer grow the array, so the budget stops bounding the loop —
+          # but the range is bounded by the release cadence, each commit
+          # costs one `git diff-tree`, and such a bound has to answer two
+          # questions this one does not: what marks the notes truncated, and
+          # what a capped scan that collected nothing means. Getting the
+          # second wrong sets RELEASE_NOTES_SKIP, which never advances the
+          # base, so every later push rescans the same prefix and can never
+          # publish again.
+          MAX_SUBJECTS=50
+          truncated=false
+          # Collapses a subject already collected, so two dependency
+          # batches in one release window do not print the same bullet
+          # twice. The FIRST occurrence is kept: the list is oldest-first
+          # and every cap drops from the tail, so a repeat must never
+          # displace the head or spend budget a later distinct subject
+          # needs.
+          # Returns non-zero only when the budget is spent AND this subject
+          # would have taken a slot — so the caller stops, and `truncated`
+          # means something really was cut. Checking the budget before that
+          # point claims omission over a tail of duplicates and housekeeping
+          # that would have added nothing, publishing a complete list with a
+          # "…" on the end.
+          add_subject() {
+            local s="$1" i
+            # Indexed rather than "${subjects[@]}": the count is always
+            # safe to read under `set -u`, an empty array included.
+            for (( i = 0; i < ${#subjects[@]}; i++ )); do
+              if [ "${subjects[$i]}" = "$s" ]; then
+                echo "Subject already collected, not repeating it: $s"
+                return 0
+              fi
+            done
+            if [ "${#subjects[@]}" -ge "$MAX_SUBJECTS" ]; then
+              echo "Reached $MAX_SUBJECTS distinct subjects; ignoring the rest of the range."
+              truncated=true
+              return 1
+            fi
+            subjects+=("$s")
+          }
+
+          while IFS= read -r sha; do
+            [ -z "$sha" ] && continue
+            s=$(git log -1 --format=%s "$sha")
+            case "$s" in
+              ci:*)       continue ;;
+              docs:*)     continue ;;
+              internal:*) continue ;;
+              refactor:*) continue ;;
+              test:*)     continue ;;
+              tests:*)    continue ;;
+            esac
+            relevant=false
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              # `case` matches `*` against `/` too, so `.*` covers any path
+              # whose first component starts with `.` (.github/, .claude/,
+              # .gitignore, …) in one pattern.
+              case "$f" in
+                .*)    ;;
+                *.md)  ;;
+                *)     relevant=true; break ;;
+              esac
+            done < <(git diff-tree --no-commit-id --name-only -r "$sha")
+            if [ "$relevant" = "false" ]; then
+              continue
+            fi
+            add_subject "$s" || break
+          done <<< "$shas"
+
+          if [ "${#subjects[@]}" -eq 0 ]; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "No release-worthy commits, but this is a manual workflow_dispatch — publishing the current tip anyway with a generic note."
+              subjects+=("Internal test build")
+            else
+              echo "No release-worthy commits queued for release; skipping the GitHub release and the Play upload."
+              echo "RELEASE_NOTES_SKIP=true" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          fi
+
+          MAX=500
+          TRUNC_MARK=$'\n…'
+
+          # `wc -m` counts characters under a UTF-8 locale; pin it so the
+          # bullet ("• ") and the ellipsis are scored as Play sees them,
+          # not as raw bytes.
+          export LC_ALL=C.UTF-8
+
+          format_notes() {
+            local first=1
+            for s in "$@"; do
+              if [ "$first" -eq 1 ]; then
+                printf '%s' "• $s"
+                first=0
+              else
+                printf '\n• %s' "$s"
+              fi
+            done
+          }
+
+          char_len() {
+            printf '%s' "$1" | wc -m
+          }
+
+          # Two-phase: greedy-add subjects until the formatted output would
+          # exceed MAX, then, if anything was dropped, append the "\n…"
+          # marker — dropping further subjects if the marker itself
+          # overflows. A single 499-500-char subject is hard-truncated.
+          kept=()
+          for s in "${subjects[@]}"; do
+            candidate=$(format_notes "${kept[@]}" "$s")
+            if [ "$(char_len "$candidate")" -gt "$MAX" ]; then
+              truncated=true
+              break
+            fi
+            kept+=("$s")
+          done
+
+          if [ "${#kept[@]}" -eq 0 ]; then
+            notes=$(printf '%s' "• ${subjects[0]}" | cut -c 1-499)
+            notes="${notes}…"
+          else
+            notes=$(format_notes "${kept[@]}")
+            if [ "$truncated" = true ]; then
+              while [ "$(char_len "${notes}${TRUNC_MARK}")" -gt "$MAX" ] \
+                && [ "${#kept[@]}" -gt 0 ]; do
+                unset 'kept[${#kept[@]}-1]'
+                notes=$(format_notes "${kept[@]}")
+              done
+              if [ "${#kept[@]}" -eq 0 ]; then
+                notes=$(printf '%s' "• ${subjects[0]}" | cut -c 1-498)
+              fi
+              notes="${notes}${TRUNC_MARK}"
+            fi
+          fi
+
+          # Random heredoc terminator so a crafted commit subject can't
+          # include the literal terminator and inject entries into
+          # $GITHUB_ENV.
+          delim="RELEASE_NOTES_EOF_$(openssl rand -hex 16)"
+          {
+            printf 'RELEASE_NOTES<<%s\n' "$delim"
+            printf '%s\n' "$notes"
+            printf '%s\n' "$delim"
+          } >> "$GITHUB_ENV"
+
+      - name: Download the release AAB
+        # Built by `release-build`, in parallel with the tests rather than after
+        # them. Restored to the path Gradle would have written it to, so the
+        # publish step's `releaseFiles` is unchanged.
+        if: needs.release-build.outputs.signed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-aab
+          path: app/build/outputs/bundle/release
+
+      - name: Publish a GitHub release
+        # Makes the signed bundle durable and the push's outcome legible.
+        # The run's own artifact expires and is reachable only from that
+        # run's page, which is what makes "did this push ship?" unanswerable
+        # from the Actions list: a run is titled by its last commit, so a
+        # push tipped with a housekeeping commit reads as housekeeping even
+        # when it built, signed and published. A release is permanent,
+        # linkable, listed on a page of its own, and `gh release download`
+        # works against it. Nobody installs an AAB — this is a record of
+        # what shipped and the copy a maintainer hands to Play Console, not
+        # a second distribution channel.
+        #
+        # Play's own upload needs everything this needs and the service
+        # account besides, so the invariant is one-way: every Play upload is
+        # preceded by a release, never the reverse, and a repository holding
+        # only the upload keystore still gets a discoverable build. Ahead of
+        # the upload deliberately — a rejection is exactly when having the
+        # bundle to hand matters.
+        #
+        # Prerelease because nothing in this pipeline promotes a build past
+        # Play's internal track.
+        #
+        # Supersession is the script's own check, not this `if:`. Nothing
+        # here reaches Play, so nothing rejects a stale bundle the way
+        # Play's API does, and the Releases page orders by publication time
+        # — so an older push whose deploy runs late would sit on top reading
+        # as current. It asks the release list, which is the record of what
+        # published; folding it into "Build release notes"' probe instead
+        # would be wrong, because that probe keys on a successful *Play*
+        # upload precisely because it doubles as the notes' range base.
+        #
+        # When it finds itself superseded the script sets RELEASE_SUPERSEDED,
+        # and the Play steps below skip on it too: stopping at this step would
+        # leave the older bundle going to Play whenever the newer run's own
+        # upload skipped or failed — which is precisely the case where a
+        # newer prerelease exists and no newer Play release does. This step's
+        # own condition is a superset of theirs, so whenever they run it has
+        # run and the variable is set.
+        #
+        # The body lives in `scripts/publish-github-release.sh`, which
+        # `scripts/publish_github_release_test.py` drives against a stubbed
+        # `gh` on every pull request. This job cannot run on one, so an
+        # inline body could only ever be verified by merging it. Nothing in
+        # that script is app-specific: the bundle path and asset base name
+        # come in here, so the file stays byte-identical across the siblings
+        # that publish this way.
+        if: |
+          needs.release-build.outputs.signed == 'true' &&
+          env.RELEASE_NOTES_SKIP != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+          AAB_PATH: app/build/outputs/bundle/release/app-release.aab
+          ASSET_BASE: trackmo
+        run: scripts/publish-github-release.sh
+
+      - name: Compose Play Store release notes
+        # The upload action takes a directory of whatsnew-<locale> files;
+        # this writes the list built by "Build release notes" in the layout
+        # the action expects.
+        if: |
+          needs.release-build.outputs.signed == 'true' &&
+          env.HAS_PLAY_SA == 'true' &&
+          env.RELEASE_NOTES_SKIP != 'true' &&
+          env.RELEASE_SUPERSEDED != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/whatsnew"
+          printf '%s' "${RELEASE_NOTES}" \
+            > "${RUNNER_TEMP}/whatsnew/whatsnew-en-US"
+          echo "PLAY_WHATSNEW_DIR=${RUNNER_TEMP}/whatsnew" >> "${GITHUB_ENV}"
+
+      - name: Upload to Play Store internal track
+        # Runs only with both the upload key and service account configured,
+        # and skipped when RELEASE_NOTES_SKIP=true — no Play-worthy "What's
+        # new" entry exists, so shipping would be redundant. Skipped too on
+        # RELEASE_SUPERSEDED, set by the release step above when a later
+        # push has already published a higher versionCode: Play accepts an
+        # older bundle whenever the newer run's own upload skipped or
+        # failed, so standing down there has to stand this down as well. See
+        # dev-docs/play-store-internal-track.md for the Play Console setup.
+        if: |
+          needs.release-build.outputs.signed == 'true' &&
+          env.HAS_PLAY_SA == 'true' &&
+          env.RELEASE_NOTES_SKIP != 'true' &&
+          env.RELEASE_SUPERSEDED != 'true'
+        uses: r0adkll/upload-google-play@a80b0bcdcfdfcc2d026f2bc73f726760b2cbc967  # post-v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: app.trackmo
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          tracks: internal
+          status: completed
+          whatsNewDirectory: ${{ env.PLAY_WHATSNEW_DIR }}
+
