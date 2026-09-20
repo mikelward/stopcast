@@ -116,6 +116,9 @@ fun MainScreen(
     // Open the open-source licenses screen (from the About dialog). Default no-op so an
     // unwired build/test renders the screen without a licenses destination.
     onOpenLicenses: () -> Unit = {},
+    // Open the Settings screen (from the overflow menu). Default no-op so an unwired build/test
+    // renders the screen without a settings destination.
+    onOpenSettings: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Overflow-menu and About-dialog visibility. Saved so an open dialog survives rotation.
@@ -149,9 +152,16 @@ fun MainScreen(
                         Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
                     }
                     IconButton(onClick = { menuExpanded = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.menu_about))
+                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.menu_more))
                     }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.menu_settings)) },
+                            onClick = {
+                                menuExpanded = false
+                                onOpenSettings()
+                            },
+                        )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.menu_about)) },
                             onClick = {

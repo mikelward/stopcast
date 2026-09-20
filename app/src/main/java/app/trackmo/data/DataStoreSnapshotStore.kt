@@ -37,6 +37,23 @@ class DataStoreSnapshotStore internal constructor(
         dataStore.updateData { snapshot.toPersisted() }
     }
 
+    override suspend fun saveIfStopsMatch(
+        snapshot: DeparturesSnapshot,
+        expectedStopIds: List<String>,
+    ): Boolean {
+        val desired = snapshot.toPersisted()
+        // The transform runs under DataStore's write lock, so the compare and the write are one
+        // atomic step — no reload→save window a concurrent writer could slip through. Keep the
+        // stored snapshot untouched when its stop set no longer matches what the caller worked
+        // from (a newer write changed it), discarding the caller's now-stale result. The block
+        // stays a pure function of `current` (no captured mutable state), since DataStore may
+        // re-run it on a write conflict.
+        val written = dataStore.updateData { current ->
+            if (current.matchesStops(expectedStopIds)) desired else current
+        }
+        return written == desired
+    }
+
     companion object {
         /** The file name DataStore owns under the app's files dir. */
         private const val FILE_NAME = "departures-snapshot.json"
@@ -76,6 +93,14 @@ class DataStoreSnapshotStore internal constructor(
             }
     }
 }
+
+/**
+ * True when the stored snapshot exists and holds exactly [ids], in order — the identity a
+ * conditional save compares against. Order is part of it: the nearby set is distance-sorted, so a
+ * reordering is a different set, and a null (nothing stored) never matches.
+ */
+private fun PersistedSnapshot?.matchesStops(ids: List<String>): Boolean =
+    this != null && stops.map { it.stopId } == ids
 
 /**
  * Reads and writes [PersistedSnapshot] as JSON. An empty file is "nothing saved yet" and

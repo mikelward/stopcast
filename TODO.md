@@ -602,14 +602,17 @@ Builds on Phase 1's minimal line-status marking.
 - [x] Lock-screen eligibility on Android 16 QPR (standard widget, no `not_keyguard`
       opt-out); one implementation for both placements. `widgetCategory="home_screen|keyguard"`
       in the provider info — placement needs a real Android 16 QPR device to confirm.
-- [ ] Refresh strategy beyond app-driven push (decided 2026-09-19 — see *Widget follow-ups*
+- [~] Refresh strategy beyond app-driven push (decided 2026-09-19 — see *Widget follow-ups*
       below). The app calls `updateAll` on every fetch, so the widget follows the app's last
-      refresh; `updatePeriodMillis=0`. The **honesty** half now landed in #44: the widget
+      refresh; `updatePeriodMillis=0`. The **honesty** half landed in #44: the widget
       schedules one render-only redraw at its staleness boundary (a `WorkManager` one-shot per
       snapshot), so a closed-app widget flips to the stale `?` treatment on its own instead of
-      holding a live-looking countdown forever (SPEC D4). What remains this follow-up is the
-      **data-refresh** cadence: refresh-on-unlock by default, plus an opt-in "Live widget"
-      setting driving a sustained ~1–2 min loop for the always-on kiosk.
+      holding a live-looking countdown forever (SPEC D4). The **data-refresh** opt-in landed
+      too: the "refresh widget every minute" setting drives a self-rescheduling WorkManager
+      one-shot chain (mechanism B), off by default, for the screen-on kiosk case. What still
+      remains: **refresh-on-unlock by default** (`ACTION_USER_PRESENT`), and the
+      screen-**off** guarantee via a foreground service (mechanism A) — see *Widget
+      follow-ups*.
 - [x] Layout coverage of the widget states, two complementary forms. `WidgetContentTest` uses
       Glance's own unit-test harness (`runGlanceAppWidgetUnitTest`, under Robolectric for a real
       `Bundle`) to assert the emitted layout nodes (no-data, no-rows, stale-empty, fresh-row,
@@ -644,19 +647,28 @@ The maintainer settled each; #44 ships the render surface with the honest fixes 
 withhold, explicit empty states, fresh-before-truncate cap, corruption logging, layout tests),
 and these carry the rest as their own PRs:
 
-- [ ] **Widget refresh (own PR).** Default: refresh on unlock (`ACTION_USER_PRESENT`, a
-      manifest receiver — one fetch when the device is unlocked to check; battery-negligible
-      because it piggybacks on active use rather than waking the radio from idle; cellular
-      data is the only real cost, ~2–5 MB/day, gate on WiFi/charging if wanted). Opt-in
-      **"Live widget" setting (off by default)**: a foreground-service loop that refreshes +
-      re-renders every ~1–2 min (interval a small set: 1/2/5 min) while the screen is on, for
-      the always-on kiosk/lock-screen wall display that never fires unlock. Motion-triggered
-      refresh is a *future supplement* only (it shows stale data for the first seconds after
-      someone walks up, so the periodic loop stays the reliable core). This is what makes the
-      lock-screen widget genuinely fresh. (Note: this is about fetching **new data**. The
-      separate *honesty* case — a closed-app widget holding a live-looking countdown past the
-      staleness threshold — is already handled: #44 schedules a one-shot render-only redraw at
-      the staleness boundary that flips it to `?` without any fetch, SPEC D4.)
+- [~] **Widget refresh (own PR).** The opt-in **"refresh widget every minute" setting (off
+      by default)** landed via **mechanism B** — a self-rescheduling WorkManager one-shot
+      chain (`WidgetRefreshWorker`) that re-fetches the widget's persisted stops ~1/min and
+      saves the snapshot, holding while the screen is on and deferred by Doze otherwise. That
+      covers the screen-on kiosk/home case. Two pieces still remain:
+      - [ ] **Refresh on unlock by default** (`ACTION_USER_PRESENT`, a manifest receiver —
+        one fetch when the device is unlocked; battery-negligible because it piggybacks on
+        active use rather than waking the radio from idle; cellular data is the only real cost,
+        ~2–5 MB/day, gate on WiFi/charging if wanted). This is the default path for a user who
+        never opts into the every-minute loop.
+      - [ ] **Mechanism A — foreground service, the screen-off follow-up** (recorded as the
+        maintainer asked: *start with B, record A as a possible follow-up if B doesn't work*,
+        2026-09-20). B is Doze-deferred, so it does **not** guarantee the exact minute with the
+        screen off; a foreground service would, at the cost of a persistent notification, the
+        Play foreground-service-type policy that carries (the snoozemo precedent), and more
+        battery. Take this only if the screen-on case proves insufficient on a real device.
+      - Motion-triggered refresh is a *future supplement* only (it shows stale data for the
+        first seconds after someone walks up, so the periodic loop stays the reliable core).
+      (Note: this is about fetching **new data**. The separate *honesty* case — a closed-app
+      widget holding a live-looking countdown past the staleness threshold — is already
+      handled: #44 schedules a one-shot render-only redraw at the staleness boundary that flips
+      it to `?` without any fetch, SPEC D4.)
       - **Render-only countdown tick while closed (Codex P1 on `ae0cf78`, deferred here).**
         Between redraws the widget's countdown text is static, so within the freshness window a
         closed-app countdown can read up to the staleness threshold optimistic ("2 min" for a
@@ -939,6 +951,31 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   reversible — the scheme is two colour tables plus one default flag in `Theme.kt`, and
   flipping `dynamicColor` back on restores Material You. Promote to `SPEC.md` once the
   colour is confirmed on a device.
+- **Live widget refresh uses mechanism B (WorkManager one-shot chain), A recorded as the
+  follow-up** (maintainer: *start with B, record A as a possible follow-up if B doesn't
+  work*, 2026-09-20). The opt-in "refresh widget every minute" setting drives a
+  self-rescheduling `OneTimeWorkRequest` chain (`WidgetRefreshWorker`) rather than a
+  foreground service. B is lighter (no persistent notification, no Play
+  foreground-service-type declaration, less battery) and adequate for the scoped
+  screen-on case, but it is **Doze-deferred**, so it does not guarantee the exact minute
+  with the screen off. Mechanism A (a foreground service) would, at those costs, and is
+  recorded under *Widget follow-ups* to take only if the screen-on case proves
+  insufficient on a real device. Reversible — B is contained to `WidgetRefreshWorker` +
+  the settings store + one call site; swapping to A is additive. Wants a real-device
+  check that the ~1/min chain actually holds while the screen is on (and that Doze
+  behaves as expected when it isn't).
+- **Settings screen is a top-level overlay reached from the departures overflow only**
+  (autopilot, this PR — maintainer asked for a Settings screen and said "the Settings
+  screen should come first" then "sequence how you like"). Hosted at the activity top
+  level like the licenses overlay (a `BackHandler`-closed screen, no nav library), added
+  as a "Settings" item in the departures overflow menu **above** "About". The location
+  gate's menu still offers About alone — its existing "Open settings" affordance is the OS
+  app-settings for permissions, a different thing, so putting our Settings there would be
+  confusing while location is denied. The screen composable is UI-only (reflects the
+  setting, reports a change); persistence + the WorkManager scheduler are wired by the
+  activity, keeping it Robolectric-renderable. Reversible — a menu item, a boolean overlay
+  swap, and a UI-only composable. Wants a maintainer look at whether Settings also belongs
+  on the gate, and at the overflow ordering.
 
 ## Decisions
 
