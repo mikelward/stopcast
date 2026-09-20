@@ -31,6 +31,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Trackmo"
+rootProject.name = "StopCast"
 
 include(":app")

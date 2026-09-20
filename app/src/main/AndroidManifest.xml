@@ -3,7 +3,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Precise location for the nearby-stops search: a coarse fix put the nearest stop up to
-         ~1 km off (a stop half a mile away read as nearest), so trackmo requests FINE and uses
+         ~1 km off (a stop half a mile away read as nearest), so stopcast requests FINE and uses
          it when granted (maintainer, 2026-09-19). COARSE stays declared so the runtime dialog
          offers the precise/approximate choice and an approximate grant still finds stops,
          degraded. Location is used on demand only — sent to TfL to find stops, never on a
@@ -17,11 +17,11 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Trackmo">
+        android:theme="@style/Theme.StopCast">
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.Trackmo">
+            android:theme="@style/Theme.StopCast">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -32,14 +32,14 @@
              handles the APPWIDGET_UPDATE plumbing; the provider meta-data points at the sizing
              and category config. exported=true because the launcher/host binds it. -->
         <receiver
-            android:name=".widget.TrackmoWidgetReceiver"
+            android:name=".widget.StopCastWidgetReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/trackmo_widget_info" />
+                android:resource="@xml/stopcast_widget_info" />
         </receiver>
     </application>
 

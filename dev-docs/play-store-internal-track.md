@@ -8,7 +8,7 @@ It is the only channel a *device* installs a build from, and the route to
 alpha/beta/production later.
 
 The same signed bundle is also published as a **GitHub prerelease**, tagged
-`v<versionCode>` with `trackmo-<versionCode>.aab` attached and the same "What's
+`v<versionCode>` with `stopcast-<versionCode>.aab` attached and the same "What's
 new" notes. It is not a second way to install anything — nobody installs an
 AAB — it is the durable record of what shipped: the workflow artifact expires
 and is reachable only from its own run's page, and the Actions list titles a run
@@ -21,7 +21,7 @@ easy to repeat.
 
 `./gradlew bundleRelease` produces
 `app/build/outputs/bundle/release/app-release.aab` and the action uploads it to
-the `internal` track on the `app.trackmo` listing. Play App Signing re-signs the
+the `internal` track on the `app.stopcast` listing. Play App Signing re-signs the
 AAB with its managed app-signing key before delivery, so the upload key
 generated below only authenticates to Play — it doesn't sign what testers run.
 
@@ -57,10 +57,10 @@ every release build, not only in CI.
 
 https://play.google.com/console → "Create app":
 
-- **App name**: `Trackmo`
+- **App name**: `StopCast`
 - **Default language**: English (United States)
 - **App or game**: App; **Free or paid**: Free
-- **Package name**: `app.trackmo` (must match `applicationId` in
+- **Package name**: `app.stopcast` (must match `applicationId` in
   `app/build.gradle.kts`)
 
 Complete the required declarations under "App content" using the facts recorded
@@ -86,7 +86,7 @@ Console.
 RELEASE_KEYSTORE_FILE=/path/to/release.keystore \
 RELEASE_KEYSTORE_PASSWORD=<password> \
 RELEASE_KEY_PASSWORD=<password> \
-RELEASE_KEY_ALIAS=trackmo \
+RELEASE_KEY_ALIAS=stopcast \
 ./gradlew bundleRelease
 ```
 
@@ -121,7 +121,7 @@ roles needed) → Keys tab → Add key → JSON. The downloaded JSON becomes the
 ### 6. Grant the service account access in Play Console
 
 Play Console → Users and permissions → Invite new users → the service account
-email. On "App permissions", add Trackmo and grant **Releases: Release to
+email. On "App permissions", add StopCast and grant **Releases: Release to
 testing tracks** — the minimum for an internal-track upload. Propagation can
 take a few minutes.
 
@@ -137,8 +137,8 @@ revises these forms periodically).
 
 - **Privacy policy**: the published copy of `docs/PRIVACY.md` (confirm the
   hosted URL before submitting — e.g. a GitHub Pages copy at
-  `https://mikelward.github.io/trackmo/PRIVACY.html`).
-- **What trackmo sends off the device** (`docs/PRIVACY.md`, SPEC *Privacy*):
+  `https://mikelward.github.io/stopcast/PRIVACY.html`).
+- **What stopcast sends off the device** (`docs/PRIVACY.md`, SPEC *Privacy*):
   - **Approximate or precise location → Transport for London**, on demand only,
     when the user asks for "near me now": the device coordinates are sent to
     TfL's `/StopPoint` lookup to find nearby stops. Precise where the user
@@ -149,11 +149,11 @@ revises these forms periodically).
   - **The typed stop-name or line query → TfL**, for stop/line search (Phase 2).
   - **An optional user-supplied TfL `app_key`**, if the user sets one, sent as
     their own credential with their own TfL calls and nowhere else.
-  - **Nothing else leaves the device to trackmo**: no Firebase, no analytics, no
-    crash reporter, no third-party tracker, no server of trackmo's own. (The
+  - **Nothing else leaves the device to stopcast**: no Firebase, no analytics, no
+    crash reporter, no third-party tracker, no server of stopcast's own. (The
     user's own Android backup / device-to-device transfer carries their saved
     config; that is a platform feature under the user's control, not data
-    trackmo collects or transmits — no Data Safety change, `docs/PRIVACY.md`.)
+    stopcast collects or transmits — no Data Safety change, `docs/PRIVACY.md`.)
 - **On-device diagnostic log**: coarse stop/line IDs, HTTP status, and location
   fix outcomes — **never a raw coordinate or the `app_key`** (`docs/PRIVACY.md`).
   Stays on the device; a future shareable export redacts travel data.
@@ -188,11 +188,11 @@ Play App Signing at the seed upload (step 2) is what keeps a lost key that cheap
 KEYSTORE_PASSWORD=$(openssl rand -hex 24)
 keytool -genkeypair \
   -keystore release.keystore \
-  -alias trackmo \
+  -alias stopcast \
   -storetype PKCS12 \
   -storepass "$KEYSTORE_PASSWORD" \
   -keypass "$KEYSTORE_PASSWORD" \
-  -dname "CN=Trackmo Release, O=Trackmo, C=US" \
+  -dname "CN=StopCast Release, O=StopCast, C=US" \
   -validity 36500 \
   -keyalg RSA \
   -keysize 2048
@@ -229,7 +229,7 @@ only entry here that cannot be regenerated equivalently.
 | `RELEASE_KEYSTORE_BASE64` | Base64-encoded PKCS12 keystore bytes (`base64 -w0 release.keystore`). |
 | `RELEASE_KEYSTORE_PASSWORD` | Random hex string set when the keystore was generated. |
 | `RELEASE_KEY_PASSWORD` | Same value as `RELEASE_KEYSTORE_PASSWORD` (PKCS12 convention). |
-| `RELEASE_KEY_ALIAS` | Key alias inside the keystore. Use `trackmo` to match the snippet above. |
+| `RELEASE_KEY_ALIAS` | Key alias inside the keystore. Use `stopcast` to match the snippet above. |
 | `PLAY_SERVICE_ACCOUNT_JSON` | Full JSON contents of the service account key from step 5. |
 
 ## Release notes
@@ -260,7 +260,7 @@ by a shallow clone.
   with `fetch-depth: 0`.
 - **`The caller does not have permission`** — the service account lacks
   "Release to testing tracks" on the app, or the invite hasn't propagated.
-- **`Package not found: app.trackmo`** — the listing doesn't exist yet, or the
+- **`Package not found: app.stopcast`** — the listing doesn't exist yet, or the
   first AAB hasn't been uploaded manually (step 2).
 - **`Upload to Play Store internal track` is skipped** — `PLAY_SERVICE_ACCOUNT_JSON`
   isn't set, or nothing release-worthy is queued. The GitHub prerelease is

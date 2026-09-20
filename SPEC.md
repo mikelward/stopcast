@@ -1,6 +1,6 @@
-# Trackmo
+# StopCast
 
-Trackmo shows live London transport departures for the stops you care about, at a
+StopCast shows live London transport departures for the stops you care about, at a
 glance — on the Android **lock screen**, on the home screen, and in full in the app.
 It reads Transport for London's live prediction feed and answers one question fast:
 *what's leaving the stops near me, and when?* — plus the disruptions (delays,
@@ -19,23 +19,23 @@ logic, persistence — that the widget then renders from. The widget follows onc
 spine is proven. `TODO.md` phases it this way.
 
 Minimum supported version: Android 14 (API 34), the device floor across the sibling
-fleet. The lock-screen *placement* needs Android 16 QPR; trackmo's widget is a
+fleet. The lock-screen *placement* needs Android 16 QPR; stopcast's widget is a
 standard widget that becomes lock-screen-eligible where the OS allows it, so there is
 no separate lock-screen code path.
 
-Coverage is London / TfL only. Trackmo is not affiliated with Transport for London,
+Coverage is London / TfL only. StopCast is not affiliated with Transport for London,
 and uses the free, public TfL Unified API.
 
 ## Product behavior
 
-Trackmo watches a small set of **stops** and, for each, shows the next few departures
+StopCast watches a small set of **stops** and, for each, shows the next few departures
 and any disruption that would change whether you'd trust them. A "stop" is a TfL
 `StopPoint`: a bus stop, an Underground/Overground/Elizabeth-line/DLR station, a tram
 stop, or a pier.
 
 ### Watched stops
 
-The user builds a short list of **watched stops** — the stops trackmo shows. A watched
+The user builds a short list of **watched stops** — the stops stopcast shows. A watched
 stop can be narrowed to specific **lines** and/or a **direction** (inbound/outbound,
 or a named platform), so a surface shows only the departures the user actually takes —
 "Victoria line southbound at Warren Street", not every service through the station.
@@ -48,7 +48,7 @@ decision **D1** for why the widget renders watched stops rather than "nearest to
 
 The app finds stops two ways:
 
-- **Near me now** — with location permission, trackmo lists the stops nearest the
+- **Near me now** — with location permission, stopcast lists the stops nearest the
   user's current position (TfL `/StopPoint` by coordinates) so pinning the right ones
   is one tap. It asks for **precise location** (`ACCESS_FINE_LOCATION`): a coarse fix
   can be off by up to ~1 km, enough to read a stop half a mile away as the nearest, so
@@ -87,7 +87,7 @@ The app finds stops two ways:
 
   To keep the lookup fast and honest: a recent cached position is used at once; if a fresh fix
   is slow or absent, a *somewhat-stale* cached one substitutes for it rather than making the
-  user wait or fail — but only within a bounded age, past which trackmo reports "couldn't get
+  user wait or fail — but only within a bounded age, past which stopcast reports "couldn't get
   your location" rather than showing a previous location's stops as current (a user who has
   traveled would be misled). A failure to get a fix is always logged, so a misfire is
   diagnosable.
@@ -112,7 +112,7 @@ The app finds stops two ways:
 
 ### Departures
 
-For each watched stop, trackmo shows the next few departures: **line**, **destination**
+For each watched stop, stopcast shows the next few departures: **line**, **destination**
 (where the service is headed), and a **countdown**. Countdowns render as minutes — "Due"
 when imminent, "3 min", "12 min" — sorted soonest-first.
 
@@ -215,7 +215,7 @@ direction-independent since no prediction supplies a direction. So a suspended l
 closed stop is surfaced, not silently dropped for want of a departure to build a row from
 (see *Disruptions*) — the quietly-wrong failure the whole model exists to avoid.
 
-The list shows the **watched stops'** rows (D1) — trackmo renders the stops the user
+The list shows the **watched stops'** rows (D1) — stopcast renders the stops the user
 chose ahead of time, not "nearest to me" — ordered **location-free** so the view works
 with location denied: soonest-first, with **starred** rows pinned to the top. Starring is
 ranking only, separate from which stops are watched (add/remove membership). A star keys on
@@ -240,7 +240,7 @@ by the **next branch or interchange point** downstream rather than the terminus,
 letting users set **favorite destinations** to filter or rank by.
 
 TfL's endpoint is named "Arrivals"; for a bus stop these are departures *from* that
-stop, which is what a rider wants. Trackmo calls them departures throughout the UI.
+stop, which is what a rider wants. StopCast calls them departures throughout the UI.
 
 Each service wears its line's identity: a pill filled with the line's official TfL color
 carries the line's **three-letter code** (its first three letters, uppercased — VIC, BAK,
@@ -276,7 +276,7 @@ neutral pill rather than an invented shade — a cosmetic gap, not a correctness
 
 A departure time is worse than useless if the service is cancelled or the stop is
 closed — showing the number alone is the "quietly wrong" failure (see *Engineering
-quality bar*). So trackmo surfaces, for watched stops and their lines:
+quality bar*). So stopcast surfaces, for watched stops and their lines:
 
 - **Line status** — minor/severe delays, part-suspended, suspended (TfL line status).
 - **Stop closures and stop-level disruptions** — a closed entrance, a moved stop.
@@ -300,13 +300,13 @@ On a glance surface a disruption is a one-line summary plus a count ("Victoria l
 severe delays"); in the app it's the full text. A disrupted line/stop is marked even
 when its predictions still look normal, because the prediction is the thing not to be
 trusted — **and even when it has no predictions at all.** A suspended line often returns
-zero arrivals, so trackmo retains the watched stop→line mapping independently of the
+zero arrivals, so stopcast retains the watched stop→line mapping independently of the
 predictions and shows a line's status from that mapping; otherwise the surface would say
 "no departures" for a suspended line and leave the user waiting for a service that isn't
 coming — the quietly-wrong failure in its purest form.
 
 Disruption and arrivals are separate requests, so a refresh can get one and not the
-other. When the disruption lookup fails but arrivals succeed, trackmo does **not** present
+other. When the disruption lookup fails but arrivals succeed, stopcast does **not** present
 those departures as verified-clean: it keeps the last-good disruption state (aged and
 stamped like any other data) or marks the affected departures "status unknown", rather
 than showing normal-looking times whose disruption status was never actually checked.
@@ -345,7 +345,7 @@ about when data has gone stale.
 
 ### When something is wrong
 
-Trackmo never blanks or lies when it can't get fresh data. If TfL is unreachable, the
+StopCast never blanks or lies when it can't get fresh data. If TfL is unreachable, the
 rate limit is hit, or location is denied, the surface says which ("offline", "can't
 reach TfL", "location off") and shows the last good data stamped with its age, rather
 than an empty box or unlabeled stale numbers.
@@ -355,7 +355,7 @@ than an empty box or unlabeled stale numbers.
 An overflow menu in the departures top bar opens an About dialog naming the app and its
 installed version. Its one action is the open-source licenses screen — the transitive
 dependency graph, and for each component its version, authors, and license identity —
-which trackmo ships to meet those licenses' attribution terms (Apache-2.0 §4 among them).
+which stopcast ships to meet those licenses' attribution terms (Apache-2.0 §4 among them).
 That attribution is exported at build time and bundled, so the list itself renders with no
 network. The full license *text* is not bundled (following the sibling repos' export, which
 omits it): each license links out to its canonical text, one tap to the browser.
@@ -364,7 +364,7 @@ omits it): each license links out to its canonical text, one tap to the browser.
 
 An overflow-menu entry opens a Settings screen, hosted at the activity top level like the
 licenses screen (an overlay whose own Back closes it) rather than through a navigation graph
-— trackmo still has no nav library. Its first setting is the opt-in "refresh widget every
+— stopcast still has no nav library. Its first setting is the opt-in "refresh widget every
 minute" toggle (D5). The screen composable is UI-only: it reflects the setting and reports a
 change, while persistence (a typed DataStore, mirroring the starred-rows store) and the
 refresh scheduler (WorkManager) are wired by the activity, so the screen stays
@@ -381,7 +381,7 @@ screen.
 ## Architecture
 
 - **Kotlin + Jetpack Compose**, a single `:app` module (mirroring simmo and Type
-  Launcher), with all product logic in a pure-Kotlin **domain** layer (`app.trackmo.
+  Launcher), with all product logic in a pure-Kotlin **domain** layer (`app.stopcast.
   domain`) that is testable on the JVM with no Android: nearest-stop ranking,
   arrival→countdown formatting, disruption summarization, and staleness
   classification live there.
@@ -403,7 +403,7 @@ screen.
 
 ## Data source, cost, and reliability
 
-Trackmo's one external dependency is the **TfL Unified API** — free and public.
+StopCast's one external dependency is the **TfL Unified API** — free and public.
 
 - Endpoints: `/StopPoint` (nearby by lat/lon + stop types + radius) and `/StopPoint/
   Search` for finding stops by name, plus `/Line/Search/{query}` then `/Line/{id}/
@@ -412,11 +412,11 @@ Trackmo's one external dependency is the **TfL Unified API** — free and public
   Disruption` for disruptions.
 - **Cost: £0.** Anonymous access is limited to ~50 requests/min; a free, user-supplied
   `app_key` raises it to ~500/min.
-- **D7 — trackmo ships no baked-in key.** It works keyless out of the box, and a user
+- **D7 — stopcast ships no baked-in key.** It works keyless out of the box, and a user
   may paste their own free `app_key` in settings for the higher limit. A shared, baked-in
   key would pool every user's traffic into one 500/min bucket and put a credential in
   the APK; a per-user key does neither.
-- **Reliability:** one dependency, so if TfL is down or throttling, trackmo shows
+- **Reliability:** one dependency, so if TfL is down or throttling, stopcast shows
   stamped last-good data and an offline/rate-limited notice (never a blank or an
   unlabeled stale number). Added latency lives off every render path (snapshot-render,
   above).
@@ -427,7 +427,7 @@ There is one widget. On Android 16 QPR and later, where the OS re-added widgets 
 phone lock screen, it is eligible to sit there; everywhere else it is a home-screen
 widget. Both use the standard AppWidget/Glance API — a lock-screen widget is just a
 widget the host is allowed to place on the keyguard — so there is no lock-screen-specific
-code path to maintain. Trackmo does **not** opt out of lock-screen placement (the
+code path to maintain. StopCast does **not** opt out of lock-screen placement (the
 `not_keyguard` category). The app and its home-screen widget run on the fleet floor
 (Android 14 / API 34); the lock-screen *placement* simply appears on devices new enough
 to offer it.
@@ -457,8 +457,8 @@ the widget when the app isn't driving it is deferred (D5).
 
 ## Privacy
 
-Trackmo handles location and the set of stops the user watches — which together reveal
-where they live, work, and travel. Trackmo itself sends none of it anywhere except the
+StopCast handles location and the set of stops the user watches — which together reveal
+where they live, work, and travel. StopCast itself sends none of it anywhere except the
 TfL requests that *are* the product: a nearby-stops lookup necessarily sends coordinates
 to TfL — **precise** where the user granted precise and an accurate fix is available,
 approximate under an approximate-only grant or when no accurate fix can be obtained (see
@@ -468,15 +468,15 @@ search endpoints. That is inherent to each feature and disclosed; precise locati
 Play Data Safety type the nearby action may collect (and so declares), not a claim that
 every fix sent is precise.
 
-All of trackmo's persisted config — watched stops, per-stop filters, row stars, any saved
+All of stopcast's persisted config — watched stops, per-stop filters, row stars, any saved
 favorite destinations, the user's `app_key` — and the last-good snapshot travel through
-**Android's own backup and device-to-device transfer** — trackmo allows
+**Android's own backup and device-to-device transfer** — stopcast allows
 both, deliberately, so a phone swap keeps the user's setup rather than losing it
 (maintainer, 2026-09-18; the fleet's "never lose the user's work" over a literal
 never-leaves-the-device wording). This is the platform's user-controlled channel tied to
-the user's own Google account, not an off-device channel trackmo adds: cost £0, and no
-Play Data Safety change (Android Auto Backup is a platform feature, not data trackmo
-collects or transmits). The guarantee is therefore precise, not absolute — *trackmo*
+the user's own Google account, not an off-device channel stopcast adds: cost £0, and no
+Play Data Safety change (Android Auto Backup is a platform feature, not data stopcast
+collects or transmits). The guarantee is therefore precise, not absolute — *stopcast*
 adds no off-device channel beyond the TfL requests, and the user's own backup/transfer
 carries their config under their control.
 
@@ -489,12 +489,12 @@ a raw coordinate or the user's API key.
 
 In priority order; where a rule below conflicts with a principle, the principle wins.
 
-1. **Never show a departure trackmo doesn't stand behind.** The worst outcome is the
-   user missing a bus, or running for a cancelled one, because trackmo showed a number
+1. **Never show a departure stopcast doesn't stand behind.** The worst outcome is the
+   user missing a bus, or running for a cancelled one, because stopcast showed a number
    it shouldn't have trusted. Stale-but-unlabeled, or a normal-looking prediction for a
    suspended line, is worse than an honest "can't refresh" or "severe delays". Every
    surface is honest about age and disruption.
-2. **Never fail silently.** If trackmo can't refresh — offline, rate-limited, location
+2. **Never fail silently.** If stopcast can't refresh — offline, rate-limited, location
    denied — it says so where the user is looking and shows stamped last-good data,
    rather than a blank or a silent stale render.
 3. **Do the work ahead of time.** A surface renders from the persisted snapshot; the
@@ -530,12 +530,12 @@ Mirrors the sibling fleet:
 
 ## Non-goals
 
-- **Journey planning / routing** (the TfL Journey API). Trackmo answers "what's next
+- **Journey planning / routing** (the TfL Journey API). StopCast answers "what's next
   from here", not "how do I get there".
 - **Non-TfL operators** outside the Unified API (National Rail services TfL doesn't
   carry, coach, etc.).
 - **Ticketing**, Oyster/contactless balances, and service maps.
-- **Writing to TfL.** Trackmo is read-only.
+- **Writing to TfL.** StopCast is read-only.
 - **Continuous background location / geofencing.** Location is used on demand in the
   app to find nearby stops, never tracked in the background.
 
