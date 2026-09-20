@@ -617,17 +617,14 @@ Builds on Phase 1's minimal line-status marking.
         disruption is worse than an extra one).
       - Then **show the full alert text on tapping the card/chip** (requested 2026-09-20), the
         detail surface the compact chip below points at.
-- [ ] **Bug: the "Couldn't check for disruptions" notice appears to fire constantly**
-      (reported 2026-09-20, on-device). The `disruptionUnknown` state shows far more often
-      than a real outage should. Prime suspect: `MainViewModel.refresh()` sets
-      `disruptionUnknown = true` on **any** per-stop `/StopPoint/{id}/Disruption` failure
-      (`MainViewModel.kt:245-253`), and that request runs for every watched stop every
-      refresh — so one endpoint that consistently 4xx/5xx's, or a stop id it rejects, lights
-      the notice on every refresh even when the batched line-status call succeeds. Also
-      check the line-status path (`/Line/{ids}/Status` failing or rate-limited, a line with
-      no status entry, empty/oddly-formed line ids). Fix it so the notice means a genuine
-      "couldn't check", not the normal case (SPEC principle 2: say why, but only when it's
-      true). Add a test over each path that currently yields `disruptionUnknown`.
+- [x] **Bug: the "Couldn't check for disruptions" notice appears to fire constantly**
+      (reported 2026-09-20, on-device; fixed 2026-09-20). Root cause: with `getFamily=true`
+      the endpoint returns a `DisruptedPointFamily` **tree object**, not the flat
+      `DisruptedPoint[]` the DTO parsed — so every per-stop fetch threw `JsonConvertException`
+      and `disruptionUnknown` lit on every refresh. Fix: parse `TflDisruptedPointFamilyDto`
+      and walk `children`, collecting each node's `disruptions` (drop blanks, dedupe by text).
+      The test fixture had been the wrong (flat) shape, which is why this shipped green; it now
+      records the real family tree. Line-status path was not implicated (batched call succeeds).
 - [ ] **Show a chip per disruption condition, not just the single most-severe one**
       (requested 2026-09-20). Today `mostSevereDisruption` collapses coexisting statuses to
       one label; the maintainer wants to revisit that — show a chip for each condition a line
