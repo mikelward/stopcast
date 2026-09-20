@@ -107,6 +107,29 @@ class KtorTflClientTest {
             ]
           },
           {
+            "id": "43",
+            "name": "43",
+            "modeName": "bus",
+            "lineStatuses": [
+              {
+                "statusSeverity": 0,
+                "statusSeverityDescription": "Special Service",
+                "reason": "Road closed for works. Buses will be diverted and will miss stops."
+              }
+            ]
+          },
+          {
+            "id": "district",
+            "name": "District",
+            "lineStatuses": [
+              {
+                "statusSeverity": 5,
+                "statusSeverityDescription": "Part Closure",
+                "reason": "No service between Earls Court and Ealing Broadway this weekend."
+              }
+            ]
+          },
+          {
             "id": "circle",
             "name": "Circle",
             "lineStatuses": []
@@ -265,12 +288,12 @@ class KtorTflClientTest {
     @Test
     fun `parses line statuses, marking disruptions and leaving good service clean`() = runTest {
         val statuses = client(statusJson)
-            .lineStatuses(listOf("victoria", "northern", "central", "circle"))
+            .lineStatuses(listOf("victoria", "northern", "central", "43", "district", "circle"))
             .associateBy { it.lineId }
 
         // circle has no status entries → dropped as unknown, not fabricated into good
         // service (SPEC principle 1: don't manufacture a clean status from absent data).
-        assertEquals(3, statuses.size)
+        assertEquals(5, statuses.size)
         assertFalse(statuses.containsKey("circle"))
         assertFalse(statuses.getValue("victoria").disrupted)
         assertEquals("Good Service", statuses.getValue("victoria").description)
@@ -280,6 +303,13 @@ class KtorTflClientTest {
         // non-good statuses, then take the worst (lowest severity).
         assertTrue(statuses.getValue("central").disrupted)
         assertEquals("Minor Delays", statuses.getValue("central").description)
+        // A bus's vague "Special Service" is replaced by the disruption its reason names,
+        // and the line stays flagged (never turned into a good service).
+        assertTrue(statuses.getValue("43").disrupted)
+        assertEquals("Diversion", statuses.getValue("43").description)
+        // An informative status (a weekend part closure) is still surfaced as TfL words it.
+        assertTrue(statuses.getValue("district").disrupted)
+        assertEquals("Part Closure", statuses.getValue("district").description)
     }
 
     @Test
