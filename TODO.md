@@ -561,23 +561,41 @@ Builds on Phase 1's minimal line-status marking.
       and cancellations of specific services where TfL exposes them.
 - [ ] Rich in-app disruption text; mark a disrupted line/stop even when predictions look
       normal (D3). Domain summarization JVM-tested.
-- [ ] **Classify disruption kind, and judge relevance** (reported 2026-09-19, on-device). A
-      small diversion currently surfaces as "Special Service" where a rider expects "Detour"
-      or "Diversion". Open design point for when it's built: today's label is the generic
-      `/Line/{ids}/Status` `statusSeverityDescription`, which carries no discriminator for the
-      cause, so a rider-readable kind needs a detailed source (`/Line/{ids}/Disruption` or
-      similar) — settle the source, mapping, and fixtures then. This also decides the wording
-      question the maintainer raised (2026-09-19): "Special Service" (severity 0) and "Diverted"
-      (15) are distinct TfL statuses shown verbatim, so a small severity→copy map can't tell a
-      real diversion from an unrelated special service — relabeling terse statuses into clearer
-      rider copy needs the same detailed source, not a severity guess. And decide **whether to
-      show a disruption at all** when it's not relevant to most journeys through the stop (the
-      observed case was a detour miles away), with any relevance test still erring toward showing
-      over hiding (SPEC principle 1 — a wrongly-hidden real disruption is worse than an extra one).
+- [ ] **Name a disruption from the reason text, and judge relevance** (reported 2026-09-19,
+      on-device; refined 2026-09-20). A rider expects "Diversion", not "Special Service".
+      **Landed so far:** a vague "Special Service" is replaced by a concise label parsed from
+      the reason text ("Diversion") when the text names one, keeping TfL's own wording for
+      every informative status ("Part Closure", "Suspended", delays); the line always stays
+      flagged (never turned into a good service). **What's left, and it needs the free-text:**
+      - Why the text and not a field: **there is no structured discriminator** — checked
+        against the live API, a bus's `disruption.closureText` is `null` and `category` is only
+        `PlannedWork`/`RealTime`, and `/Line/{id}/Disruption` is empty while
+        `/Line/{id}/Status?detail=true` carries the prose in `reason` (== `disruption.description`).
+        The reason-scan landed for the two things a vague "Special Service" actually hides —
+        **Diversion** and **Curtailment** — most-severe wins across coexisting entries.
+        Suspensions and delays are *not* inferred from prose: TfL words those itself
+        ("Suspended", "Part Suspended", "Severe/Minor Delays"), kept verbatim on the graded
+        path. Extend the inferred vocabulary as new catch-all cases turn up.
+      - Stretch: also pull the **affected stretch** from the text — "Diversion Moorgate to
+        Monument" — where the text gives a clean from→to.
+      - **Current-vs-future must come from the dates in the text, not `isNow`.** TfL's
+        `validityPeriods[].isNow` reads `false` even for planned closures in effect right now
+        (observed 2026-09-20, a Sunday: every live Overground/tube part-closure was `isNow:
+        false`), so it marks "unplanned", not "current". A not-yet-started diversion currently
+        shows a chip today (the safe side — an extra chip beats a hidden disruption); parsing the
+        reason's dates is what would let a not-yet-started one be held back without hiding a
+        genuinely-current one.
+      - Decide **whether to show a disruption at all** when it's not relevant to most journeys
+        through the stop (the observed case was a detour miles away), with any relevance test
+        still erring toward showing over hiding (SPEC principle 1 — a wrongly-hidden real
+        disruption is worse than an extra one).
+      - Then **show the full alert text on tapping the card/chip** (requested 2026-09-20), the
+        detail surface the compact chip below points at.
 - [ ] **Make the disruption chip lighter-weight than a full row** (requested 2026-09-19,
-      on-device). The shipped "Special Service" (and other status) chip takes a whole row,
-      which reads as too heavy for what it conveys — the maintainer suggested a warning
-      triangle (or similar compact affordance) instead. Refines the shipped Phase 1 status
+      on-device). The shipped status chip ("Part Closure", "Suspended", delays) takes a whole
+      row, which reads as too heavy for what it conveys — the maintainer suggested a warning
+      triangle (or similar compact affordance) instead, e.g. `⚠ Diversion Moorgate to Monument`
+      once the label work above lands. Refines the shipped Phase 1 status
       chip's density without dropping the signal (SPEC principle 1/2 — the disruption must
       still be visible and, ideally, tappable to the fuller detail once the Phase 2/3 detail
       surface exists). Design the compact form before building. **Constraint:** the glance
