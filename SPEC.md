@@ -282,6 +282,20 @@ quality bar*). So trackmo surfaces, for watched stops and their lines:
 - **Stop closures and stop-level disruptions** — a closed entrance, a moved stop.
 - **Cancellations** of specific predicted services, where TfL exposes them.
 
+A disrupted line is always kept flagged — its countdowns are never shown as verified-clean
+(principle 1). The chip's label is TfL's own wording where it names the disruption ("Part
+Closure", "Suspended", "Severe Delays"), and a concise label recovered from the free-text
+reason where the wording is only TfL's vague bus catch-all "Special Service" — which names
+nothing on its own, the real state (usually a diversion) living only in the text. So a
+diverted bus reads "Diversion"; a vague status whose text yields nothing better falls back
+to "Service Alert" — never the meaningless "Special Service" — rather than being hidden.
+Pulling the affected stretch
+("Diversion Moorgate to Monument") and the compact chip are follow-ups (`TODO.md` Phase 3).
+TfL's `isNow` flag is not used to hide a "future" alert: it reads `false` even for planned
+closures currently in effect, so telling current from future needs the dates in the text,
+and showing a not-yet-current diversion is the safe side (an extra chip beats a hidden
+disruption).
+
 On a glance surface a disruption is a one-line summary plus a count ("Victoria line:
 severe delays"); in the app it's the full text. A disrupted line/stop is marked even
 when its predictions still look normal, because the prediction is the thing not to be

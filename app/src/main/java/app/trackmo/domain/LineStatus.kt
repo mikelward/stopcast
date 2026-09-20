@@ -8,8 +8,10 @@ package app.trackmo.domain
  * rather than have its countdowns shown as if they could be trusted (SPEC principle 1 —
  * never show a departure trackmo doesn't stand behind).
  *
- * [description] is TfL's own wording for the shown status ("Severe Delays", "Suspended",
- * "Good Service"), kept as TfL spells it.
+ * [description] is the short chip label: TfL's own wording for the shown status ("Severe
+ * Delays", "Suspended", "Good Service") where that already names the disruption, else a
+ * concise label recovered from TfL's free-text reason when the wording is only a vague
+ * "Special Service" ([resolveDisruption]).
  */
 data class LineStatus(
     val lineId: String,
