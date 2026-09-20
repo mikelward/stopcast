@@ -39,8 +39,19 @@ exercises the whole spine the widget later renders from.
       after merge may show screenshot drift red on `lanes` if the committed baselines differ
       from the CI render — the next UI PR's `sync-screenshots` commits the CI-accurate set
       and self-heals it once the token is in place.
-- [ ] Deploy job (Play internal track, release notes from commit subjects) — Phase 5,
-      needs the signing secrets.
+- [x] Deploy job (Play internal track, release notes from commit subjects) — **pipeline
+      landed**: `release-apk` (PR-lane R8 smoke test), `release-build` (signed AAB) and
+      `deploy` (GitHub prerelease + Play internal-track upload, notes built from commit
+      subjects) in `ci.yml`, plus `scripts/publish-github-release.sh` and its two PR-run
+      tests, `workflow_dispatch` deploy-force, and `dev-docs/play-store-internal-track.md`. No
+      Firebase (dropped every google-services/Crashlytics step). **Human setup still owed
+      before a build actually ships** (all in `dev-docs/play-store-internal-track.md`): generate
+      the upload keystore; create the `app.trackmo` app on Play Console and seed the internal
+      track with one manual upload; create the Play service account; add the five secrets
+      (`RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_PASSWORD`,
+      `RELEASE_KEY_ALIAS`, `PLAY_SERVICE_ACCOUNT_JSON`) to a `production` environment
+      restricted to `main`; and complete the Play Data Safety / App content form. End-to-end
+      proof is the Phase 5 item.
 - [x] `AboutLibraries` licenses export + Licenses screen scaffolding. The plugin exports
       the transitive dependency graph to `res/raw/aboutlibraries.json` (committed;
       regenerated with `./gradlew :app:exportBundledLicenses`, since AGP 9 can't wire the
@@ -742,7 +753,12 @@ and these carry the rest as their own PRs:
 
 ## Phase 5 — Distribution and polish
 
-- [ ] Play internal-track deploy proven end to end; signing keystore via secrets.
+- [ ] Play internal-track deploy proven end to end; signing keystore via secrets. **The
+      pipeline itself landed in Phase 0** (see the Deploy-job item there and
+      `dev-docs/play-store-internal-track.md`); what remains is the human setup — upload keystore,
+      Play Console app + seed upload, service account, the five `production`-environment
+      secrets, and the Data Safety form — and one real push confirmed to reach the internal
+      track.
 - [ ] Consider a CI check that keeps `docs/play-store/icon-512.png` in step with the icon
       drawables. Measured on the siblings: **folding the assertion into an existing
       screenshot class is near-free; a dedicated Roborazzi step ≈ 8–9s/run** (the ~90s
@@ -751,6 +767,31 @@ and these carry the rest as their own PRs:
       matters: batch the screenshot job's single-class steps the way simmo did (9→4 saved
       ~3min there) — the icon steps are not the cost. The 512 landed without a check for
       now, script-rendered via `scripts/render-store-icon.py`.
+- [ ] **Fan out the release-notes-walk hardenings to the siblings** (Codex, PR #58): the
+      "Build release notes" walk in `ci.yml`'s `deploy` job — copied verbatim from the
+      sibling Android repos — carried several latent bugs that trackmo's copy now fixes
+      and simmo / snoozemo / typelauncher / clothescast still have: (1) both the outer
+      workflow-runs query and the per-run jobs query used `… || true`, masking an API
+      failure as "no runs / not published" and risking a wrong range base (dropped or
+      repeated notes); both now fail closed. (2) the walk skipped runs by head SHA, so a
+      `workflow_dispatch` re-deploy of an already-published tip, and a re-run whose
+      earlier attempt had published, both went undetected → older base picked, used
+      versionCode re-uploaded. The walk now skips no runs and queries per-run jobs with
+      `filter=all` (all attempts), relying on the "did the Play-upload step succeed" check
+      + the supersession guard. Port to the four siblings' identical walks; maintainer
+      coordinates the fan-out (one repo at a time; simmo is private/billed so it goes
+      last). (3) Deferred (Codex, PR #58): in the rare case-2 fallback (nothing in the
+      searched window has published yet — i.e. before the first-ever Play upload, or a long
+      outage), the base is `${oldest_run_head}~1`, which includes only the oldest push's tip
+      commit; if that push carried several commits (rebase-merge lands them together), the
+      earlier ones are omitted and lost once this run becomes the next base. Correct fix
+      needs the head of the run one older than the oldest seen, which the page cap may hide —
+      entangled with the redesign below.
+      Deeper option if this keeps producing edge cases: base the range on a durable
+      marker (the last `v<versionCode>` prerelease that a Play upload accepted) instead of
+      reconstructing it from the Actions API — a design change, its cost being that a
+      GitHub prerelease is created even when the Play upload skips, so the marker must
+      still encode "reached Play". Maintainer's call.
 - [ ] **Peer-parity sweep** (requested 2026-09-19, on-device): confirm nothing peer-standard
       from the sibling apps is missing before release. The already-tracked peer features are
       the shareable debug-log export (its own item below), Settings (Phase 2), the
