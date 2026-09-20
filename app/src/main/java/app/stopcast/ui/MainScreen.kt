@@ -2,6 +2,8 @@
 
 package app.stopcast.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -47,8 +51,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.semantics.contentDescription
@@ -140,6 +147,30 @@ fun MainScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
+                navigationIcon = {
+                    // The app's own launcher mark, rendered on its dark icon background so it
+                    // reads the same in either theme. The foreground fills only the ~72/108
+                    // adaptive-icon safe zone, so it's drawn larger than the clipping box —
+                    // requiredSize overrides the box's 32dp max constraint (a plain size would
+                    // be coerced back to 32dp, leaving the padded artwork tiny) — and the box
+                    // clips it back to 32dp, offsetting the padding rather than sitting tiny in
+                    // the middle. Decorative — the title already names the app, so no content
+                    // description.
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colorResource(R.color.ic_launcher_background)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_launcher_foreground),
+                            contentDescription = null,
+                            modifier = Modifier.requiredSize(48.dp),
+                        )
+                    }
+                },
                 actions = {
                     FreshnessStamp(state, now, onRefresh)
                     // Left of refresh: re-find stops at the current location.
