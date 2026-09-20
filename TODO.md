@@ -25,13 +25,20 @@ exercises the whole spine the widget later renders from.
 
 ### Phase 0 — remaining (follow-up PRs)
 
-- [ ] Screenshot job — **record + upload landed** with `MainScreen` (the `build` job
-      runs the screenshot tests for pass/fail; the `screenshot-tests` job re-runs them in
-      record mode and uploads the PNGs). Still to do: **drift refresh** (record the
-      canonical set back onto the PR branch, since local and CI rendering can differ) and
-      the **before/after visual-diff PR comment** (the `mikelward/ci-commit-artifact`
-      apparatus the siblings use). Until that lands, committed baselines are reviewed via
-      the uploaded artifact, and CI does not yet gate on pixel drift.
+- [ ] Screenshot job — record + upload landed; **drift-refresh + visual-diff apparatus
+      wired**, awaiting one operator step. The `screenshot-tests` job now checks out the PR
+      head branch, enforces the `--tests` allow-list against every `*ScreenshotTest`, clears
+      then records, and fails on drift on pushes/forks; `sync-screenshots` (the
+      `mikelward/ci-commit-artifact@main` reusable workflow) pushes the refreshed PNGs back
+      to a same-repo PR branch; `post-screenshot-diff` posts the before/after PR comment.
+      **Remaining: `repo setup` must be re-run after this lands on main** — it only
+      provisions `CI_COMMIT_ARTIFACT_TOKEN` (in a `ci-commit-artifact` environment) once a
+      default-branch workflow actually calls the reusable workflow, so on the PR that adds
+      this `sync-screenshots` fails for lack of the token (deliberately kept out of the
+      required `lanes` gate so it doesn't block the merge). Also note: the first main push
+      after merge may show screenshot drift red on `lanes` if the committed baselines differ
+      from the CI render — the next UI PR's `sync-screenshots` commits the CI-accurate set
+      and self-heals it once the token is in place.
 - [ ] Deploy job (Play internal track, release notes from commit subjects) — Phase 5,
       needs the signing secrets.
 - [x] `AboutLibraries` licenses export + Licenses screen scaffolding. The plugin exports
@@ -829,7 +836,8 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   `View` (`WidgetScreenshotTest`). The API is `@ExperimentalGlanceRemoteViewsApi` — if a glance
   bump changes it, this test's render path may need adjusting (the node-based `WidgetContentTest`
   is unaffected). Reversible — it's one test file + one CI step. Baselines are committed but CI
-  records (doesn't verify) them; the drift-refresh/verify gate is still the Phase 0 follow-up.
+  records (doesn't verify) them; the drift-refresh/verify gate is wired in the
+  screenshot-drift-refresh PR (pending the post-merge `repo setup` token step).
 - **Staleness threshold = 5 minutes** (`Staleness.THRESHOLD`, Phase 1 domain). The one
   shared "too old to trust" bound past which countdowns are withheld for "tap to refresh"
   (SPEC D4). Alternatives: a tighter 2–3 min (safer, but shows "tap to refresh" more
@@ -862,7 +870,13 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   PNGs, but does not yet fail on pixel drift or auto-commit the canonical set, because
   local and CI rendering can differ and the refresh apparatus isn't wired. The
   drift-refresh + visual-diff-comment follow-up is tracked under Phase 0. Reversible —
-  adding the gate is additive.
+  adding the gate is additive. **Superseded by the screenshot-drift-refresh PR**, which
+  wires the apparatus mirroring the siblings: `screenshot-tests` clears-then-records,
+  enforces the `--tests` allow-list, and fails on drift on pushes/forks;
+  `sync-screenshots` (`mikelward/ci-commit-artifact@main`) pushes the refreshed set back to
+  same-repo PR branches; `post-screenshot-diff` posts the before/after comment. Kept OUT of
+  the required `lanes` gate until `repo setup` provisions `CI_COMMIT_ARTIFACT_TOKEN`
+  post-merge, so its bootstrap failure doesn't block that PR.
 - **Brand accent = red, and Material You (dynamic color) off by default** (maintainer
   "let's try red", 2026-09-19). `TrackmoTheme` now seeds a red `primary` (with its
   container/secondary/tertiary partners) so red reads as an accent on buttons and the
