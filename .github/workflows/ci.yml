@@ -307,7 +307,25 @@ jobs:
           HEAD_SHA=$(git rev-parse HEAD)
           mapfile -t entries < <(git diff --name-status "$BASE_SHA" HEAD -- app/src/test/snapshots/images/ | grep -E '^[AM]' || true)
           if [ ${#entries[@]} -eq 0 ]; then
-            echo "No added or changed screenshots vs merge-base; skipping comment."
+            echo "No added or changed screenshots vs merge-base."
+            # A push may have reverted an earlier visual change, leaving a stale
+            # diff comment from a prior run showing images from an obsolete
+            # revision. Delete any marked comment so the thread matches reality.
+            # --paginate so the marker isn't missed past 100 comments; the `if`
+            # guards a listing failure (skip rather than guess), and an empty
+            # id list makes the loop a no-op.
+            if ids=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              --jq '.[] | select((.body // "") | startswith("<!-- screenshot-diff -->")) | .id'); then
+              for cid in $ids; do
+                if gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${cid}" > /dev/null; then
+                  echo "Deleted stale screenshot-diff comment ${cid}."
+                else
+                  echo "::warning::Could not delete stale screenshot-diff comment ${cid}."
+                fi
+              done
+            else
+              echo "::warning::Could not list PR comments to clear a stale screenshot-diff comment."
+            fi
             exit 0
           fi
           raw="https://github.com/${GITHUB_REPOSITORY}/raw"
