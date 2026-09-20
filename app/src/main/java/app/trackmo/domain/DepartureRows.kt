@@ -91,28 +91,44 @@ object DepartureRows {
         }.sortedWith(rowOrder)
 
     /**
-     * Split [row]'s upcoming departures into per-(destination, branch) lines for rendering,
-     * soonest group first, with each line's countdowns capped to the next [maxTimes] so a card
-     * or widget shows a bounded few *per destination*. A non-branching row yields a single group.
+     * Split [row]'s upcoming departures into per-destination lines for rendering, soonest group
+     * first, with each line's countdowns capped to the next [maxTimes] so a card or widget shows
+     * a bounded few *per destination*. A non-branching row yields a single group.
      *
      * **Group first, cap within a group** — [maxTimes] bounds the countdowns on each line, not
      * the flat list before grouping. Capping first would drop a divergent destination whose
      * soonest train is beyond the first [maxTimes] overall (three imminent Morden trains then a
      * Battersea): the Battersea line would vanish though it's a valid service (SPEC D8). Every
-     * (destination, branch) group therefore survives; only the times *within* each are bounded.
+     * group therefore survives; only the times *within* each are bounded.
      *
      * Groups come back soonest-first: [row]'s upcoming is soonest-first and `groupBy` keeps
      * first-encounter order, so the soonest departure's group leads and the rest follow by their
-     * own soonest. The **branch is part of the key** because one terminus can be reached by two
-     * trunks (Edgware via Bank and via Charing Cross), and merging those would label the later
-     * train's countdown with the first train's branch — a countdown must never sit under the
-     * wrong destination *or* branch (SPEC D8). Shared by the in-app card and the widget so the
-     * two surfaces group a branching row identically and neither can drift from the other.
+     * own soonest.
+     *
+     * **The via-branch is grouped by [topology], not by its raw string** (SPEC D8). One terminus
+     * reached by two trunks (Edgware via Bank and via Charing Cross) is split into two labeled
+     * lines *only where the trunk is still a choice ahead of this stop*; where the trunks have
+     * already met (or not yet split) the two are the same service from here, so they merge into
+     * one line and the now-meaningless branch label is dropped — a countdown still never sits
+     * under the wrong destination or branch, and a rider isn't shown a distinction that makes no
+     * difference from where they're standing. With [RouteTopology.EMPTY] (the default) every
+     * branch keeps its raw label and nothing merges, the pre-topology behavior. Shared by the
+     * in-app card and the widget so the two surfaces group a branching row identically and
+     * neither can drift from the other.
      */
-    fun destinationLines(row: DepartureRow, maxTimes: Int): List<DestinationGroup> =
+    fun destinationLines(
+        row: DepartureRow,
+        maxTimes: Int,
+        topology: RouteTopology = RouteTopology.EMPTY,
+    ): List<DestinationGroup> =
         row.upcoming
-            .groupBy { it.destination to it.branch }
-            .map { (key, times) -> DestinationGroup(key.first, key.second, times.take(maxTimes)) }
+            .map { it to topology.grouping(row.lineId, row.stopId, it.destination, it.branch) }
+            .groupBy { (departure, grouping) -> departure.destination to grouping.mergeKey }
+            .map { (key, entries) ->
+                // All entries in a group share a merge key (the same forward path from this stop),
+                // so they also share the branch label the group resolved to.
+                DestinationGroup(key.first, entries.first().second.label, entries.map { it.first }.take(maxTimes))
+            }
 
     /**
      * Collapse the "near me now" rows so a **(line, direction)** appears once — from the
@@ -417,10 +433,11 @@ data class StopArrivals(
 
 /**
  * One rendered line of a (service, stop, direction) row (see [DepartureRows.destinationLines]):
- * a single [destination] reached via a single [branch] (TfL's via-trunk, null for most
- * services), with that group's own soonest-first [times]. A branching row yields several of
- * these; the soonest leads. Rendered per-surface — the in-app card measures how the branch
- * fits, the widget shows a compact form — but grouped identically by the shared function.
+ * a single [destination] with that group's own soonest-first [times]. [branch] is the via-trunk
+ * label to show (the board form, `Bank` / `Charing X`) — null for most services, and also null
+ * where a branching line's trunk is not a choice from this stop, so two equivalent trunks merge
+ * into one unlabeled line (see [RouteTopology]). A branching row yields several of these; the
+ * soonest leads. Grouped identically for both surfaces by the shared function.
  */
 data class DestinationGroup(
     val destination: String,

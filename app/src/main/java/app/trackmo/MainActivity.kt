@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -41,6 +42,8 @@ import app.trackmo.data.DataStoreAppSettings
 import app.trackmo.data.logAppSettingsWarning
 import app.trackmo.data.DataStoreStarredRowsStore
 import app.trackmo.data.KtorTflClient
+import app.trackmo.data.RouteTopologyStore
+import app.trackmo.ui.LocalRouteTopology
 import app.trackmo.ui.LicensesScreen
 import app.trackmo.ui.LocationGate
 import app.trackmo.ui.MainScreen
@@ -56,8 +59,10 @@ import app.trackmo.widget.applyLiveWidgetRefresh
 import app.trackmo.widget.syncLiveWidgetRefreshSchedule
 import androidx.glance.appwidget.updateAll
 import java.time.Instant
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     // The location gate: resolves the nearby stops (an on-demand, location-sending action)
@@ -74,9 +79,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // The bundled branch topology, loaded off the main thread so the ~9 KB asset parse never
+    // sits on the cold-start / first-frame path (SPEC principles 3–5). The initial value is the
+    // process-wide cached instance if one is already parsed — free of IO, so after a rotation the
+    // retained view models' departures render merged on the very first frame rather than
+    // flickering through split rows while the async load re-runs — and RouteTopology.EMPTY (the
+    // safe default: branches as TfL gives them, nothing merged) only on a true cold start, where
+    // the async load below fills it the instant the asset is ready, well before the network
+    // snapshot arrives. The widget loads the same cached instance in its own coroutine.
+    private val routeTopology = mutableStateOf(RouteTopologyStore.cached())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lifecycleScope.launch {
+            routeTopology.value = withContext(Dispatchers.IO) { RouteTopologyStore.load(applicationContext) }
+        }
         setContent {
             TrackmoAppRoot {
                 val nearby by nearbyViewModel.state.collectAsStateWithLifecycle()
@@ -291,24 +309,29 @@ class MainActivity : ComponentActivity() {
             // removes DeparturesForStops from composition and stops the polling (Codex).
             RefreshOnForeground(viewModel)
             AutoRefresh(viewModel)
-            MainScreen(
-                state = state,
-                now = tickingNow(),
-                onRefresh = viewModel::refresh,
-                refreshing = refreshing,
-                // From "near me now": collapse a line served by several adjacent nearby stops
-                // to its nearest stop (SPEC *Finding stops → Near me now*). Empty for a
-                // location-free list (a watched-stops view), which is shown as-is.
-                stopDistanceMeters = stopDistanceMeters,
-                onLocateHere = onLocateHere,
-                starred = starred,
-                onToggleStar = viewModel::toggleStar,
-                starringAvailable = starringAvailable,
-                starWriteFailed = starWriteFailed,
-                onStarWriteFailureShown = viewModel::starWriteFailureShown,
-                onOpenLicenses = onOpenLicenses,
-                onOpenSettings = onOpenSettings,
-            )
+            // Provide the branch topology so the card groups a branching row the way the widget
+            // does — equivalent trunks merged, the label kept only where the trunk is a choice
+            // ahead of the stop (see DepartureRows.destinationLines).
+            CompositionLocalProvider(LocalRouteTopology provides routeTopology.value) {
+                MainScreen(
+                    state = state,
+                    now = tickingNow(),
+                    onRefresh = viewModel::refresh,
+                    refreshing = refreshing,
+                    // From "near me now": collapse a line served by several adjacent nearby stops
+                    // to its nearest stop (SPEC *Finding stops → Near me now*). Empty for a
+                    // location-free list (a watched-stops view), which is shown as-is.
+                    stopDistanceMeters = stopDistanceMeters,
+                    onLocateHere = onLocateHere,
+                    starred = starred,
+                    onToggleStar = viewModel::toggleStar,
+                    starringAvailable = starringAvailable,
+                    starWriteFailed = starWriteFailed,
+                    onStarWriteFailureShown = viewModel::starWriteFailureShown,
+                    onOpenLicenses = onOpenLicenses,
+                    onOpenSettings = onOpenSettings,
+                )
+            }
         }
     }
 

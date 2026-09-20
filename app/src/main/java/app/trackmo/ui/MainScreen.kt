@@ -452,7 +452,7 @@ private fun DepartureRowCard(
             // shared `destinationLines` (the widget uses the same one, so the two surfaces
             // can't drift); each line renders identically — the leading one is not styled as a
             // bigger "headline" — so a multi-line card reads as a parallel set.
-            val destinationLines = DepartureRows.destinationLines(row, MAX_TIMES)
+            val destinationLines = DepartureRows.destinationLines(row, MAX_TIMES, LocalRouteTopology.current)
 
             // The pill sits to the left of the destination line(s). A single-destination
             // card centers the pill against its one line so pill and destination sit level
