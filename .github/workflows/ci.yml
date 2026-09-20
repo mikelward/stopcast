@@ -80,21 +80,83 @@ jobs:
     timeout-minutes: 20
     needs: classify
     if: needs.classify.outputs.docs_only != 'true'
+    # Read-only: this job renders PR-controlled Gradle code and only uploads
+    # an artifact. The commit-back moved to `sync-screenshots` below, which
+    # runs nothing from the PR — that separation is the fix, not a hardened
+    # version of committing from here (see the ci-commit-artifact repo's
+    # README). A job running PR code must hold no repo-write credential.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
+          # Same-repo PRs check out the head *branch* (not refs/pull/N/merge)
+          # so recorded drift is measured against the PNGs actually committed
+          # on the branch `sync-screenshots` pushes back to; the `build` job
+          # still runs these tests on the merge ref for pass/fail.
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || '' }}
           persist-credentials: false
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2  # v5
-      # One step per screenshot class, an explicit allow-list: a new
-      # *ScreenshotTest not added here records nothing even when it passes.
-      # The `build` job already runs these for pass/fail; this job re-runs them
-      # in record mode to produce the PNGs uploaded below for review. Recording
-      # the canonical set back onto the PR branch (drift refresh + visual-diff
-      # comment) is the tracked follow-up — see TODO Phase 0.
+        with:
+          # PR-controlled code must not write the shared cache; only main
+          # pushes do.
+          cache-read-only: ${{ github.event_name != 'push' }}
+      - name: Every screenshot class is on the allow-list
+        # This job records against an explicit `--tests` allow-list, one step
+        # per class, so a class nobody added a step for records NOTHING here —
+        # it passes in `build`'s `./gradlew test` like any other unit test, its
+        # captures are never written, and the drift check has nothing to
+        # compare. AGENTS.md warns about exactly this; nothing enforced it.
+        # Cheap enough to run before Gradle: a grep over the sources and this
+        # file that fails the moment the two disagree.
+        run: |
+          # The allow-list is what THIS job's own steps actually run, scoped by
+          # the job block rather than matched across the file, and fully
+          # qualified on both sides (`app.trackmo.ui.X` and `app.trackmo.X`
+          # are different classes to Gradle).
+          allow=$(awk '
+            /^  screenshot-tests:/ { in_job = 1; next }
+            in_job && /^  [A-Za-z0-9_-]+:/ { in_job = 0 }
+            in_job && $0 !~ /^[[:space:]]*#/ { print }
+          ' .github/workflows/ci.yml \
+            | grep -o -- '--tests "[A-Za-z0-9_.]*"' | sed 's/^--tests "//; s/"$//')
+          # A scan that finds nothing must fail loudly, not vacuously pass:
+          # renaming this job would otherwise empty the allow-list and report
+          # every class as missing.
+          if [ -z "$allow" ]; then
+            echo "::error::No --tests entries found in the screenshot-tests job."
+            echo "The allow-list scan found nothing — did the job get renamed?"
+            exit 1
+          fi
+          missing=""
+          for f in $(grep -rl 'class [A-Za-z0-9_]*ScreenshotTest' app/src/test); do
+            pkg=$(sed -n 's/^package \([A-Za-z0-9_.]*\).*/\1/p' "$f" | head -1)
+            for cls in $(sed -n 's/.*class \([A-Za-z0-9_]*ScreenshotTest\).*/\1/p' "$f"); do
+              printf '%s\n' "$allow" | grep -qxF "$pkg.$cls" \
+                || missing="$missing $pkg.$cls"
+            done
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Screenshot classes with no recording step in ci.yml:$missing"
+            echo "Add a 'Run … screenshot tests' step for each, or they record nothing."
+            exit 1
+          fi
+      - name: Clear committed snapshots before recording
+        # Recording only overwrites files the suites still produce; starting
+        # from empty means a removed test surfaces as a deletion in the refresh
+        # commit instead of a stale PNG living forever.
+        run: |
+          rm -rf app/src/test/snapshots/images
+          mkdir -p app/src/test/snapshots/images
+      # One step per screenshot class, the explicit allow-list the guard above
+      # enforces. `build` already runs these for pass/fail; this job records
+      # the PNGs that `sync-screenshots` commits back and `post-screenshot-diff`
+      # embeds for review.
       - name: Run MainScreen screenshot tests
         run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.ui.MainScreenScreenshotTest" -Proborazzi.test.record=true
       - name: Run LocationGate screenshot tests
@@ -103,20 +165,197 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.widget.WidgetScreenshotTest" -Proborazzi.test.record=true
       - name: Run Licenses screenshot tests
         run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.ui.LicensesScreenshotTest" -Proborazzi.test.record=true
+      - name: Print failing test details
+        if: failure()
+        run: |
+          shopt -s nullglob globstar
+          for xml in app/build/test-results/**/TEST-*.xml; do
+            if grep -q "<\(failure\|error\)" "$xml"; then
+              echo "::group::$xml"
+              cat "$xml"
+              echo "::endgroup::"
+            fi
+          done
+      - name: Fail on screenshot drift when a refresh cannot be pushed
+        # Fork PRs and pushes to main can't receive a refresh commit, so
+        # recorded drift must fail the job loudly there instead of hiding in
+        # the artifact under a green check. Same-repo PRs skip this — their
+        # drift is pushed back by `sync-screenshots`.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          if [ -n "$(git status --porcelain -- app/src/test/snapshots/images)" ]; then
+            git status --porcelain -- app/src/test/snapshots/images
+            echo "::error::Recorded screenshots differ from the committed ones; re-record and commit them."
+            exit 1
+          fi
       - name: Upload Roborazzi screenshots
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: roborazzi-screenshots
           path: app/src/test/snapshots/images/
-          if-no-files-found: warn
+          # A job that died before any test ran still uploads an empty
+          # directory, and that emptiness is itself the diagnosis. This is
+          # also `sync-screenshots`' only input.
+          if-no-files-found: ignore
       - name: Upload screenshot test reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: screenshot-test-reports
-          path: app/build/reports/tests/
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
           if-no-files-found: ignore
+          retention-days: 1
+
+  # Pushes any drift in `screenshot-tests`' regenerated snapshots back to a
+  # same-repo PR branch. Delegated to mikelward/ci-commit-artifact's reusable
+  # workflow rather than done inline in `screenshot-tests`, specifically so the
+  # commit/push never shares a job with the PR's own Gradle code — see that
+  # repo's README for the structural reasoning. The @main reference is
+  # deliberate: a shared reusable workflow this fleet tracks, so a fix there
+  # reaches every consumer's next run with no per-repo bump.
+  #
+  # NOTE: this needs CI_COMMIT_ARTIFACT_TOKEN in a `ci-commit-artifact`
+  # environment, provisioned by `repo setup` only once a workflow on the
+  # default branch actually calls mikelward/ci-commit-artifact. So on the PR
+  # that first adds this job it has no token and fails — deliberately kept OUT
+  # of the required `lanes` gate below so that failure doesn't block the merge.
+  # Re-run `repo setup` after this lands on main to provision the token; the
+  # next UI PR's refresh then succeeds.
+  sync-screenshots:
+    name: sync-screenshots
+    needs: [classify, screenshot-tests]
+    # Same-repo PRs only — fork branches aren't pushable with this token, and
+    # pushing to main from CI is not this job's purpose. The bare `needs:`
+    # already implies success(), so this also skips on a docs-only PR (where
+    # screenshot-tests is skipped).
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    uses: mikelward/ci-commit-artifact/.github/workflows/commit-artifact.yml@main
+    # All three are required by GitHub's static check at call time: the called
+    # workflow's commit job declares contents/pull-requests/actions write, and
+    # GitHub refuses to start a run whose caller grants less than the callee
+    # requests. pull-requests: write is dead weight here (comment-marker stays
+    # unset and post-screenshot-diff posts the comment), kept only because the
+    # platform demands it.
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    with:
+      artifact-name: roborazzi-screenshots
+      dest-path: app/src/test/snapshots/images
+      commit-message: 'ci: refresh recorded screenshots'
+      branch-ref: ${{ github.event.pull_request.head.ref }}
+      # The tested SHA, not the branch name: the artifact was rendered against
+      # this commit, and expected-head-sha lets the hub tell a genuine lost
+      # race (branch advanced since) apart from an ordinary no-op.
+      expected-head-sha: ${{ github.event.pull_request.head.sha }}
+      # comment-marker stays unset: this repo posts its own richer visual diff
+      # (post-screenshot-diff below), not the hub's plain status line.
+    # `inherit`, not a `secrets:` block: the called workflow's commit job reads
+    # CI_COMMIT_ARTIFACT_TOKEN from this repository's `ci-commit-artifact`
+    # environment, and an environment secret reaches a called workflow no other
+    # way. The corresponding zizmor finding is excused inline; .github/zizmor.yml
+    # carries the matching ref-pin policy for the reusable workflow.
+    secrets: inherit # zizmor: ignore[secrets-inherit]
+
+  # Embeds every snapshot this PR adds or changes, pinned to commit SHAs, into
+  # a single auto-updated PR comment (marker: <!-- screenshot-diff -->) so
+  # reviewers see the visual delta inline without downloading the artifact. Its
+  # own job because a reusable-workflow job (`sync-screenshots`) can't carry
+  # extra steps, and because posting a comment needs a pull-requests: write
+  # token that must stay away from the render job.
+  post-screenshot-diff:
+    name: post-screenshot-diff
+    runs-on: ubuntu-latest
+    needs: [sync-screenshots]
+    # Same-repo-PR-ness is already implied: sync-screenshots only reaches
+    # success (rather than being skipped) on that path.
+    if: needs.sync-screenshots.result == 'success'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          # The diff script runs `git merge-base HEAD origin/<base>`, and the
+          # default shallow clone fetches no base branch — without this the
+          # call fails before a comment can post.
+          fetch-depth: 0
+          # The hub workflow's own authoritative result — the resulting head of
+          # branch-ref after it ran, whether or not it actually pushed — never a
+          # commit made locally in this job.
+          ref: ${{ needs.sync-screenshots.outputs.commit-sha }}
+          persist-credentials: false
+      - name: Post screenshot diffs as a PR comment
+        # Convenience comment with before/after embeds pinned to commit SHAs;
+        # never gates the job. Embeds go through github.com/<repo>/raw/<sha>/…
+        # rather than raw.githubusercontent.com: that CDN origin never sees a
+        # github.com session cookie, so every embed 404s once the repo is
+        # private. The github.com path authorizes the viewer and redirects.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          BASE_SHA=$(git merge-base HEAD "origin/${GITHUB_BASE_REF}")
+          HEAD_SHA=$(git rev-parse HEAD)
+          mapfile -t entries < <(git diff --name-status "$BASE_SHA" HEAD -- app/src/test/snapshots/images/ | grep -E '^[AM]' || true)
+          if [ ${#entries[@]} -eq 0 ]; then
+            echo "No added or changed screenshots vs merge-base; skipping comment."
+            exit 0
+          fi
+          raw="https://github.com/${GITHUB_REPOSITORY}/raw"
+          files="https://github.com/${GITHUB_REPOSITORY}/pull/${PR_NUMBER}/files"
+          body="<!-- screenshot-diff -->"$'\n'"## Screenshot diffs"$'\n\n'"Auto-posted by CI. Images pinned to \`${HEAD_SHA:0:7}\`; each caption opens the diff."$'\n'
+          count=0
+          for entry in "${entries[@]}"; do
+            status="${entry%%$'\t'*}"
+            path="${entry#*$'\t'}"
+            name=$(basename "$path")
+            # GitHub anchors a file in the Files changed tab by the sha256 of its path.
+            anchor=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
+            count=$((count+1))
+            if [ "$count" -gt 20 ]; then
+              body+=$'\n'"_…truncated: more than 20 added/changed screenshots._"
+              break
+            fi
+            if [ "$status" = "A" ]; then
+              body+=$'\n'"**Added — [\`${name}\`](${files}#diff-${anchor})**"$'\n\n'"<img src=\"${raw}/${HEAD_SHA}/${path}\" width=\"320\">"$'\n'
+            else
+              body+=$'\n'"**Changed — [\`${name}\`](${files}#diff-${anchor})**"$'\n\n'"| Before | After |"$'\n'"| --- | --- |"$'\n'"| <img src=\"${raw}/${BASE_SHA}/${path}\" width=\"320\"> | <img src=\"${raw}/${HEAD_SHA}/${path}\" width=\"320\"> |"$'\n'
+            fi
+          done
+          # `gh api` exits non-zero on an HTTP error AND on a body jq can't
+          # parse; either way the answer is skip, not guess, so a swallowed
+          # error can't post a duplicate. --paginate so the marker isn't lost
+          # off page one past 100 comments.
+          if ! ids=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+            --jq '.[] | select((.body // "") | startswith("<!-- screenshot-diff -->")) | .id'); then
+            echo "::warning::Could not list PR comments; skipping the screenshot-diff comment rather than risking a duplicate. The snapshots are in the roborazzi-screenshots artifact."
+            exit 0
+          fi
+          existing="${ids%%$'\n'*}"
+          if [ -n "$existing" ]; then
+            if gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" \
+              -f body="$body" > /dev/null; then
+              echo "Updated screenshot-diff comment ${existing}."
+            else
+              echo "::warning::Could not update screenshot-diff comment ${existing}; the snapshots are in the roborazzi-screenshots artifact."
+            fi
+          else
+            if gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              -f body="$body" > /dev/null; then
+              echo "Posted new screenshot-diff comment."
+            else
+              echo "::warning::Could not post the screenshot-diff comment; the snapshots are in the roborazzi-screenshots artifact."
+            fi
+          fi
 
   lanes:
     name: lanes
