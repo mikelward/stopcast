@@ -705,9 +705,16 @@ and these carry the rest as their own PRs:
       update. Same interim-nearby-source family as the dedupe bullet — the snapshot carries the
       stop *set*, so a fix is app-side (clear-if-different-set + `updateAll`), not a schema
       reversal, but it's throwaway surgery on the interim source and needs a device to verify
-      the `updateAll`/blank-flicker behavior. Moot once Phase 2's stable watched stops replace
-      the location-derived set (the set then changes only when the user edits it). The aging
-      stamp is the honesty floor until then.
+      the `updateAll`/blank-flicker behavior. Much *rarer* once Phase 2's stable watched stops
+      replace the location-derived set (the set then changes only on an explicit edit, not on
+      every location drift), but not eliminated — an edit whose first fetch fails still leaves
+      the old set on the widget — so this scoping stays an open task even after Phase 2, until a
+      render-time snapshot-vs-set comparison (or equivalent invalidation) lands. The aging stamp
+      is the honesty floor meanwhile. **PR #53 attempted the app-side clear and was deferred
+      (closed unmerged) — see *Decisions needing review*: seven race findings in three review
+      rounds all traced to the same shape (an activity effect clearing the shared store
+      concurrently with the per-set writers), which is a design signal, not seven bugs. Revisit
+      as a render-path scoping (the redesign option below), not as more race patches.**
 - [ ] **Size-aware row cap (own PR, Codex P2 on #44).** The fixed 6-row cap can clip at the
       110dp minimum height; derive the count from `LocalSize`. The node-assertion harness that
       landed can't verify "doesn't clip" (it asserts nodes, not pixels), so this waits on
@@ -796,6 +803,50 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
 
 ## Decisions needing review
 
+- **Widget-snapshot-scope (Codex P1 from #44) deferred: PR #53 closed unmerged; aging stamp
+  is the honesty floor and the render-path scoping stays an open task (not closed by Phase 2)**
+  (autopilot, maintainer said "defer 53"). The gap is
+  real: after a move whose new-set fetch fails, the previous area's departures linger on the
+  nameless widget reading as live until the stamp ages them stale (SPEC principle 1 / D4). PR
+  #53's app-side clear worked, but Codex found **seven race findings across three review
+  rounds**, every one the same shape — an activity-level effect clearing the shared snapshot
+  store concurrently with the per-set `MainViewModel` writers (read-check-write; redraw-after-
+  clear; retained writer saving after an Empty-path clear; cancellation mid-`updateAll`
+  skipping the retry). The same shape recurring — this activity-effect clear racing the
+  concurrent per-set writer lifecycle — is evidence about the design rather than seven separate
+  bugs (the sibling repos' AGENTS.md codify that as a rule; trackmo's own does not, so this is
+  the escalation's reasoning, not a trackmo policy citation). A design change is the
+  maintainer's call — so this is escalated rather than patched an eighth time. The three
+  options, cheapest-to-revisit first:
+  - **Defer (chosen).** Close #53, keep the per-row withhold + aging stamp as the honesty
+    floor. The widget still ages stale data to `?` on its own (the staleness redraw that *did*
+    land), so the failure mode is "shows the old area's trains until the stamp ages them out",
+    not "shows them as live forever". Cost: that window is ~5 minutes **plus** the staleness
+    redraw's scheduling delay — it's a `WorkManager` `setInitialDelay` wake (deferrable, and
+    Doze/batching can push it past the boundary), so on a closed-app widget the flip to stale
+    isn't bounded to a hard 5 minutes. Fully reversible — the work is captured in the closed
+    PR and item 691.
+  - **Redesign race-free on the render path.** Move the scoping off the concurrent activity
+    effect: persist the *current resolved set* on resolution, independently of the snapshot's
+    own save path — a snapshot save happens only on a successful fetch, so binding the set to
+    it would leave both pointing at the old area in exactly the failed-fetch case this exists
+    to fix, preserving the wrong-location window rather than closing it (Codex's finding on the
+    first cut of this note). The widget's own `provideGlance` then blanks a snapshot whose stop
+    set doesn't match that independently-persisted current set, so the decision is made where
+    the widget renders instead of by a second concurrent mutator. Deletes the whole race class
+    rather than patching instances, but it needs a new persisted "current set" surface written
+    on resolution (ownership coordinated with the snapshot writer) plus a device check — larger
+    than #53 was.
+  - **Keep patching #53's design.** Fix findings G (cancel the retained writer on the Empty
+    path) and H (guarantee the redraw on cancellation) and ship. Rejected as autopilot's call:
+    it's the eighth race patch on a shape that keeps producing them, exactly the move the
+    design-signal reasoning above says not to make alone.
+  Recommendation: option 2 if the window matters before Phase 2. Phase 2's stable watched stops
+  make it much *rarer* — the set then changes only on an explicit edit, not on every location
+  drift — but they do **not** eliminate it: an edit whose first arrivals fetch fails still
+  leaves the previous set's departures on the widget, so the render-path scoping (or a
+  render-time compare against an independently-persisted watched set) stays worthwhile even
+  then, not fully mooted (Codex P1). **Maintainer's call.**
 - **About/Licenses entry point is an overflow menu → About dialog → full-screen Licenses
   overlay, reachable from every state** (autopilot, licenses-screen PR). Trackmo has no nav
   graph and, until now, no About/Settings surface, so the licenses screen needed a home.
