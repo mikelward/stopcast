@@ -552,7 +552,7 @@ private fun DestinationLine(
     now: Instant,
     modifier: Modifier = Modifier,
     // The "via" branch (TfL's `towards`), shown parenthesized after the destination — the
-    // cue a rider uses to pick a train ("Battersea Power (Charing Cross)"). Null for most
+    // cue a rider uses to pick a train ("Battersea Power (Charing X)"). Null for most
     // services, so the common row never pays the measuring path below.
     branch: String? = null,
 ) {
@@ -572,11 +572,10 @@ private fun DestinationLine(
             )
         } else {
             // The branch is the cue that tells a branching line's two trunks apart, so it
-            // outranks the terminus for space: it keeps its full name where the row can fit
-            // it, falls back to the board's own short form ("Charing Cross" → "Charing X")
-            // where it can't, and the destination truncates to make the room (SPEC
-            // destination-label). Measured against the actual row width so the full name shows
-            // wherever it fits and shortens only when it must — never abbreviated needlessly.
+            // outranks the terminus for space: it keeps its label and the destination
+            // truncates to make the room (SPEC destination-label). The label is already the
+            // normalized short board form ("Charing X"), so [abbreviateBranch] is a no-op here; a
+            // fuller rider-readable form under width pressure is a tracked follow-up (TODO).
             BoxWithConstraints(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                 val style = MaterialTheme.typography.titleMedium
                 val measurer = rememberTextMeasurer()

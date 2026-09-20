@@ -29,20 +29,46 @@ fun cleanStopName(raw: String): String {
 }
 
 private const val VIA = " via "
+private const val BRANCH_SUFFIX = " Branch"
 
 /**
- * The "via" branch TfL names in a prediction's `towards` — "Charing Cross" from
+ * The "via" branch TfL names in a prediction's `towards` — `Charing X` from
  * "Battersea Power Station via Charing Cross" — or null when there is no "via" (most
  * services, and buses, whose `towards` is a plain destination or a comma list). This is
  * the branch a rider reads off the platform board to pick a train, distinct from the
  * terminus. Anything past a comma is dropped as noise, matching the destination cleaning.
- * Returned in full; [abbreviateBranch] shortens it only when a row can't fit the full form.
+ *
+ * TfL's live feed spells the same trunk several ways — the Northern line's two central
+ * trunks arrive as `Bank`, `Bank Branch`, and `CX` — so this folds them to one short
+ * label the rider reads the same every time: a trailing " Branch" is dropped as noise,
+ * and TfL's cryptic `CX` and the full `Charing Cross` both render as the board's own
+ * `Charing X`. So the label is already a short form; [abbreviateBranch] only shortens a
+ * still-longer branch (e.g. the Central line's Hainault-loop vias) when a row can't fit it.
  */
 fun branchOf(towards: String?): String? {
     if (towards == null) return null
     val idx = towards.indexOf(VIA, ignoreCase = true)
     if (idx < 0) return null
-    return towards.substring(idx + VIA.length).substringBefore(",").trim().ifBlank { null }
+    return normalizeBranch(towards.substring(idx + VIA.length).substringBefore(",").trim())
+}
+
+/**
+ * Folds a branch label to the one short board form — see [branchOf] for the spellings TfL
+ * uses and why. Applied both when parsing a prediction's `towards` and when restoring a
+ * persisted snapshot, so a value an older build stored ("Charing Cross", "Bank Branch")
+ * reads back as the same canonical label ("Charing X", "Bank") a fresh fetch produces — a row
+ * never shows two spellings for one trunk across a process restart. `null`/blank is `null`.
+ */
+fun normalizeBranch(raw: String?): String? {
+    if (raw == null) return null
+    var branch = raw.trim()
+    if (branch.endsWith(BRANCH_SUFFIX, ignoreCase = true)) {
+        branch = branch.dropLast(BRANCH_SUFFIX.length).trim()
+    }
+    if (branch.equals("CX", ignoreCase = true) || branch.equals("Charing Cross", ignoreCase = true)) {
+        return "Charing X"
+    }
+    return branch.ifBlank { null }
 }
 
 // The compass words, "Cross", and "Central" a departures board itself shortens ("Charing X",

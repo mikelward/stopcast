@@ -4,6 +4,7 @@ import app.trackmo.domain.Departure
 import app.trackmo.domain.DeparturesSnapshot
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.StopArrivals
+import app.trackmo.domain.normalizeBranch
 import java.time.Instant
 import kotlinx.serialization.Serializable
 
@@ -132,5 +133,7 @@ private fun PersistedDeparture.toDomain(): Departure =
         platform = platform,
         expectedArrival = Instant.ofEpochMilli(expectedArrivalMillis),
         mode = mode,
-        branch = branch,
+        // Fold an older build's raw spelling ("Charing Cross", "Bank Branch") to the canonical
+        // short label on restore, so a persisted row matches a freshly-fetched one (SPEC).
+        branch = normalizeBranch(branch),
     )

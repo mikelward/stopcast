@@ -160,7 +160,7 @@ On a **branching line** (the Northern most visibly) two trains to the same termi
 run via different central trunks, and TfL names the trunk in `towards` ("Battersea Power
 Station via Charing Cross") — the cue a rider uses to pick their train. So when `towards`
 carries a "via", the branch is shown **parenthesized after the destination** ("Battersea
-Power (Charing Cross)"). The branch **participates in grouping**: within a direction, a
+Power (Charing X)"). The branch **participates in grouping**: within a direction, a
 line is split not just per destination (D8) but per terminus-and-branch, so two trains to
 one terminus via different trunks (Edgware via Bank and via Charing Cross) each get their
 own line and their own merged countdown. Merging across branches would label the later
@@ -168,17 +168,17 @@ train's countdown with the first train's branch, defeating the disambiguation �
 countdown must never sit under the wrong branch any more than under the wrong
 destination.
 
+TfL spells the same trunk several ways in its feed — the Northern line's two central
+trunks arrive as "Bank", "Bank Branch", and "CX", plus the full "Charing Cross" — so the
+label is normalized to one short board form per trunk ("Bank", "Charing X"), the spelling
+a rider reads the same on every row.
+
 The **branch outranks the terminus for space**, because on a branching line the trunk is
 what tells two otherwise-identical trains apart — losing it defeats the row. So where the
-full pair won't fit, the branch is kept and the **destination truncates** to make room
-("Batter… (Charing Cross)"); and before the destination is crushed too far, the branch
-itself shortens to the form a departures board uses — the compass words, "Cross", and
-"Central" abbreviated ("Charing Cross" → "Charing X", "East Ham" → "E. Ham",
-"Walthamstow Central" → "Walthamstow C.") — so a tight row reads
-"Batter… (Charing X)" rather than one unreadable stub plus a long branch. The full branch
-still shows wherever the row can fit it (the abbreviation is measured, not unconditional);
-a branch with no shortenable word stays whole and the destination simply truncates
-further.
+pair won't fit, the branch is kept and the **destination truncates** to make room
+("Batter… (Charing X)"). A width-adaptive form that shortens the branch further under
+pressure (to `Charing`, then `CX`) and truncates rather than elides the destination is a
+tracked refinement (`TODO.md`).
 
 The row set is not purely prediction-derived: a watched stop or line with a **known
 disruption** but **zero predictions** still contributes a row — a status row (for the
@@ -397,8 +397,9 @@ passing old times off as live (D4). Its rows **mirror the in-app list**: the sam
 grouped the same way — one line per (destination, branch), so a branching service's
 divergent trains each keep their own countdown — and the user's **starred** services
 pinned to the top (D8), sharing the domain's grouping and pinning so the two surfaces can't
-drift. It shows the via-branch in the board's short form ("Charing X") since the compact
-widget can't measure how the full name fits. (Reordering the nearby set closest-first is
+drift. It shows the via-branch in the same normalized short form as the app ("Charing X"):
+the label is one short form per trunk on every surface, so neither has to measure a fuller
+name. (Reordering the nearby set closest-first is
 not yet mirrored — it needs per-stop distances the snapshot doesn't carry and is moot once
 Phase 2's watched stops replace the interim nearby source.) The app pushes an update whenever it fetches, so the
 widget follows the app's last refresh rather than waking on the OS's periodic schedule

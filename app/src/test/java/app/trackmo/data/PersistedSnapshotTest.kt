@@ -104,7 +104,7 @@ class PersistedSnapshotTest {
                     departures = listOf(
                         Departure(
                             "northern", "Northern", "outbound", "Battersea Power",
-                            null, now.plusSeconds(120), "tube", branch = "Charing Cross",
+                            null, now.plusSeconds(120), "tube", branch = "Charing X",
                         ),
                     ),
                     fetchedAt = now,
@@ -113,8 +113,40 @@ class PersistedSnapshotTest {
             fetchedAt = now,
         )
         val restored = snapshot.toPersisted().toDomain()!!
-        assertEquals("Charing Cross", restored.stops.single().departures.single().branch)
+        assertEquals("Charing X", restored.stops.single().departures.single().branch)
         assertEquals(snapshot, restored)
+    }
+
+    @Test
+    fun `restoring normalizes an older build's raw branch spelling`() {
+        // A snapshot a previous build wrote can carry TfL's raw "Charing Cross" / "Bank Branch";
+        // restore folds them to the canonical short label so a row never shows two spellings for
+        // one trunk across a process restart (before the first refresh, and while offline).
+        val legacy = DeparturesSnapshot(
+            stops = listOf(
+                StopArrivals(
+                    stopId = "940GZZLUEUS",
+                    stopName = "Euston",
+                    departures = listOf(
+                        Departure(
+                            "northern", "Northern", "outbound", "Battersea Power",
+                            null, now.plusSeconds(120), "tube", branch = "Charing Cross",
+                        ),
+                        Departure(
+                            "northern", "Northern", "outbound", "Edgware",
+                            null, now.plusSeconds(300), "tube", branch = "Bank Branch",
+                        ),
+                    ),
+                    fetchedAt = now,
+                ),
+            ),
+            fetchedAt = now,
+        )
+        val restored = legacy.toPersisted().toDomain()!!
+        assertEquals(
+            listOf("Charing X", "Bank"),
+            restored.stops.single().departures.map { it.branch },
+        )
     }
 
     @Test
