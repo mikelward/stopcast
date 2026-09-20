@@ -88,6 +88,16 @@ class MainViewModelTest {
             stored = snapshot
             saves += snapshot
         }
+
+        override suspend fun saveIfStopsMatch(
+            snapshot: DeparturesSnapshot,
+            expectedStopIds: List<String>,
+        ): Boolean {
+            if (stored?.stops?.map { it.stopId } != expectedStopIds) return false
+            stored = snapshot
+            saves += snapshot
+            return true
+        }
     }
 
     private fun stopArrivals(stopId: String, name: String, offsetSeconds: Long, fetchedAt: Instant) =

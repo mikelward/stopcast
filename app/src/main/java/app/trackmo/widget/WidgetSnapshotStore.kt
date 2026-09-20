@@ -30,15 +30,36 @@ class WidgetSnapshotStore(context: Context) : SnapshotStore {
         // The primary operation: persist the last-good snapshot. Its failure propagates to the
         // caller, which reports it as a real save failure.
         delegate.save(snapshot)
-        // The widget redraw is secondary and best-effort — the snapshot is already committed, so
-        // a redraw failure must NOT surface as a save failure (the caller would log "snapshot
-        // save failed" for a save that in fact succeeded). Log it separately, sanitized, and
-        // swallow; the widget re-renders on the next successful save or host refresh. Rethrow
-        // cancellation first so structured concurrency isn't broken.
-        // Pokes the widget to re-render with the new snapshot. That updateAll re-runs
-        // provideGlance, which arms the one-shot staleness-boundary redraw for the app-closed
-        // case (SPEC D4) — so scheduling lives on the render path, not here. Best-effort: a
-        // redraw failure must not surface as a save failure; cancellation is rethrown.
+        pokeWidget()
+    }
+
+    /**
+     * The compare-and-set save the background refresh uses: persist only if the stored stop set
+     * still matches [expectedStopIds], and poke the widget only when the write was applied.
+     * Returns false when a newer in-app snapshot (a different set — e.g. the user relocated while
+     * the worker was fetching) is already stored; that write already poked the widget, so this
+     * discarded stale result changes nothing and must not redraw over it (Codex P1 on #56).
+     */
+    override suspend fun saveIfStopsMatch(
+        snapshot: DeparturesSnapshot,
+        expectedStopIds: List<String>,
+    ): Boolean {
+        val applied = delegate.saveIfStopsMatch(snapshot, expectedStopIds)
+        if (applied) pokeWidget()
+        return applied
+    }
+
+    /**
+     * Pokes the widget to re-render with the now-persisted snapshot. The redraw is secondary and
+     * best-effort — the snapshot is already committed, so a redraw failure must NOT surface as a
+     * save failure (the caller would log "snapshot save failed" for a save that in fact
+     * succeeded). Log it separately, sanitized, and swallow; the widget re-renders on the next
+     * successful save or host refresh. The updateAll re-runs provideGlance, which arms the
+     * one-shot staleness-boundary redraw for the app-closed case (SPEC D4) — so that scheduling
+     * lives on the render path, not here. Cancellation is rethrown so structured concurrency
+     * isn't broken.
+     */
+    private suspend fun pokeWidget() {
         try {
             TrackmoWidget().updateAll(appContext)
         } catch (e: CancellationException) {

@@ -18,12 +18,46 @@ interface SnapshotStore {
     /** Persist [snapshot] as the new last-good, replacing any previous one. */
     suspend fun save(snapshot: DeparturesSnapshot)
 
+    /**
+     * Persist [snapshot] only if the stored snapshot's stop set still matches [expectedStopIds]
+     * — the ids the caller loaded before it did its (possibly slow) work. Returns true if the
+     * write was applied, false if a different stop set is now stored and the caller's now-stale
+     * result was therefore discarded.
+     *
+     * This is the compare-and-set a background refresh needs: the widget worker loads a snapshot,
+     * fetches for seconds, then saves — and in that window the app may persist a different set
+     * (the user relocated). An unconditional [save] would let the slow worker win last and stamp
+     * old-location departures as fresh over the new set. The compare must be atomic with the
+     * write (no reload→save window), which the DataStore-backed store gets from its update
+     * transform running under the write lock. The app's own refresh, which is the authority on
+     * the current set, keeps using [save].
+     *
+     * The guard is deliberately on stop **identity**, not the exact snapshot or a revision: it
+     * closes only the case that breaks the honesty floor — a *changed* set, where old-location
+     * departures would be stamped fresh over the new one. A *same-set* concurrent write (the app
+     * and the worker both refreshing the same stops seconds apart) still passes this predicate,
+     * but both results are honestly ~fresh for the same stops and countdowns render from absolute
+     * `expectedArrival`, so the marginally-older one winning is within the aging-stamp floor — the
+     * broader concurrent-writer race the maintainer deferred (the widget-snapshot-scope work; a
+     * full-prior/revision compare that would also close the same-set case is that redesign's shape,
+     * a maintainer call, not folded in here).
+     */
+    suspend fun saveIfStopsMatch(
+        snapshot: DeparturesSnapshot,
+        expectedStopIds: List<String>,
+    ): Boolean
+
     companion object {
         /** A store that persists nothing — the default for tests and for a build with no
          *  wired DataStore, so the app runs identically minus the cross-session restore. */
         val NONE: SnapshotStore = object : SnapshotStore {
             override suspend fun load(): DeparturesSnapshot? = null
             override suspend fun save(snapshot: DeparturesSnapshot) {}
+            // Persists nothing, so no conditional write is ever applied.
+            override suspend fun saveIfStopsMatch(
+                snapshot: DeparturesSnapshot,
+                expectedStopIds: List<String>,
+            ): Boolean = false
         }
     }
 }

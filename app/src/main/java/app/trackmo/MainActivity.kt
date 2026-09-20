@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,6 +37,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.trackmo.data.AndroidLocationProvider
+import app.trackmo.data.DataStoreAppSettings
+import app.trackmo.data.logAppSettingsWarning
 import app.trackmo.data.DataStoreStarredRowsStore
 import app.trackmo.data.KtorTflClient
 import app.trackmo.ui.LicensesScreen
@@ -43,13 +46,18 @@ import app.trackmo.ui.LocationGate
 import app.trackmo.ui.MainScreen
 import app.trackmo.ui.MainViewModel
 import app.trackmo.ui.NearbyStopsViewModel
+import app.trackmo.ui.SettingsScreen
 import app.trackmo.ui.StopRef
 import app.trackmo.ui.theme.TrackmoTheme
+import app.trackmo.widget.LiveWidgetRefreshResult
 import app.trackmo.widget.TrackmoWidget
 import app.trackmo.widget.WidgetSnapshotStore
+import app.trackmo.widget.applyLiveWidgetRefresh
+import app.trackmo.widget.syncLiveWidgetRefreshSchedule
 import androidx.glance.appwidget.updateAll
 import java.time.Instant
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     // The location gate: resolves the nearby stops (an on-demand, location-sending action)
@@ -132,17 +140,60 @@ class MainActivity : ComponentActivity() {
                 // static screen. Saved so it survives rotation and process death; each screen's
                 // own Back closes it.
                 var licensesOpen by rememberSaveable { mutableStateOf(false) }
+                var settingsOpen by rememberSaveable { mutableStateOf(false) }
                 val openLicenses = { licensesOpen = true }
-                if (licensesOpen) {
-                    LicensesScreen(onBack = { licensesOpen = false })
-                } else {
-                    when (val state = nearby) {
+
+                // App settings + the opt-in "live widget" refresh (SPEC D5). The setting is
+                // collected here and applied to the scheduler at start — so an enabled toggle
+                // resumes the ~1/min refresh chain after the process is recreated — and on every
+                // change; the Settings screen itself stays UI-only (WorkManager is wired here).
+                val settings = remember {
+                    DataStoreAppSettings.from(applicationContext, warn = ::logAppSettingsWarning)
+                }
+                // null until the first read lands (a slow or persistently-failing DataStore read
+                // leaves the flow silent) — the Settings switch is disabled meanwhile so the user
+                // can't act on an off value that may not reflect the stored choice (Codex P2 on #56).
+                val liveWidgetRefresh: Boolean? by settings.liveWidgetRefresh()
+                    .collectAsStateWithLifecycle(initialValue = null)
+                val settingsScope = rememberCoroutineScope()
+                // Whether the last apply of the live-widget setting failed to schedule, so the
+                // Settings screen can surface it. The coordinator owns persist + schedule + the
+                // error policy (see applyLiveWidgetRefresh); this is just its result.
+                var liveWidgetRefreshFailed by rememberSaveable { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    liveWidgetRefreshFailed =
+                        syncLiveWidgetRefreshSchedule(applicationContext, settings) ==
+                            LiveWidgetRefreshResult.FAILED
+                }
+
+                // Licenses and Settings are activity-level overlays (like the licenses screen's
+                // existing hosting), reachable from every state and closed by their own Back, so
+                // opening either takes the departures view and its background refresh out of
+                // composition rather than polling TfL behind a static screen.
+                when {
+                    licensesOpen -> LicensesScreen(onBack = { licensesOpen = false })
+                    settingsOpen -> SettingsScreen(
+                        liveWidgetRefresh = liveWidgetRefresh == true,
+                        liveWidgetRefreshEnabled = liveWidgetRefresh != null,
+                        liveWidgetRefreshFailed = liveWidgetRefreshFailed,
+                        onLiveWidgetRefreshChange = { enabled ->
+                            settingsScope.launch {
+                                liveWidgetRefreshFailed =
+                                    applyLiveWidgetRefresh(applicationContext, settings, enabled) ==
+                                        LiveWidgetRefreshResult.FAILED
+                            }
+                        },
+                        onDismissLiveWidgetRefreshError = { liveWidgetRefreshFailed = false },
+                        onBack = { settingsOpen = false },
+                    )
+                    else -> when (val state = nearby) {
                         is NearbyStopsViewModel.State.Ready ->
                             DeparturesForStops(
                                 state.stops,
                                 state.distanceMeters,
                                 nearbyViewModel::locate,
                                 onOpenLicenses = openLicenses,
+                                onOpenSettings = { settingsOpen = true },
                             )
                         else -> LocationGate(
                             state = state,
@@ -184,6 +235,7 @@ class MainActivity : ComponentActivity() {
         stopDistanceMeters: Map<String, Double>,
         onLocateHere: () -> Unit,
         onOpenLicenses: () -> Unit,
+        onOpenSettings: () -> Unit,
     ) {
         // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
         // the set changes (the user moved and re-located) rather than left keyed in the
@@ -255,6 +307,7 @@ class MainActivity : ComponentActivity() {
                 starWriteFailed = starWriteFailed,
                 onStarWriteFailureShown = viewModel::starWriteFailureShown,
                 onOpenLicenses = onOpenLicenses,
+                onOpenSettings = onOpenSettings,
             )
         }
     }

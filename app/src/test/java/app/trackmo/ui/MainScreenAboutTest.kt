@@ -49,9 +49,9 @@ class MainScreenAboutTest {
             }
         }
 
-        // Overflow (content description "About") opens the menu; the menu item (text) opens the
-        // dialog — the two match different semantics, so neither selector is ambiguous.
-        composeRule.onNodeWithContentDescription("About").performClick()
+        // Overflow (content description "More options") opens the menu; the menu item (text)
+        // opens the dialog — the two match different semantics, so neither selector is ambiguous.
+        composeRule.onNodeWithContentDescription("More options").performClick()
         composeRule.onNodeWithText("About").performClick()
 
         // The dialog is up, showing its one action (the app name also appears here, but it
@@ -76,7 +76,7 @@ class MainScreenAboutTest {
             }
         }
 
-        composeRule.onNodeWithContentDescription("About").performClick()
+        composeRule.onNodeWithContentDescription("More options").performClick()
         composeRule.onNodeWithText("About").performClick()
         composeRule.onNodeWithText("Open source licenses").assertIsDisplayed()
 

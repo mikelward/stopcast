@@ -165,6 +165,8 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.widget.WidgetScreenshotTest" -Proborazzi.test.record=true
       - name: Run Licenses screenshot tests
         run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.ui.LicensesScreenshotTest" -Proborazzi.test.record=true
+      - name: Run Settings screenshot tests
+        run: ./gradlew :app:testDebugUnitTest --tests "app.trackmo.ui.SettingsScreenScreenshotTest" -Proborazzi.test.record=true
       - name: Print failing test details
         if: failure()
         run: |

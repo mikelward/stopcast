@@ -316,14 +316,25 @@ dependency graph, and for each component its version, authors, and license ident
 which trackmo ships to meet those licenses' attribution terms (Apache-2.0 §4 among them).
 That attribution is exported at build time and bundled, so the list itself renders with no
 network. The full license *text* is not bundled (following the sibling repos' export, which
-omits it): each license links out to its canonical text, one tap to the browser. There is
-no Settings surface yet; About is reached through the menu, not a navigation graph.
+omits it): each license links out to its canonical text, one tap to the browser.
+
+### Settings
+
+An overflow-menu entry opens a Settings screen, hosted at the activity top level like the
+licenses screen (an overlay whose own Back closes it) rather than through a navigation graph
+— trackmo still has no nav library. Its first setting is the opt-in "refresh widget every
+minute" toggle (D5). The screen composable is UI-only: it reflects the setting and reports a
+change, while persistence (a typed DataStore, mirroring the starred-rows store) and the
+refresh scheduler (WorkManager) are wired by the activity, so the screen stays
+JVM/Robolectric-renderable without touching Android services.
 
 About — and so the license attribution — is reachable in **every** state, including the
 location gate when permission is denied and departures never resolve: it is hosted above the
 gate, not inside the departures view, so a user who never grants location can still open it.
-Opening it also takes the departures view (and its background refresh) out of the picture, so
-nothing polls TfL behind the static screen.
+Settings shares that top-level hosting, but is reached only from the departures overflow menu
+for now (the gate's own menu offers About alone). Opening either takes the departures view
+(and its background refresh) out of the picture, so nothing polls TfL behind the static
+screen.
 
 ## Architecture
 
@@ -509,7 +520,24 @@ Mirrors the sibling fleet:
   widget *honest* is separate from refreshing its *data*: because the host never re-renders
   a static widget on its own, the widget schedules one render-only redraw at its staleness
   boundary (a single bounded wake per snapshot) so it flips to the stale treatment when the
-  app is closed (D4) — fetching new data on that schedule remains the deferred part.
+  app is closed (D4) — fetching new data on that schedule was the deferred part.
+  - **Opt-in live refresh (off by default).** A Settings toggle, "refresh widget every
+    minute", drives a self-rescheduling one-shot WorkManager chain that re-fetches
+    arrivals for exactly the widget's persisted stops (location-free, D1) about once a
+    minute and saves the refreshed snapshot, which pokes the widget to re-render. It is
+    off by default because it costs battery and data the passive widget doesn't. A failed
+    cycle keeps the last-good and still reschedules, so a transient TfL error doesn't
+    break the chain. This is a **deferrable** one-shot, not a foreground service: the OS
+    runs it roughly once a minute while the device is active and defers it under Doze
+    (screen off and unplugged), but it is **not screen-state-gated**. With the app closed
+    there is no live component to hear screen on/off, so the chain can still run with the
+    screen off while charging (Doze may not engage) — which is why the setting's copy
+    describes it as a background refresh, not a screen-on-only guarantee (decided with the
+    maintainer, 2026-09, on Codex's finding that the earlier "while the screen is on" copy
+    over-promised). A true screen-on-only scope — and guaranteeing the exact minute with
+    the screen off — would need a foreground service, its persistent notification, and the
+    Play foreground-service-type policy that carries; that is the deferred follow-up
+    (mechanism A, *Widget follow-ups* in `TODO.md`).
 - **D6 — The app refreshes on open, on foreground return, on pull-to-refresh, and
   auto-refreshes once a minute while the screen is on** (paused when backgrounded). The
   intended targets — home users and an always-on kiosk display — leave the screen open,

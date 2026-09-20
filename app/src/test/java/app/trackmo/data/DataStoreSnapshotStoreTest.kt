@@ -62,4 +62,47 @@ class DataStoreSnapshotStoreTest {
         val store = DataStoreSnapshotStore(FakeDataStore(future))
         assertNull(store.load())
     }
+
+    /** A different-id snapshot, standing in for "the user relocated" — a new stop set entirely. */
+    private fun relocated() = DeparturesSnapshot(
+        stops = listOf(
+            StopArrivals(
+                stopId = "940GZZLUKSX",
+                stopName = "King's Cross",
+                departures = listOf(
+                    Departure("northern", "Northern", "southbound", "Morden", null, now.plusSeconds(120), "tube"),
+                ),
+                fetchedAt = now,
+            ),
+        ),
+        fetchedAt = now,
+    )
+
+    @Test
+    fun `saveIfStopsMatch applies and writes when the stored stop set matches`() = runTest {
+        val store = DataStoreSnapshotStore(FakeDataStore(snapshot().toPersisted()))
+        val refreshed = snapshot().copy(fetchedAt = now.plusSeconds(60))
+        val applied = store.saveIfStopsMatch(refreshed, listOf("940GZZLUOXC"))
+        assertEquals(true, applied)
+        assertEquals(refreshed, store.load())
+    }
+
+    @Test
+    fun `saveIfStopsMatch discards and keeps the stored snapshot when the set differs`() = runTest {
+        // The store now holds a different (relocated) set than the one the caller worked from.
+        val store = DataStoreSnapshotStore(FakeDataStore(relocated().toPersisted()))
+        val staleResult = snapshot().copy(fetchedAt = now.plusSeconds(60))
+        val applied = store.saveIfStopsMatch(staleResult, listOf("940GZZLUOXC"))
+        assertEquals(false, applied)
+        // The newer relocated snapshot is untouched — the stale result was dropped.
+        assertEquals(relocated(), store.load())
+    }
+
+    @Test
+    fun `saveIfStopsMatch discards when nothing is stored`() = runTest {
+        val store = DataStoreSnapshotStore(FakeDataStore(null))
+        val applied = store.saveIfStopsMatch(snapshot(), listOf("940GZZLUOXC"))
+        assertEquals(false, applied)
+        assertNull(store.load())
+    }
 }

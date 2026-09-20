@@ -106,6 +106,19 @@ class TrackmoWidget : GlanceAppWidget() {
         // all go through here, so each arms the flip from the snapshot it just drew — and a host
         // with no widget never runs this, so a widgetless user is never scheduled for (SPEC D4).
         scheduleStalenessRedrawFor(context, snapshot?.fetchedAt, now)
+        // A widget render means a widget exists, so resume the opt-in live-refresh chain if the
+        // setting is on and it isn't already running — the worker retires the chain when the last
+        // widget is removed, and this restarts it after one is re-added (SPEC D5, Codex P1 on #56).
+        // Wrapped: this is an optional scheduler-recovery step, so a settings/WorkManager I/O error
+        // here must not fail the render — the snapshot is already loaded and must still paint
+        // (SPEC jank-free UI, Codex P2 on #56).
+        try {
+            resumeWidgetRefreshIfEnabled(context)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logWidgetSnapshotWarning("widget refresh resume failed: ${e::class.simpleName}")
+        }
         provideContent { WidgetContent(widgetModel(snapshot, now, starred), now) }
     }
 
@@ -118,6 +131,10 @@ class TrackmoWidget : GlanceAppWidget() {
         try {
             if (GlanceAppWidgetManager(context).getGlanceIds(TrackmoWidget::class.java).isEmpty()) {
                 cancelWidgetStalenessRedraw(context)
+                // Also retire the opt-in live-refresh chain — a widgetless user isn't left with a
+                // ~1/min fetch loop (Codex P1 on #56). The worker's own installed-widget guard is
+                // the backstop; this catches the removed-while-app-closed case promptly.
+                cancelWidgetRefresh(context)
             }
         } catch (e: CancellationException) {
             throw e
