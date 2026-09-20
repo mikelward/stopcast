@@ -17,9 +17,6 @@
          trust — say it may be out of date and prompt a refresh (SPEC D4). -->
     <string name="departures_stale_empty">Departures may be out of date</string>
     <string name="refresh">Refresh</string>
-    <!-- Top-bar action left of refresh: re-find stops at the current location; the
-         accessible label for the crosshair icon. Temporary (on-device radius testing). -->
-    <string name="locate_here">Stops near me</string>
     <!-- Star toggle on a departure card: pins the service to the top of the list. The label
          names the action, so it flips with the state (a screen reader hears what a tap does). -->
     <string name="star">Pin to top</string>

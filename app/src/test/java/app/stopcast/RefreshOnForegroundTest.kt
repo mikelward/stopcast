@@ -62,6 +62,33 @@ class RefreshOnForegroundTest {
     }
 
     @Test
+    fun `a foreground return during a relocation is gated, and resumes once it clears`() = runTest(dispatcher) {
+        // RefreshOnForeground passes isBusy = { relocating.value }: a return to the foreground
+        // while a manual re-locate's fix is in flight must not refresh the current (soon-to-be-
+        // previous) set and save it as fresh before the fix resolves (Codex).
+        val owner = FakeOwner()
+        var refreshes = 0
+        var relocating = true
+        val job = launch { refreshOnForeground(owner.lifecycle, isBusy = { relocating }) { refreshes++ } }
+
+        owner.registry.currentState = Lifecycle.State.STARTED // initial start (always skipped)
+        advanceUntilIdle()
+        owner.registry.currentState = Lifecycle.State.CREATED
+        owner.registry.currentState = Lifecycle.State.STARTED // return while relocating
+        advanceUntilIdle()
+        assertEquals("a return during a relocate is gated", 0, refreshes)
+
+        // Once the relocate clears, a later return refreshes normally.
+        relocating = false
+        owner.registry.currentState = Lifecycle.State.CREATED
+        owner.registry.currentState = Lifecycle.State.STARTED
+        advanceUntilIdle()
+        assertEquals("returns refresh again once the relocate has settled", 1, refreshes)
+
+        job.cancel()
+    }
+
+    @Test
     fun `a recreated activity skips its own first start`() = runTest(dispatcher) {
         // A configuration change restarts refreshOnForeground fresh; its first STARTED is
         // the recreated first frame and must not fetch again (the ViewModel survived).

@@ -87,6 +87,35 @@ class AutoRefreshTest {
     }
 
     @Test
+    fun `a relocation in flight gates the tick, like a refresh does`() = runTest(dispatcher) {
+        // The AutoRefresh composable feeds isRefreshing = { refreshing || relocating }, so a
+        // manual re-locate that overlaps the interval must skip the tick — otherwise the timer
+        // would fetch (and re-stamp) the current, soon-to-be-previous set in parallel with the
+        // fix (Codex). Here departures aren't refreshing; only the relocate is in flight.
+        val owner = FakeOwner()
+        var refreshes = 0
+        var refreshing = false
+        var relocating = true
+        val job = launch {
+            autoRefresh(owner.lifecycle, 60_000L, isRefreshing = { refreshing || relocating }) { refreshes++ }
+        }
+        owner.registry.currentState = Lifecycle.State.RESUMED
+        runCurrent()
+
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals("no tick fires while a relocate is resolving", 0, refreshes)
+
+        // The relocate resolves (same set → its own refresh takes over; here just clear it).
+        relocating = false
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals("ticks resume once the relocate has settled", 1, refreshes)
+
+        job.cancel()
+    }
+
+    @Test
     fun `pauses while backgrounded and resumes on return`() = runTest(dispatcher) {
         val owner = FakeOwner()
         var refreshes = 0

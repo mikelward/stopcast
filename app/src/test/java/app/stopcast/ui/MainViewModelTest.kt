@@ -131,6 +131,55 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `cancelFetch cancels an in-flight fetch without saving, and clears refreshing`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    "940GZZLUKSX" to Result.success(listOf(departure("northern", "Northern", 120))),
+                ),
+            ),
+            store = store,
+        )
+        advanceUntilIdle() // initial load settles
+        val savesAfterInit = store.saves.size
+        assertEquals(false, vm.refreshing.value)
+
+        // A re-locate cancels the current fetch before resolving the new position, so a fetch
+        // for this (soon-to-be-previous) set can't finish and save a fresh snapshot for the old
+        // location during the fix window (SPEC D4 / principle 1). The job is canceled on the test
+        // dispatcher before its body runs, so it saves nothing.
+        vm.refresh()
+        assertEquals("a refresh marks the VM busy", true, vm.refreshing.value)
+        vm.cancelFetch()
+        assertEquals("cancelFetch clears the busy flag at once", false, vm.refreshing.value)
+        advanceUntilIdle()
+        assertEquals("the canceled fetch saved nothing", savesAfterInit, store.saves.size)
+    }
+
+    @Test
+    fun `cancelFetch during init cancels the pending initial fetch, saving nothing`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    "940GZZLUKSX" to Result.success(listOf(departure("northern", "Northern", 120))),
+                ),
+            ),
+            store = store,
+        )
+        // The init snapshot-load + refresh is still pending on the test dispatcher; a re-locate
+        // that cancels before init completes must stop the init-driven fetch, so it can't save a
+        // snapshot for the old seed set while the fix is in flight (SPEC D4 / principle 1).
+        vm.cancelFetch()
+        advanceUntilIdle()
+        assertEquals("the init-driven fetch saved nothing after cancelFetch", 0, store.saves.size)
+        assertEquals(false, vm.refreshing.value)
+    }
+
+    @Test
     fun `one stop failing keeps the others and logs a sanitized reason`() = runTest(dispatcher) {
         val warnings = mutableListOf<String>()
         val vm = viewModel(

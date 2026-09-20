@@ -376,29 +376,20 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       **Privacy:** the typed query is sent to TfL's search endpoints — a new off-device input
       beyond today's coordinates/stop-IDs, so SPEC *Privacy* is updated to disclose it (done)
       and the Play Data Safety answers account for it when this ships. Requested 2026-09-19.
-- [ ] **Re-locate the "near me now" list on demand, not just on first open.** Today the
-      nearby flow locates once; a user who has moved is stuck on the old position until
-      something else re-triggers it. **The toolbar button shipped in PR #43** (the crosshair
-      "Stops near me" action, left of Refresh), but it calls the plain `locate()` path — so
-      it still needs the **force-fresh** mode below. Codex flagged this on #43
-      (`discussion_r4053414081`, deferred here 2026-09-19): tapped within ~2 min of an
-      accurate fix it re-queries TfL with the *cached* (old) coordinates via
-      `FixSelection.resolve()`, the very staleness this item exists to fix. **First
-      deliverable: an explicit "Update location"
-      toolbar button** — the standard my-location glyph (crosshairs / GPS arrow) — that
-      re-runs the fix and the nearby lookup. Keep re-location behind that deliberate
-      near-me action (and other explicit near-me moments, e.g. returning to the discovery
-      screen after a gap) — **not** folded into the departures **refresh** path: D1 keeps
-      location off every refresh, and the `StopFinder`/`TflClient` split enforces that
-      boundary. It reuses the `AndroidLocationProvider` path but needs an **explicit-update
-      mode that forces a fresh fix**: `FixSelection`'s fast path returns a cached fix up to
-      `FRESH_ENOUGH_MILLIS` (~2 min) old without calling `freshFix`, so a plain re-run tapped
-      within that window would reuse the old coordinates — the very staleness this item fixes.
-      The Update-location action must attempt a fresh fix first, applying the bounded cached
-      fallback only if that fails. Each re-location is another on-demand coordinate to TfL —
-      the same recipient and data category as the first fix, not a new off-device channel — so
-      £0, negligible against the keyless rate budget for a user-initiated tap, and a small
-      per-fix battery cost.
+- [x] **Re-locate the "near me now" list on demand, not just on first open** — shipped as
+      milestone C (PR #70). **Reversal of the original design, recorded here:** this item first
+      called for a dedicated crosshairs "Update location" toolbar button and insisted
+      re-location stay **out** of the departures refresh path (the then-D1 "location off every
+      refresh"). That is not what shipped, deliberately: the crosshairs button (PR #43) is
+      **removed**, and **refresh + pull-to-refresh now re-locate** (force a fresh fix, then
+      re-resolve the nearby set) as well as re-fetching departures. D1 was updated to match —
+      location stays off the *background/widget* refreshes but a *manual near-me* refresh takes
+      an on-demand foreground fix. The force-fresh requirement this item raised is met
+      (`relocate()` → `current(forceFresh = true)` → `FixSelection.resolve(forceFresh = true)`,
+      which bypasses the instant fast path entirely, cache only a bounded fallback). Cost/battery note stands: each re-location is one more
+      on-demand coordinate to TfL (same recipient/category, £0, negligible on a user tap).
+      **Remaining follow-up** is the *automatic* distance-triggered version (milestone A) and
+      the same-set-metadata gap — both under *Decisions needing review* below, not here.
   - [x] **Nearby per-mode coverage (crowd-out)** — landed, PR #39. The nearby list shows a
         line once from its nearest stop (dedupe, PR #36) and now mixes in the nearest stop of
         each mode within ~1 mi so a denser mode can't crowd out another — the one Tube within
@@ -1004,11 +995,37 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   production loaded state (`onLocateHere` non-null) the bar also carries the freshness stamp
   plus locate + refresh + overflow buttons, so on a 411dp phone the "StopCast" title is
   squeezed and can ellipsize (Codex P2 on #67, deferred with maintainer's sign-off). Accepted
-  as-is; the fix is to **slim the action row**: drop the locate button (auto-jump to the
-  current location — the auto-locate work, which also removes `onLocateHere`), and drop the
-  refresh button (pull-to-refresh already exists via `PullToRefreshBox`), moving anything left
-  to the overflow menu. Reversible — layout-only, no data path. Do it with the auto-locate
-  feature, not as a standalone app-bar refactor.
+  as-is; the fix is to **slim the action row**. **Partly done:** the crosshairs/locate button
+  is now gone (refresh + pull-to-refresh re-locate as well as re-fetch — the milestone-C
+  auto-locate work), which frees one slot. Remaining if the bar is still tight: drop the
+  refresh button too (pull-to-refresh covers it), moving anything left to the overflow menu.
+  Reversible — layout-only, no data path.
+- **Automatic distance-triggered re-locate (milestone A, after C) — try-it, revisit
+  (maintainer, 2026-09-20).** Milestone C makes refresh re-locate; the user pulls to refresh
+  when walking past a station, and if that's fast enough (the re-locate forces a fresh fix —
+  `FixSelection.resolve(forceFresh = true)` bypasses the cache fast path — so it waits ~1–2 s
+  typically, capped at 10 s with a last-fix fallback) it may be enough on its own. If automatic "updates as I walk"
+  is still
+  wanted, layer on `LocationManager.requestLocationUpdates(FUSED_PROVIDER, minTime≈12 s,
+  minDistance=100 m)`, foreground-only (register on resume, remove on pause), re-resolving the
+  nearby set on each delivery. Notes for when we do it: the `minDistance` filter gates
+  *callbacks*, not the positioning hardware, so it doesn't cut GPS battery — `minTime` +
+  provider is the battery lever, and a stationary phone left open (kiosk) still draws while
+  the locator cycles; a self-idle (stop updates after N min stationary, resume on a
+  `TYPE_SIGNIFICANT_MOTION` trigger) is the mitigation if that proves costly. Throttle the
+  TfL re-resolve to **≤ ~once/min** regardless of how often the distance filter fires
+  (maintainer's rate goal). No new dependency (framework `FUSED_PROVIDER`, already used).
+- **Same-set re-locate discards updated stop metadata (Codex P2 on #70,
+  `discussion_r4057899804`, deferred here 2026-09-20).** `relocate()`'s same-set check
+  compares stop IDs only, so a refresh that returns the *same* IDs but updated `name`/`lines`
+  (e.g. a stop now serves a new line) takes the in-place `onSameSet` path and keeps the old
+  `MainViewModel`, whose `seedStops` are fixed at init — so a newly-served line with no
+  predictions never enters `declaredLineIds` and its disruption can't surface. Real but
+  narrow (same stops, a new line, no predictions, an active disruption). The clean fix re-keys
+  the per-set store by full `StopRef` (id+name+lines) so a metadata change spins up a fresh VM
+  — that touches the `NearbyDeparturesStores` keying, which is the *third* finding in the
+  same-set optimization (after the parallel-refresh and cached-fix ones), so it's a design
+  question for the maintainer rather than a fourth point fix. Reversible; tracked here.
 - **Widget-snapshot-scope (Codex P1 from #44) deferred: PR #53 closed unmerged; aging stamp
   is the honesty floor and the render-path scoping stays an open task (not closed by Phase 2)**
   (autopilot, maintainer said "defer 53"). The gap is

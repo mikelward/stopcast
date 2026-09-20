@@ -105,6 +105,12 @@ class MainViewModel(
 
     private var fetchJob: Job? = null
 
+    // The init coroutine that loads the last-good snapshot and then calls refresh(). Tracked so
+    // cancelFetch() can stop it too: during its load() the fetchJob isn't assigned yet, so
+    // without this a re-locate that cancels mid-init would still let the init-driven refresh()
+    // fetch and save the old seed set during the fix window (SPEC D4 / principle 1, Codex).
+    private var initLoadJob: Job? = null
+
     init {
         viewModelScope.launch {
             // A read failure (DataStore IOException, a non-corruption disk error) must not
@@ -139,7 +145,7 @@ class MainViewModel(
         // placeholder, so nothing blocks on the DataStore read (SPEC snapshot-render). The
         // restored snapshot becomes the `prior` the refresh merges into, so a stop that then
         // fails to refresh keeps its aged rows rather than dropping out.
-        viewModelScope.launch {
+        initLoadJob = viewModelScope.launch {
             val restored = try {
                 withContext(io) { snapshotStore.load() }
             } catch (e: CancellationException) {
@@ -153,6 +159,21 @@ class MainViewModel(
             }
             refresh()
         }
+    }
+
+    /**
+     * Cancel any in-flight fetch without starting a new one. Used when a re-locate begins: a
+     * fetch already running for this (soon-to-be-previous) set must not finish first and save a
+     * freshly stamped snapshot during the fix window (SPEC D4 / principle 1). Clears the
+     * refreshing flag so an indicator started by that fetch doesn't stick on.
+     */
+    fun cancelFetch() {
+        // Cancel the init pipeline too: it calls refresh() after its snapshot load(), and during
+        // that load fetchJob isn't set yet, so cancelling only fetchJob would let the init-driven
+        // fetch run and save during a re-locate's fix window.
+        initLoadJob?.cancel()
+        fetchJob?.cancel()
+        _refreshing.value = false
     }
 
     /** Re-fetch every seed stop and swap in a fresh snapshot; safe to call repeatedly. */

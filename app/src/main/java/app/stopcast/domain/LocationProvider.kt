@@ -21,5 +21,15 @@ data class Coordinates(val latitude: Double, val longitude: Double)
  * asked without it simply returns `null`.
  */
 interface LocationProvider {
-    suspend fun current(): Coordinates?
+    /**
+     * The device's current position, or `null` when none can be given.
+     *
+     * [forceFresh] governs the recent-cache fast path: by default a very recent cached fix is
+     * returned at once (fast, and fine for a first open where the user just arrived). A
+     * **re-locate on refresh** passes `true` — the user may have walked since the last fix, so
+     * a cached one (even a recent one) would re-query TfL for the *previous* position and show
+     * the old area's stops; forcing fresh requests a new fix and falls back to a cached one only
+     * within a bounded age if the fresh request fails.
+     */
+    suspend fun current(forceFresh: Boolean = false): Coordinates?
 }

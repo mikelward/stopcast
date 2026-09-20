@@ -79,6 +79,13 @@ object FixSelection {
         // one. Gates the fast path above; the fresh-fix side (accurate providers first) is the
         // caller's. Default off preserves the coarse-only behavior.
         preferAccurate: Boolean = false,
+        // Bypass the instant fast path entirely, so a fresh fix is always requested (the cached
+        // one stays only a bounded fallback if the fresh attempt fails). Used by a manual
+        // re-locate: the rider may have just walked, so even a brand-new cached fix is the
+        // *previous* position. Represented explicitly rather than as `freshEnoughMillis = 0`,
+        // because ages truncate to whole milliseconds and the fast path accepts `age <=
+        // freshEnoughMillis`, so a sub-millisecond (age-0) cache would still short-circuit `0`.
+        forceFresh: Boolean = false,
         freshEnoughMillis: Long = FRESH_ENOUGH_MILLIS,
         maxFallbackAgeMillis: Long = MAX_FALLBACK_AGE_MILLIS,
         timeoutMillis: Long = FRESH_FIX_TIMEOUT_MILLIS,
@@ -103,8 +110,8 @@ object FixSelection {
         // precise attempt, or precise access is defeated by a slightly newer network fix
         // (Codex). Such a coarse fix stays a fallback below if the fresh fix fails; it just no
         // longer short-circuits it. With preferAccurate off, any recent cached fix short-circuits.
-        if (lastKnown != null && lastKnownAgeMillis != null && lastKnownAgeMillis <= freshEnoughMillis &&
-            (lastKnownIsAccurate || !preferAccurate)
+        if (!forceFresh && lastKnown != null && lastKnownAgeMillis != null &&
+            lastKnownAgeMillis <= freshEnoughMillis && (lastKnownIsAccurate || !preferAccurate)
         ) {
             if (!hasPermission()) return permissionRevoked(warn)
             return lastKnown

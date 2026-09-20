@@ -101,10 +101,6 @@ fun MainScreen(
     // From "near me now" (`stopId` → meters): collapse a line served by several adjacent
     // nearby stops to its nearest stop. Empty for a location-free list, shown unchanged.
     stopDistanceMeters: Map<String, Double> = emptyMap(),
-    // Re-resolve the nearby set at the device's current position. Non-null only in the
-    // "near me now" context; a watched-stops view (Phase 2) omits it. Temporary — a manual
-    // re-locate for on-device testing of the nearby radius (TODO: auto-locate-on-open UX).
-    onLocateHere: (() -> Unit)? = null,
     // The rows the user has starred (SPEC D8): pinned to the top, and their star filled.
     // Empty by default so an unwired build/test renders the plain soonest-first list.
     starred: Set<StarredRow> = emptySet(),
@@ -173,12 +169,9 @@ fun MainScreen(
                 },
                 actions = {
                     FreshnessStamp(state, now, onRefresh)
-                    // Left of refresh: re-find stops at the current location.
-                    if (onLocateHere != null) {
-                        IconButton(onClick = onLocateHere) {
-                            Icon(CrosshairIcon, contentDescription = stringResource(R.string.locate_here))
-                        }
-                    }
+                    // Refresh re-resolves the nearby set (a fresh location fix) as well as
+                    // re-fetching departures, so walking to the next stop and pulling to refresh
+                    // updates both — there's no separate locate control (SPEC *Finding stops*).
                     IconButton(onClick = onRefresh) {
                         Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
                     }

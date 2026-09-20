@@ -60,7 +60,27 @@ The app finds stops two ways:
   under an approximate-only grant it is always approximate. Precise location is the Play Data
   Safety type the action **may collect** and so declares, not a claim that every fix is
   precise; either way it is never a background send. This is an in-app,
-  on-demand action, never a background one. The list is a
+  on-demand action, never a background one.
+
+  The fix is taken when the near-me view first resolves **and again on every refresh**:
+  the refresh control and pull-to-refresh re-resolve the nearby set as well as re-fetching
+  departures, so a user walking from stop to stop sees the set follow them, one refresh at a
+  time (the common "walk past a station and check" case). It stays user-initiated — no
+  background or automatic polling — so the location send stays bounded by the user's own
+  refreshes rather than a timer. The re-locate **forces a fresh fix** (it does not take the
+  recent-cached fast path a first open may use): a rider who has walked since the last fix
+  must not be re-resolved against the old position, so a cached fix is only a bounded fallback
+  here — a fresh fix is ~1–2 s in the common case, comfortably under the refresh spinner.
+  Re-resolving skips the "locating…" spinner on the common success path — the departures stay
+  on screen during the fix rather than
+  flashing back to the gate on every pull — but an unsuccessful re-resolve is **surfaced
+  honestly, not swallowed** (principles 1–2): a failed fix, an unreachable lookup, or an
+  out-of-range "no stops nearby" replaces the list rather than leaving a previous location's
+  stops on screen as if current (cards omit the stop name, so a stale set is
+  indistinguishable from the real one). There is therefore **no separate "locate" control**
+  — refresh does both. (An automatic, distance-triggered version — update
+  when the user moves ~100 m — is a later enhancement; the parameters and battery trade-offs
+  are in `TODO.md`.) The list is a
   **useful, scannable spread, not a raw nearest-N**:
   - a **line appears once**, not once per stop it passes — a raw nearest-N repeats the same
     bus route several times, one per adjacent stop, which reads as noise;
@@ -546,7 +566,13 @@ Mirrors the sibling fleet:
   waiting on a location fix — and background location on the keyguard is restricted,
   often ungranted, and battery-costly. So what a surface shows is chosen ahead of time.
   The app still uses on-demand location to *find and suggest* nearby stops to pin, and
-  to show a "near me now" list, keeping location off every refresh path.
+  to show a "near me now" list. Location stays off the **background and widget** refresh
+  paths — those re-fetch a fixed set of stops with no fix (the widget's persisted watched
+  set; the near-me view's already-resolved set). The one path that does take a fix is a
+  **manual near-me refresh**: a user refresh (button or pull-to-refresh) on the near-me
+  departures re-resolves the nearby set as well as re-fetching, so walking to the next stop
+  and refreshing follows the user (see *Finding stops*). That is still on-demand and
+  foreground — a user gesture, never a timer or a background wake.
 - **D2 — A watched stop can be filtered to lines and/or a direction.** A station serves
   many lines and platforms; the rider takes one or two. Default is all.
 - **D3 — Disruptions are surfaced alongside departures, and mark the line/stop even

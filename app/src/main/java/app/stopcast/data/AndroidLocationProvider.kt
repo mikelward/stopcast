@@ -36,7 +36,7 @@ class AndroidLocationProvider(
     private val context: Context,
     private val warn: (String) -> Unit = {},
 ) : LocationProvider {
-    override suspend fun current(): Coordinates? {
+    override suspend fun current(forceFresh: Boolean): Coordinates? {
         if (!hasLocationPermission()) {
             warn("location fix skipped: location permission not held")
             return null
@@ -59,6 +59,13 @@ class AndroidLocationProvider(
             // tries the accurate providers first — so precise access isn't defeated by a
             // slightly newer network fix (Codex). Off under a coarse-only grant.
             lastKnownIsAccurate = cached?.accurate ?: false,
+            // A re-locate on refresh forces a fresh fix: `forceFresh` bypasses the instant fast
+            // path entirely (regardless of the cached fix's age), so resolve requests a new
+            // position and uses the cached one only as the bounded fallback (maxFallbackAgeMillis).
+            // Without this, walking to a new stop and refreshing would re-query TfL at the previous
+            // coordinates and show the old area's stops (SPEC *Finding stops*). Passed explicitly
+            // rather than as freshEnoughMillis = 0, which a sub-millisecond (age-0) cache defeated.
+            forceFresh = forceFresh,
             preferAccurate = hasFineLocationPermission(),
             warn = warn,
             // The same monotonic clock the cached age was measured against, so the fallback
@@ -97,9 +104,11 @@ class AndroidLocationProvider(
 
     /**
      * One fresh fix from [provider] (or `null`). [LocationManager.getCurrentLocation] delivers a
-     * single fix and self-cancels, so there is no long-lived listener to leak; the
-     * [CancellationSignal] only covers the caller giving up (a [FixSelection] timeout, or the
-     * screen going away).
+     * single fix representing the present moment (its contract bounds any historical location to
+     * the order of seconds, never minutes) and self-cancels, so there is no long-lived listener
+     * to leak; the [CancellationSignal] only covers the caller giving up (a [FixSelection]
+     * timeout, or the screen going away). The minutes-scale cache a re-locate must bypass is
+     * `getLastKnownLocation`, which [FixSelection]'s `forceFresh` already skips.
      */
     private suspend fun requestFreshFixFrom(manager: LocationManager, provider: String): Coordinates? =
         try {
