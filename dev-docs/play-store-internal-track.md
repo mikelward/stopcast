@@ -100,6 +100,16 @@ Either way, upload `app-release.aab` via Play Console → Internal testing →
 Create new release, and accept Play App Signing when prompted. Then add
 `PLAY_SERVICE_ACCOUNT_JSON` so the next push to main uploads automatically.
 
+**Wait on this last secret until App content is complete.** Play lets you
+*upload* a bundle with the App content declarations (Data safety, Content
+rating, …) unfinished, which is why the manual seed above works — but it
+rejects a *rollout*, and the upload step runs `status: completed`
+(`.github/workflows/ci.yml`), so it rolls out on every push. Adding
+`PLAY_SERVICE_ACCOUNT_JSON` before App content is signed off therefore turns
+the `deploy` job red on the next push to main (the GitHub prerelease still
+publishes the signed AAB). Seed manually, add testers, finish App content,
+*then* add the secret.
+
 ### 3. Add internal testers
 
 Play Console → Internal testing → Testers tab → "Create email list". Send the
@@ -260,6 +270,10 @@ by a shallow clone.
   with `fetch-depth: 0`.
 - **`The caller does not have permission`** — the service account lacks
   "Release to testing tracks" on the app, or the invite hasn't propagated.
+- **Rollout rejected for incomplete App content** (e.g. Data safety not
+  submitted) — the bundle uploaded but `status: completed` couldn't roll it
+  out. Finish the App content declarations, or hold `PLAY_SERVICE_ACCOUNT_JSON`
+  until they're done (see step 2). The GitHub prerelease is unaffected.
 - **`Package not found: app.stopcast`** — the listing doesn't exist yet, or the
   first AAB hasn't been uploaded manually (step 2).
 - **`Upload to Play Store internal track` is skipped** — `PLAY_SERVICE_ACCOUNT_JSON`
