@@ -34,6 +34,7 @@ import androidx.glance.unit.ColorProvider
 import app.trackmo.MainActivity
 import app.trackmo.data.DataStoreSnapshotStore
 import app.trackmo.data.DataStoreStarredRowsStore
+import app.trackmo.data.RouteTopologyStore
 import app.trackmo.domain.Countdown
 import app.trackmo.domain.DepartureLabels
 import app.trackmo.domain.DepartureRow
@@ -41,6 +42,7 @@ import app.trackmo.domain.DepartureRows
 import app.trackmo.domain.DeparturesSnapshot
 import app.trackmo.domain.DestinationGroup
 import app.trackmo.domain.RelativeTime
+import app.trackmo.domain.RouteTopology
 import app.trackmo.domain.Staleness
 import app.trackmo.domain.StarredRow
 import app.trackmo.domain.StarredRowSet
@@ -119,7 +121,10 @@ class TrackmoWidget : GlanceAppWidget() {
         } catch (e: Exception) {
             logWidgetSnapshotWarning("widget refresh resume failed: ${e::class.simpleName}")
         }
-        provideContent { WidgetContent(widgetModel(snapshot, now, starred), now) }
+        // The bundled branch topology (shared, cached instance), so the widget merges/labels a
+        // branching row exactly as the in-app card does.
+        val topology = RouteTopologyStore.load(context)
+        provideContent { WidgetContent(widgetModel(snapshot, now, starred, topology = topology), now) }
     }
 
     override suspend fun onDelete(context: Context, glanceId: GlanceId) {
@@ -172,6 +177,7 @@ internal fun widgetModel(
     now: Instant,
     starred: Set<StarredRow> = emptySet(),
     maxLines: Int = 6,
+    topology: RouteTopology = RouteTopology.EMPTY,
 ): WidgetModel {
     if (snapshot == null || snapshot.stops.isEmpty()) {
         return WidgetModel(hasData = false, stale = false, uncertain = false, stamp = null, rows = emptyList())
@@ -208,7 +214,7 @@ internal fun widgetModel(
         var used = 0
         for (row in pinned) {
             if (used >= maxLines) break
-            val groups = DepartureRows.destinationLines(row, WIDGET_MAX_TIMES)
+            val groups = DepartureRows.destinationLines(row, WIDGET_MAX_TIMES, topology)
             val shown = if (groups.size <= maxLines - used) groups else groups.take(maxLines - used)
             add(WidgetRowModel(row, shown))
             used += shown.size

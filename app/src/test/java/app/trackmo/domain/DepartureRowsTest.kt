@@ -727,4 +727,102 @@ class DepartureRowsTest {
         assertEquals("Z", ordered.first().stopId)
         assertTrue("the closure leads", ordered.first().stopDisruption != null)
     }
+
+    // A minimal Northern-line topology: the two central trunks share the northern leg
+    // (High Barnet → Camden) and the southern leg (Kennington → Morden), and differ only
+    // between — Mornington Crescent (MTC) on Charing X, Bank (BNK) on Bank.
+    private val northernTopology = RouteTopology(
+        mapOf(
+            "northern" to listOf(
+                RoutePattern("Bank", listOf(HBT, HGT, CTN, EUS, BNK, KNG, MDN), "High Barnet", "Morden"),
+                RoutePattern("Charing X", listOf(HBT, HGT, CTN, MTC, EUS, CHX, KNG, MDN), "High Barnet", "Morden"),
+            ),
+        ),
+    )
+
+    private fun rowAt(stopId: String, vararg upcoming: Departure): DepartureRow {
+        val soonest = upcoming.first()
+        return DepartureRow(
+            stopId = stopId,
+            stopName = stopId,
+            lineId = soonest.lineId,
+            lineName = soonest.lineName,
+            direction = soonest.direction,
+            directionKey = soonest.direction,
+            destination = soonest.destination,
+            mode = soonest.mode,
+            upcoming = upcoming.toList(),
+            fetchedAt = now,
+        )
+    }
+
+    @Test
+    fun `destinationLines merges two branches past the junction, dropping the label`() {
+        // Highgate → High Barnet (north of Camden Town): the trunks have physically joined, so the
+        // two are the same service from here — one merged line, no branch label (the maintainer's ask).
+        val row = rowAt(
+            HGT,
+            departure("northern", "Northern", "northbound", "High Barnet", 120, branch = "Bank"),
+            departure("northern", "Northern", "northbound", "High Barnet", 300, branch = "Charing X"),
+        )
+        val lines = DepartureRows.destinationLines(row, maxTimes = 3, topology = northernTopology)
+        assertEquals(1, lines.size)
+        assertEquals("High Barnet", lines[0].destination)
+        assertNull(lines[0].branch)
+        assertEquals(2, lines[0].times.size)
+    }
+
+    @Test
+    fun `destinationLines keeps both branches where the trunk is a choice ahead`() {
+        // Southbound at Camden Town toward Morden: the trunks haven't split behind you — they
+        // diverge ahead (different central stations), so both lines stay, each labeled.
+        val row = rowAt(
+            CTN,
+            departure("northern", "Northern", "southbound", "Morden", 120, branch = "Bank"),
+            departure("northern", "Northern", "southbound", "Morden", 300, branch = "Charing X"),
+        )
+        val lines = DepartureRows.destinationLines(row, maxTimes = 3, topology = northernTopology)
+        assertEquals(2, lines.size)
+        assertEquals(listOf("Bank", "Charing X"), lines.map { it.branch })
+        lines.forEach { assertEquals("Morden", it.destination) }
+    }
+
+    @Test
+    fun `destinationLines keeps the branch at Euston toward High Barnet (Mornington Crescent)`() {
+        // The edge case: at Euston (on both trunks) a High Barnet train's branch still tells the
+        // rider whether it stops at Mornington Crescent, so it is a genuine choice and stays.
+        val row = rowAt(
+            EUS,
+            departure("northern", "Northern", "northbound", "High Barnet", 120, branch = "Bank"),
+            departure("northern", "Northern", "northbound", "High Barnet", 300, branch = "Charing X"),
+        )
+        val lines = DepartureRows.destinationLines(row, maxTimes = 3, topology = northernTopology)
+        assertEquals(2, lines.size)
+        assertEquals(listOf("Bank", "Charing X"), lines.map { it.branch })
+    }
+
+    @Test
+    fun `destinationLines with the empty topology keeps every raw branch, merging nothing`() {
+        // The default: no topology, so the pre-topology behavior — each branch is its own line.
+        val row = rowAt(
+            CTN,
+            departure("northern", "Northern", "northbound", "High Barnet", 120, branch = "Bank"),
+            departure("northern", "Northern", "northbound", "High Barnet", 300, branch = "Charing X"),
+        )
+        val lines = DepartureRows.destinationLines(row, maxTimes = 3)
+        assertEquals(2, lines.size)
+        assertEquals(listOf("Bank", "Charing X"), lines.map { it.branch })
+    }
+
+    private companion object {
+        const val HBT = "940GZZLUHBT"
+        const val HGT = "940GZZLUHGT"
+        const val CTN = "940GZZLUCTN"
+        const val MTC = "940GZZLUMTC"
+        const val EUS = "940GZZLUEUS"
+        const val BNK = "940GZZLUBNK"
+        const val CHX = "940GZZLUCHX"
+        const val KNG = "940GZZLUKNG"
+        const val MDN = "940GZZLUMDN"
+    }
 }

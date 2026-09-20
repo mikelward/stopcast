@@ -25,6 +25,8 @@ import androidx.compose.ui.test.performClick
 import app.trackmo.domain.Departure
 import app.trackmo.domain.LineRef
 import app.trackmo.domain.LineStatus
+import app.trackmo.domain.RoutePattern
+import app.trackmo.domain.RouteTopology
 import app.trackmo.domain.StopArrivals
 import app.trackmo.domain.StopDisruption
 import app.trackmo.ui.theme.TrackmoTheme
@@ -221,6 +223,63 @@ class MainScreenScreenshotTest {
         composeRule.onAllNodesWithText("Edgware").assertCountEquals(2)
         // Each line carries its own branch cue (Bank is short, so it's never abbreviated).
         composeRule.onNodeWithText("(Bank)").assertExists()
+    }
+
+    @Test
+    fun `equivalent branches merge into one line past the junction`() {
+        // The maintainer's ask, end to end through the card: at Highgate (north of Camden Town,
+        // past where the two central trunks join) a High Barnet train is the same service whichever
+        // trunk it came up, so the topology merges the two into one line with no branch cue (the
+        // card reads it from LocalRouteTopology, the way the provider wires it in MainActivity).
+        // Logic-only — the merged card is a plain single line, so no baseline to eyeball; the
+        // render proves the wiring. Public names only.
+        val topology = RouteTopology(
+            mapOf(
+                "northern" to listOf(
+                    RoutePattern(
+                        "Bank",
+                        listOf(
+                            "940GZZLUHBT", "940GZZLUHGT", "940GZZLUCTN", "940GZZLUEUS",
+                            "940GZZLUBNK", "940GZZLUKNG", "940GZZLUMDN",
+                        ),
+                        "High Barnet",
+                        "Morden",
+                    ),
+                    RoutePattern(
+                        "Charing X",
+                        listOf(
+                            "940GZZLUHBT", "940GZZLUHGT", "940GZZLUCTN", "940GZZLUMTC",
+                            "940GZZLUEUS", "940GZZLUCHX", "940GZZLUKNG", "940GZZLUMDN",
+                        ),
+                        "High Barnet",
+                        "Morden",
+                    ),
+                ),
+            ),
+        )
+        val stop = StopArrivals(
+            "940GZZLUHGT",
+            "Highgate",
+            listOf(
+                dep("northern", "Northern", "northbound", "High Barnet", 120, "Platform 1", branch = "Bank"),
+                dep("northern", "Northern", "northbound", "High Barnet", 300, "Platform 1", branch = "Charing X"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            TrackmoTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(LocalRouteTopology provides topology) {
+                        MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // One merged High Barnet line — a split would show "High Barnet" twice — and no branch cue.
+        composeRule.onAllNodesWithText("High Barnet").assertCountEquals(1)
+        composeRule.onNodeWithText("(Bank)").assertDoesNotExist()
+        composeRule.onNodeWithText("(Charing X)").assertDoesNotExist()
     }
 
     @Test

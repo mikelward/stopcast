@@ -192,26 +192,38 @@ Corrections to the departure label the card already ships (the via-branch and th
 tight-width abbreviation); the Phase 4 widget mirrors the same shared rendering, so each
 fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
 
-- [ ] **Only show the via-branch when the trunk diverges downstream of this stop, in this
-      direction.** The shipped via-branch (#48) shows TfL's `towards` "via X" whenever TfL
-      gives one, which is meaningless when the trunk is *behind* the rider — e.g. "High
-      Barnet via Bank" northbound, where Bank is south of the junction. Maintainer's rule:
-      the via matters at Highgate *southbound* (towards Morden / Charing Cross / Kennington /
-      Battersea — the Camden Town trunk choice is ahead) but **not northbound** (towards High
-      Barnet — behind you). **Approach: start cheap** (maintainer, 2026-09-19) — a
-      data-driven heuristic: show the branch on a line only when the same (line, direction,
-      **terminus**) at this stop actually has **≥2 distinct branches** in the shown departures
-      (i.e. it disambiguates two trains *to the same terminus* you could catch). Different
-      termini are already distinguished by the destination, so they get **no** via — Mill Hill
-      East vs High Barnet needs no "(via …)", only same-terminus trunk splits (Morden via Bank
-      vs via Charing Cross) do (maintainer, 2026-09-19). Do **not** build the route-sequence
-      topology version (`/Line/{id}/Route/Sequence`) — even that wouldn't match TfL's own
-      practice. Put the relevance filter in whatever shared per-(destination, branch)
-      grouping the card and widget both render from, so they can't diverge — today that
-      grouping is a local value in `MainScreen`; PR #44 promotes it to a pure domain helper
-      (`DepartureRows.destinationLines`) the widget reuses. If this lands before that helper
-      exists, add it as the pure domain function the app uses now and any later widget must
-      reuse (don't leave it card-only). Supersedes the naive unconditional display.
+- [x] **Only show the via-branch where the trunk is a choice the rider makes here.** Two
+      trains to one terminus by different trunks now merge into one line (branch label dropped)
+      only past the junction, on the single shared track (Highgate → High Barnet), and stay
+      split (each labeled) wherever the trunks are still distinct — a trunk-only stop ahead
+      (High Barnet → Morden, Euston → High Barnet's Mornington Crescent edge) **and at the
+      junction/trunk stops themselves** (Camden Town, Euston, Kennington), where a Bank train
+      and a Charing Cross train reach the stop by different approaches/platforms and the rider
+      still picks one (maintainer, 2026-09-20: "coming from Camden or Euston I need to know
+      which branch it takes"). Landed in `RouteTopology` (`grouping()`), used by
+      `DepartureRows.destinationLines` (the shared grouping the card and widget both render, so
+      they can't diverge), from a bundled `route_topology.json` (regenerated from
+      `/Line/{id}/Route/Sequence` for northern / central / piccadilly). Test is an
+      **approach-inclusive path comparison**: from the stop *one before* this one through to the
+      terminus, equal stop-sets on both trunks ⇒ merge, different ⇒ keep. Including the approach
+      stop is what keeps the branch at the junction (trunks reach it by different approaches)
+      while merging once past it. Resolution requires an **exact branch match**: a train whose
+      branch names no serving pattern keeps TfL's raw label — Battersea Power Station, tagged
+      "via Charing Cross" against an unlabeled pattern, keeps "(Charing X)" (maintainer,
+      2026-09-20: "battersea keeps Charing X is not only fine, it's better"). **Reverses the
+      earlier "start cheap, no topology" note** (maintainer, 2026-09-19) after re-deciding for
+      the topology approach (2026-09-20): the ≥2-distinct-branches-in-the-feed heuristic
+      couldn't tell a no-choice single-branch stop (Bank → Morden) from a real choice, nor merge
+      two same-path trunks. Validated against live TfL data. Unknown line / uncovered stop or
+      terminus falls back to TfL's raw label (no merge), so it never merges wrongly on
+      incomplete data.
+- [ ] **Refresh the bundled route topology at runtime** (follow-up). The asset is static and
+      ships with the build, so a TfL branch change (a line extension) needs an app update to
+      reach it. A cached refresh from `/Line/{id}/Route/Sequence` (warmed at startup, off every
+      decision/render path, falling back to the bundled asset) would close that — the maintainer
+      approved the "bundled asset + cached refresh" shape (2026-09-20); only the bundled half
+      shipped first. Free API; state the cost/reliability note (an added background fetch, no
+      user-facing latency) when it lands.
 - [ ] **Branch truncation: abbreviate across both halves, keep one full word in each**
       (maintainer, 2026-09-19). Rendering "Destination (Branch)" at decreasing width, don't
       spend the space keeping one half fully spelled while gutting the other; instead

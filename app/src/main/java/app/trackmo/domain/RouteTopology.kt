@@ -1,0 +1,130 @@
+package app.trackmo.domain
+
+/**
+ * One end-to-end route pattern of a line, from TfL's Route/Sequence: its ordered [stops]
+ * (naptanIds, first→last), the [branch] its `towards` names (normalized to the board label
+ * — `Bank` / `Charing X` — via [normalizeBranch], null for a pattern with no "via"), and
+ * the two terminus names [endA]/[endB] aligned to `stops.first()` / `stops.last()`. Endpoint
+ * names are held as TfL spells them; [RouteTopology] cleans them ([cleanStopName]) for
+ * matching, so one cleaning rule serves stop names, arrival destinations, and these.
+ */
+data class RoutePattern(
+    val branch: String?,
+    val stops: List<String>,
+    val endA: String,
+    val endB: String,
+)
+
+/**
+ * How to group and label a departure's (destination, branch) on a row (see
+ * [DepartureRows.destinationLines]): [mergeKey] collapses branches that are the *same
+ * service from this stop onward* into one line, and [label] is the branch to show — null to
+ * drop it where the branch names only which trunk the train came up *behind* this stop, not
+ * a choice a rider makes here.
+ */
+data class BranchGrouping(val mergeKey: String, val label: String?)
+
+/**
+ * The branch topology of the lines that run more than one central trunk — the Northern
+ * line's `via Bank` / `via Charing Cross`, the Central line's Hainault loop. It answers one
+ * question, for a train at a stop bound for a terminus: **is its via-branch a choice ahead
+ * of here, or already behind?**
+ *
+ * Two trains to one terminus by different trunks are the *same service* only once they have
+ * physically joined — past the junction, on the single shared track — "from the perspective of
+ * someone traveling away from Bank and Charing Cross the origin doesn't matter" (maintainer).
+ * There the rows merge and the label drops. The branch stays, each row labeled, wherever the
+ * trunks are still distinct: a trunk-only stop ahead (High Barnet → Morden picks which central
+ * stations you pass; Euston → High Barnet picks whether you stop at Mornington Crescent), **and
+ * at the junction and trunk stops themselves** (Camden Town, Euston, Kennington), where a Bank
+ * train and a Charing Cross train reach you by different approaches/platforms and you still pick
+ * one (maintainer, 2026-09-20).
+ *
+ * The test is an **approach-inclusive path comparison**: from the stop one before this one
+ * through to the terminus, do the two branches visit the same stops? Equal ⇒ merge and drop the
+ * label; differ ⇒ keep both. Including the approach stop is what keeps the branch at the junction
+ * (the trunks reach it by different approaches) while still merging once past it (the approach is
+ * shared). Pure and topology-only — it reads no clock and touches no decision path; it only shapes
+ * how [DepartureRows.destinationLines] groups a row for display. Static app data loaded from a
+ * bundled asset. [EMPTY] (an unknown line, an unwired build or test) resolves every branch as
+ * unknown, so the label is kept exactly as TfL gave it and nothing merges — the safe default,
+ * never a wrong merge.
+ */
+class RouteTopology(patternsByLine: Map<String, List<RoutePattern>>) {
+    // Endpoint names pre-cleaned once, so matching a (cleaned) arrival destination is plain
+    // equality rather than a trim on every lookup.
+    private class Pattern(val branch: String?, val stops: List<String>, val endA: String, val endB: String)
+
+    private val byLine: Map<String, List<Pattern>> =
+        patternsByLine.mapValues { (_, patterns) ->
+            patterns.map { Pattern(it.branch, it.stops, cleanStopName(it.endA), cleanStopName(it.endB)) }
+        }
+
+    /**
+     * The grouping for a departure on [lineId] at [stopId] bound for [destination] via
+     * [branch] (both as they appear on a [Departure] — [destination] already [cleanStopName]d,
+     * [branch] already normalized). Departures sharing a (destination, [BranchGrouping.mergeKey])
+     * render as one line; [BranchGrouping.label] is the branch shown, or null to drop it.
+     *
+     * **Resolution requires an exact branch match** — the arrival's branch must name a route
+     * pattern that actually serves this leg. Anything the bundled asset doesn't model that way
+     * keeps TfL's raw label and merges nothing: an unknown line, a stop or terminus off every
+     * pattern, or a branch no serving pattern carries (a Battersea train TfL tags "via Charing
+     * Cross" against an unlabeled Battersea pattern — it keeps `(Charing X)`, the trunk it runs;
+     * a rename or extension the asset predates). Incomplete or stale data degrades to "show what
+     * TfL said", never a confident wrong merge (maintainer, 2026-09-20).
+     */
+    fun grouping(lineId: String, stopId: String, destination: String, branch: String?): BranchGrouping {
+        val patterns = byLine[lineId] ?: return raw(branch)
+        // The approach-inclusive segment (one stop before this stop, through to the terminus) for
+        // every pattern that serves the leg, plus this departure's own (the pattern whose branch
+        // matches exactly).
+        val segments = ArrayList<Set<String>>(patterns.size)
+        var mine: Set<String>? = null
+        for (pattern in patterns) {
+            val segment = segment(pattern, stopId, destination) ?: continue
+            segments += segment
+            if (pattern.branch == branch) mine = segment
+        }
+        val forward = mine ?: return raw(branch)
+        // A choice iff more than one distinct segment serves the leg — either the trunks diverge
+        // ahead (High Barnet → Morden), or they reach this very stop by different approaches (the
+        // junction: Camden Town, Euston, Kennington), where the rider still picks a trunk/platform.
+        // Only past the junction, on the single shared track, do the segments match and rows merge.
+        return BranchGrouping(
+            mergeKey = signatureOf(forward),
+            label = if (segments.toHashSet().size >= 2) branch else null,
+        )
+    }
+
+    /**
+     * The stop-set from the stop **one before** [stopId] (toward [destination]) through to
+     * [destination] on [pattern], or null if [pattern] doesn't serve that leg. Including the
+     * approach stop is what keeps the branch at a junction: two trunks reach the junction stop
+     * by different approaches (into Camden Town, Bank via Euston vs Charing Cross via Mornington
+     * Crescent), so their segments differ there and both stay labeled. Only once past the
+     * junction — where the approach is shared too — do the segments match and the rows merge.
+     */
+    private fun segment(pattern: Pattern, stopId: String, destination: String): Set<String>? {
+        val i = pattern.stops.indexOf(stopId)
+        if (i < 0) return null
+        return when (destination) {
+            // Toward the last endpoint: this stop through the end, plus the one before it.
+            pattern.endB -> pattern.stops.subList((i - 1).coerceAtLeast(0), pattern.stops.size).toHashSet()
+            // Toward the first endpoint: the start through this stop, plus the one after it.
+            pattern.endA -> pattern.stops.subList(0, (i + 2).coerceAtMost(pattern.stops.size)).toHashSet()
+            else -> null
+        }
+    }
+
+    /** A canonical id for a segment, so equal segments share a merge key. */
+    private fun signatureOf(stops: Set<String>): String = stops.sorted().joinToString(",")
+
+    /** Keep TfL's own branch and merge nothing — the fallback when topology can't decide. */
+    private fun raw(branch: String?) = BranchGrouping(mergeKey = "raw:${branch ?: ""}", label = branch)
+
+    companion object {
+        /** No topology: every branch resolves as unknown, so labels are kept and nothing merges. */
+        val EMPTY = RouteTopology(emptyMap())
+    }
+}

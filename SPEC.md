@@ -173,6 +173,34 @@ trunks arrive as "Bank", "Bank Branch", and "CX", plus the full "Charing Cross" 
 label is normalized to one short board form per trunk ("Bank", "Charing X"), the spelling
 a rider reads the same on every row.
 
+The branch is shown only where it names a **choice the rider makes here**. Two trains to
+one terminus by different trunks are the *same service* only once the trunks have
+physically joined — past the junction, on the single shared track — "from the perspective
+of someone traveling away from Bank and Charing Cross the origin doesn't matter". There the
+rows **merge into one line and the branch label is dropped** (one "High Barnet" from
+Highgate, not a "High Barnet (Bank)" and a "High Barnet (Charing X)"). The branch stays,
+each row labeled, wherever the trunks are still distinct — including **at the junction and
+trunk stops themselves** (Camden Town, Euston, Kennington): a Bank train and a Charing Cross
+train reach Camden by different approaches (via Euston vs via Mornington Crescent) and leave
+from different platforms, so the rider still picks one there even though both go to High
+Barnet the same way onward. It stays too where a trunk-only stop lies ahead — High Barnet →
+Morden picks which central stations you pass, Euston → High Barnet picks whether the train
+calls at Mornington Crescent. The test is an **approach-inclusive path comparison** over
+TfL's Route/Sequence data: from the stop *one before* this one through to the terminus, equal
+sets of stops on both trunks ⇒ merge and drop the label; different ⇒ keep both. Including the
+approach stop is what keeps the branch at the junction (the trunks reach it by different
+approaches) while still merging once past it (the approach is then shared).
+
+Resolution requires an **exact branch match** — the arrival's branch must name a route
+pattern that actually serves this leg. Anything the asset doesn't model that way keeps TfL's
+raw label and merges nothing: an unknown line, a stop or terminus off every pattern, or a
+branch no serving pattern carries. That last case is Battersea Power Station — TfL tags its
+trains "via Charing Cross" but its route pattern carries no "via", so the branch matches no
+serving pattern and the train keeps "(Charing X)", the trunk it runs (redundant but not
+wrong; the maintainer prefers keeping it over dropping it). That data is a **bundled static
+asset** (regenerated from TfL, no runtime cost on any path); incomplete or stale data
+degrades to "show what TfL said", never to a confident wrong merge.
+
 The **branch outranks the terminus for space**, because on a branching line the trunk is
 what tells two otherwise-identical trains apart — losing it defeats the row. So where the
 pair won't fit, the branch is kept and the **destination truncates** to make room
