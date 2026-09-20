@@ -973,6 +973,16 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
 
 ## Decisions needing review
 
+- **App-bar action row is temporarily crowded by the launcher icon — accepted for now
+  (maintainer, 2026-09-20).** PR #67 adds the app icon in the `TopAppBar` nav slot. In the
+  production loaded state (`onLocateHere` non-null) the bar also carries the freshness stamp
+  plus locate + refresh + overflow buttons, so on a 411dp phone the "StopCast" title is
+  squeezed and can ellipsize (Codex P2 on #67, deferred with maintainer's sign-off). Accepted
+  as-is; the fix is to **slim the action row**: drop the locate button (auto-jump to the
+  current location — the auto-locate work, which also removes `onLocateHere`), and drop the
+  refresh button (pull-to-refresh already exists via `PullToRefreshBox`), moving anything left
+  to the overflow menu. Reversible — layout-only, no data path. Do it with the auto-locate
+  feature, not as a standalone app-bar refactor.
 - **Widget-snapshot-scope (Codex P1 from #44) deferred: PR #53 closed unmerged; aging stamp
   is the honesty floor and the render-path scoping stays an open task (not closed by Phase 2)**
   (autopilot, maintainer said "defer 53"). The gap is
