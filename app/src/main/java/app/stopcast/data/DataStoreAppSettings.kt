@@ -9,6 +9,9 @@ import androidx.datastore.core.Serializer
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStoreFile
 import app.stopcast.domain.AppSettings
+import app.stopcast.domain.DEFAULT_FONT_SCALE
+import app.stopcast.domain.FontSizeSettings
+import app.stopcast.domain.clampFontScale
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -35,31 +38,52 @@ class DataStoreAppSettings internal constructor(
 ) : AppSettings {
 
     override fun liveWidgetRefresh(): Flow<Boolean> =
-        dataStore.data
-            // A transient read failure (an I/O error, not the recognized corruption the handler
-            // replaces) is emitted into `data` as an exception. Retry it rather than collapsing to
-            // a terminal default: a `catch`-and-emit would end the flow, leaving a long-lived
-            // collector stuck at the default after storage recovered and making the worker read a
-            // synthetic `false` and retire the chain (Codex P2 on #56). retryWhen keeps the flow
-            // alive and recovers when the read succeeds; a non-IO cause rethrows. Sanitized log.
-            .retryWhen { cause, _ ->
-                if (cause is IOException) {
-                    logAppSettingsWarning("settings read failed, retrying: ${cause::class.simpleName}")
-                    delay(SETTINGS_READ_RETRY_MILLIS)
-                    true
-                } else {
-                    false
-                }
-            }
-            .map { it?.liveWidgetRefresh ?: DEFAULT_LIVE_WIDGET_REFRESH }
+        persisted().map { it?.liveWidgetRefresh ?: DEFAULT_LIVE_WIDGET_REFRESH }
 
     override suspend fun setLiveWidgetRefresh(enabled: Boolean) {
         dataStore.updateData { (it ?: PersistedSettings()).copy(liveWidgetRefresh = enabled) }
     }
 
+    override fun fontSize(): Flow<FontSizeSettings> =
+        persisted().map {
+            // Clamped on read, so a value written by a build with a wider range can never size a
+            // screen past what this one lays out.
+            FontSizeSettings(
+                scale = clampFontScale(it?.fontScale ?: DEFAULT_FONT_SCALE),
+                pinchEnabled = it?.pinchEnabled ?: DEFAULT_PINCH_ENABLED,
+            )
+        }
+
+    override suspend fun setFontScale(scale: Float) {
+        val clamped = clampFontScale(scale)
+        dataStore.updateData { (it ?: PersistedSettings()).copy(fontScale = clamped) }
+    }
+
+    override suspend fun setPinchEnabled(enabled: Boolean) {
+        dataStore.updateData { (it ?: PersistedSettings()).copy(pinchEnabled = enabled) }
+    }
+
+    // The shared read flow: DataStore's `data`, with a transient I/O read failure retried rather
+    // than collapsed to a terminal default. A `catch`-and-emit would end the flow, leaving a
+    // long-lived collector stuck at the default after storage recovered (Codex P2 on #56).
+    // retryWhen keeps the flow alive and recovers when the read succeeds; a non-IO cause rethrows.
+    private fun persisted(): Flow<PersistedSettings?> =
+        dataStore.data.retryWhen { cause, _ ->
+            if (cause is IOException) {
+                logAppSettingsWarning("settings read failed, retrying: ${cause::class.simpleName}")
+                delay(SETTINGS_READ_RETRY_MILLIS)
+                true
+            } else {
+                false
+            }
+        }
+
     companion object {
         /** The documented default, used before anything is saved and after a discard. */
         const val DEFAULT_LIVE_WIDGET_REFRESH = false
+
+        /** Whether a pinch may resize text before the user has chosen otherwise. */
+        const val DEFAULT_PINCH_ENABLED = true
 
         /** Backoff between retries of a transient settings read, so [liveWidgetRefresh]'s
          *  retryWhen doesn't hot-loop while storage is briefly unavailable. */
@@ -113,6 +137,8 @@ internal fun logAppSettingsWarning(message: String) = Log.w("StopCast.Settings",
 @Serializable
 data class PersistedSettings(
     val liveWidgetRefresh: Boolean = DataStoreAppSettings.DEFAULT_LIVE_WIDGET_REFRESH,
+    val fontScale: Float = DEFAULT_FONT_SCALE,
+    val pinchEnabled: Boolean = DataStoreAppSettings.DEFAULT_PINCH_ENABLED,
 )
 
 /**

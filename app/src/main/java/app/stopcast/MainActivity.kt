@@ -45,6 +45,7 @@ import app.stopcast.data.logAppSettingsWarning
 import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.RouteTopologyStore
+import app.stopcast.ui.FontSizeSetting
 import app.stopcast.ui.LocalRouteTopology
 import app.stopcast.ui.LicensesScreen
 import app.stopcast.ui.LocationGate
@@ -101,6 +102,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Warm the chosen text size into memory (off the main thread) so the first frame is sized
+        // from the user's setting rather than the default, then resized a beat later (SPEC *Display
+        // size*). Idempotent and shares the process-singleton DataStore instance the settings
+        // collector below uses.
+        FontSizeSetting.warm(DataStoreAppSettings.from(applicationContext, warn = ::logAppSettingsWarning))
         lifecycleScope.launch {
             routeTopology.value = withContext(Dispatchers.IO) { RouteTopologyStore.load(applicationContext) }
         }

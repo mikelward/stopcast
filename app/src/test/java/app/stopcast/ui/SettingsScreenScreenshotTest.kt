@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.stopcast.ui.theme.StopCastTheme
@@ -133,7 +134,7 @@ class SettingsScreenScreenshotTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNode(androidx.compose.ui.test.isToggleable()).assertIsNotEnabled()
+        composeRule.onNodeWithTag("liveWidgetSwitch").assertIsNotEnabled()
     }
 
     /**
@@ -168,7 +169,7 @@ class SettingsScreenScreenshotTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNode(androidx.compose.ui.test.isToggleable()).assertIsOn()
+        composeRule.onNodeWithTag("liveWidgetSwitch").assertIsOn()
     }
 
     @Test
@@ -180,7 +181,28 @@ class SettingsScreenScreenshotTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNode(androidx.compose.ui.test.isToggleable()).assertIsOff()
+        composeRule.onNodeWithTag("liveWidgetSwitch").assertIsOff()
+    }
+
+    /**
+     * The text-size controls render inside the theme, which provides the shared font-size state:
+     * the labeled slider (at the default system size) and the pinch switch (SPEC *Display size*).
+     * They appear above the live-widget row, so the recorded settings snapshots capture them too.
+     */
+    @Test
+    fun textSizeControls_render() {
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(liveWidgetRefresh = false, onLiveWidgetRefreshChange = {}, onBack = {})
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Text size").assertIsDisplayed()
+        composeRule.onNodeWithText("100%").assertIsDisplayed()
+        composeRule.onNodeWithTag("textSizeSlider").assertExists()
+        composeRule.onNodeWithText("Pinch to resize text").assertIsDisplayed()
+        composeRule.onNodeWithTag("pinchSwitch").assertIsOn()
     }
 
     /**

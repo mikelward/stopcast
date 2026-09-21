@@ -90,6 +90,16 @@
     <string name="settings_live_widget_refresh_failed">Couldn\'t update live refresh</string>
     <string name="action_dismiss">Dismiss</string>
 
+    <!-- Text-size (display scaling) settings. The size multiplies the system font size; the pinch
+         switch gates the two-finger gesture. -->
+    <string name="settings_text_size_title">Text size</string>
+    <!-- %1$d is the size as a percentage of the system size (100 = system size). -->
+    <string name="settings_text_size_value">%1$d%%</string>
+    <string name="settings_text_size_reset">Reset</string>
+    <string name="settings_text_size_content_description">Text size, %1$d percent</string>
+    <string name="settings_pinch_title">Pinch to resize text</string>
+    <string name="settings_pinch_summary">Spread or pinch two fingers anywhere in the app to change the text size.</string>
+
     <!-- About dialog and open-source licenses screen. -->
     <string name="menu_about">About</string>
     <string name="about_title">About</string>

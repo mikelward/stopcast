@@ -22,30 +22,41 @@ import app.stopcast.R
  */
 @Composable
 internal fun AboutDialog(onOpenLicenses: () -> Unit, onDismiss: () -> Unit) {
+    // A dialog opens its own window, which does not inherit the theme's scaled density or its
+    // pinch handler (SPEC *Display size*): [FontSizeWindow] re-applies the chosen size to each
+    // slot, and [pinchFontSizeHost] lets a pinch resize while the dialog is up, so "pinch anywhere"
+    // holds here too.
     AlertDialog(
+        modifier = Modifier.pinchFontSizeHost(),
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.about_title)) },
+        title = { FontSizeWindow { Text(stringResource(R.string.about_title)) } },
         text = {
-            Column {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Text(
-                    text = stringResource(R.string.settings_version, BuildConfig.VERSION_NAME),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+            FontSizeWindow {
+                Column {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_version, BuildConfig.VERSION_NAME),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = onOpenLicenses) {
-                Text(stringResource(R.string.settings_licenses_title))
+            FontSizeWindow {
+                TextButton(onClick = onOpenLicenses) {
+                    Text(stringResource(R.string.settings_licenses_title))
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+            FontSizeWindow {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+            }
         },
     )
 }

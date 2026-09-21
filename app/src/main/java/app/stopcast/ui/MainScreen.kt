@@ -230,30 +230,41 @@ fun MainScreen(
                                 }
                             }
                         }
-                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                            if (updateAvailable) {
+                        // The menu opens its own window, which doesn't inherit the theme's scaled
+                        // density or pinch handler — FontSizeWindow re-applies the chosen size to
+                        // the items and pinchFontSizeHost lets a pinch resize while it's open, so
+                        // the size setting reaches the menu too (SPEC *Display size*). The host
+                        // consumes only a two-finger pinch, so item taps are unaffected.
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            modifier = Modifier.pinchFontSizeHost(),
+                        ) {
+                            FontSizeWindow {
+                                if (updateAvailable) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.update_available)) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onOpenAppListing()
+                                        },
+                                    )
+                                }
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.update_available)) },
+                                    text = { Text(stringResource(R.string.menu_settings)) },
                                     onClick = {
                                         menuExpanded = false
-                                        onOpenAppListing()
+                                        onOpenSettings()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.menu_about)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        showAbout = true
                                     },
                                 )
                             }
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.menu_settings)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onOpenSettings()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.menu_about)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    showAbout = true
-                                },
-                            )
                         }
                     }
                 },
