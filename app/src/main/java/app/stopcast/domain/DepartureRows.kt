@@ -157,13 +157,15 @@ object DepartureRows {
      * (St Pancras International and King's Cross St. Pancras both carrying the same "No Step
      * Free Access" notice). Identical description text is the same notice whatever cluster it
      * sits in, so it is kept once, on the **nearest** stop carrying it. The kept row records the
-     * OTHER affected stops in [DepartureRow.alsoAt] (by display name, nearest-first), so the card
-     * names every stop the notice covers on expand rather than silently hiding the farther ones —
-     * which is what keeps a text-only collapse safe even when TfL's text does not name its own
-     * stop (a place-less "Station closed"): no warning is dropped (SPEC principle 1). Two genuinely
-     * different closures carry different text and stay separate cards. Line rows (timed and
-     * line-status) are deduped separately by their cross-stop (line, direction) key. Survivors are
-     * re-sorted by [rowOrder].
+     * OTHER differently-named affected stops in [DepartureRow.alsoAt] (by display name,
+     * nearest-first), so the card names them on expand rather than silently hiding a
+     * differently-named farther stop — which is what keeps a text-only collapse safe even when
+     * TfL's text does not name its own stop (a place-less "Station closed"): such a warning is not
+     * dropped (SPEC principle 1). Two closures with different text stay separate cards. (A farther
+     * stop that shares the nearest's *name* folds under it — a station's own platforms read as one
+     * place; two unrelated same-named places is a deferred residual, see the inline note.) Line
+     * rows (timed and line-status) are deduped separately by their cross-stop (line, direction)
+     * key. Survivors are re-sorted by [rowOrder].
      *
      * The dedupe identity is **cross-stop**: line + TfL's `direction`, *not* the row's
      * [DepartureRow.directionKey], which for a timed row can be the stop-local platform
@@ -195,10 +197,15 @@ object DepartureRows {
         val kept = lineRows.filter { nearestStopByKey[dedupeKeyOf(it)] == it.stopId }
         // Keep each distinct disruption notice once, on the nearest stop carrying its text — an
         // interchange's hub-wide notice is otherwise one identical card per member stop. The kept
-        // row records the OTHER stops the notice covers ([DepartureRow.alsoAt], by display name,
-        // nearest-first) so the card names every affected stop on expand: nothing is hidden even
-        // when TfL's text doesn't name its own stop (a place-less "Station closed"), which is what
-        // keeps a text-only collapse from dropping a genuinely distinct warning (principle 1).
+        // row records the OTHER distinctly-named stops the notice covers ([DepartureRow.alsoAt], by
+        // display name, nearest-first) so the card names them on expand: a differently-named stop is
+        // never hidden even when TfL's text doesn't name its own stop (a place-less "Station
+        // closed"), which is what keeps a text-only collapse from dropping such a warning
+        // (principle 1). Farther stops that share the nearest's display name fold under it — a
+        // station's own platforms (St Pancras spells one name across several `stationNaptan`s) read
+        // as one place, which is the point; the residual is two genuinely unrelated same-named
+        // places both closed with identical text, which needs the hub/geography identity to
+        // separate (deferred — see TODO.md; keying on display name is what folds the platforms).
         val statusByNotice = LinkedHashMap<String, MutableList<DepartureRow>>()
         for (row in stopStatus) {
             val text = row.stopDisruption ?: continue
@@ -208,7 +215,9 @@ object DepartureRows {
             val sorted = group.sortedWith(compareBy({ distanceOf(it.stopId) }, { it.stopId }))
             val nearest = sorted.first()
             // Distinct display names of the farther stops carrying this notice, nearest-first, the
-            // nearest's own name excluded (the group header already names it).
+            // nearest's own name excluded (the group header already names it). By display name so a
+            // station's several platforms fold to one, not by `clusterId` (that would list the
+            // station's own name a second time); the same-name residual is documented above.
             val others = sorted.asSequence()
                 .map { it.stopName }
                 .distinct()
