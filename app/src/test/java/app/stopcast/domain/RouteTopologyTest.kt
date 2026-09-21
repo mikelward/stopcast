@@ -87,7 +87,7 @@ class RouteTopologyTest {
     fun `an arrival whose branch matches no serving pattern keeps it raw`() {
         // TfL tags a Battersea train "via Charing Cross" (branch "Charing X"), but the Battersea
         // pattern carries no via — the branch matches no serving pattern, so it stays raw. The
-        // maintainer prefers Battersea keeping "(Charing X)" (the trunk it runs) over dropping it.
+        // maintainer prefers Battersea keeping ", Charing X" (the trunk it runs) over dropping it.
         assertEquals("Charing X", label(KNG, "Battersea Power", "Charing X"))
         // A branch the line never runs (a rename/extension the asset predates) likewise stays raw.
         assertEquals("Riverside", label(BNK, "Morden", "Riverside"))

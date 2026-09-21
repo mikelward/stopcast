@@ -217,8 +217,8 @@ class MainScreenScreenshotTest {
         // production "before" and not the unwired RouteTopology.EMPTY fallback. King's Cross is on
         // the Northern line's Bank (City) branch alone — the Charing Cross branch runs Camden Town →
         // Mornington Crescent → Warren Street → Charing Cross, not via King's Cross — so only one
-        // trunk serves this stop and the topology drops the redundant "(Bank)" cue here (High Barnet,
-        // Morden render bare). EMPTY would instead keep "(Bank)", which production never shows.
+        // trunk serves this stop and the topology drops the redundant ", Bank" cue here (High Barnet,
+        // Morden render bare). EMPTY would instead keep ", Bank", which production never shows.
         val topology = RouteTopology(
             mapOf(
                 "northern" to listOf(
@@ -259,9 +259,9 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("Walthamstow Central").assertExists()
         composeRule.onNodeWithText("Cockfosters").assertExists()
         // The Northern rows here are Bank-branch-only at King's Cross, so the topology drops the
-        // "(Bank)" cue — the production render, not the RouteTopology.EMPTY fallback.
+        // ", Bank" cue — the production render, not the RouteTopology.EMPTY fallback.
         composeRule.onNodeWithText("High Barnet").assertExists()
-        composeRule.onNodeWithText("(Bank)").assertDoesNotExist()
+        composeRule.onNodeWithText(", Bank").assertDoesNotExist()
     }
 
     // Two poles of one place: a northbound and a southbound bus stop that share a display name are
@@ -521,14 +521,14 @@ class MainScreenScreenshotTest {
     }
 
     @Test
-    fun `via branch shown in parens`() {
-        // The Northern line's branch (TfL's `towards` "via Charing Cross") shows parenthesized
-        // after the terminus, so a rider can pick the train by its central trunk (SPEC
-        // destination-label). Canned public line/place names only (SPEC *Privacy*).
+    fun `via branch joined to the terminus in list style`() {
+        // The Northern line's branch (TfL's `towards` "via Charing Cross") joins the terminus
+        // in list style ("Morden, Bank"), so a rider can pick the train by its central trunk
+        // (SPEC destination-label). Canned public line/place names only (SPEC *Privacy*).
         // Two cards, so the layout shows both behaviors: a short destination lets the branch
-        // sit fully beside it (Morden (Bank)), while a long one keeps the branch (the trunk
+        // sit fully beside it (Morden, Bank), while a long one keeps the branch (the trunk
         // cue) by shortening it to the board's own form and hard-clipping the destination to
-        // make room (Batter (Charing X)) — the branch outranks the terminus (SPEC destination-label).
+        // make room (Batter, Charing X) — the branch outranks the terminus (SPEC destination-label).
         val euston = StopArrivals(
             "940GZZLUEUS",
             "Euston",
@@ -553,9 +553,31 @@ class MainScreenScreenshotTest {
         // visually truncated; the branch shortens to the board's form where the row is tight,
         // and stays full where it fits.
         composeRule.onNodeWithText("Battersea Power").assertExists()
-        composeRule.onNodeWithText("(Charing X)").assertExists()
+        composeRule.onNodeWithText(", Charing X").assertExists()
         composeRule.onNodeWithText("Morden").assertExists()
-        composeRule.onNodeWithText("(Bank)").assertExists()
+        composeRule.onNodeWithText(", Bank").assertExists()
+    }
+
+    @Test
+    fun `Battersea, Charing X via-branch renders as a comma list`() {
+        // The literal "Battersea, Charing X" width case (maintainer, PR #92): the label joined in
+        // plain list style, filling the row beside a full three-arrival countdown ("Due · 8 · 12
+        // min"), with the comma against the terminus. Public line/place names only (SPEC *Privacy*).
+        val euston = StopArrivals(
+            "940GZZLUEUS",
+            "Euston",
+            listOf(
+                dep("northern", "Northern", "southbound", "Battersea", 30, "Platform 1", branch = "Charing X"),
+                dep("northern", "Northern", "southbound", "Battersea", 480, "Platform 1", branch = "Charing X"),
+                dep("northern", "Northern", "southbound", "Battersea", 720, "Platform 1", branch = "Charing X"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        capture("main-via-branch-clip.png") {
+            MainScreen(DeparturesUiState.Loaded(listOf(euston), now.minusSeconds(60)), now, {})
+        }
+        composeRule.onNodeWithText("Battersea").assertExists()
+        composeRule.onNodeWithText(", Charing X").assertExists()
     }
 
     @Test
@@ -584,7 +606,7 @@ class MainScreenScreenshotTest {
         // Two Edgware lines, one per branch — a single merged line would show "Edgware" once.
         composeRule.onAllNodesWithText("Edgware").assertCountEquals(2)
         // Each line carries its own branch cue (Bank is short, so it's never abbreviated).
-        composeRule.onNodeWithText("(Bank)").assertExists()
+        composeRule.onNodeWithText(", Bank").assertExists()
     }
 
     @Test
@@ -640,8 +662,8 @@ class MainScreenScreenshotTest {
         composeRule.waitForIdle()
         // One merged High Barnet line — a split would show "High Barnet" twice — and no branch cue.
         composeRule.onAllNodesWithText("High Barnet").assertCountEquals(1)
-        composeRule.onNodeWithText("(Bank)").assertDoesNotExist()
-        composeRule.onNodeWithText("(Charing X)").assertDoesNotExist()
+        composeRule.onNodeWithText(", Bank").assertDoesNotExist()
+        composeRule.onNodeWithText(", Charing X").assertDoesNotExist()
     }
 
     @Test

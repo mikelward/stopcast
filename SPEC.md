@@ -217,8 +217,8 @@ reversal of dropping them when a real destination exists.
 On a **branching line** (the Northern most visibly) two trains to the same terminus can
 run via different central trunks, and TfL names the trunk in `towards` ("Battersea Power
 Station via Charing Cross") — the cue a rider uses to pick their train. So when `towards`
-carries a "via", the branch is shown **parenthesized after the destination** ("Battersea
-Power (Charing X)"). The branch **participates in grouping**: within a direction, a
+carries a "via", the branch is shown **joined after the destination in plain list style**
+("Battersea Power, Charing X"). The branch **participates in grouping**: within a direction, a
 line is split not just per destination (D8) but per terminus-and-branch, so two trains to
 one terminus via different trunks (Edgware via Bank and via Charing Cross) each get their
 own line and their own merged countdown. Merging across branches would label the later
@@ -236,7 +236,7 @@ one terminus by different trunks are the *same service* only once the trunks hav
 physically joined — past the junction, on the single shared track — "from the perspective
 of someone traveling away from Bank and Charing Cross the origin doesn't matter". There the
 rows **merge into one line and the branch label is dropped** (one "High Barnet" from
-Highgate, not a "High Barnet (Bank)" and a "High Barnet (Charing X)"). The branch stays,
+Highgate, not a "High Barnet, Bank" and a "High Barnet, Charing X"). The branch stays,
 each row labeled, wherever the trunks are still distinct — including **at the junction and
 trunk stops themselves** (Camden Town, Euston, Kennington): a Bank train and a Charing Cross
 train reach Camden by different approaches (via Euston vs via Mornington Crescent) and leave
@@ -254,7 +254,7 @@ pattern that actually serves this leg. Anything the asset doesn't model that way
 raw label and merges nothing: an unknown line, a stop or terminus off every pattern, or a
 branch no serving pattern carries. That last case is Battersea Power Station — TfL tags its
 trains "via Charing Cross" but its route pattern carries no "via", so the branch matches no
-serving pattern and the train keeps "(Charing X)", the trunk it runs (redundant but not
+serving pattern and the train keeps ", Charing X", the trunk it runs (redundant but not
 wrong; the maintainer prefers keeping it over dropping it). That data is a **bundled static
 asset** (regenerated from TfL, no runtime cost on any path); incomplete or stale data
 degrades to "show what TfL said", never to a confident wrong merge.
@@ -263,7 +263,7 @@ The one exception to that raw fallback is a **single-branch stop** — one every
 reaches on the same trunk. There the branch names which trunk the train came up behind this
 stop, never a choice, so the label is dropped even for a short-working the asset doesn't model
 as a terminus. King's Cross is Bank-only, so a Bank-branch train there terminating at Golders
-Green or Finchley Central shows no "(Bank)".
+Green or Finchley Central shows no ", Bank".
 
 The **branch outranks the terminus for space**, because on a branching line the trunk is
 what tells two otherwise-identical trains apart — losing it defeats the row. So where the
@@ -272,7 +272,7 @@ yields**, in two steps: it first shortens common whole words to a compact form
 (`East`→`E.`, `Street`→`St`, and the rest — `DestinationAbbreviations`), and only a name
 still too long after that is **hard-clipped with a clean cut** — no ellipsis (maintainer
 preference: a `…` on a narrow row crushed the name to a glyph and read as a glitch). So a
-tight row reads "E. Finchley", or "Batter (Charing X)" at the extreme. The full name shows
+tight row reads "E. Finchley", or "Batter, Charing X" at the extreme. The full name shows
 whenever it fits and stays the accessible label throughout. Giving branch and terminus
 equal width was considered and declined: the branch is always short, so equal space would
 only clip the terminus sooner. A fuller rider-readable branch form under pressure

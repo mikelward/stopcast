@@ -277,6 +277,17 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       (2026-09-21): the branch is always the short board form, so equal space would only clip
       the terminus sooner; revisit as proportional balancing only if a fuller branch form
       (`via Charing Cross`) is ever shown.
+- [ ] **When the row has literally no room for the terminus, reconsider preferring the terminus
+      over the branch** (maintainer, 2026-09-21, PR #92). The branch outranks the terminus for
+      space today (SPEC destination-label), so at an extreme accessibility font scale on a narrow
+      row — where even the terminus's first glyph won't fit — the row shows the branch **alone and
+      bare**: `branchedLabel` drops the leading comma so it never renders a malformed ", Charing X"
+      with nothing before it (the Codex P2 fixed on #92). Open question the maintainer flagged: in
+      that zero-room case, is the *terminus* the more useful survivor than the branch? Cheap to
+      flip — it's one predicate in the pure `branchedLabel`, covered by its unit test — so it's
+      recorded here rather than guessed. Current behavior (branch alone) matches the existing
+      branch-outranks-terminus rule; the degenerate case is rare enough that either choice is only
+      seen at the largest font scales.
 - [x] **Cluster departures under a per-stop header** (maintainer, 2026-09-20; PR #78).
       Rather than a per-card subtitle, the list clusters by stop, **one header per stop**,
       showing the **bare stop name**, with each stop's own warning leading its block (option
@@ -1046,6 +1057,15 @@ and these carry the rest as their own PRs:
       would reintroduce the tube-color collision #42's hollow treatment exists to avoid (Windrush
       red ≈ Central). So the widget shows a safe neutral pill for named Overground for now;
       revisit with a verifiable Glance hollow treatment (or once pixel rendering lands).
+- [ ] **Widget should reuse the in-app row, differences as parameters (own PR, maintainer
+      2026-09-21).** The widget re-implements the departure-row shape (destination + branch
+      label, countdown, pill) in Glance rather than sharing the in-app card's composable, so a
+      rendering rule has to be applied twice and can drift — the branch-join format was just
+      changed in both `MainScreen` and `StopCastWidget.widgetLineLabel` for exactly this reason.
+      Factor the shared row/label logic into one place and drive the genuine differences
+      (Glance vs. Compose primitives, the widget's no-width-measurement constraint, its pill
+      fallbacks) through parameters. Reduces the two-surface drift the branch format, the
+      Overground pill, and the abbreviation ladder each already pay for separately.
 
 ## Phase 5 — Distribution and polish
 
