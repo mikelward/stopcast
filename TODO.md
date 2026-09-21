@@ -319,6 +319,29 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         something — a stop-detail / route-detail view. The card long-press already toggles
         the star; a tap is a deliberate no-op today (`DepartureRowCard`), and the header has
         no interaction. Decide the destinations and wire them.
+  - [x] **Dedupe a hub-wide alert; collapse the closure card** (maintainer, 2026-09-21).
+        v122 showed the same interchange notice as three full-height cards (King's Cross St.
+        Pancras + St Pancras International both carrying TfL's "no step-free access" text).
+        The near-me path now keeps each distinct notice once, on the nearest member carrying
+        its text (`DepartureRows.nearbyDeduped`), and the closure card collapses to one line,
+        tap-to-expand (`StopClosureContent`). Deduped by text — TfL names the place, so
+        identical text is the same notice — so it spans stations *and* the hub with no
+        `hubNaptanCode` plumbing; departures stay grouped per station (SPEC *Disruptions*).
+        Follow-ups deferred here:
+    - [ ] **Where the deduped alert renders.** It stays on the nearest member's card today
+          (option 3a). A dedicated **hub alert band** titled with TfL's interchange name (3b)
+          or **floating all alerts to a top block** were mocked in chat; both are a render
+          swap on the same dedup, judged on a device. The band needs the hub's display name,
+          which the nearby `/StopPoint` payload gives only as `hubNaptanCode`.
+    - [ ] **Per-description dedup.** A stop's disruptions are joined into one row's text, so
+          the dedup is on the joined string; a stop carrying a hub notice *plus* a local one
+          won't collapse the shared notice against a stop carrying only the hub notice. Rare
+          (mostly one notice per stop); split per description if it bites.
+    - [ ] **Merge the interchange's departures to the hub?** SPEC keeps King's Cross and St
+          Pancras as separate departure headers (they are different buildings). Clustering on
+          `hubNaptanCode` would merge them into one place; the next grain down is
+          `stationNaptan` (today's cluster) as a sub-header. Reverses a SPEC decision and hits
+          the dense-header case below — a maintainer call, discussed but not taken.
   - [ ] **Carry the stop grouping through the widget** (Codex, PR #78). The widget ships
         now and, on a multi-stop snapshot, renders a flat sequence of destination rows with
         no stop headers — so it gives no boarding location, the same gap this PR just closed

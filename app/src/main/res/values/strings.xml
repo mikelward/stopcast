@@ -31,6 +31,11 @@
     <!-- Shown when arrivals loaded but the disruption lookup failed, so these times'
          disruption status was never checked (SPEC Disruptions: not verified-clean). -->
     <string name="disruptions_unknown">Couldn\'t check for disruptions</string>
+    <!-- Click labels for the stop-closure card, which collapses a long TfL notice to one
+         line and expands to the full text on tap. Announced by a screen reader as the action
+         ("double tap to Show full alert"); the notice text itself is read from the card. -->
+    <string name="alert_expand">Show full alert</string>
+    <string name="alert_collapse">Show less</string>
     <!-- On a status row: a disrupted line (e.g. suspended) returning no predictions. Sits
          where a countdown would, as a short dash meaning "none" — distinct from the "?" a
          stale timed row shows for an unknown/withheld countdown. The chip beside it names
