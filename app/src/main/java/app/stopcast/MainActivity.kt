@@ -884,7 +884,7 @@ private fun AutoRefresh(viewModel: MainViewModel, relocating: StateFlow<Boolean>
 
 /**
  * A clock that advances on screen so countdowns and the freshness stamp recompute
- * without a new fetch (SPEC D4). Ten seconds is enough to keep "N min"/"Due" honest
+ * without a new fetch (SPEC D4). Ten seconds is enough to keep "N min"/"0 min" honest
  * while staying off a per-frame recomposition. The tick is gated on the RESUMED
  * lifecycle so a backgrounded screen isn't woken every 10 s for nothing (battery).
  */

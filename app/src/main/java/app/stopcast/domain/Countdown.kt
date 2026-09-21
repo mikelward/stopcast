@@ -10,7 +10,7 @@ import java.time.Instant
  *
  * - **Recompute from now**, not the fetch-time countdown, so the number stays
  *   honest as the clock advances between fetches.
- * - **Drop a departed service** rather than holding it at "Due" or showing
+ * - **Drop a departed service** rather than holding it at "0 min" or showing
  *   negative time — a countdown that reaches zero leaves the list.
  * - **Soonest-first**, so the next departure is at the top.
  */
@@ -26,36 +26,34 @@ object Countdown {
     }
 
     /**
-     * The minutes label: "Due" inside the last minute, "N min" otherwise. Assumes
+     * The minutes label: "0 min" inside the last minute, "N min" otherwise. Assumes
      * [departure] has not yet gone — call [upcoming] first, which drops departed
-     * services — but is defensive: a non-positive remaining still reads "Due"
+     * services — but is defensive: a non-positive remaining still reads "0 min"
      * rather than a negative number.
      */
     fun label(departure: Departure, now: Instant): String {
         val minutes = remaining(departure, now).toMinutes()
-        return if (minutes < 1) "Due" else "$minutes min"
+        return if (minutes < 1) "0 min" else "$minutes min"
     }
 
     /**
-     * Several [departures]' countdowns as one line — "Due · 3 · 6 min" — for a card that
+     * Several [departures]' countdowns as one line — "0 · 3 · 6 min" — for a card that
      * merges a service's next few times instead of one row each. Each departure renders as
-     * [label] would ("Due" or the bare minute count), joined by " · ", with the "min" unit
+     * [label] would ("0" or the bare minute count), joined by " · ", with the "min" unit
      * written once at the end so it reads as a list of minutes rather than repeating it.
      *
      * The caller passes an already-[upcoming] list (soonest-first, departed ones dropped),
      * **all to the same destination** — the screen groups by destination first so a
      * branching direction never merges a divergent train's time under the wrong headline
-     * (SPEC D8). Empty in, empty out. The unit is omitted when every entry is "Due" (all
-     * imminent), since there is no number for it to qualify.
+     * (SPEC D8). Empty in, empty out. Every entry is a number ("0" for an imminent train),
+     * so the "min" unit is always written once at the end.
      */
     fun mergedLabel(departures: List<Departure>, now: Instant): String {
         if (departures.isEmpty()) return ""
         val minutes = departures.map { remaining(it, now).toMinutes() }
-        val parts = minutes.map { if (it < 1) "Due" else it.toString() }
-        // upcoming() sorts soonest-first, so any "Due" precedes the numbers — the unit
-        // belongs at the end, present whenever at least one entry is a minute count.
-        val unit = if (minutes.any { it >= 1 }) " min" else ""
-        return parts.joinToString(" · ") + unit
+        val parts = minutes.map { if (it < 1) "0" else it.toString() }
+        // Every entry is a number now, so the "min" unit always belongs at the end.
+        return parts.joinToString(" · ") + " min"
     }
 
     /** [departures] that have not yet gone, soonest-first (ties broken by line for stability). */

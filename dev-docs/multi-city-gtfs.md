@@ -105,7 +105,7 @@ and its honesty floor (SPEC principle 1: never present scheduled as live).
   live countdown.
 - **If we ever added a scheduled fallback (post-v1), how to show it in the UI** so it can't
   be mistaken for live:
-  - **Format carries the distinction.** Live = a **countdown** ("3 min", "Due") — a countdown
+  - **Format carries the distinction.** Live = a **countdown** ("3 min", "0 min") — a countdown
     means a **fresh realtime prediction** (a `TripUpdate`), which may or may not be backed by a
     tracked vehicle position; it promises *live data*, not a vehicle we can see on a map.
     Scheduled = a **wall-clock time** ("14:32"), never a countdown. A counting-down number must

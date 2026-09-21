@@ -26,9 +26,9 @@ class CountdownTest {
         )
 
     @Test
-    fun `inside the last minute reads Due, otherwise whole minutes`() {
-        assertEquals("Due", Countdown.label(departure(offsetSeconds = 30), now))
-        assertEquals("Due", Countdown.label(departure(offsetSeconds = 59), now))
+    fun `inside the last minute reads 0 min, otherwise whole minutes`() {
+        assertEquals("0 min", Countdown.label(departure(offsetSeconds = 30), now))
+        assertEquals("0 min", Countdown.label(departure(offsetSeconds = 59), now))
         assertEquals("1 min", Countdown.label(departure(offsetSeconds = 60), now))
         assertEquals("1 min", Countdown.label(departure(offsetSeconds = 119), now))
         assertEquals("3 min", Countdown.label(departure(offsetSeconds = 180), now))
@@ -36,23 +36,23 @@ class CountdownTest {
 
     @Test
     fun `mergedLabel joins countdowns with the unit written once`() {
-        val soon = departure(offsetSeconds = 40) // Due
+        val soon = departure(offsetSeconds = 40) // 0
         val mid = departure(offsetSeconds = 180) // 3 min
         val later = departure(offsetSeconds = 360) // 6 min
-        assertEquals("Due · 3 · 6 min", Countdown.mergedLabel(listOf(soon, mid, later), now))
+        assertEquals("0 · 3 · 6 min", Countdown.mergedLabel(listOf(soon, mid, later), now))
     }
 
     @Test
     fun `mergedLabel of a single departure matches label`() {
         assertEquals("3 min", Countdown.mergedLabel(listOf(departure(offsetSeconds = 180)), now))
-        assertEquals("Due", Countdown.mergedLabel(listOf(departure(offsetSeconds = 30)), now))
+        assertEquals("0 min", Countdown.mergedLabel(listOf(departure(offsetSeconds = 30)), now))
     }
 
     @Test
-    fun `mergedLabel omits the unit when every entry is Due`() {
+    fun `mergedLabel keeps the unit even when every entry is 0`() {
         val a = departure(offsetSeconds = 20)
         val b = departure(offsetSeconds = 50)
-        assertEquals("Due · Due", Countdown.mergedLabel(listOf(a, b), now))
+        assertEquals("0 · 0 min", Countdown.mergedLabel(listOf(a, b), now))
     }
 
     @Test

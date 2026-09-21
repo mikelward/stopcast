@@ -155,13 +155,13 @@ The app finds stops two ways:
 ### Departures
 
 For each watched stop, stopcast shows the next few departures: **line**, **destination**
-(where the service is headed), and a **countdown**. Countdowns render as minutes — "Due"
+(where the service is headed), and a **countdown**. Countdowns render as minutes — "0 min"
 when imminent, "3 min", "12 min" — sorted soonest-first.
 
 **The unit of display is a flat row per (service, stop, direction)** — a *service*
 being a line (or bus route) at a stop — presented as a **compact card**: the line pill
 and its destination as the headline, and the service's **next few countdowns merged onto
-one line** ("Due · 3 · 6 min", the "min" unit written once). The **stop name is not
+one line** ("0 · 3 · 6 min", the "min" unit written once). The **stop name is not
 repeated on every card**: it read as clutter restated per row, and on the lock-screen
 widget the stop is implied by the context the user set up. Instead, once the list spans
 more than one place, a **small header above each group of same-place cards** names it,
@@ -420,7 +420,7 @@ time as the clock advances — so "3 min" becomes "1 min" between network calls 
 new request, and the numbers stay honest.
 
 A prediction whose countdown reaches zero is **dropped from the list client-side** — it
-is never held at "Due" or shown as negative time for a service that has already gone —
+is never held at "0 min" or shown as negative time for a service that has already gone —
 so the next departure advances between fetches without waiting for one.
 
 "Too old to trust" is **one shared policy, not a per-surface judgment**: a single
@@ -730,7 +730,7 @@ Mirrors the sibling fleet:
   "quietly wrong" failure; the disruption is what makes the number trustworthy or not.
 - **D4 — No surface presents stale data as live.** Data is stamped with its fetch age;
   countdowns recompute from the fetch time client-side; an expired prediction drops off
-  the list rather than sticking at "Due"; and a single shared staleness threshold (one
+  the list rather than sticking at "0 min"; and a single shared staleness threshold (one
   tuned constant, not a per-surface number) decides when numbers are withheld for "tap
   to refresh".
 - **D5 — Widget refresh is opportunistic and bounded, not aggressive polling.** Tap,
