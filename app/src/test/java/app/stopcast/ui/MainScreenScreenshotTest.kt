@@ -164,6 +164,104 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("OXFORD CIRCUS").assertExists()
     }
 
+    // The busiest interchange on the network: King's Cross St. Pancras, six Underground lines
+    // both ways. Real line ids and termini so the pills and destinations render as they would
+    // on the day. Public infrastructure / line names only (SPEC *Privacy*).
+    private fun kingsCrossStPancras() = StopArrivals(
+        "940GZZLUKSX",
+        "King's Cross St. Pancras",
+        listOf(
+            dep("victoria", "Victoria", "northbound", "Walthamstow Central", 60, "Northbound - Platform 1"),
+            dep("victoria", "Victoria", "southbound", "Brixton", 210, "Southbound - Platform 2"),
+            dep("piccadilly", "Piccadilly", "eastbound", "Cockfosters", 120, "Eastbound - Platform 3"),
+            dep("piccadilly", "Piccadilly", "westbound", "Heathrow Terminal 5", 330, "Westbound - Platform 4"),
+            dep("northern", "Northern", "northbound", "High Barnet", 90, "Northbound - Platform 5", branch = "Bank"),
+            dep("northern", "Northern", "southbound", "Morden", 240, "Southbound - Platform 6", branch = "Bank"),
+            // Circle, Hammersmith & City and Metropolitan share the sub-surface platforms here,
+            // so all three run eastbound (Platform 2) / westbound (Platform 1) at King's Cross —
+            // not the Metropolitan's whole-network northbound/southbound convention.
+            dep("circle", "Circle", "eastbound", "Edgware Road", 300, "Eastbound - Platform 2"),
+            dep("circle", "Circle", "westbound", "Hammersmith", 390, "Westbound - Platform 1"),
+            dep("metropolitan", "Metropolitan", "eastbound", "Aldgate", 180, "Eastbound - Platform 2"),
+            dep("metropolitan", "Metropolitan", "westbound", "Uxbridge", 270, "Westbound - Platform 1"),
+            dep("hammersmith-city", "Hammersmith & City", "eastbound", "Barking", 150, "Eastbound - Platform 2"),
+            dep("hammersmith-city", "Hammersmith & City", "westbound", "Hammersmith", 420, "Westbound - Platform 1"),
+        ),
+        fetchedAt = now.minusSeconds(60),
+    )
+
+    // A bus stop on the same street — a realistic local watched set is a station plus the bus
+    // stops around it, not two far-apart interchanges. Public route/place names only.
+    private fun kingsCrossBusStop() = StopArrivals(
+        "490000077E",
+        "King's Cross Station",
+        listOf(
+            dep("73", "73", "outbound", "Stoke Newington", 120, "", mode = "bus"),
+            dep("91", "91", "outbound", "Crouch End", 300, "", mode = "bus"),
+            dep("259", "259", "outbound", "Edmonton Green", 480, "", mode = "bus"),
+        ),
+        fetchedAt = now.minusSeconds(60),
+    )
+
+    @Test
+    fun `the most connected station renders under one bare-name header`() {
+        // The wall the large-station grain decision turns on (TODO): King's Cross' six lines both
+        // ways sit under a single bare "KING'S CROSS ST. PANCRAS" header today, with direction
+        // living only in each card's destination. A nearby bus stop makes the multi-stop header
+        // render (a single stop would imply itself) and sits below the wall — a busy interchange
+        // overflows one screen. This captures the shipped one-per-stop behavior: the "before"
+        // for any grain change.
+        // Wire the bundled branch topology the way MainActivity does, so the capture is the real
+        // production "before" and not the unwired RouteTopology.EMPTY fallback. King's Cross is on
+        // the Northern line's Bank (City) branch alone — the Charing Cross branch runs Camden Town →
+        // Mornington Crescent → Warren Street → Charing Cross, not via King's Cross — so only one
+        // trunk serves this stop and the topology drops the redundant "(Bank)" cue here (High Barnet,
+        // Morden render bare). EMPTY would instead keep "(Bank)", which production never shows.
+        val topology = RouteTopology(
+            mapOf(
+                "northern" to listOf(
+                    RoutePattern(
+                        "Bank",
+                        listOf(
+                            "940GZZLUHBT", "940GZZLUHGT", "940GZZLUCTN", "940GZZLUEUS",
+                            "940GZZLUKSX", "940GZZLUBNK", "940GZZLUKNG", "940GZZLUMDN",
+                        ),
+                        "High Barnet",
+                        "Morden",
+                    ),
+                    RoutePattern(
+                        "Charing X",
+                        listOf(
+                            "940GZZLUHBT", "940GZZLUHGT", "940GZZLUCTN", "940GZZLUMTC",
+                            "940GZZLUEUS", "940GZZLUCHX", "940GZZLUKNG", "940GZZLUMDN",
+                        ),
+                        "High Barnet",
+                        "Morden",
+                    ),
+                ),
+            ),
+        )
+        capture("main-connected-station.png") {
+            CompositionLocalProvider(LocalRouteTopology provides topology) {
+                MainScreen(
+                    DeparturesUiState.Loaded(listOf(kingsCrossStPancras(), kingsCrossBusStop()), now.minusSeconds(60)),
+                    now,
+                    {},
+                )
+            }
+        }
+        // The header and the two soonest cards are within the composed window; the bus stop's own
+        // block is below the wall (off-screen, so not in the semantics tree here). Real lines
+        // render their own pills, with direction only on the cards — the grain question.
+        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertExists()
+        composeRule.onNodeWithText("Walthamstow Central").assertExists()
+        composeRule.onNodeWithText("Cockfosters").assertExists()
+        // The Northern rows here are Bank-branch-only at King's Cross, so the topology drops the
+        // "(Bank)" cue — the production render, not the RouteTopology.EMPTY fallback.
+        composeRule.onNodeWithText("High Barnet").assertExists()
+        composeRule.onNodeWithText("(Bank)").assertDoesNotExist()
+    }
+
     @Test
     fun `via branch shown in parens`() {
         // The Northern line's branch (TfL's `towards` "via Charing Cross") shows parenthesized
