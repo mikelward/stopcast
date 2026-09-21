@@ -12,6 +12,9 @@ Product and architecture decisions live in `SPEC.md`; the phased plan lives in
 `mikelward/simmo`, `mikelward/snoozemo`, and `mikelward/typelauncher`; when a convention
 is underspecified here, Simmo's `AGENTS.md` is the tiebreaker.
 
+**Prefer a shared `mikelward/*` library over hand-rolling an app-local copy** (unless the
+maintainer says otherwise), so the fleet doesn't carry divergent implementations of one thing.
+
 **The Gradle build and CI land in Phase 0 (`TODO.md`).** Until then there is nothing to
 `./gradlew`; once Phase 0 lands, `./gradlew test` and `./gradlew lint` must pass before
 every push.

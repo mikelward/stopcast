@@ -1,13 +1,13 @@
 package app.stopcast.data
 
 import android.content.Context
-import android.util.Log
 import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.Serializer
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStoreFile
+import app.stopcast.StopcastDebugLog
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.DEFAULT_FONT_SCALE
 import app.stopcast.domain.FontSizeSettings
@@ -127,7 +127,7 @@ class DataStoreAppSettings internal constructor(
  * by the production callers so a silent reset-to-defaults leaves a diagnostic (Codex P2 on #56).
  * A top-level function so every caller passes the same sink (the singleton keeps the first).
  */
-internal fun logAppSettingsWarning(message: String) = Log.w("StopCast.Settings", message)
+internal fun logAppSettingsWarning(message: String) = StopcastDebugLog.warning("settings: %s", message)
 
 /**
  * The persisted settings shape. Every field carries a default so a file written by an older

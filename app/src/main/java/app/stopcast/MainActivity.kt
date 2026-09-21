@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -705,39 +704,39 @@ private fun tickingNow(): Instant {
 /**
  * The production sink for the location seam's warnings: coarse messages carrying no
  * coordinate or key (SPEC *Privacy*), so a diagnosis of a misfiring fix isn't discarded in
- * the shipped app. Logcat only — not the persisted, shareable debug log, which lands with
- * its `docs/PRIVACY.md` disclosure in the Phase 5 logging work.
+ * the shipped app. Routes to [StopcastDebugLog] — the shared diagnostic log, which fans out
+ * to Logcat and the on-device persisted file (`docs/PRIVACY.md`). It never leaves the device;
+ * a user-shareable export with travel data redacted is a later change.
  *
  * Top-level, not an Activity method: a `MainActivity::` method reference is held by the
  * ViewModels it's passed to, and an activity-scoped ViewModel outlives the Activity across
  * configuration changes — so a bound reference would pin each destroyed Activity in the
  * ViewModel store (Codex). A top-level function captures nothing.
  */
-private fun logLocationWarning(message: String) = Log.w("StopCast.Location", message)
+private fun logLocationWarning(message: String) = StopcastDebugLog.warning("location: %s", message)
 
 /**
  * The production sink for the departures/disruption seam's warnings. Without it wired,
  * `MainViewModel`'s `warn` defaulted to a no-op, so a persistent "couldn't check for
  * disruptions" left nothing in logcat to explain which line or lookup was unknown. The
  * messages are coarse — a count, a line id, an HTTP reason — with no coordinate, stop-set,
- * or key (SPEC *Privacy*: line ids are allowed). Logcat only, like [logLocationWarning];
- * the persisted, shareable debug log lands in the Phase 5 work. Top-level for the same
- * no-Activity-capture reason as [logLocationWarning].
+ * or key (SPEC *Privacy*: line ids are allowed). Routes to [StopcastDebugLog] like
+ * [logLocationWarning], top-level for the same no-Activity-capture reason.
  */
-private fun logDepartureWarning(message: String) = Log.w("StopCast.Departures", message)
+private fun logDepartureWarning(message: String) = StopcastDebugLog.warning("departures: %s", message)
 
 /**
  * The production sink for the starred-rows store's warnings — a discarded corrupt star file,
  * or a preserved newer-schema file. Without it wired the store defaulted to a no-op, so those
  * recovery paths left nothing in logcat. The messages are coarse facts (no stop/line id is
- * needed and none is logged); Logcat only, like [logLocationWarning], for the same
- * no-Activity-capture reason.
+ * needed and none is logged); routed to [StopcastDebugLog] like [logLocationWarning], for the
+ * same no-Activity-capture reason.
  */
-private fun logStarWarning(message: String) = Log.w("StopCast.Stars", message)
+private fun logStarWarning(message: String) = StopcastDebugLog.warning("stars: %s", message)
 
 /**
  * The production sink for the Play update checker's warnings — a failed availability fetch.
- * Coarse and PII-free (an exception class name, no user data); Logcat only, like
- * [logLocationWarning], for the same no-Activity-capture reason.
+ * Coarse and PII-free (an exception class name, no user data); routed to [StopcastDebugLog]
+ * like [logLocationWarning], for the same no-Activity-capture reason.
  */
-private fun logUpdateWarning(message: String) = Log.w("StopCast.Update", message)
+private fun logUpdateWarning(message: String) = StopcastDebugLog.warning("update: %s", message)

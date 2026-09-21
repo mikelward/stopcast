@@ -630,8 +630,13 @@ Mirrors the sibling fleet:
 - CI mirrors the sibling `ci.yml` (build + unit tests + lint, a screenshot job, a
   Play-internal-track deploy job with release notes built from commit subjects) plus
   the shared `lanes`, `codex`, and `zizmor` checks.
-- The on-device debug log is `mikelward/androidlog`, resolved as a published
-  dependency.
+- **Diagnostics are a persisted, on-device debug log**, off every render path: warnings are
+  buffered and written to a rotating file in app-private storage that survives a crash or a
+  silent process kill, so a misbehaving fix or refresh can be diagnosed after the fact (serves
+  *never fail silently*). It stays on the device — no off-device sink — and carries coarse
+  diagnostics only (see *Data source, cost, and reliability*); a redacted, user-shareable
+  export is planned. The implementation is the shared `mikelward/androidlog` buffer, resolved
+  as a published dependency.
 
 ## Non-goals
 
