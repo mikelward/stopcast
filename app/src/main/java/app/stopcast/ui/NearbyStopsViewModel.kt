@@ -55,19 +55,35 @@ class NearbyStopsViewModel(
         data object Locating : State
 
         /**
-         * Located, with the near-me set (SPEC *Finding stops → Near me now*). [stops] is the
-         * **eager** tier — the nearest [NearbySelection.CLUSTERS_PER_MODE] clusters of each mode —
-         * handed to the departures view and fetched at once. (Paging the farther clusters behind a
-         * per-mode "More" control is deferred to its own change; see `TODO.md`.)
+         * Located, with the near-me set as its two tiers (SPEC *Finding stops → Near me now*):
+         * [eager] — the nearest [NearbySelection.CLUSTERS_PER_MODE] clusters of each mode, fetched
+         * and shown at once — and [more] — the farther clusters, distance-ordered, that a per-mode
+         * "More" tap reveals and fetches on demand. Both are carried (not just eager) so the
+         * retained departures view can key on the whole nearby set and reconcile a revealed
+         * expansion across a relocation, rather than losing it whenever the eager set's identity
+         * shifts.
          *
-         * [distanceMeters] (`stopId` → meters from the fix) lets the departures list collapse a
-         * line served by several adjacent stops down to its nearest. It stays in memory for that
-         * render and never reaches a log or the persisted snapshot (SPEC *Privacy*).
+         * [distanceMeters] (`stopId` → meters from the fix) spans **both** tiers, so a revealed
+         * stop is collapsed and ordered the same way an eager one is (a line served by several
+         * adjacent stops shows once, from its nearest). It stays in memory for that render and
+         * never reaches a log or the persisted snapshot (SPEC *Privacy*).
          */
         data class Ready(
-            val stops: List<StopRef>,
+            val eager: List<NearbySelection.NearbyCluster>,
+            val more: List<NearbySelection.NearbyCluster>,
             val distanceMeters: Map<String, Double>,
-        ) : State
+        ) : State {
+            /** The eager tier flattened to the stops shown and fetched at once. */
+            val eagerStops: List<StopRef> get() = eager.flatMap { c -> c.stops.map { it.toStopRef() } }
+
+            /**
+             * Order-independent identity of the WHOLE nearby set (both tiers), so a relocation that
+             * only reorders the same clusters — or shifts one across the eager/more boundary while
+             * every cluster stays in range — is recognized as the same set and keeps a revealed
+             * expansion, rather than rebuilding the retained departures view and dropping it.
+             */
+            val clusterSetKey: String get() = (eager + more).map { it.key }.sorted().joinToString(",")
+        }
 
         /** Permission held but no position available (location off, or no fix yet). */
         data object NoLocation : State
@@ -128,29 +144,30 @@ class NearbyStopsViewModel(
      *   principles 1–2) — the gate replaces the list rather than leaving a stale set on screen
      *   (cards omit the stop name, so a stale set is indistinguishable from the real one).
      */
-    fun relocate(onSameSet: () -> Unit = {}) {
+    fun relocate(onSameSet: (State.Ready) -> Unit = {}) {
         locateJob?.cancel()
         val current = _state.value
         val job = viewModelScope.launch {
             // Force a fresh fix: the user may have walked since the last one, and a cached fix
             // would re-resolve for the previous position (see LocationProvider.current).
             val next = resolveNearby(forceFresh = true)
-            // Always emit the fresh outcome. Even when the stop IDs are unchanged, the fresh fix
-            // may have moved within the set, so the per-stop distances differ — and the list uses
+            // Always emit the fresh outcome. Even when the cluster set is unchanged, the fresh fix
+            // may have moved within it, so the per-stop distances differ — and the list uses
             // distanceMeters to pick which adjacent stop represents each line and to order rows
             // (SPEC *Finding stops → Near me now*), so the old distances would dedupe/sort by the
-            // previous position. Emitting a same-ID Ready does not recreate the departures
-            // ViewModel (its store is keyed by stop IDs only), so this is a plain recompose, not a
-            // re-fetch. (Updated name/lines still don't reach the already-seeded ViewModel — the
-            // deferred same-set-metadata gap, tracked in TODO.md.)
+            // previous position. Emitting a same-set Ready does not recreate the departures
+            // ViewModel (its store is keyed on the whole cluster set), so this is a plain
+            // recompose plus an in-place reconcile, not a rebuild.
             _state.value = next
             if (
                 next is State.Ready && current is State.Ready &&
-                next.stops.map { it.id } == current.stops.map { it.id }
+                next.clusterSetKey == current.clusterSetKey
             ) {
-                // Same stop set: refresh the existing departures ViewModel in place, sequenced
-                // after the fix (never fetched in parallel with it).
-                onSameSet()
+                // Same nearby set (both tiers, order-independent): reconcile the retained
+                // departures ViewModel in place — update its tiers, drop a revealed cluster the
+                // fresh fix no longer offers, and re-fetch — sequenced after the fix (never
+                // fetched in parallel with it), so a revealed expansion survives the relocation.
+                onSameSet(next)
             }
         }
         locateJob = job
@@ -192,21 +209,18 @@ class NearbyStopsViewModel(
         // Eager empty means no clusters at all (each present mode contributes its nearest) —
         // nothing in range.
         if (result.eager.isEmpty()) return State.Empty
-        // Distance per eager stop (in memory only) so the departures list can show a line once,
-        // from its nearest stop (SPEC *Finding stops → Near me now*). Never logged or persisted
-        // (SPEC *Privacy*).
-        val eagerStops = result.eager.flatMap { it.stops }
-        val distances = eagerStops.associate {
-            it.id to NearestStops.distanceMeters(fix.latitude, fix.longitude, it.latitude, it.longitude)
-        }
+        // Distance per stop, over BOTH tiers (in memory only), so a revealed stop is collapsed and
+        // ordered like an eager one — the departures list shows a line once, from its nearest stop
+        // (SPEC *Finding stops → Near me now*). Never logged or persisted (SPEC *Privacy*).
+        val distances = (result.eager + result.more)
+            .flatMap { it.stops }
+            .associate { it.id to NearestStops.distanceMeters(fix.latitude, fix.longitude, it.latitude, it.longitude) }
         return State.Ready(
-            stops = eagerStops.map { it.toStopRef() },
+            eager = result.eager,
+            more = result.more,
             distanceMeters = distances,
         )
     }
-
-    private fun StopLocation.toStopRef() =
-        StopRef(id = id, name = name, lines = lines, clusterId = clusterId)
 
     private fun kindOf(e: Throwable): DeparturesUiState.Error.Kind = when (e) {
         is TflException.Offline -> DeparturesUiState.Error.Kind.OFFLINE
@@ -214,3 +228,8 @@ class NearbyStopsViewModel(
         else -> DeparturesUiState.Error.Kind.UNREACHABLE
     }
 }
+
+/** The departures-view [StopRef] a nearby [StopLocation] maps to — the coordinate is dropped
+ *  (it stays in the selection/distance math, never reaching the departures VM or a log). */
+internal fun StopLocation.toStopRef() =
+    StopRef(id = id, name = name, lines = lines, clusterId = clusterId)

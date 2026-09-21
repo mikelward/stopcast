@@ -49,6 +49,15 @@ class WidgetSnapshotStore(context: Context) : SnapshotStore {
         return applied
     }
 
+    override suspend fun pruneStops(departedStopIds: Collection<String>) {
+        if (departedStopIds.isEmpty()) return
+        // Drop the departed stops from the shared file, then re-render so the widget shows the
+        // reduced set at once (a stop left the nearby set). The poke is secondary and best-effort,
+        // as on the save path — the removal is already committed.
+        delegate.pruneStops(departedStopIds)
+        pokeWidget()
+    }
+
     /**
      * Pokes the widget to re-render with the now-persisted snapshot. The redraw is secondary and
      * best-effort — the snapshot is already committed, so a redraw failure must NOT surface as a

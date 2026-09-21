@@ -5,8 +5,10 @@ import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
+import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.SnapshotStore
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.StopLocation
 import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.TflClient
 import app.stopcast.domain.TflException
@@ -58,8 +60,14 @@ class MainViewModelTest {
     ) : TflClient {
         var requestedLineIds: Collection<String>? = null
 
-        override suspend fun arrivals(stopId: String): List<Departure> =
-            byStop.getValue(stopId).getOrThrow()
+        // Stop ids to fail regardless of [byStop] — lets a later fetch of an
+        // already-succeeded stop fail, so a reconcile's refetch can be made non-authoritative.
+        val failing = mutableSetOf<String>()
+
+        override suspend fun arrivals(stopId: String): List<Departure> {
+            if (stopId in failing) throw RuntimeException("arrivals failed for $stopId")
+            return byStop.getValue(stopId).getOrThrow()
+        }
 
         override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
             requestedLineIds = lineIds
@@ -83,8 +91,15 @@ class MainViewModelTest {
     private class FakeStore(initial: DeparturesSnapshot? = null) : SnapshotStore {
         var stored: DeparturesSnapshot? = initial
         val saves = mutableListOf<DeparturesSnapshot>()
+        // When > 0, the next this-many save() calls throw instead of storing — to exercise a
+        // shrink-save that fails so the pending-persist is retried, not dropped (Codex, PR #87).
+        var failSaves: Int = 0
         override suspend fun load(): DeparturesSnapshot? = stored
         override suspend fun save(snapshot: DeparturesSnapshot) {
+            if (failSaves > 0) {
+                failSaves--
+                throw RuntimeException("save failed")
+            }
             stored = snapshot
             saves += snapshot
         }
@@ -97,6 +112,16 @@ class MainViewModelTest {
             stored = snapshot
             saves += snapshot
             return true
+        }
+
+        // A targeted removal, independent of [save] and its [failSaves] — the redesign's point is
+        // that a departed stop leaves disk regardless of the re-fetch's save (Codex, PR #87).
+        override suspend fun pruneStops(departedStopIds: Collection<String>) {
+            val current = stored ?: return
+            val kept = current.stops.filterNot { it.stopId in departedStopIds }
+            if (kept.size != current.stops.size) {
+                stored = DeparturesSnapshot(kept, kept.maxOfOrNull { it.fetchedAt } ?: current.fetchedAt)
+            }
         }
     }
 
@@ -1340,4 +1365,235 @@ class MainViewModelTest {
         assertTrue(vm.starred.value.isEmpty())
         assertTrue(warnings.any { it.contains("starred set read failed") })
     }
+
+    // --- The "More" reveal: the retained ViewModel owns both tiers and reconciles across a
+    // relocation (SPEC *Finding stops → Near me now*). ---
+
+    // A `more` cluster [key] holding one stop per (id, mode). Coordinates don't matter here (the
+    // ViewModel fetches by id and never reads them), so they're the origin.
+    private fun clusterOf(key: String, vararg stops: Pair<String, String>): NearbySelection.NearbyCluster =
+        NearbySelection.NearbyCluster(
+            key = key,
+            stops = stops.map { (id, mode) ->
+                StopLocation(id = id, name = id, latitude = 0.0, longitude = 0.0, lines = listOf(LineRef("$mode-$id", id, mode)), clusterId = key)
+            },
+            distanceMeters = 0.0,
+        )
+
+    private fun tierVm(
+        client: TflClient,
+        eager: List<StopRef>,
+        more: List<NearbySelection.NearbyCluster>,
+        store: SnapshotStore = SnapshotStore.NONE,
+    ) = MainViewModel(client, eager, initialMore = more, clock = { now }, io = dispatcher, snapshotStore = store)
+
+    // The eager tier for a reconcile as one single-stop cluster per (id, mode), each its own key.
+    private fun eagerOf(vararg stops: Pair<String, String>): List<NearbySelection.NearbyCluster> =
+        stops.map { (id, mode) -> clusterOf("ec:$id", id to mode) }
+
+    private fun shownIds(vm: MainViewModel) = (vm.state.value as DeparturesUiState.Loaded).stops.map { it.stopId }
+
+    private fun twoStopClient() = FakeClient(
+        mapOf(
+            "E" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+            "MA" to Result.success(listOf(departure("central", "Central", 200))),
+        ),
+    )
+
+    @Test
+    fun `reveal fetches the more cluster and drops its More button`() = runTest(dispatcher) {
+        val vm = tierVm(twoStopClient(), listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")))
+        advanceUntilIdle()
+        // Before the tap: only the eager stop is shown, and a "bus" More button is offered.
+        assertEquals(setOf("bus"), vm.moreState.value)
+        assertEquals(listOf("E"), shownIds(vm))
+
+        vm.reveal("bus")
+        advanceUntilIdle()
+        // The revealed cluster's stop is fetched and shown; nothing is left to page, so no button.
+        assertEquals(setOf("E", "MA"), shownIds(vm).toSet())
+        assertTrue(vm.moreState.value.isEmpty())
+    }
+
+    @Test
+    fun `a reconcile to the same set keeps a revealed cluster fetched`() = runTest(dispatcher) {
+        val vm = tierVm(twoStopClient(), listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")))
+        advanceUntilIdle()
+        vm.reveal("bus")
+        advanceUntilIdle()
+        assertTrue("MA" in shownIds(vm))
+
+        // The same nearby set, re-supplied (a plain relocate that keeps the clusters) — the reveal
+        // survives, since the ViewModel is keyed on the whole set, not rebuilt.
+        vm.reconcile(newEager = eagerOf("E" to "bus"), newMore = listOf(clusterOf("M1", "MA" to "bus")))
+        advanceUntilIdle()
+        assertTrue("MA" in shownIds(vm))
+    }
+
+    @Test
+    fun `a revealed cluster survives a promotion into eager and a later demotion`() = runTest(dispatcher) {
+        val vm = tierVm(twoStopClient(), listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")))
+        advanceUntilIdle()
+        vm.reveal("bus")
+        advanceUntilIdle()
+
+        // A small move: M1 (MA) crosses into the eager pair, E drops to `more`. The whole cluster
+        // set is unchanged, so MA stays fetched — now via the eager tier — while the demoted E
+        // leaves the shown set and offers its own "More" button.
+        vm.reconcile(newEager = listOf(clusterOf("M1", "MA" to "bus")), newMore = listOf(clusterOf("EC", "E" to "bus")))
+        advanceUntilIdle()
+        assertTrue("MA" in shownIds(vm))
+        assertTrue("E" !in shownIds(vm))
+        assertEquals(setOf("bus"), vm.moreState.value)
+
+        // Move back: M1 demotes to `more` and E returns to eager, still the same whole set. M1's
+        // reveal identity was retained while it was eager, so it stays expanded (MA fetched) rather
+        // than reverting to a "More" button — the eager/more boundary shift is survived both ways.
+        vm.reconcile(newEager = listOf(clusterOf("EC", "E" to "bus")), newMore = listOf(clusterOf("M1", "MA" to "bus")))
+        advanceUntilIdle()
+        assertTrue("MA" in shownIds(vm))
+        assertTrue(vm.moreState.value.isEmpty())
+    }
+
+    @Test
+    fun `a relocation that drops a revealed cluster prunes its stop synchronously`() = runTest(dispatcher) {
+        val vm = tierVm(twoStopClient(), listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")))
+        advanceUntilIdle()
+        vm.reveal("bus")
+        advanceUntilIdle()
+        assertTrue("MA" in shownIds(vm))
+
+        // Walk on: the fresh fix no longer offers M1. The departed stop must leave the shown list AT
+        // ONCE — before the re-fetch coroutine runs — so it can't linger with stale departures.
+        vm.reconcile(newEager = eagerOf("E" to "bus"), newMore = emptyList())
+        assertTrue("MA" !in shownIds(vm))
+        assertTrue("E" in shownIds(vm))
+        advanceUntilIdle()
+        assertTrue("MA" !in shownIds(vm))
+    }
+
+    @Test
+    fun `a revealed cluster losing a member prunes it synchronously`() = runTest(dispatcher) {
+        val client = FakeClient(
+            mapOf(
+                "E" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                "PA" to Result.success(listOf(departure("central", "Central", 200))),
+                "PB" to Result.success(listOf(departure("central", "Central", 260))),
+            ),
+        )
+        val vm = tierVm(client, listOf(StopRef("E", "E")), listOf(clusterOf("M1", "PA" to "bus", "PB" to "bus")))
+        advanceUntilIdle()
+        vm.reveal("bus")
+        advanceUntilIdle()
+        assertTrue("PA" in shownIds(vm) && "PB" in shownIds(vm))
+
+        // The same cluster (same key) now has only PA — PB's pole crossed the radius. PB leaves at
+        // once; PA stays. Same-key clusters whose MEMBERS changed are reconciled, not just dropped.
+        vm.reconcile(newEager = eagerOf("E" to "bus"), newMore = listOf(clusterOf("M1", "PA" to "bus")))
+        assertTrue("PB" !in shownIds(vm))
+        advanceUntilIdle()
+        assertTrue("PA" in shownIds(vm))
+        assertTrue("PB" !in shownIds(vm))
+    }
+
+    @Test
+    fun `a pruned set is persisted even when the refetch gets no fresh arrivals`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val client = twoStopClient()
+        val vm = tierVm(client, listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")), store)
+        advanceUntilIdle()
+        vm.reveal("bus")
+        advanceUntilIdle()
+        assertEquals(setOf("E", "MA"), store.stored!!.stops.map { it.stopId }.toSet())
+
+        // The follow-up refetch fails for every remaining stop (non-authoritative), yet the departed
+        // stop is gone from disk anyway — the removal happens at prune time, independent of the
+        // refetch's save, so a dropped stop can't linger for the widget worker to poll.
+        client.failing += "E"
+        vm.reconcile(newEager = eagerOf("E" to "bus"), newMore = emptyList())
+        advanceUntilIdle()
+        assertEquals(listOf("E"), store.stored!!.stops.map { it.stopId })
+    }
+
+    @Test
+    fun `a shrink to an error state removes the departed stops from disk`() = runTest(dispatcher) {
+        // The whole eager cluster's members change (OLD leaves, NEW arrives). NEW's arrivals AND
+        // disruptions both fail and it has no prior or declared lines, so mergeStop emits nothing:
+        // merged is empty and the refetch yields an Error, not a Loaded. OLD must still leave disk —
+        // the prune-time removal is independent of the refetch's (skipped) save, so OLD can't linger
+        // for the widget worker to poll as current (D4).
+        val store = FakeStore()
+        val client = FakeClient(
+            byStop = mapOf("OLD" to Result.success(listOf(departure("victoria", "Victoria", 300)))),
+            // NEW is absent from byStop, so its arrivals throw; its disruptions fail too.
+            disruptionsByStop = mapOf("NEW" to Result.failure(RuntimeException("disruption failed"))),
+        )
+        val vm = tierVm(client, listOf(StopRef("OLD", "OLD")), emptyList(), store)
+        advanceUntilIdle()
+        assertEquals(listOf("OLD"), store.stored!!.stops.map { it.stopId })
+
+        val newEager = listOf(
+            NearbySelection.NearbyCluster("ec:NEW", listOf(StopLocation("NEW", "NEW", 0.0, 0.0)), 0.0),
+        )
+        vm.reconcile(newEager = newEager, newMore = emptyList())
+        advanceUntilIdle()
+        assertTrue(vm.state.value is DeparturesUiState.Error)
+        assertTrue("OLD is cleared from disk, not left for the widget worker", store.stored!!.stops.isEmpty())
+    }
+
+    @Test
+    fun `a departed stop leaves the widget snapshot even if the refetch save fails`() = runTest(dispatcher) {
+        // The prune-time removal is independent of the refetch's save. Drop MA while E still
+        // succeeds (so the refetch IS authoritative and does try to save) but make that save throw:
+        // MA must still be gone from disk, because it was removed directly at prune time, not by the
+        // save. Under the old flag design a failed save stranded MA until a later retry.
+        val store = FakeStore()
+        val client = twoStopClient()
+        val vm = tierVm(client, listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")), store)
+        advanceUntilIdle()
+        vm.reveal("bus")
+        advanceUntilIdle()
+        assertEquals(setOf("E", "MA"), store.stored!!.stops.map { it.stopId }.toSet())
+
+        store.failSaves = 1
+        vm.reconcile(newEager = eagerOf("E" to "bus"), newMore = emptyList())
+        advanceUntilIdle()
+        assertEquals(listOf("E"), store.stored!!.stops.map { it.stopId })
+    }
+
+    @Test
+    fun `pruning every shown stop shows loading, not a trusted empty, until the refetch returns`() =
+        runTest(dispatcher) {
+            // The whole set's stops change and the replacement's fetch hangs. Every prior stop
+            // departs, so `kept` is empty — the screen must show the loading placeholder, not a
+            // trusted "No departures" (partialRefresh=false, recent stamp) through the unfinished
+            // fetch of stops that haven't been checked yet (SPEC principle 2; Codex).
+            val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val client = object : TflClient {
+                override suspend fun arrivals(stopId: String): List<Departure> {
+                    if (stopId == "NEW") gate.await()
+                    return listOf(departure("victoria", "Victoria", 300))
+                }
+
+                override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+                override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+            }
+            val vm = tierVm(client, listOf(StopRef("E", "E")), emptyList())
+            advanceUntilIdle()
+            assertEquals(listOf("E"), shownIds(vm))
+
+            val newEager = listOf(
+                NearbySelection.NearbyCluster("ec:NEW", listOf(StopLocation("NEW", "NEW", 0.0, 0.0)), 0.0),
+            )
+            vm.reconcile(newEager = newEager, newMore = emptyList())
+            advanceUntilIdle()
+            // The refetch is still in flight (NEW hangs) and every prior stop departed — Loading,
+            // not a trusted empty Loaded.
+            assertTrue(vm.state.value is DeparturesUiState.Loading)
+
+            gate.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(listOf("NEW"), shownIds(vm))
+        }
 }
