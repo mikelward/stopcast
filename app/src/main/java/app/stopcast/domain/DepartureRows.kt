@@ -156,11 +156,14 @@ object DepartureRows {
      * the interchange, so the near-me set otherwise shows the identical card once per stop
      * (St Pancras International and King's Cross St. Pancras both carrying the same "No Step
      * Free Access" notice). Identical description text is the same notice whatever cluster it
-     * sits in — TfL's text names the affected place — so it is kept once, on the **nearest**
-     * stop carrying it, and suppressed on the farther ones. Two genuinely different closures
-     * carry different text (TfL names the place) and both survive, so no real warning is
-     * dropped (SPEC principle 2). Line rows (timed and line-status) are deduped separately by
-     * their cross-stop (line, direction) key. Survivors are re-sorted by [rowOrder].
+     * sits in, so it is kept once, on the **nearest** stop carrying it. The kept row records the
+     * OTHER affected stops in [DepartureRow.alsoAt] (by display name, nearest-first), so the card
+     * names every stop the notice covers on expand rather than silently hiding the farther ones —
+     * which is what keeps a text-only collapse safe even when TfL's text does not name its own
+     * stop (a place-less "Station closed"): no warning is dropped (SPEC principle 1). Two genuinely
+     * different closures carry different text and stay separate cards. Line rows (timed and
+     * line-status) are deduped separately by their cross-stop (line, direction) key. Survivors are
+     * re-sorted by [rowOrder].
      *
      * The dedupe identity is **cross-stop**: line + TfL's `direction`, *not* the row's
      * [DepartureRow.directionKey], which for a timed row can be the stop-local platform
@@ -190,17 +193,29 @@ object DepartureRows {
         // Keep every row from the nearest stop for its key, so two platforms of one service
         // at a single stop both survive; a farther stop's same-service row is dropped.
         val kept = lineRows.filter { nearestStopByKey[dedupeKeyOf(it)] == it.stopId }
-        // Keep each distinct disruption notice once, on the nearest stop carrying its text —
-        // an interchange's hub-wide notice is otherwise one identical card per member stop.
-        val nearestStopByNotice = HashMap<String, String>()
+        // Keep each distinct disruption notice once, on the nearest stop carrying its text — an
+        // interchange's hub-wide notice is otherwise one identical card per member stop. The kept
+        // row records the OTHER stops the notice covers ([DepartureRow.alsoAt], by display name,
+        // nearest-first) so the card names every affected stop on expand: nothing is hidden even
+        // when TfL's text doesn't name its own stop (a place-less "Station closed"), which is what
+        // keeps a text-only collapse from dropping a genuinely distinct warning (principle 1).
+        val statusByNotice = LinkedHashMap<String, MutableList<DepartureRow>>()
         for (row in stopStatus) {
             val text = row.stopDisruption ?: continue
-            val incumbent = nearestStopByNotice[text]
-            if (incumbent == null || isCloserStop(row.stopId, incumbent, ::distanceOf)) {
-                nearestStopByNotice[text] = row.stopId
-            }
+            statusByNotice.getOrPut(text) { mutableListOf() }.add(row)
         }
-        val keptStatus = stopStatus.filter { nearestStopByNotice[it.stopDisruption] == it.stopId }
+        val keptStatus = statusByNotice.values.map { group ->
+            val sorted = group.sortedWith(compareBy({ distanceOf(it.stopId) }, { it.stopId }))
+            val nearest = sorted.first()
+            // Distinct display names of the farther stops carrying this notice, nearest-first, the
+            // nearest's own name excluded (the group header already names it).
+            val others = sorted.asSequence()
+                .map { it.stopName }
+                .distinct()
+                .filter { it != nearest.stopName }
+                .toList()
+            if (others.isEmpty()) nearest else nearest.copy(alsoAt = others)
+        }
         return (keptStatus + kept).sortedWith(rowOrder)
     }
 

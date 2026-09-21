@@ -631,7 +631,7 @@ private fun DepartureRowCard(
             if (row.stopDisruption != null) {
                 // A stop-level status row: the whole stop is disrupted (a closure), so it
                 // leads with the stop, not a line pill (SPEC D3).
-                StopClosureContent(row.stopDisruption)
+                StopClosureContent(row.stopDisruption, row.alsoAt)
                 return@Column
             }
 
@@ -743,14 +743,21 @@ private fun DepartureRowCard(
  * what is drawn. Expanded state is `rememberSaveable`, keyed on the notice text, so it
  * survives a configuration change and never bleeds onto a different notice when a `LazyColumn`
  * row is recycled.
+ *
+ * When the notice was deduped across an interchange (the same text reported at several stops,
+ * see [DepartureRows.nearbyDeduped]), [alsoAt] names the OTHER affected stops; the expanded card
+ * lists them under the text so none is hidden (SPEC *Disruptions*, principle 1). The header names
+ * the nearest, so [alsoAt] excludes it.
  */
 @Composable
-private fun StopClosureContent(disruption: String) {
+private fun StopClosureContent(disruption: String, alsoAt: List<String> = emptyList()) {
     // The stop name is not repeated here — the group header above names the stop (a closed
     // stop always shows its header, see StopGrouping.groupByStop). This card is the closure
     // notice alone.
     var expanded by rememberSaveable(disruption) { mutableStateOf(false) }
     val clickLabel = stringResource(if (expanded) R.string.alert_collapse else R.string.alert_expand)
+    val alsoAtLine =
+        if (alsoAt.isEmpty()) null else stringResource(R.string.alert_also_affects, alsoAt.joinToString(", "))
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -763,13 +770,23 @@ private fun StopClosureContent(disruption: String) {
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            Text(
-                text = disruption,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = if (expanded) Int.MAX_VALUE else 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = disruption,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = if (expanded) Int.MAX_VALUE else 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // The other stops the notice covers, shown only when expanded — the header already
+                // names the nearest one, so a collapsed card stays a single line.
+                if (expanded && alsoAtLine != null) {
+                    Text(
+                        text = alsoAtLine,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
             // A quiet chevron marks the row as expandable; the click label carries the action
             // for a screen reader, so the icon itself needs no separate description.
             Icon(

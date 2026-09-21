@@ -378,6 +378,9 @@ class MainScreenScreenshotTest {
         // captures the expanded baseline rather than asserting the (unchanged) string.
         composeRule.onNodeWithText(notice).performClick()
         composeRule.waitForIdle()
+        // Expanding names the other stops the notice covers, so the deduped King's Cross copy isn't
+        // hidden — the nearest (St Pancras) is the header, King's Cross is named below the text.
+        composeRule.onNodeWithText("Also affects King's Cross St. Pancras").assertExists()
         captureSnapshot("main-near-me-hub-alert-expanded.png")
     }
 
