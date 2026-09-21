@@ -33,6 +33,11 @@ data class TflStopPointDto(
     val modes: List<String> = emptyList(),
     val lines: List<TflStopLineDto> = emptyList(),
     val lineModeGroups: List<TflLineModeGroupDto> = emptyList(),
+    // TfL's parent cluster for this stop: a bus junction's poles and a station's platforms share
+    // it (e.g. `490G000804`, `940GZZLUKSX`). Often blank for a bus pole with no assigned StopArea;
+    // then the grouping falls back to the display name. Used only for grouping (SPEC D8), never a
+    // coordinate.
+    val stationNaptan: String = "",
 )
 
 @Serializable
@@ -72,5 +77,9 @@ fun TflStopPointDto.toStopLocationOrNull(): StopLocation? {
         lines = lines
             .filter { it.id.isNotBlank() }
             .map { LineRef(id = it.id, name = it.name, mode = modeByLineId[it.id] ?: primaryMode) },
+        // Cluster by TfL's StopArea/parent where it gives one, else by the cleaned name so a
+        // station's same-named poles still merge (SPEC *Finding stops*). Keying on the id when TfL
+        // provides it is what keeps a station whose name it spells several ways together.
+        clusterId = stationNaptan.ifBlank { stopName },
     )
 }

@@ -41,6 +41,7 @@ class SnapshotTest {
     ) = Snapshot.mergeStop(
         stopId = "940GZZLUKSX",
         stopName = "King's Cross St. Pancras",
+        clusterId = "940GZZLUKSX",
         lines = lines,
         freshDepartures = freshDepartures,
         freshDisruptions = freshDisruptions,

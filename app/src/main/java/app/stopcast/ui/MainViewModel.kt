@@ -31,7 +31,14 @@ import kotlinx.coroutines.withContext
  * still surfaces as a status row (SPEC *Departures*); empty means only predicted lines
  * are known for the stop.
  */
-data class StopRef(val id: String, val name: String, val lines: List<LineRef> = emptyList())
+data class StopRef(
+    val id: String,
+    val name: String,
+    val lines: List<LineRef> = emptyList(),
+    // The stop's cluster (TfL `stationNaptan` else display name) for per-place grouping (SPEC D8);
+    // blank groups the stop alone. Set from the nearby lookup ([StopLocation.clusterId]).
+    val clusterId: String = "",
+)
 
 /**
  * Owns the departures snapshot the screen renders (SPEC staleness contract): the fetch
@@ -278,6 +285,7 @@ class MainViewModel(
                 Snapshot.mergeStop(
                     stopId = stop.id,
                     stopName = stop.name,
+                    clusterId = stop.clusterId,
                     lines = stop.lines,
                     freshDepartures = departures,
                     freshDisruptions = disruptions,

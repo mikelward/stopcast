@@ -31,6 +31,9 @@ object DepartureRows {
         // Defaults to `now` (rows "as of now") so a grouping-only caller need not supply it;
         // `across` passes the stop's own fetch age so the screen can withhold per stop.
         fetchedAt: Instant = now,
+        // The stop's cluster (TfL `stationNaptan` else display name), stamped on each row so the
+        // screen groups by place rather than name (SPEC D8). Blank groups the stop alone.
+        clusterId: String = "",
     ): List<DepartureRow> {
         // upcoming() has already dropped departed services and sorted soonest-first;
         // groupBy preserves that encounter order within each group.
@@ -41,6 +44,7 @@ object DepartureRows {
                 DepartureRow(
                     stopId = stopId,
                     stopName = stopName,
+                    clusterId = clusterId,
                     lineId = key.lineId,
                     lineName = soonest.lineName,
                     direction = soonest.direction,
@@ -73,7 +77,10 @@ object DepartureRows {
     ): List<DepartureRow> =
         stops.flatMap { stop ->
             val timed =
-                forStop(stop.stopId, stop.stopName, stop.departures, now, lineStatuses, stop.fetchedAt)
+                forStop(
+                    stop.stopId, stop.stopName, stop.departures, now, lineStatuses, stop.fetchedAt,
+                    stop.clusterId,
+                )
             // A synthesized line-status row asserts "No departures", which is only true when
             // this stop's arrivals were actually fetched AND are still current: fetched (not
             // a disruption-only stop stamped `now` with no arrivals, nor one carried from a
@@ -305,6 +312,7 @@ object DepartureRows {
             DepartureRow(
                 stopId = stop.stopId,
                 stopName = stop.stopName,
+                clusterId = stop.clusterId,
                 lineId = "",
                 lineName = "",
                 direction = "",
@@ -342,6 +350,7 @@ object DepartureRows {
                 DepartureRow(
                     stopId = stop.stopId,
                     stopName = stop.stopName,
+                    clusterId = stop.clusterId,
                     lineId = line.id,
                     lineName = line.name,
                     direction = "",
@@ -429,6 +438,11 @@ data class StopArrivals(
     val lines: List<LineRef> = emptyList(),
     val disruptions: List<StopDisruption> = emptyList(),
     val arrivalsFresh: Boolean = true,
+    // The cluster this stop belongs to — TfL's `stationNaptan` else the display name (see
+    // [StopLocation.clusterId]). Carried onto each [DepartureRow] so the screen can group rows
+    // into per-place headers by cluster rather than by the name TfL spells inconsistently (SPEC
+    // D8). Blank groups the stop on its own.
+    val clusterId: String = "",
 )
 
 /**

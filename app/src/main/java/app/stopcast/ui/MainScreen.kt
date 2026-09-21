@@ -459,9 +459,9 @@ private fun DepartureList(
     starringAvailable: Boolean,
     modifier: Modifier,
 ) {
-    // Cluster the flat rows into per-stop, per-direction groups so each gets a stop-name
-    // header — the flat list gives a card no boarding location once >1 stop is on screen
-    // (SPEC D8). Pure and cheap; the caller has already ordered the rows.
+    // Cluster the flat rows into per-place groups (stops sharing a name — a junction's poles, a
+    // station's platforms) so each gets a name header — the flat list gives a card no boarding
+    // location once >1 place is on screen (SPEC D8). Pure and cheap; the caller ordered the rows.
     val groups = remember(rows) { StopGrouping.groupByStop(rows) }
     LazyColumn(
         modifier = modifier,

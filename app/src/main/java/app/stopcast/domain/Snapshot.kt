@@ -50,6 +50,7 @@ object Snapshot {
     fun mergeStop(
         stopId: String,
         stopName: String,
+        clusterId: String,
         lines: List<LineRef>,
         freshDepartures: List<Departure>?,
         freshDisruptions: List<StopDisruption>?,
@@ -79,6 +80,7 @@ object Snapshot {
         return StopArrivals(
             stopId = stopId,
             stopName = stopName,
+            clusterId = clusterId,
             departures = departures,
             lines = lines,
             disruptions = disruptions,

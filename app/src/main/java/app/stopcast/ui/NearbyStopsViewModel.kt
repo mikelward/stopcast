@@ -198,7 +198,9 @@ class NearbyStopsViewModel(
                 )
             }
             State.Ready(
-                stops = nearest.map { StopRef(id = it.id, name = it.name, lines = it.lines) },
+                stops = nearest.map {
+                    StopRef(id = it.id, name = it.name, lines = it.lines, clusterId = it.clusterId)
+                },
                 distanceMeters = distances,
             )
         }
