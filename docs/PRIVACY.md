@@ -31,14 +31,18 @@ travel — so it adds no new Play Data Safety category beyond Google Play's exis
 the app's distributor. It is free, runs release-only (a debug build isn't a Play app), and
 silently does nothing if Play is unavailable.
 
-The only **user data** that leaves the device by any channel other than a TfL request is
-carried by **your own Android backup and device-to-device transfer**, if you have it
-enabled: like any app's data, your saved stopcast data (your settings and its last-good
-departures snapshot) rides it, so a phone swap keeps your setup. That is Android's channel,
-under your control and tied to your Google account — not something stopcast sends. So the
-guarantee is precise rather than absolute: **the only user data stopcast itself sends off
-the device goes in its TfL requests** (the Play update check carries none), and Android's
-backup carries your saved data under your control.
+Two channels other than a TfL request can carry **user data** off the device, and both are
+under your control rather than stopcast's. The first is **your own Android backup and
+device-to-device transfer**, if you have it enabled: like any app's data, your saved stopcast
+data (your settings and its last-good departures snapshot) rides it, so a phone swap keeps your
+setup. That is Android's channel, tied to your Google account — not something stopcast sends.
+The second is a **bug report you choose to send** (see *Sending a bug report* below): it hands
+the app you pick a diagnostic report that, unlike everything else here, **includes your exact
+location** — but only after a consent screen that says so, and then to your clipboard and the
+app you pick (the clipboard copy happens as soon as you confirm — detailed below).
+So the guarantee is precise rather than absolute: **the only user data stopcast itself sends
+off the device goes in its TfL requests** (the Play update check carries none); Android's backup
+carries your saved data under your control, and a bug report carries what you consent to share.
 
 ## The on-device diagnostic log
 
@@ -73,9 +77,43 @@ anywhere. (A Crashlytics-style crash/breadcrumb reporter is a possible future ad
 new off-device channel that would be disclosed here, and in the Play Data Safety answers,
 before it ships.) The logging runs through one shared on-device buffer
 (`mikelward/androidlog`), wired incrementally: a feature whose warning seam isn't connected
-yet is discarded rather than recorded. A user-shareable **bug-report export** is planned
-(`TODO.md`). The on-device logging exception above does **not** extend to an artifact that
-leaves the device: when the log is exported to be shared, **travel data — stop IDs and line
-ids — is redacted**, because a shared file is subject to the same rule as any other artifact
-that leaves the machine (`AGENTS.md` *Privacy*). That redaction lands with the export feature
-itself.
+yet is discarded rather than recorded.
+
+Two ways to get the log **off** the device for a bug report are foreseen, and they draw the
+privacy line differently. A **location-safe export** — the log shared with its **travel data
+(stop IDs and line ids) redacted**, since a shared file is otherwise subject to the same rule
+as any other artifact that leaves the machine (`AGENTS.md` *Privacy*) — is still planned
+(`TODO.md`). The other is the **consent-gated bug report** described next, which does the
+opposite on purpose: it keeps the location *in*, openly and under consent, because that is the
+context a routing bug is diagnosed from.
+
+## Sending a bug report
+
+StopCast can send a **bug report** from its overflow menu. This is the one channel that
+deliberately carries what the on-device log never does — so it is gated by an explicit consent
+screen that names exactly what leaves, and nothing is assembled or sent until you pass it. The
+report carries:
+
+- the **diagnostic log** described above (in full, not redacted — the report already reveals
+  more than the log's stop/line ids would),
+- your **exact location from the last nearby lookup** — the fix that found the stops you were
+  looking at, which is where a routing bug happened; it is labeled that way in the report, since
+  the departures screen can stay open while you move, so it is not necessarily where you are the
+  instant you send,
+- **how far you are from each nearby stop**.
+
+It is **user-initiated and £0**: stopcast runs no service of its own for it. Tapping *Send bug
+report* opens the consent screen; on *Continue* the report is **copied to your clipboard**
+(on-device, but readable by other apps from then) **and** handed to Android's share sheet, where
+**you** choose the app it goes to — an email, an issue, a chat. So the clipboard copy happens as
+soon as you tap Continue; nothing is sent to a destination *you* pick until you pick it, but the
+report has left the composing screen at that point. A **"don't ask again"** option skips the
+consent screen on later reports; it never sends anything on its own.
+
+This is an honest trade, not a location-safe one: a report useful for a *where did routing go
+wrong* bug has to say where you were, so this one says so plainly rather than stripping the
+context to look safe. For **Play Data Safety** it is a user-initiated share of app diagnostics
+and a coarse-or-precise location to an app you choose — disclosed here as such. (A **screenshot**
+of the screen you were on is a planned addition to this report, landing once the shared
+`mikelward/androidlog` library gains screenshot support — `TODO.md`; it will be named on the
+consent screen before it ships.)

@@ -50,4 +50,22 @@ class DataStoreAppSettingsTest {
     fun `the documented default is off`() {
         assertEquals(false, DataStoreAppSettings.DEFAULT_LIVE_WIDGET_REFRESH)
     }
+
+    @Test
+    fun `skip bug-report consent reads the default (ask every time) when nothing is stored`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(null))
+        assertFalse(store.skipBugReportConsent().first())
+    }
+
+    @Test
+    fun `opting out of the bug-report consent screen persists and re-emits`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(null))
+        store.setSkipBugReportConsent(true)
+        assertTrue(store.skipBugReportConsent().first())
+    }
+
+    @Test
+    fun `the documented consent default is to ask every time`() {
+        assertEquals(false, DataStoreAppSettings.DEFAULT_SKIP_BUG_REPORT_CONSENT)
+    }
 }

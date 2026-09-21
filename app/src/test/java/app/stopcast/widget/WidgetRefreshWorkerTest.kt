@@ -111,6 +111,8 @@ class WidgetRefreshWorkerTest {
         override fun fontSize(): Flow<FontSizeSettings> = flowOf(FontSizeSettings())
         override suspend fun setFontScale(scale: Float) {}
         override suspend fun setPinchEnabled(enabled: Boolean) {}
+        override fun skipBugReportConsent(): Flow<Boolean> = flowOf(false)
+        override suspend fun setSkipBugReportConsent(enabled: Boolean) {}
     }
 
     @Test

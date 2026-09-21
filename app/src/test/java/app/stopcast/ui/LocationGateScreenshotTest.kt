@@ -10,6 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import app.stopcast.domain.Coordinates
 import app.stopcast.ui.theme.StopCastTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -33,6 +35,9 @@ class LocationGateScreenshotTest {
 
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    // Obviously-synthetic fix for the Empty/Failed states, never a real position (SPEC Privacy).
+    private val FIX = Coordinates(51.5, -0.12)
 
     @Test
     fun `permission required, light`() {
@@ -83,7 +88,12 @@ class LocationGateScreenshotTest {
     @Test
     fun `no stops nearby`() {
         capture("location-empty.png") {
-            LocationGate(NearbyStopsViewModel.State.Empty, onAllow = {}, onRetry = {}, onOpenSettings = {})
+            LocationGate(
+                NearbyStopsViewModel.State.Empty(FIX),
+                onAllow = {},
+                onRetry = {},
+                onOpenSettings = {},
+            )
         }
         composeRule.onNodeWithText("No stops found nearby").assertExists()
     }
@@ -92,13 +102,52 @@ class LocationGateScreenshotTest {
     fun `lookup failed`() {
         capture("location-error.png") {
             LocationGate(
-                NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.OFFLINE),
+                NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.OFFLINE, FIX),
                 onAllow = {},
                 onRetry = {},
                 onOpenSettings = {},
             )
         }
         composeRule.onNodeWithText("You're offline").assertExists()
+    }
+
+    @Test
+    fun `a stuck state offers the bug report action and reports the tap`() {
+        var sent = false
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    LocationGate(
+                        NearbyStopsViewModel.State.NoLocation,
+                        onAllow = {},
+                        onRetry = {},
+                        onOpenSettings = {},
+                        onSendBugReport = { sent = true },
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Send bug report").performClick()
+        composeRule.runOnIdle { assert(sent) }
+    }
+
+    @Test
+    fun `the first-run permission prompt has no bug report action`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    LocationGate(
+                        NearbyStopsViewModel.State.PermissionRequired,
+                        onAllow = {},
+                        onRetry = {},
+                        onOpenSettings = {},
+                        onSendBugReport = {},
+                    )
+                }
+            }
+        }
+        // The allow prompt isn't a stuck state — no report action there.
+        composeRule.onNodeWithText("Send bug report").assertDoesNotExist()
     }
 
     private fun capture(name: String, dark: Boolean = false, content: @Composable () -> Unit) {

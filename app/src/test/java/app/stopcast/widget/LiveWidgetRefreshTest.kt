@@ -50,6 +50,8 @@ class LiveWidgetRefreshTest {
         override fun fontSize(): Flow<FontSizeSettings> = flowOf(FontSizeSettings())
         override suspend fun setFontScale(scale: Float) {}
         override suspend fun setPinchEnabled(enabled: Boolean) {}
+        override fun skipBugReportConsent(): Flow<Boolean> = flowOf(false)
+        override suspend fun setSkipBugReportConsent(enabled: Boolean) {}
     }
 
     private fun enqueuedCount() =
@@ -131,6 +133,8 @@ class LiveWidgetRefreshTest {
             override fun fontSize(): Flow<FontSizeSettings> = flowOf(FontSizeSettings())
             override suspend fun setFontScale(scale: Float) {}
             override suspend fun setPinchEnabled(enabled: Boolean) {}
+            override fun skipBugReportConsent(): Flow<Boolean> = flowOf(false)
+            override suspend fun setSkipBugReportConsent(enabled: Boolean) {}
         }
         launch { applyLiveWidgetRefresh(context, settings, enabled = true) }
         launch { applyLiveWidgetRefresh(context, settings, enabled = false) }

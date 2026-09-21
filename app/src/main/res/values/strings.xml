@@ -130,4 +130,22 @@
     <string name="more_stops_rail">More rail stations</string>
     <string name="more_stops_coach">More coach stops</string>
     <string name="more_stops_river">More river bus piers</string>
+
+    <!-- Bug report (SPEC Privacy). Overflow item, then the consent screen that spells out what
+         leaves the device before anything is shared. The copy is deliberately plain that it
+         shares the EXACT location — this report is the honest, consent-gated one, not a
+         location-safe export. -->
+    <string name="menu_send_bug_report">Send bug report</string>
+    <string name="bug_report_consent_title">Send bug report</string>
+    <string name="bug_report_consent_body">To help fix a problem, this shares:\n\n• a diagnostic log (stops, lines, and errors the app saw)\n• your exact location\n• how far you are from each nearby stop\n\nOn Continue, the report is copied to your clipboard and offered to an app you pick.</string>
+    <string name="bug_report_consent_dont_ask">Don\'t ask again</string>
+    <string name="bug_report_consent_continue">Continue</string>
+    <string name="action_cancel">Cancel</string>
+    <!-- Subject line and share-sheet / clipboard labels for the report. -->
+    <string name="bug_report_subject">StopCast bug report</string>
+    <string name="bug_report_chooser_title">Send bug report</string>
+    <string name="bug_report_clipboard_label">StopCast bug report</string>
+    <!-- Toasts when the share sheet didn't open (the report is on the clipboard) or nothing landed. -->
+    <string name="bug_report_copied">Bug report copied to clipboard</string>
+    <string name="bug_report_failed">Couldn\'t share the bug report</string>
 </resources>

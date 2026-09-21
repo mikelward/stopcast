@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -44,6 +45,10 @@ import app.stopcast.data.logAppSettingsWarning
 import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.RouteTopologyStore
+import app.stopcast.domain.AppSettings
+import app.stopcast.domain.BugReport
+import app.stopcast.domain.Coordinates
+import app.stopcast.ui.BugReportConsentDialog
 import app.stopcast.ui.FontSizeSetting
 import app.stopcast.ui.LocalRouteTopology
 import app.stopcast.ui.LicensesScreen
@@ -60,7 +65,10 @@ import app.stopcast.widget.WidgetSnapshotStore
 import app.stopcast.widget.applyLiveWidgetRefresh
 import app.stopcast.widget.syncLiveWidgetRefreshSchedule
 import androidx.glance.appwidget.updateAll
+import com.mikelward.androidlog.android.DebugReport
+import com.mikelward.androidlog.android.ShareOutcome
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -198,6 +206,23 @@ class MainActivity : ComponentActivity() {
                             LiveWidgetRefreshResult.FAILED
                 }
 
+                // The bug-report consent gate. false-defaulted while the setting loads so a slow
+                // read over-asks rather than sharing the location unprompted; "don't ask again"
+                // (persisted) skips straight to the share sheet (SPEC *Privacy*).
+                val skipBugReportConsent: Boolean by settings.skipBugReportConsent()
+                    .collectAsStateWithLifecycle(initialValue = false)
+                // Whether the consent dialog is open is held in a retained ViewModel, not the saved
+                // bundle: it survives a configuration change (rotation) so the open dialog isn't
+                // discarded with the Send (Codex P2 on #86), but resets on process death — where the
+                // in-memory fix is gone anyway (never persisted, SPEC *Privacy*), so a restored
+                // dialog would only build a location-unavailable report (Codex P2 on #86). The report
+                // inputs are rebuilt from the current [nearby] state (also ViewModel-backed) at send.
+                val bugReportConsent: BugReportConsentViewModel = viewModel()
+                val requestBugReport = {
+                    if (skipBugReportConsent) shareBugReport(bugReportRequestFor(nearby))
+                    else bugReportConsent.open = true
+                }
+
                 // Licenses and Settings are activity-level overlays (like the licenses screen's
                 // existing hosting), reachable from every state and closed by their own Back, so
                 // opening either takes the departures view and its background refresh out of
@@ -228,6 +253,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenSettings = { settingsOpen = true },
                                 updateAvailable = updateAvailable.value,
                                 onOpenAppListing = ::openPlayListing,
+                                onSendBugReport = requestBugReport,
                             )
                         else -> {
                             // While the gate is up (a failed/empty relocate, or a retry), drop
@@ -251,9 +277,36 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenSettings = ::openAppSettings,
                                 onOpenLicenses = openLicenses,
+                                // The report is most useful in exactly these stuck states (no fix,
+                                // TfL unreachable, nothing nearby), so it is reachable here too, not
+                                // only past the gate — with no location or stops (Codex P2 on #86).
+                                onSendBugReport = requestBugReport,
                             )
                         }
                     }
+                }
+
+                // The consent gate overlays whatever is shown; requested from the Ready overflow or
+                // a stuck gate. Confirm builds the report from the current state and shares it
+                // (persisting the opt-out if ticked); cancel just closes. Nothing is assembled until
+                // the user confirms here.
+                if (bugReportConsent.open) {
+                    BugReportConsentDialog(
+                        onConfirm = { dontAskAgain ->
+                            bugReportConsent.open = false
+                            // Persist the opt-out on the application scope, not settingsScope: this
+                            // Activity can be recreated the instant Continue is tapped (config
+                            // change), which would cancel a settingsScope write and silently lose
+                            // the "don't ask again" choice — the same reason shareBugReport uses it.
+                            if (dontAskAgain) {
+                                val optOutScope =
+                                    (application as? StopcastApp)?.applicationScope ?: settingsScope
+                                optOutScope.launch { persistBugReportOptOut(settings) }
+                            }
+                            shareBugReport(bugReportRequestFor(nearby))
+                        },
+                        onDismiss = { bugReportConsent.open = false },
+                    )
                 }
             }
         }
@@ -295,6 +348,64 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Assembles and shares the consent-gated bug report — the diagnostic log plus the **exact
+     * location** and per-stop distances the [request] captured. Reached only after
+     * [BugReportConsentDialog] (or the persisted "don't ask again"): this is the sanctioned
+     * exception to the on-device-only log rule, so it runs only past that gate (SPEC *Privacy*).
+     *
+     * The shared `mikelward/androidlog` `DebugReport` does the mechanism: [DebugReport.collect]
+     * reads (and, once shared, consumes) the persisted earlier runs off the main thread, wrapping
+     * this app's section; [DebugReport.deliver] copies to the clipboard and opens the share sheet
+     * on the main thread. Screenshot attachment waits on that library gaining screenshot support
+     * (`TODO.md`). A `COPIED_ONLY`/`FAILED` outcome is surfaced, not swallowed (SPEC principle 2).
+     */
+    private fun shareBugReport(request: BugReportRequest) {
+        val app = application as? StopcastApp
+        // Null in a test Application (or if setup failed) — the report then carries no earlier
+        // runs, which is exactly what a null sink means to collect().
+        val sink = app?.diagnosticSink
+        // Run on the application scope with the application context, not lifecycleScope + the
+        // Activity: collect reads the persisted log (up to ~10 s) and deliver opens the share
+        // sheet, so a rotation mid-collect must not cancel the coroutine and drop the share with
+        // no sheet or toast (SPEC principle 2; Codex P2 on #86). The chooser is launched with
+        // FLAG_ACTIVITY_NEW_TASK by DebugReport, so the app context is fine. Falls back to the
+        // Activity scope only in a test Application that isn't StopcastApp.
+        val scope = app?.applicationScope ?: lifecycleScope
+        val context = applicationContext
+        scope.launch {
+            val report = withContext(Dispatchers.IO) {
+                DebugReport.collect(StopcastDebugLog, sink) {
+                    BugReport.compose(
+                        header = bugReportHeader(),
+                        location = request.location,
+                        stops = request.stops.map {
+                            BugReport.StopLine(it.name, it.id, request.distanceMeters[it.id])
+                        },
+                        // This run's buffer, rendered in full (DEVICE fidelity) — the report is
+                        // consent-gated, so it is not the redacted, location-safe export.
+                        logLines = StopcastDebugLog.snapshot(),
+                    )
+                }
+            }
+            val outcome = DebugReport.deliver(
+                context = context,
+                log = StopcastDebugLog,
+                report = report,
+                subject = context.getString(R.string.bug_report_subject),
+                chooserTitle = context.getString(R.string.bug_report_chooser_title),
+                clipboardLabel = context.getString(R.string.bug_report_clipboard_label),
+            )
+            when (outcome) {
+                ShareOutcome.SHARED -> {}
+                ShareOutcome.COPIED_ONLY ->
+                    Toast.makeText(context, R.string.bug_report_copied, Toast.LENGTH_LONG).show()
+                ShareOutcome.FAILED ->
+                    Toast.makeText(context, R.string.bug_report_failed, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    /**
      * The departures view for a resolved nearby set. The [MainViewModel] is created here —
      * not as an activity field — because its watched stops aren't known until location
      * resolves; each nearby set gets its own instance, scoped to a per-set store owner that
@@ -333,6 +444,8 @@ class MainActivity : ComponentActivity() {
         // item. Threaded from the activity's [updateAvailable] state, refreshed on each resume.
         updateAvailable: Boolean,
         onOpenAppListing: () -> Unit,
+        // Overflow "Send bug report": built at the Ready branch so it captures the fix + distances.
+        onSendBugReport: () -> Unit,
     ) {
         // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
         // the set changes (the user moved and re-located) rather than left keyed in the
@@ -435,6 +548,7 @@ class MainActivity : ComponentActivity() {
                     // Ignore a "More" tap while a relocation's fresh fix is in flight, so it can't
                     // page the pre-fix set as current (matches the cancel-on-relocate discipline).
                     onReveal = { mode -> if (!relocatingNow) viewModel.reveal(mode) },
+                    onSendBugReport = onSendBugReport,
                 )
             }
         }
@@ -496,6 +610,79 @@ class MainActivity : ComponentActivity() {
         // single long-lived client is OkHttp's own recommended shape; it lives for the
         // process and dies with it.
         private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
+    }
+}
+
+/**
+ * What a bug report is filed from: the [location] fix and the watched [stops] with their
+ * [distanceMeters]. Built from the current nearby state by [bugReportRequestFor] at the moment the
+ * user sends (so it survives a rotation mid-consent). [location] is the fix — from [Ready], or the
+ * one [Empty]/[Failed] resolved against — and null only where none was obtained (no permission, no
+ * fix yet); the report then states the location as unavailable. [stops] is empty off [Ready].
+ */
+internal data class BugReportRequest(
+    val location: Coordinates?,
+    val stops: List<StopRef>,
+    val distanceMeters: Map<String, Double>,
+)
+
+/**
+ * The report inputs for the current nearby [state]: the retained fix, all resolved nearby stops
+ * (both tiers), and their distances when [NearbyStopsViewModel.State.Ready]; the retained fix alone
+ * for [Empty]/[Failed]; otherwise a null-location request. Kept out of composition so the request
+ * is rebuilt fresh each time the user sends.
+ */
+/**
+ * Holds whether the bug-report consent dialog is open, in an activity-scoped [ViewModel] so it
+ * survives a configuration change (the dialog stays up through a rotation) but resets on process
+ * death — where the in-memory location fix is gone anyway, so restoring the dialog would only build
+ * a location-unavailable report (Codex P2 on #86). A plain flag, not the report inputs: the
+ * coordinate is never persisted (SPEC *Privacy*), so the request is rebuilt from live state at send.
+ */
+internal class BugReportConsentViewModel : androidx.lifecycle.ViewModel() {
+    var open by mutableStateOf(false)
+}
+
+/** The build/device header for a bug report — no user data (SPEC *Privacy*). Top-level so the
+ *  application-scoped share coroutine doesn't capture the Activity. */
+internal fun bugReportHeader(): BugReport.Header = BugReport.Header(
+    versionName = BuildConfig.VERSION_NAME,
+    versionCode = BuildConfig.VERSION_CODE.toLong(),
+    device = "${Build.MANUFACTURER} ${Build.MODEL}",
+    androidRelease = Build.VERSION.RELEASE,
+    sdkInt = Build.VERSION.SDK_INT,
+    capturedAt = Instant.now(),
+)
+
+internal fun bugReportRequestFor(state: NearbyStopsViewModel.State): BugReportRequest =
+    when (state) {
+        is NearbyStopsViewModel.State.Ready ->
+            // Every resolved nearby stop (both tiers), so a report after a "More" reveal carries
+            // the farther stops too — matching distanceMeters and the consent's "each nearby stop".
+            BugReportRequest(state.location, state.nearbyStops, state.distanceMeters)
+        // Empty and Failed obtained a fix (the lookup ran) — carry it so a report from those gates
+        // says where "no stops nearby" / "can't reach TfL" happened, the context they need.
+        is NearbyStopsViewModel.State.Empty ->
+            BugReportRequest(state.location, stops = emptyList(), distanceMeters = emptyMap())
+        is NearbyStopsViewModel.State.Failed ->
+            BugReportRequest(state.location, stops = emptyList(), distanceMeters = emptyMap())
+        // PermissionRequired / Locating / NoLocation have no fix to carry.
+        else -> BugReportRequest(location = null, stops = emptyList(), distanceMeters = emptyMap())
+    }
+
+/**
+ * Persists the bug-report "don't ask again" opt-out, guarded. A failed DataStore write is a lost
+ * preference, not a crash: consent is simply asked again next time (honest, not a blank — SPEC
+ * principle 2), so it is logged sanitized and swallowed rather than propagated out of the UI
+ * coroutine (Codex P2 on #86 / *Error handling*). Cancellation rethrows first.
+ */
+internal suspend fun persistBugReportOptOut(settings: AppSettings) {
+    try {
+        settings.setSkipBugReportConsent(true)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        StopcastDebugLog.warning("bug report: consent opt-out not saved: %s", e::class.simpleName)
     }
 }
 

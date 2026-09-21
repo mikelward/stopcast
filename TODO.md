@@ -1142,23 +1142,24 @@ and these carry the rest as their own PRs:
       from — so for those reports the consent-gated richer report below (which includes the
       location openly) is the better tool, not this location-redacted one. This item stays as
       the location-safe option; it is not the one that reveals location.
-- [ ] **A richer shareable bug report — screenshot + exact location — behind a consent gate**
-      (requested 2026-09-20, on-device; **maintainer decided 2026-09-20: include the exact
-      location, gated by a consent dialog**). Deliberately includes a **screenshot** and the
-      **exact location** so a report pins down what the user was looking at and where. Gated by
-      a **consent screen that spells out exactly what is shared** before anything leaves, with
-      a **"don't ask again"** opt-out (the siblings' bug-report sharing is the reference). It's
-      a **Play Data Safety change** — a new off-device channel carrying a coordinate and screen
-      contents — so the consent copy and the Data Safety declaration are part of the
-      deliverable.
-      **The honesty point (maintainer, 2026-09-20):** a bug report that is actually useful for
-      a routing/location issue reveals where the user is — so rather than claim a location-safe
-      share that has to strip the diagnostic context to stay safe (the redacted export above),
-      this report includes the location **openly, under consent**. It never claims to hide
-      where you are; the consent screen says plainly that it shares the location and the
-      screenshot. `docs/PRIVACY.md` is updated to describe this channel in those honest terms
-      rather than implying any shared report is location-free. Cost £0 (a user-initiated
-      platform share, no service stopcast runs).
+- [x] **A richer shareable bug report — exact location — behind a consent gate** (requested
+      2026-09-20; **maintainer decided 2026-09-20: include the exact location, gated by a consent
+      dialog**). Shipped as the overflow's *Send bug report*: it shares the diagnostic log (in
+      full, not redacted), the **exact location**, and the **per-stop distances** via the platform
+      share sheet, behind a **consent screen that spells out exactly what leaves** and a persisted
+      **"don't ask again"** opt-out. Rides the shared `mikelward/androidlog` `DebugReport`
+      (clipboard + `ACTION_SEND`), reuses the retained nearby fix so the coordinate and distances
+      agree, and includes the location **openly, under consent** — the honest report, not a
+      location-safe one. `docs/PRIVACY.md` and `SPEC.md` describe the channel in those terms; the
+      **Play Data Safety** hand-off is a user-initiated share of diagnostics + location. Cost £0.
+- [ ] **Add the screenshot to the bug report.** The consent-gated report above ships without the
+      screenshot: the shared `mikelward/androidlog` `DebugReport` shares **text** (clipboard +
+      `ACTION_SEND`) and has no screenshot support yet, so attaching one is a shared-library change
+      first (PixelCopy capture + `FileProvider` + `EXTRA_STREAM`, the pattern `clothescast`
+      hand-rolls) — being done in a separate session. Once the library gains optional screenshot
+      support and stopcast bumps to it, wire it in and name the screenshot on the consent screen
+      (`bug_report_consent_body`) and in `docs/PRIVACY.md` before it ships. Needs a `FileProvider`
+      + `res/xml/file_paths.xml` (cache path), neither of which exists yet.
 - [ ] Finalize the store-facing privacy disclosure (location, watched stops, the TfL
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.

@@ -6,6 +6,9 @@ import android.util.Log
 import com.mikelward.androidlog.DebugLog
 import com.mikelward.androidlog.android.DebugFileSink
 import com.mikelward.androidlog.android.LogcatSink
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 private const val LOGCAT_TAG = "StopCast"
 
@@ -44,6 +47,25 @@ internal fun installDiagnosticSinks(
  * (`docs/PRIVACY.md`, `TODO.md`). No off-device sink is registered.
  */
 open class StopcastApp : Application() {
+    /**
+     * The persisted diagnostic sink once it is stood up — the shared logger's on-device file
+     * store. Handed to the consent-gated bug report so it can bundle (and, once shared, consume)
+     * the earlier runs the sink kept. Null before [onCreate] runs, if setup failed, or in the
+     * test Application that skips installation — a report then simply carries no earlier runs.
+     */
+    var diagnosticSink: DebugFileSink? = null
+        private set
+
+    /**
+     * A process-lived scope for work that must outlive the Activity that started it — the bug
+     * report's collect+share, which reads the persisted log (up to ~10 s) and opens the share
+     * sheet, so a rotation mid-collect must not cancel it and drop the share silently (SPEC
+     * principle 2; Codex P2 on #86). Main-dispatched because delivery touches the clipboard and
+     * starts an activity; the collect step moves itself to IO. Never canceled — it lives for the
+     * process, like the app.
+     */
+    val applicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     override fun onCreate() {
         super.onCreate()
         installDiagnosticLog()
@@ -67,7 +89,7 @@ open class StopcastApp : Application() {
         // worker, never here. Guarded so a failure to stand up the log is logged and swallowed
         // rather than crashing the app it exists to diagnose (nothing acquired to clean up here).
         try {
-            installDiagnosticSinks(StopcastDebugLog, this)
+            diagnosticSink = installDiagnosticSinks(StopcastDebugLog, this)
         } catch (e: Exception) {
             Log.w(LOGCAT_TAG, "diagnostic log setup failed: ${e::class.simpleName}")
         }
