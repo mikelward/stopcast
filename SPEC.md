@@ -88,22 +88,35 @@ The app finds stops two ways:
     when several stops of another mode are closer, as long as it's within reach (so the
     nearest Tube shows even where bus stops dominate the immediate area);
   - it is **bounded to within reach** — on the order of a mile — so a far stop never appears
-    just because nothing nearer shares its line. That reach is the TfL lookup's own radius; when
-    the immediate ~0.2 mi around the user is empty the selection still keeps the single nearest
-    stop within that reach, and a London locate effectively always has a stop within a mile — if
-    somehow none does, an honest "couldn't find stops" beats reaching arbitrarily far. The
-    current implementation imposes **no count cap**; whether a bound is ever needed to stay
-    scannable at a dense interchange is undecided and tracked in `TODO.md`, not a cap imposed here;
+    just because nothing nearer shares its line. That reach is the TfL lookup's own radius; a
+    London locate effectively always has a stop within a mile — if somehow none does, an honest
+    "couldn't find stops" beats reaching arbitrarily far. The list shows the **nearest two
+    clusters of each mode**, which keeps a dense interchange scannable and caps how many
+    clusters are fetched; reaching the clusters beyond that cap — a per-mode **"More"** control
+    — is deferred to a later change (see below), so for now the farther clusters within reach
+    aren't surfaced;
   - it is **by line, both directions shown** for now — paired stops across a road serve a line
     in opposite directions, so neither direction is dropped; narrowing by direction or
     destination is a later refinement tied to *favorite destinations*;
   - a **closer closed stop is surfaced honestly** — its status is shown rather than silently
     routing the user to a farther open stop with no explanation.
 
-  The exact selection policy (radii, per-mode counts, whether an overall count cap is needed,
-  how "mode-stop" maps onto the TfL model) is still being shaped on-device and lives in
-  `TODO.md`, but the constraints above are the settled product intent the implementation must
-  satisfy.
+  The selection is **two-tier** (maintainer, 2026-09-21): stops group into **clusters** (a
+  station's platforms, a bus junction's poles — keyed on TfL's `stationNaptan`, D8), and the
+  **nearest two clusters of each mode** are *eager* — fetched and shown at once. Per-mode
+  selection guarantees the nearest station of a sparse mode (a Tube up to the ~1 mile reach) is
+  always eager, without a separate reserve rule. The cap is two rather than more because
+  expanding is not free: TfL doesn't aggregate a bus junction, so each lettered pole is its own
+  arrivals request, and a low eager cap keeps the list short and caps how many clusters are
+  fetched — sharply fewer than "everything in reach" at a dense corner. It bounds the cluster
+  *count*, not the request count: one large junction cluster is still an arrivals request per
+  pole, so a hard per-cluster fetch budget is a `TODO.md` follow-up. The clusters beyond the cap
+  are the *more* tier — the
+  selection computes it, but **surfacing it (a per-mode "More" control that pages the rest on
+  demand) is deferred to its own change** (maintainer, 2026-09-21; `TODO.md`), because keeping
+  a revealed expansion consistent across relocation turned out to need its own design pass. So
+  the shipped near-me list is the eager tier; the widget mirrors it (the widget renders the
+  same last-good snapshot the app writes).
 
   To keep the lookup fast and honest: a recent cached position is used at once; if a fresh fix
   is slow or absent, a *somewhat-stale* cached one substitutes for it rather than making the
@@ -112,13 +125,11 @@ The app finds stops two ways:
   traveled would be misled). A failure to get a fix is always logged, so a misfire is
   diagnosable.
 
-  The **current implementation** is distance-shaped rather than a fixed count — an inner ring
-  of stops close by, plus the nearest stop of each *mode* a little farther out that the inner
-  ring doesn't already cover, so a denser mode (London's bus stops) can't crowd out a sparser
-  one (the nearest Tube or rail station still appears), with no overall count cap. **The radii
-  are provisional and not yet validated on a device** — the illustrative values and the open
-  question of whether a dense interchange needs a scannability bound live in `TODO.md`; what
-  is durable is the constraints above, not the specific numbers. **The near-me list is ordered
+  Both tiers draw from one TfL `/StopPoint` lookup within the **~1 mile reach** (the lookup's
+  own radius); only the eager clusters' stops are fetched for arrivals (the *more* tier is
+  computed but not fetched, since its "More" reveal is deferred — above). **The reach and the
+  two-per-mode cap are not yet validated on a device** — whether either wants tuning at a real interchange lives in
+  `TODO.md`; what is durable is the two-tier shape and the constraints above. **The near-me list is ordered
   closest stop first**, with soonest-first breaking a same-stop tie (a stop's several services
   are equidistant); warnings still lead and starred rows are still pinned above it. Distance
   orders only this location-derived list — never the location-free watched list, which stays

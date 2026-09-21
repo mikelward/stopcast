@@ -378,43 +378,34 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
 - [ ] "Near me now" discovery (on-demand location, nearby `/StopPoint` lookup selected by
       `NearbySelection`) with one-tap add-to-watched; stop search. Distance ranking lives
       here — for *finding* stops to watch — not in ordering the watched list, which stays
-      location-free so the view works with location denied (D1). Stop **selection** (all
-      services within ~0.2 mi + the nearest stop of each mode within ~1 mi, distance-sorted,
-      no count cap) is implemented in `NearbySelection` (PR #39); one-tap add-to-watched and
+      location-free so the view works with location denied (D1). Stop **selection** (two-tier:
+      the nearest two clusters of each mode eager, plus a computed *more* tier) is implemented in
+      `NearbySelection` (two-tier, 2026-09-21; per-mode crowd-out, PR #39), and the eager tier is
+      what the near-me list shows. **Surfacing the *more* tier (a per-mode "More" reveal) is
+      deferred to its own change** (see the "More" reveal item below); one-tap add-to-watched and
       stop search are still to build.
-  - [ ] **Nearby selection — the still-being-shaped policy toward SPEC's constraints.** The
-        *settled* product constraints — a line appears once (not per stop it passes), no dense
-        mode crowds out another, bounded within reach, by line with both directions, closed
-        stops surfaced honestly — now live in **SPEC *Finding stops → Near me now*** as the
-        product intent the implementation must satisfy. This item is only the experimental
-        policy that meets them (maintainer, on-device 2026-09-19). The symptom that started it:
-        the current "nearest N stops" set repeats the same bus line several times, one per stop
-        it passes.
-    - Current lean (maintainer): **all services within ~0.2 mi, plus at least one stop per
-      mode that has a stop within ~1 mi**, expanding the 0.2 mi radius if nothing falls
-      inside it. A fixed total (an earlier "nearest ~8 services" idea) is de-emphasized in
-      favor of this distance-shaped rule. Still illustrative, not settled — try and see.
-    - **Open: does the list need a hard count cap at all?** Not decided (maintainer,
-      2026-09-19 — "that's what a to-do means"), and the lean is **away from an arbitrary cap**.
-      The worry against one: at a busy junction a count cap would **silently hide options** the
-      user might want — which is exactly SPEC principle 2's "never hide options quietly," so an
-      arbitrary numeric cap is the wrong default. Plan: **try the distance-shaped rule on a real
-      device first** and see whether a dense interchange actually produces an unscannable list;
-      only reach for some bound if it does, and even then not a bare number that drops services
-      with no signal. If any bound is added it must **reserve the per-mode entries first** (the
-      crowd-out rule) and not silently discard relevant nearby services. Whether-and-how is part
-      of the on-device shaping, not settled here or in SPEC.
-    - Candidate that avoids silent hiding (maintainer, 2026-09-19): rather than dropping rows,
-      **collapse above a per-mode threshold behind an expander** — e.g. "Tap to see 5 more buses"
-      — so a busy junction stays scannable but every option is still one tap away, nothing
-      hidden. Just a direction to try later, not decided.
-    - **One canonical distance unit:** miles (the maintainer's numbers are in miles) — the
-      current outer ring is ~1 mile (~1609 m) and the inner ring ~0.2 mi (~322 m). The ~1 mile
-      is the TfL query's own radius (the hard reach for one lookup); the expand-if-empty rule
-      applies to the *inner* ring — when nothing is within ~0.2 mi the selection keeps the
-      nearest stop that is still within the ~1 mile query. **These radii are provisional
-      — the maintainer has not tested them on a device — so nothing here is settled; the numbers
-      are what `NearbySelection` currently uses, to be tuned once tried in the field.**
+  - [x] **Nearby selection — settled as the two-tier near-me (2026-09-21).** The product
+        constraints — a line appears once (not per stop it passes), no dense mode crowds out
+        another, bounded within reach, by line with both directions, closed stops surfaced
+        honestly — live in **SPEC *Finding stops → Near me now*** as the intent the
+        implementation must satisfy; the two-tier selection (nearest two clusters per mode +
+        per-mode "More") is what meets them. The bullets below are the shaping history that led
+        there, kept for the reasoning; the radii and the cap are still to validate on a device.
+    - **Superseded by the two-tier resolution below (2026-09-21), kept for the reasoning.** The
+      earlier lean was distance-shaped: all services within ~0.2 mi, plus at least one stop per
+      mode within ~1 mi, expanding the 0.2 mi radius if empty. No inner ring survives in the
+      two-tier design, which selects the nearest two *clusters* per mode instead.
+    - **Resolved — the two-tier near-me (maintainer, 2026-09-21).** The list is no longer
+      distance-shaped-with-no-cap: it shows the **nearest two clusters of each mode** eagerly. The
+      per-mode cap bounds the eager fetch burst (below) and answers the count-cap question. The
+      **"More" control that pages the rest is deferred** — the count cap ships, but reaching the
+      farther clusters (principle 2's "one tap away") comes with the "More" reveal follow-up
+      below. See SPEC *Finding stops → Near me now*.
+    - **One canonical distance unit:** miles (the maintainer's numbers are in miles). The reach
+      is **~1 mile (~1609 m)** — the TfL query's own radius, the hard bound for one lookup. The
+      two-tier design dropped the ~0.2 mi inner ring and its expand-if-empty rule (there is no
+      inner ring now). **The reach and the two-per-mode cap are provisional — not yet tested on a
+      device — the numbers `NearbySelection` currently uses, to be tuned in the field.**
     - The natural unit may be a "mode-stop" (all services at a nearby stop); how stops /
       mode-stops / directions map onto the TfL model and API is an **implementation** question
       left open here — this bullet is the policy, not the settled shape (which is in SPEC).
@@ -480,20 +471,61 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [x] **Nearby per-mode coverage (crowd-out)** — landed, PR #39. The nearby list shows a
         line once from its nearest stop (dedupe, PR #36) and now mixes in the nearest stop of
         each mode within ~1 mi so a denser mode can't crowd out another — the one Tube within
-        reach no longer falls outside the nearest bus stops and vanishes. Distance-shaped, no
-        fixed count cap (SPEC *Finding stops → Near me now*; the cap stays parked in
-        `NearbySelection`).
-  - [ ] Bound the nearby request burst at a **dense interchange** without a count cap.
-        `MainViewModel.refresh()` fetches arrivals per selected stop (~2 requests each) plus a
-        line-status call, every minute; with 25+ stops in the ~0.2 mi inner ring that can
-        approach TfL's ~50 req/min keyless budget and get persistently rate-limited (Codex,
-        PR #39). Left uncapped for now — the maintainer's no-count-cap decision stands (a cap
-        silently hides options, SPEC principle 2), and a typical locate is a handful of stops;
-        keyless degrades honestly on 429. Revisit only if a real dense interchange proves a
-        problem on-device, and then without dropping services silently: options are a soft
-        stop-fetch budget that reserves the per-mode entries first, scaling the refresh
-        interval with the set size (a staleness trade), or leaning on the optional user
-        `app_key` (D7, ~500/min) for dense areas.
+        reach no longer falls outside the nearest bus stops and vanishes. Superseded by the
+        two-tier near-me (2026-09-21), which selects the nearest two clusters *per mode* and pages
+        the rest behind "More" (SPEC *Finding stops → Near me now*).
+  - [x] Reduce the nearby request burst at a **dense interchange** — the two-tier near-me
+        (maintainer, 2026-09-21). The eager set is the nearest **two clusters per mode**, so
+        `MainViewModel.refresh()` fetches sharply fewer stops at a dense corner than the old
+        inner-ring-all set, which could approach TfL's ~50 req/min keyless budget at a busy
+        junction (Codex, PR #39). **Caveat (Codex, PR #85):** the cap bounds the *cluster* count,
+        not the request count — a bus cluster is one arrivals request per lettered pole, so a
+        single large junction cluster is still many requests. A hard per-cluster fetch budget is
+        the follow-up below.
+  - [ ] **Cap the eager fetch by request count, not just cluster count** (Codex, PR #85). Two
+        clusters per mode bounds how many *clusters* are eager, but a large bus junction cluster
+        flattens to one arrivals + one disruption request per lettered pole, so two big junctions
+        can still exceed the keyless TfL budget and make the near-me refresh slow or rate-limited.
+        Apply a stop/request budget within the eager clusters (which poles of a big junction to
+        fetch, and how to present the rest) — a product decision on junction presentation, so its
+        own change; it pairs naturally with the "More" reveal, which also reshapes how a junction
+        expands. Until then SPEC/`NearbySelection` say plainly the cap bounds clusters, not
+        requests.
+  - [ ] **Coarsen the cluster key so one logical station's several naptans merge** (maintainer,
+        2026-09-21, screenshot). TfL's `stationNaptan` is more granular than the logical station
+        at a big multi-operator interchange: St Pancras International has separate naptans for its
+        National Rail, Underground, and low-level/Thameslink parts, so the near-me list shows
+        three "London St Pancras International" headers repeating one alert. Merge them into one
+        cluster **without** collapsing genuinely distinct adjacent stations — TfL's hub (`HUBKGX`)
+        over-merges King's Cross with St Pancras, which the maintainer wants kept apart, so the
+        right granularity sits between `stationNaptan` and hub (needs a TfL-data look: hub id vs.
+        a name/parent normalization). Its own PR.
+  - [ ] **The "More" reveal — page the *more* tier on demand** (maintainer, 2026-09-21; deferred
+        from PR #85). `NearbySelection.selectClusters` already returns the *more* tier; what's
+        deferred is surfacing it: a per-mode "More" control at the foot of the near-me list that
+        fetches that mode's next clusters on tap and merges them into the list, so a dense
+        interchange's farther poles are reachable without lengthening the list up front
+        (principle 2). **Why it's its own PR:** an in-app expansion has to survive relocation
+        (a small move must not discard what the user opened — maintainer), and getting that
+        consistent generated seven Codex rounds on PR #85 across two roots:
+        - **In-app retention.** The per-set `MainViewModel` is *seeded* with the eager set and
+          keyed on it, so an expansion is lost whenever the eager set's identity changes — a
+          distance reorder of the same clusters, or an eager-boundary shift (a cluster moving
+          between the eager pair and the *more* tier) while everything stays nearby. Doing this
+          right means the retained ViewModel reconciles **both** tiers against each relocation
+          and is keyed on the whole nearby cluster set (not just the eager ids), which in turn
+          means the eager tier itself must be updatable in-place rather than fixed at
+          construction. That's the redesign this item is for.
+        - **Persistence to disk/widget.** If the expanded set reaches the persisted snapshot,
+          the widget's refresh worker keeps polling it and a dropped stop can linger on disk
+          (the non-authoritative refresh skips the save). Decide up front whether the reveal is
+          in-app-only (widget/persisted snapshot stays eager) or reaches the widget; if it
+          reaches the widget, a pruned set must be persisted even when it empties.
+        Sub-features that ride on the reveal once it exists: a **widget "More"** that just opens
+        the app (the widget can't expand in place; keep widget + main-screen rendering one
+        parameterized implementation, and consider hiding "More" on the widget); **line hints**
+        (a tappable "VIC" chip for a line nearby but not eager); and a **radius-expand chip**
+        (widen the TfL query radius per tap, distinct from paging clusters already within range).
   - [ ] Use measured `Location.accuracy`, not just provider name, on **both** the cached
         fast-path and the fresh-fix waterfall. `AndroidLocationProvider` classifies a fix as
         accurate by provider (GPS/fused, PR #38), which is a proxy: a fused fix derived from

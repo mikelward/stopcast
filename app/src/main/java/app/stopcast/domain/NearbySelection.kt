@@ -5,32 +5,25 @@ package app.stopcast.domain
  * now*). Pure math over coordinates the caller supplies — no Android, no I/O — so it stays
  * JVM-testable and off any render path.
  *
- * The policy is **distance-shaped, not a fixed count** (maintainer, on-device 2026-09-19):
+ * Stops group into **clusters** (a station's platforms, a bus junction's poles — keyed on
+ * TfL's `stationNaptan`, SPEC D8). The nearest [CLUSTERS_PER_MODE] clusters of each mode are
+ * **eager** (fetched and shown at once); the rest wait behind a per-mode "More" tap that
+ * fetches them on demand ([selectClusters] returns the two tiers as [Result]). Per-mode
+ * selection guarantees the nearest station of a sparse mode — a Tube up to the ~1 mile outer
+ * radius — is always eager, without a separate reserve rule.
  *
- * 1. **All stops within the inner radius** (~0.2 mi) — every service you could walk to right
- *    now, nothing dropped to a count. If nothing falls inside it, the ring expands to the
- *    single nearest stop, so the list is never empty when stops exist.
- * 2. **Plus the nearest stop of each mode present within the outer radius** that the inner
- *    ring doesn't already cover. This is the crowd-out fix: London bus stops are far denser
- *    than Tube/rail stations, so a pure nearest-N set is all buses and the one Tube stop a
- *    little farther off never appears (the reported "only buses everywhere" bug). By
- *    reserving one stop per mode, a denser mode can't evict a sparser one.
- *
- * The outer radius is **~1 mile (1609 m)** so a mode's nearest stop up to a mile off — a Tube
- * station 0.8 mi away, say — is still represented. TfL's `/StopPoint` geo query accepts this
- * (verified: 1609 m returns HTTP 200; the endpoint takes at least 2000 m); the single query
- * returns stop metadata only, and only the selected handful are then fetched for arrivals.
- *
- * There is deliberately **no overall count cap** — a busy interchange returns more, but a
- * count cap would silently hide options (SPEC principle 2). Collapsing the *services* a
- * line repeats across adjacent stops is a separate concern ([DepartureRows] dedupe); this
- * only picks the stops to fetch. The cost is one arrivals fetch per selected stop, so the
- * inner radius is kept tight.
+ * The per-mode cap replaces an "all of the inner ring" set: a dense corner returns many bus
+ * poles, and each pole is its own arrivals request (TfL doesn't aggregate a junction), so
+ * expanding them all is both long to scan and many fetches. The cap plus the (deferred) "More"
+ * affordance keeps the extra options reachable rather than silently hidden (SPEC principle 2)
+ * and caps how many *clusters* are fetched — sharply fewer at a dense corner. It bounds the
+ * cluster count, not the request count: one large junction cluster is still one arrivals
+ * request per pole, so it isn't a hard fetch bound independent of density (a per-cluster fetch
+ * budget is a `TODO.md` follow-up). TfL's `/StopPoint` geo query takes the 1609 m radius
+ * (verified 2026-09-19: HTTP 200); it returns stop metadata only, and only the selected
+ * clusters' stops are then fetched for arrivals.
  */
 object NearbySelection {
-    /** Inner ring: ~0.2 mi. Every stop this close is shown. */
-    const val INNER_RADIUS_METERS = 322
-
     /**
      * Outer ring: ~1 mile (1609 m). A mode with a stop this close is guaranteed a
      * representative — a Tube station up to a mile off still shows. TfL's `/StopPoint` geo
@@ -42,43 +35,16 @@ object NearbySelection {
      * How many clusters of each mode the near-me list fetches and expands at once (SPEC
      * *Finding stops → Near me now*). The rest of that mode's clusters wait behind a "More"
      * tap. Two keeps a busy corner scannable and the eager fetch small — a bus cluster is one
-     * arrivals request per lettered pole, so a low cap matters most for the densest mode.
+     * arrivals request per lettered pole, so a low cap matters most for the densest mode. (The
+     * cap is on cluster count, not request count — a large junction cluster is still many poles;
+     * a hard per-cluster fetch budget is a `TODO.md` follow-up.)
      */
     const val CLUSTERS_PER_MODE = 2
 
-    fun select(
-        stops: List<StopLocation>,
-        latitude: Double,
-        longitude: Double,
-        innerRadiusMeters: Int = INNER_RADIUS_METERS,
-        outerRadiusMeters: Int = OUTER_RADIUS_METERS,
-    ): List<StopLocation> {
-        if (stops.isEmpty()) return emptyList()
-        val byDistance = stops
-            .map { it to NearestStops.distanceMeters(latitude, longitude, it.latitude, it.longitude) }
-            .sortedWith(compareBy({ it.second }, { it.first.id }))
-
-        // Inner ring, or the single nearest stop when nothing is inside it (expand-if-empty).
-        val inner = byDistance.filter { it.second <= innerRadiusMeters }
-            .ifEmpty { listOf(byDistance.first()) }
-
-        val selected = inner.toMutableList()
-        val selectedIds = inner.mapTo(mutableSetOf()) { it.first.id }
-        val coveredModes = inner.flatMapTo(mutableSetOf()) { it.first.modes() }
-
-        // Per-mode coverage: nearest-first, add a stop that brings a mode not yet covered,
-        // until the outer radius. Bounded by the number of modes, not the stop count.
-        for ((stop, distance) in byDistance) {
-            if (distance > outerRadiusMeters) break
-            if (stop.id in selectedIds) continue
-            if (stop.modes().none { it !in coveredModes }) continue
-            selected += stop to distance
-            selectedIds += stop.id
-            coveredModes += stop.modes()
-        }
-
-        return selected.sortedWith(compareBy({ it.second }, { it.first.id })).map { it.first }
-    }
+    // Selection bucket for a cluster with no declared mode (a stop TfL listed no lines for), so
+    // it isn't dropped from every mode's top-N and made to vanish. Internal to selection — never
+    // a real mode, so it never surfaces as a "More" button.
+    private const val NO_MODE = "\u0000none"
 
     /**
      * A cluster of nearby stops that share a [StopLocation.clusterId] — a station's platforms or
@@ -112,8 +78,9 @@ object NearbySelection {
      * The per-mode cap replaces the old "show everything in the inner ring" set: a dense corner
      * returns many bus poles, and expanding them all is both long to scan and many arrivals
      * fetches (each bus pole is its own request — TfL doesn't aggregate a junction). The cap
-     * plus the visible "More" affordance keeps the extra options reachable rather than silently
-     * hidden (SPEC principle 2), and bounds the eager fetch count independent of area density.
+     * plus the (deferred) "More" affordance keeps the extra options reachable rather than
+     * silently hidden (SPEC principle 2), and caps how many clusters are fetched (the count, not
+     * the request total — a large junction cluster is still many poles).
      */
     data class Result(
         val eager: List<NearbyCluster>,
@@ -149,11 +116,13 @@ object NearbySelection {
 
         // Nearest [clustersPerMode] clusters of each mode are eager; their union is the eager
         // set. A cluster serving two modes is eager if it's in the top N of *either*, so the
-        // nearest station of a sparse mode is never crowded out by a denser one.
+        // nearest station of a sparse mode is never crowded out by a denser one. A cluster with
+        // no mode buckets under [NO_MODE] so it's still selected rather than vanishing.
+        fun modesOf(cluster: NearbyCluster): Set<String> = cluster.modes.ifEmpty { setOf(NO_MODE) }
         val eagerKeys = HashSet<String>()
-        for (mode in clusters.flatMapTo(sortedSetOf()) { it.modes }) {
+        for (mode in clusters.flatMapTo(sortedSetOf()) { modesOf(it) }) {
             clusters.asSequence()
-                .filter { mode in it.modes }
+                .filter { mode in modesOf(it) }
                 .take(clustersPerMode)
                 .forEach { eagerKeys += it.key }
         }

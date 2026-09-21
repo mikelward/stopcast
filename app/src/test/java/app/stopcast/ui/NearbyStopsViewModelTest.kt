@@ -94,7 +94,7 @@ class NearbyStopsViewModelTest {
         advanceUntilIdle()
 
         val ready = model.state.value as NearbyStopsViewModel.State.Ready
-        // Both inner-ring bus stops, nearest-first; the 2 km one is out of range.
+        // The two nearest bus clusters are eager, nearest-first; the 2 km one is out of range.
         assertEquals(listOf("b1", "b2"), ready.stops.map { it.id })
         assertEquals(listOf(LineRef("bus-b1", "b1", "bus")), ready.stops.first().lines)
         // Distance from the fix is carried (in memory, from #36) so the departures list can
@@ -106,13 +106,13 @@ class NearbyStopsViewModelTest {
 
     @Test
     fun `a farther mode is not crowded out by nearer stops of another mode`() = runTest {
-        // The reported bug: many near bus stops and one Tube station a little farther. The
-        // Tube must still appear — per-mode coverage reserves it (SPEC Finding stops).
+        // The reported bug: many near bus stops and one Tube station a little farther. The Tube
+        // must still be eager — per-mode selection keeps its nearest cluster (SPEC Finding stops).
         val stops = listOf(
             stop("bus1", 40.0, "bus"),
             stop("bus2", 90.0, "bus"),
             stop("bus3", 150.0, "bus"),
-            stop("tube", 700.0, "tube"), // beyond the inner ring, within the outer
+            stop("tube", 700.0, "tube"), // the lone tube, within the outer radius
         )
         val model = vm(FakeLocation(origin), FakeFinder { stops })
 
@@ -122,6 +122,28 @@ class NearbyStopsViewModelTest {
         val ready = model.state.value as NearbyStopsViewModel.State.Ready
         assertTrue("the Tube stop survives the near buses", ready.stops.any { it.id == "tube" })
         assertTrue("the near buses are still shown", ready.stops.any { it.id == "bus1" })
+    }
+
+    @Test
+    fun `the eager set is capped to the nearest clusters per mode`() = runTest {
+        val stops = listOf(
+            stop("bus1", 40.0, "bus"),
+            stop("bus2", 90.0, "bus"),
+            stop("bus3", 150.0, "bus"),
+            stop("tube", 700.0, "tube"),
+        )
+        val model = vm(FakeLocation(origin), FakeFinder { stops })
+
+        model.locate()
+        advanceUntilIdle()
+
+        val ready = model.state.value as NearbyStopsViewModel.State.Ready
+        // Eager is the two nearest bus clusters plus the lone tube — the third bus is beyond the
+        // per-mode cap and is not surfaced (the "More" paging that would reach it is deferred; the
+        // eager/`more` split itself is covered by NearbyClustersTest). Distances cover eager only.
+        assertEquals(listOf("bus1", "bus2", "tube"), ready.stops.map { it.id })
+        assertTrue("bus3" !in ready.stops.map { it.id })
+        assertTrue("bus3" !in ready.distanceMeters)
     }
 
     @Test
@@ -319,4 +341,5 @@ class NearbyStopsViewModelTest {
         assertTrue("same set → departures refreshed in place", refreshed)
         assertEquals(before, model.state.value)
     }
+
 }
