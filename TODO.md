@@ -295,12 +295,14 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       Landed: `StarredRow`/`Starred` + `DepartureRows.pinStarred` (warnings still lead —
       a starred service never jumps above a closure or a no-prediction status row),
       `StarredRowsStore` + `DataStoreStarredRowsStore` (reactive `starred()`, toggle; a
-      newer-schema file reads as `Unavailable` and is preserved, never overwritten), the
-      per-card star control (filled `Star` in primary when on, the vendored `StarBorderIcon`
-      outline when off), and `MainViewModel.toggleStar`/`starred` wired through `MainScreen`
-      and `MainActivity`. Stars ride Android backup/transfer (SPEC *Privacy* backup note),
-      not an app-initiated send. The control shows only on timed cards — a star restores its
-      pin the moment a starred, currently-suspended line has departures again.
+      newer-schema file reads as `Unavailable` and is preserved, never overwritten), and
+      `MainViewModel.toggleStar`/`starred` wired through `MainScreen` and `MainActivity`.
+      Stars ride Android backup/transfer (SPEC *Privacy* backup note), not an app-initiated
+      send. Starring is available only on timed cards — a star restores its pin the moment a
+      starred, currently-suspended line has departures again. **The interaction is a long-press
+      on the card, marked by a gold border** (PR #73): the original filled/outline per-card
+      `Star` button was removed because it ate width on every row; a discoverable, labeled star
+      returns with the tap-to-open stop detail view (below).
 - [ ] "Near me now" discovery (on-demand location, nearby `/StopPoint` lookup selected by
       `NearbySelection`) with one-tap add-to-watched; stop search. Distance ranking lives
       here — for *finding* stops to watch — not in ordering the watched list, which stays
@@ -578,13 +580,13 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       (from state already in memory, not a tap-time fetch) and how each source's freshness is
       tracked, since arrivals, disruption, and any accessibility data age independently and a
       safety-relevant lift outage must never read as current when it isn't (D4 / principle 1).
-      **Width follow-up (maintainer, 2026-09-20): temporarily remove the per-row star button
-      — it eats row width and crushes the destination (observed `B… (Charing X)`).** Move
-      starring into this detail view, opened by a card tap and/or a long-press; the row then
-      spends its width on the destination and times. "Temporarily" — it's an experiment to
-      see if the tap/long-press affordance is discoverable enough without a visible star; if
-      not, a lighter-weight star (smaller, or only on the starred ones) is the fallback.
-      Its own PR, after the truncation change above.
+      **Width follow-up (maintainer, 2026-09-20):** the per-row star button ate row width and
+      crushed the destination (observed `B… (Charing X)`). **Done (PR #73):** the button is
+      removed, starring is a long-press on the card, and a pinned card is marked by a gold
+      border (no in-row element). **Still outstanding here:** move the star into this detail
+      view — opened by a card *tap* — as a discoverable, labeled control, so the long-press is
+      the shortcut and the detail view is the obvious path. Its own PR, after the truncation
+      change above.
 - [ ] **Hand off to a navigation app** (requested 2026-09-19, on-device). From a stop (likely
       the detail view above), let the user open the stop in Google Maps or their default nav
       app — a geo/maps intent to the stop's coordinates or name. No new dependency (a plain
