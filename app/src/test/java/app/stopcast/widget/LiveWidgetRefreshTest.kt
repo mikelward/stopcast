@@ -6,6 +6,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
 import app.stopcast.domain.AppSettings
+import app.stopcast.domain.FontSizeSettings
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
@@ -46,6 +47,9 @@ class LiveWidgetRefreshTest {
     ) : AppSettings {
         override fun liveWidgetRefresh(): Flow<Boolean> = flow
         override suspend fun setLiveWidgetRefresh(enabled: Boolean) = onSet(enabled)
+        override fun fontSize(): Flow<FontSizeSettings> = flowOf(FontSizeSettings())
+        override suspend fun setFontScale(scale: Float) {}
+        override suspend fun setPinchEnabled(enabled: Boolean) {}
     }
 
     private fun enqueuedCount() =
@@ -124,6 +128,9 @@ class LiveWidgetRefreshTest {
                 }
                 active--
             }
+            override fun fontSize(): Flow<FontSizeSettings> = flowOf(FontSizeSettings())
+            override suspend fun setFontScale(scale: Float) {}
+            override suspend fun setPinchEnabled(enabled: Boolean) {}
         }
         launch { applyLiveWidgetRefresh(context, settings, enabled = true) }
         launch { applyLiveWidgetRefresh(context, settings, enabled = false) }

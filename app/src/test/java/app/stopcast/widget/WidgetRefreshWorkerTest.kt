@@ -9,6 +9,7 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.testing.WorkManagerTestInitHelper
 import app.stopcast.data.DataStoreAppSettings
 import app.stopcast.domain.AppSettings
+import app.stopcast.domain.FontSizeSettings
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -107,6 +108,9 @@ class WidgetRefreshWorkerTest {
     private class FakeSettings(private val flow: Flow<Boolean>) : AppSettings {
         override fun liveWidgetRefresh(): Flow<Boolean> = flow
         override suspend fun setLiveWidgetRefresh(enabled: Boolean) {}
+        override fun fontSize(): Flow<FontSizeSettings> = flowOf(FontSizeSettings())
+        override suspend fun setFontScale(scale: Float) {}
+        override suspend fun setPinchEnabled(enabled: Boolean) {}
     }
 
     @Test

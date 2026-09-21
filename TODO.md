@@ -583,14 +583,18 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       the battery cost of a periodic fix + a location-change subscription (SPEC *Cost and
       reliability* / §9-style budget), and fold in the location states above. The disclosure is
       the gate, not the direction — the direction is settled.
-- [ ] **Configurable display scaling / font size, with a pinch gesture** (maintainer,
+- [x] **Configurable display scaling / font size, with a pinch gesture** (maintainer,
       2026-09-20). Make the text/display size a persisted setting on the Settings screen —
       mirror how snoozemo does it (`mikelward/snoozemo`, its SettingsScreen scale control) —
       AND let the user **pinch-to-zoom** on the departures view to change it, the two kept in
       sync through the same stored value. The user likes the current dense layout, so the
       default stays as-is; scaling is opt-in. Its own PR (not part of the auto-locate work).
       Cross-check the snoozemo implementation for the store shape and the density clamp before
-      building. (Supersedes the earlier "make text size a setting" note.)
+      building. (Supersedes the earlier "make text size a setting" note.) **Done:** a Settings
+      slider + pinch switch and an app-wide two-finger pinch write one stored size (80%–160%,
+      a factor over the system scale), warmed at startup; see SPEC *Display size*. The pinch
+      works anywhere in the app, not only the departures view. Device check still owed: the
+      gesture and the live resize want an eyeball on hardware.
 - [x] **Truncate the row destination instead of ellipsizing it** (maintainer, 2026-09-20).
       The user prefers a clean cut to a `…` on the destination, which on a narrow row crushes
       to a single character plus `…` (observed `B… (Charing X)` for a Northern-line Charing

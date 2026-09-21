@@ -415,6 +415,32 @@ for now (the gate's own menu offers About alone). Opening either takes the depar
 (and its background refresh) out of the picture, so nothing polls TfL behind the static
 screen.
 
+### Display size
+
+The user can make StopCast's text bigger or smaller than everything else on the phone — a
+glance surface is read at arm's length and from a pocket. The size is a **factor on top of the
+system's own font scale**, not a replacement for it, so an accessibility setting made in
+Android is still respected and StopCast only says how much larger or smaller it should be than
+the rest of the device. It multiplies only text: paddings, icons, and touch targets keep the
+4dp-grid layout, so larger text grows what is read without breaking what is tapped. The
+offered range is 80%–160% of the system size — wide enough to help a low-vision reader,
+bounded so a departure card's one-line countdown still lays out beside its line pill at the
+top of the range (D8). The default is the system's own size (100%): StopCast follows the
+platform setting until the user chooses otherwise, so the dense default layout stays as-is and
+scaling is opt-in.
+
+Two controls change the one stored size, kept in sync because they write the same value: a
+**slider** on Settings and a **two-finger pinch anywhere in the app** (a pinch resizes the
+*app*, not the page it happened on). A switch on Settings gates the pinch, for a user who
+would rather not resize by accident. Both move the size *live* as they are used and persist
+once, when the gesture or drag ends; a size arriving from storage while the fingers are down
+is held rather than snapping the text out from under them. The size is warmed into memory at
+startup so the first frame is already the user's size — corrected a frame later on a cold
+start rather than held behind a blocking disk read (principles 3–5). The stored value is one
+number and one boolean about how the app draws itself — nothing about the user, the place, or
+the time — and travels with the rest of the config through Android's backup like any other
+setting.
+
 ### Update indicator
 
 When Google Play reports a newer version, the departures overflow (⋮) icon carries a small

@@ -148,18 +148,25 @@ private fun LibraryDetailsDialog(
     onDismiss: () -> Unit,
 ) {
     val authors = remember(library) { library.authorsOrEmpty() }
+    // A dialog opens its own window, which doesn't inherit the theme's scaled density or pinch
+    // handler — FontSizeWindow re-applies the chosen text size to each slot and pinchFontSizeHost
+    // lets a pinch resize while it's open (SPEC *Display size*).
     AlertDialog(
+        modifier = Modifier.pinchFontSizeHost(),
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) }
+            FontSizeWindow {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) }
+            }
         },
-        title = { Text(library.name) },
+        title = { FontSizeWindow { Text(library.name) } },
         text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 360.dp)
-                    .verticalScroll(rememberScrollState()),
-            ) {
+            FontSizeWindow {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
                 library.artifactVersion?.let { version ->
                     Text(
                         text = stringResource(R.string.settings_version, version),
@@ -196,6 +203,7 @@ private fun LibraryDetailsDialog(
                             modifier = Modifier.padding(top = 8.dp),
                         )
                     }
+                }
                 }
             }
         },

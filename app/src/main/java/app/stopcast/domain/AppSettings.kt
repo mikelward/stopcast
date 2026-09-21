@@ -26,12 +26,28 @@ interface AppSettings {
     /** Set [liveWidgetRefresh]. Suspending, meant to run off the main thread; best-effort. */
     suspend fun setLiveWidgetRefresh(enabled: Boolean)
 
+    /**
+     * The app's own text size and whether a pinch may change it (SPEC *Display size*): the scale
+     * factor multiplies the system font scale, and the pinch switch gates the two-finger gesture.
+     * One flow so a warmed cache reads both together and a screen re-renders on either change.
+     */
+    fun fontSize(): Flow<FontSizeSettings>
+
+    /** Set the font [scale]; clamped on read. Suspending, off the main thread; best-effort. */
+    suspend fun setFontScale(scale: Float)
+
+    /** Set whether a pinch may resize text. Suspending, off the main thread; best-effort. */
+    suspend fun setPinchEnabled(enabled: Boolean)
+
     companion object {
         /** A store that persists nothing and always reads the defaults — the default for tests
          *  and a build with no wired DataStore, so the app runs identically minus persistence. */
         val NONE: AppSettings = object : AppSettings {
             override fun liveWidgetRefresh(): Flow<Boolean> = flowOf(false)
             override suspend fun setLiveWidgetRefresh(enabled: Boolean) {}
+            override fun fontSize(): Flow<FontSizeSettings> = flowOf(FontSizeSettings())
+            override suspend fun setFontScale(scale: Float) {}
+            override suspend fun setPinchEnabled(enabled: Boolean) {}
         }
     }
 }
