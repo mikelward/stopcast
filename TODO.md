@@ -328,6 +328,13 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         identical text is the same notice — so it spans stations *and* the hub with no
         `hubNaptanCode` plumbing; departures stay grouped per station (SPEC *Disruptions*).
         Follow-ups deferred here:
+    - [x] **Name the affected stops on tap** (maintainer, 2026-09-21). The kept card records the
+          other stops the notice covers (`DepartureRow.alsoAt`, distinct display names,
+          nearest-first) and the expanded card lists them ("Also affects King's Cross St.
+          Pancras"). This resolves the Codex P1 on PR #89: TfL's text is not guaranteed to name
+          its stop (a place-less "Station closed"), so a text-only collapse alone could hide an
+          unrelated warning; naming every affected stop means none is dropped (principle 1),
+          without needing the `hubNaptanCode` plumbing.
     - [ ] **Where the deduped alert renders.** It stays on the nearest member's card today
           (option 3a). A dedicated **hub alert band** titled with TfL's interchange name (3b)
           or **floating all alerts to a top block** were mocked in chat; both are a render

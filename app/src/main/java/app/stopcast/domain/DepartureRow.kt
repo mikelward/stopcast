@@ -58,6 +58,13 @@ data class DepartureRow(
     val fetchedAt: Instant,
     val status: LineStatus? = null,
     val stopDisruption: String? = null,
+    // Other stops the SAME [stopDisruption] notice was reported at, by display name, nearest-first
+    // (this row's own [stopName] excluded). Set only on a near-me stop-status row that deduped an
+    // identical notice reported across several stops (a hub-wide lift outage): the card keeps one
+    // copy on the nearest stop but names every stop it covers on expand, so no warning is hidden
+    // even when TfL's text doesn't name its own stop (SPEC *Disruptions*, principle 1). Empty on
+    // every other row.
+    val alsoAt: List<String> = emptyList(),
 )
 
 /**

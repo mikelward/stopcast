@@ -602,6 +602,25 @@ class DepartureRowsTest {
 
         assertEquals(1, deduped.size)
         assertEquals("STP1", deduped[0].stopId)
+        // The kept card names the other affected stops (by distinct display name, nearest-first) —
+        // STP2 shares the nearest's name so it's folded in; King's Cross is the one other place.
+        assertEquals(listOf("King's Cross St. Pancras"), deduped[0].alsoAt)
+    }
+
+    @Test
+    fun `nearbyDeduped names the other affected stops when a place-less notice repeats`() {
+        // The Codex P1 case: TfL's text names no stop ("Station closed until further notice."), so
+        // two unrelated closures with identical text collapse — but the kept card names both stops
+        // (header is the nearest, alsoAt the other), so no warning is hidden (principle 1).
+        val notice = "Station closed until further notice."
+        val deduped = DepartureRows.nearbyDeduped(
+            listOf(stopStatusRow("A", "Highbury & Islington", notice), stopStatusRow("B", "Canonbury", notice)),
+            mapOf("A" to 100.0, "B" to 300.0),
+        )
+
+        assertEquals(1, deduped.size)
+        assertEquals("A", deduped[0].stopId)
+        assertEquals(listOf("Canonbury"), deduped[0].alsoAt)
     }
 
     @Test
