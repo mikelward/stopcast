@@ -18,11 +18,11 @@ internal data class BranchedLabel(
  *
  * The branch outranks the terminus for space (SPEC destination-label): the full branch is kept
  * while even the abbreviated terminus fits beside it, and the terminus yields first — full name,
- * then its abbreviated form, then a clean clip. The branch joins in plain list style, ", $branch".
+ * then its abbreviated form, then a clean clip. The branch joins with a slash, "/$branch".
  *
  * The one degenerate case is the terminus getting **no** room — at a large accessibility font
  * scale on a narrow row the branch alone can fill the width. There the row is the branch **alone
- * and bare**: a leading comma with nothing before it (", Charing X") is a malformed label, where
+ * and bare**: a leading slash with nothing before it ("/Charing X") is a malformed label, where
  * a parenthesized branch once read fine on its own. The full name stays the accessible label.
  *
  * @param label the full terminus name
@@ -32,8 +32,8 @@ internal data class BranchedLabel(
  * @param maxWidth the width available to the whole destination line
  * @param labelWidth measured width of [label]
  * @param abbrevLabelWidth measured width of [abbreviatedLabel]
- * @param fullBranchWidth measured width of ", $branch"
- * @param abbrevBranchWidth measured width of ", $abbreviatedBranch"
+ * @param fullBranchWidth measured width of "/$branch"
+ * @param abbrevBranchWidth measured width of "/$abbreviatedBranch"
  * @param firstGlyphWidth measured width of the terminus's first glyph — the floor below which
  *   the terminus can show nothing meaningful, so it is dropped rather than left at zero width
  */
@@ -54,14 +54,14 @@ internal fun branchedLabel(
     val branchWidth = if (useFullBranch) fullBranchWidth else abbrevBranchWidth
     val availForLabel = maxWidth - branchWidth
     if (availForLabel < firstGlyphWidth) {
-        // No room for the terminus: branch alone, bare (no leading comma, short board form),
+        // No room for the terminus: branch alone, bare (no leading slash, short board form),
         // full name kept for a screen reader.
         return BranchedLabel(terminus = "", branch = abbreviatedBranch, contentDescription = label)
     }
     val displayLabel = if (labelWidth <= availForLabel) label else abbreviatedLabel
     return BranchedLabel(
         terminus = displayLabel,
-        branch = if (useFullBranch) ", $branch" else ", $abbreviatedBranch",
+        branch = if (useFullBranch) "/$branch" else "/$abbreviatedBranch",
         contentDescription = if (displayLabel != label) label else null,
     )
 }

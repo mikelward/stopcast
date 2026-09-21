@@ -11,7 +11,7 @@ import org.junit.Test
 class BranchedLabelTest {
 
     @Test
-    fun `joins terminus and branch in list style when both fit`() {
+    fun `joins terminus and branch with a slash when both fit`() {
         val r = branchedLabel(
             label = "Battersea Power",
             abbreviatedLabel = "Battersea Power",
@@ -25,12 +25,12 @@ class BranchedLabelTest {
             firstGlyphWidth = 20,
         )
         assertEquals("Battersea Power", r.terminus)
-        assertEquals(", Charing Cross", r.branch)
+        assertEquals("/Charing Cross", r.branch)
         assertEquals(null, r.contentDescription)
     }
 
     @Test
-    fun `abbreviates the terminus under pressure and keeps the comma and full name`() {
+    fun `abbreviates the terminus under pressure and keeps the slash and full name`() {
         val r = branchedLabel(
             label = "High Barnet",
             abbreviatedLabel = "H. Barnet",
@@ -44,7 +44,7 @@ class BranchedLabelTest {
             firstGlyphWidth = 20,
         )
         assertEquals("H. Barnet", r.terminus)
-        assertEquals(", Bank", r.branch)
+        assertEquals("/Bank", r.branch)
         // Full name kept for a screen reader now that the visible terminus is shortened.
         assertEquals("High Barnet", r.contentDescription)
     }
@@ -64,14 +64,14 @@ class BranchedLabelTest {
             firstGlyphWidth = 20,
         )
         assertEquals("Battersea Power", r.terminus)
-        assertEquals(", Charing X", r.branch)
+        assertEquals("/Charing X", r.branch)
         assertEquals(null, r.contentDescription)
     }
 
     @Test
-    fun `drops the comma and shows the branch alone when the terminus has no room`() {
+    fun `drops the slash and shows the branch alone when the terminus has no room`() {
         // The Codex P2 on #92: at an extreme font scale on a narrow row the branch alone can
-        // fill the width, so a leading comma would render with nothing before it. The row is
+        // fill the width, so a leading slash would render with nothing before it. The row is
         // then the branch, bare, and the full name stays the accessible label.
         val r = branchedLabel(
             label = "Battersea Power",
@@ -87,8 +87,8 @@ class BranchedLabelTest {
         )
         assertEquals("", r.terminus)
         assertEquals("Charing X", r.branch)
-        // No leading comma when the branch stands alone.
-        assertEquals(false, r.branch.startsWith(","))
+        // No leading slash when the branch stands alone.
+        assertEquals(false, r.branch.startsWith("/"))
         assertEquals("Battersea Power", r.contentDescription)
     }
 }

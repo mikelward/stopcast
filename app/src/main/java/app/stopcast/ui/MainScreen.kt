@@ -897,8 +897,8 @@ private fun DestinationLine(
     stale: Boolean,
     now: Instant,
     modifier: Modifier = Modifier,
-    // The "via" branch (TfL's `towards`), joined to the destination in plain list style —
-    // "Battersea, Charing X" — the cue a rider uses to pick a train. Null for most
+    // The "via" branch (TfL's `towards`), joined to the destination with a slash —
+    // "Battersea/Charing X" — the cue a rider uses to pick a train. Null for most
     // services; a branch-free row whose name has no abbreviatable word takes the cheap
     // no-measuring path below.
     branch: String? = null,
@@ -968,8 +968,8 @@ private fun DestinationLine(
                     maxWidth = constraints.maxWidth,
                     labelWidth = remember(label) { widthOf(label) },
                     abbrevLabelWidth = remember(abbreviatedLabel) { widthOf(abbreviatedLabel) },
-                    fullBranchWidth = remember(branch) { widthOf(", $branch") },
-                    abbrevBranchWidth = remember(shortBranch) { widthOf(", $shortBranch") },
+                    fullBranchWidth = remember(branch) { widthOf("/$branch") },
+                    abbrevBranchWidth = remember(shortBranch) { widthOf("/$shortBranch") },
                     firstGlyphWidth = remember(abbreviatedLabel) { widthOf(abbreviatedLabel.take(1)) },
                 )
                 Row(
@@ -982,9 +982,9 @@ private fun DestinationLine(
                         maxLines = 1,
                         // One line, no wrap: without this a two-word terminus ("Battersea Power")
                         // wraps its second word onto a dropped line while the Text still fills its
-                        // weighted slot, floating the branch off to the far edge — the comma ends up
-                        // detached, as in "Battersea        , Charing X". softWrap = false clips on
-                        // one line so the comma stays against the last visible glyph. Hard clip (a
+                        // weighted slot, floating the branch off to the far edge — the slash ends up
+                        // detached, as in "Battersea        /Charing X". softWrap = false clips on
+                        // one line so the slash stays against the last visible glyph. Hard clip (a
                         // clean cut, no ellipsis); fill = false so a short label doesn't gap before
                         // the branch.
                         softWrap = false,

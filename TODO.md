@@ -281,7 +281,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       over the branch** (maintainer, 2026-09-21, PR #92). The branch outranks the terminus for
       space today (SPEC destination-label), so at an extreme accessibility font scale on a narrow
       row — where even the terminus's first glyph won't fit — the row shows the branch **alone and
-      bare**: `branchedLabel` drops the leading comma so it never renders a malformed ", Charing X"
+      bare**: `branchedLabel` drops the leading slash so it never renders a malformed "/Charing X"
       with nothing before it (the Codex P2 fixed on #92). Open question the maintainer flagged: in
       that zero-room case, is the *terminus* the more useful survivor than the branch? Cheap to
       flip — it's one predicate in the pure `branchedLabel`, covered by its unit test — so it's
@@ -665,19 +665,20 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       branch or interchange counts — a stop merely shared with an unrelated route is not a
       junction. Replaces the terminus label the MVP ships with.
 - [x] **Show the via branch beside the destination** — TfL's `towards` "via" trunk
-      ("Battersea Power (Charing Cross)") shown parenthesized after the terminus, so a
+      ("Battersea/Charing X") shown after the terminus joined with a slash, so a
       rider can pick a branching-line train (Northern most visibly). The branch
       **participates in grouping**: within a direction a line splits per terminus *and*
       branch, so two trains to one terminus via different trunks each get their own line
       and countdown (a countdown never sits under the wrong branch). The **branch outranks
       the terminus for space**: where the pair won't
-      fit, the destination gives way and the branch is kept — "Batter… (Charing X)" in the
+      fit, the destination gives way and the branch is kept — "Batter/Charing X" in the
       tight case. The branch is normalized to one short board form per trunk ("Charing X")
       on every surface, up front, not measured against the row; a width-adaptive form that
       shortens it further under pressure and truncates rather than elides the destination is
-      the tracked follow-up. Follow-ups: **eyeball
-      on a device** the truncation balance and the abbreviations, and whether `spaced-slash`
-      ("Battersea Power / Charing Cross") reads better than parens — an open alternative.
+      the tracked follow-up. The separator settled on a slash: parentheses (#92 shipped a
+      comma list first) cost extra spaces and dropped higher-information characters on a
+      narrow row; the slash is the compact form (#94). Follow-up: **eyeball on a device**
+      the truncation balance and the abbreviations.
 - [ ] (Later, open call) **One row per destination** as an alternative grouping to
       (service, stop, direction) (D8) — every row then names a single unambiguous
       destination (and handles a blank `direction` via `towards`), at the cost of more
