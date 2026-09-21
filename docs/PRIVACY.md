@@ -65,12 +65,17 @@ The log **never** carries:
 - any contact, name, or other personal identifier.
 
 These diagnostics are written to Android's **Logcat** (visible to a developer with the
-device connected). The logging is wired incrementally, one feature at a time: the
-**location** fix outcomes land with the location-fallback change, and the
-**departures/disruption** diagnostics with the disruption-logging change; until each is
-wired, those warnings are discarded rather than recorded. A persisted, user-shareable
-**bug-report export** is planned (`TODO.md` Phase 5). The on-device logging exception
-above does **not** extend to an artifact that leaves the device: when the log is exported
-to be shared, **travel data — stop IDs and line ids — is redacted**, because a shared file
-is subject to the same rule as any other artifact that leaves the machine (`AGENTS.md`
-*Privacy*). That redaction lands with the export feature itself.
+device connected) **and to a persisted log file on the device** — a small rotating file in
+the app's private cache (excluded from backup), kept so that a crash or a silent process
+kill still leaves a record of the last thing the app saw. The persisted log **stays on the
+device**: stopcast registers no off-device destination for it, so nothing here is sent
+anywhere. (A Crashlytics-style crash/breadcrumb reporter is a possible future addition — a
+new off-device channel that would be disclosed here, and in the Play Data Safety answers,
+before it ships.) The logging runs through one shared on-device buffer
+(`mikelward/androidlog`), wired incrementally: a feature whose warning seam isn't connected
+yet is discarded rather than recorded. A user-shareable **bug-report export** is planned
+(`TODO.md`). The on-device logging exception above does **not** extend to an artifact that
+leaves the device: when the log is exported to be shared, **travel data — stop IDs and line
+ids — is redacted**, because a shared file is subject to the same rule as any other artifact
+that leaves the machine (`AGENTS.md` *Privacy*). That redaction lands with the export feature
+itself.

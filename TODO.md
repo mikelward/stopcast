@@ -136,14 +136,32 @@ exercises the whole spine the widget later renders from.
       (coarse stop/line IDs, HTTP status, location fix outcomes — never a coordinate or
       key), and that a shareable export redacts travel data. See the doc for the precise,
       canonical wording — this line is a pointer, not a second inventory to keep in sync.
-  - [ ] **Wire the shared on-device logger into both DataStore corruption handlers**
-        (`DataStoreSnapshotStore` and `DataStoreWatchedStopsStore`) when it lands, so a
-        discarded snapshot or watched-stop set is never silent (SPEC principle 2 / *never
-        fail silently*). Today both default `warn` to a no-op — the seam is there but the
-        shared logger isn't yet — so on genuine corruption the file is discarded without a
-        diagnostic. The **watched-set** discard is the higher-stakes one: it loses the
-        user's own config, not a re-fetchable cache (though the set also rides Android
-        backup, so it isn't the only copy). Codex P2 on PR #26.
+  - [x] **Adopt the shared logger (`mikelward/androidlog`) with an on-device persisted file
+        sink.** `StopcastDebugLog` (the shared `DebugLog` buffer) is registered in a new
+        `StopcastApp` with the library `LogcatSink` and `DebugFileSink` (a rotating file in
+        `cacheDir`, chained crash handler — the seam Crashlytics hangs off later). The
+        location / departures / stars / update / settings / widget warning seams now route
+        through it, so every warning is both in Logcat and persisted on-device
+        (`docs/PRIVACY.md`). On-device only — no off-device sink. Logcat tags consolidated to
+        one `StopCast` tag with an area prefix (e.g. `location: …`).
+  - [ ] **Wire the shared logger into the `DataStoreWatchedStopsStore` corruption handler**
+        once that store is actually constructed (it has no construction site yet, so there is
+        nothing to wire — its `warn` defaults to a no-op). `DataStoreSnapshotStore`'s handler
+        already routes to the shared logger via `logWidgetSnapshotWarning`. The watched-set
+        discard is the higher-stakes one — it loses the user's own config (though the set also
+        rides Android backup). SPEC principle 2 / *never fail silently*; Codex P2 on PR #26.
+  - [ ] **Crashlytics — off-device crash + breadcrumb reporting** (requested 2026-09-21).
+        Add a Firebase Crashlytics `Destination.OFF_DEVICE` sink to `StopcastDebugLog`; the
+        library's type boundary withholds every `String` unless `safe(...)`, so breadcrumbs
+        can't leak travel data without an explicit opt-in per call. This is a **new off-device
+        channel**: a Firebase dependency, a Play **Data Safety** change, and a battery/network
+        cost — each named when built, and gated behind a user opt-in as the siblings do. Comes
+        after the shareable export.
+  - [ ] **Log recent process-exit reasons at startup** into the shared log
+        (`ActivityManager.getHistoricalProcessExitReasons`), as the siblings do
+        (`ProcessExitReasons`), so a silent kill or native crash leaves a coarse cause in the
+        next run's diagnostics. Coarse reason / importance / status only — never the platform's
+        free-text description.
 - [x] **Persist the last-good snapshot; show a stamped placeholder at once and fill it
       in when the async read completes** (SPEC snapshot-render — never block the first
       frame on the DataStore read; the intro says the first deliverable exercises

@@ -1,7 +1,6 @@
 package app.stopcast.widget
 
 import android.content.Context
-import android.util.Log
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -32,6 +31,7 @@ import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import app.stopcast.MainActivity
+import app.stopcast.StopcastDebugLog
 import app.stopcast.data.DataStoreSnapshotStore
 import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.RouteTopologyStore
@@ -390,7 +390,7 @@ private fun WidgetPill(row: DepartureRow) {
  * A top-level function so both [StopCastWidget.provideGlance] and [WidgetSnapshotStore] can
  * wire it into `DataStoreSnapshotStore.from`, which keeps the first caller's sink.
  */
-internal fun logWidgetSnapshotWarning(message: String) = Log.w("StopCast.Widget", message)
+internal fun logWidgetSnapshotWarning(message: String) = StopcastDebugLog.warning("widget: %s", message)
 
 /**
  * The widget line pill's fixed label width — every pill is the same size down the column so
