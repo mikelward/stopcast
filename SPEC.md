@@ -223,10 +223,12 @@ degrades to "show what TfL said", never to a confident wrong merge.
 
 The **branch outranks the terminus for space**, because on a branching line the trunk is
 what tells two otherwise-identical trains apart — losing it defeats the row. So where the
-pair won't fit, the branch is kept and the **destination truncates** to make room
-("Batter… (Charing X)"). A width-adaptive form that shortens the branch further under
-pressure (to `Charing`, then `CX`) and truncates rather than elides the destination is a
-tracked refinement (`TODO.md`).
+pair won't fit, the branch is kept and the **destination is truncated with a clean cut**
+— hard-clipped, no ellipsis (maintainer preference: a `…` on a narrow row crushed the
+name to a glyph and read as a glitch) — to make room ("Batter (Charing X)"). A
+width-adaptive form that shortens the branch further under pressure (to `Charing`, then
+`CX`), keeping more of the destination than a clean cut does, is a tracked refinement
+(`TODO.md`).
 
 The row set is not purely prediction-derived: a watched stop or line with a **known
 disruption** but **zero predictions** still contributes a row — a status row (for the

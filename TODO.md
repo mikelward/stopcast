@@ -548,18 +548,25 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       default stays as-is; scaling is opt-in. Its own PR (not part of the auto-locate work).
       Cross-check the snoozemo implementation for the store shape and the density clamp before
       building. (Supersedes the earlier "make text size a setting" note.)
-- [ ] **Truncate the row destination instead of ellipsizing it** (maintainer, 2026-09-20).
+- [x] **Truncate the row destination instead of ellipsizing it** (maintainer, 2026-09-20).
       The user prefers a clean cut to a `…` on the destination, which on a narrow row crushes
       to a single character plus `…` (observed `B… (Charing X)` for a Northern-line Charing
       Cross branch) and reads as a glitch. Scope this to the **destination text only** — not
       the countdown, disruption chip, stop name, or line pill: the countdown deliberately
       keeps its ellipsis so a cut like `Due · 3 …` stays intelligible rather than being sliced
-      after a separator. **Reconcile with the "Branch truncation" task above** before building:
+      after a separator. **Done:** the whole row destination line now uses `TextOverflow.Clip`
+      — the terminus (no-branch and branch cases) and its branch/via label alike, so the line
+      cuts cleanly (`Batter (Charing X)`); the countdown, disruption chip, stop name, and line
+      pill keep their ellipsis (the via was added to the clip scope at the maintainer's request
+      during the PR). The maintainer's call on
+      the tension with the "Branch truncation" task below is **hard clip wins for now** — the
+      word-abbreviation form (keeping more of the name) stays that task's deferred refinement.
+      (Original note kept for context.) **Reconcile with the "Branch truncation" task above**:
       that task deliberately word-abbreviates and keeps ellipsis as the *last* resort
-      (`Battersea… (Charing X)`, not a hard clip), so a hard clip on the destination would
-      *replace* that approach — the two are in tension and it's the maintainer's call which
-      wins (a hard clip is simpler; the word-abbreviation keeps more of the name). Related to
-      the width work below (removing the star button reclaims room); decide together whether
+      (`Battersea… (Charing X)`, not a hard clip), so a hard clip on the destination
+      *replaces* that approach for now — a hard clip is simpler; the word-abbreviation keeps
+      more of the name. Related to the width work below (removing the star button reclaims
+      room); decide together whether
       the clean-cut destination, the branch-abbreviation plan, or more column width is the fix.
       Its own PR.
 - [ ] (Later, open call) **Walk-time reachability filter** — hide departures the user
