@@ -1,0 +1,165 @@
+package app.stopcast.domain
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * The two-tier near-me cluster selection (SPEC *Finding stops → Near me now*): stops group into
+ * clusters (a station's platforms, a junction's poles), the nearest [NearbySelection.CLUSTERS_PER_MODE]
+ * clusters of each mode are eager (fetched at once), the rest wait behind a per-mode "More".
+ * Coordinates are obviously-synthetic offsets from the origin (SPEC *Privacy*).
+ */
+class NearbyClustersTest {
+    // A stop [meters] due north of the origin (~111,320 m per degree of latitude) serving one
+    // line of [mode], optionally in [cluster] (blank = its own cluster).
+    private fun stop(id: String, meters: Double, mode: String, cluster: String = "") = StopLocation(
+        id = id,
+        name = id,
+        latitude = meters / 111_320.0,
+        longitude = 0.0,
+        lines = listOf(LineRef("$mode-$id", id, mode)),
+        clusterId = cluster,
+    )
+
+    private fun select(stops: List<StopLocation>, clustersPerMode: Int = NearbySelection.CLUSTERS_PER_MODE) =
+        NearbySelection.selectClusters(stops, latitude = 0.0, longitude = 0.0, clustersPerMode = clustersPerMode)
+
+    // A tier as lists of the stop ids in each cluster, in cluster order.
+    private fun List<NearbySelection.NearbyCluster>.ids() = map { c -> c.stops.map { it.id } }
+
+    @Test
+    fun `no stops yields empty tiers`() {
+        val result = select(emptyList())
+        assertEquals(emptyList<List<String>>(), result.eager.ids())
+        assertEquals(emptyList<List<String>>(), result.more.ids())
+    }
+
+    @Test
+    fun `a stop beyond the outer ring is dropped from both tiers`() {
+        val result = select(listOf(stop("near", 100.0, "bus"), stop("far", 2000.0, "bus")))
+        assertEquals(listOf(listOf("near")), result.eager.ids())
+        assertTrue(result.more.isEmpty())
+    }
+
+    @Test
+    fun `poles sharing a cluster form one cluster, nearest member first`() {
+        // A junction's two poles are distinct stop ids sharing a stationNaptan — one cluster,
+        // its stops ordered nearest-first, ranked by the nearer pole.
+        val result = select(
+            listOf(
+                stop("A", 100.0, "bus", "490G0TPL"),
+                stop("B", 60.0, "bus", "490G0TPL"),
+            ),
+        )
+        assertEquals(listOf(listOf("B", "A")), result.eager.ids())
+        assertEquals(60.0, result.eager.single().distanceMeters, 0.5)
+    }
+
+    @Test
+    fun `two same-named stops in different clusters stay separate clusters`() {
+        // The whole point of keying on the cluster, not the name: adjacent stations TfL spells
+        // alike but gives different stationNaptans are two places, not one.
+        val result = select(
+            listOf(
+                stop("k1", 100.0, "tube", "940GZZLUKSX"),
+                stop("s1", 120.0, "tube", "490G000760"),
+            ),
+        )
+        assertEquals(listOf(listOf("k1"), listOf("s1")), result.eager.ids())
+    }
+
+    @Test
+    fun `a blank cluster id keeps each stop its own cluster`() {
+        val result = select(listOf(stop("x", 100.0, "bus"), stop("y", 120.0, "bus")))
+        assertEquals(listOf(listOf("x"), listOf("y")), result.eager.ids())
+    }
+
+    @Test
+    fun `only the nearest two clusters of a mode are eager, the rest go to more`() {
+        val result = select(
+            listOf(
+                stop("b1", 50.0, "bus", "490G0C1"),
+                stop("b2", 120.0, "bus", "490G0C2"),
+                stop("b3", 300.0, "bus", "490G0C3"),
+                stop("t1", 700.0, "tube", "940GZZLUKSX"),
+            ),
+        )
+        // Nearest two bus clusters are eager; the far lone tube is eager as its mode's nearest.
+        assertEquals(listOf(listOf("b1"), listOf("b2"), listOf("t1")), result.eager.ids())
+        // The third bus cluster waits behind "More".
+        assertEquals(listOf(listOf("b3")), result.more.ids())
+    }
+
+    @Test
+    fun `the nearest station of a sparse mode is always eager, however far`() {
+        // Highgate at 0.8 mi: the only tube, so rank 1 of its mode — never crowded out by nearer
+        // buses (maintainer's worked example).
+        val result = select(
+            listOf(
+                stop("bus1", 40.0, "bus", "490G0C1"),
+                stop("bus2", 90.0, "bus", "490G0C2"),
+                stop("bus3", 150.0, "bus", "490G0C3"),
+                stop("highgate", 1287.0, "tube", "940GZZLUHGT"), // ~0.8 mi
+            ),
+        )
+        assertTrue("the far lone tube is eager", result.eager.ids().contains(listOf("highgate")))
+        assertEquals(listOf(listOf("bus3")), result.more.ids())
+    }
+
+    @Test
+    fun `an interchange cluster counts toward every mode it serves`() {
+        // A hub serving tube + bus is eager via tube (its only one) and also counts as a top-2
+        // bus cluster, so it isn't double-listed and the tube is never pushed to "More".
+        val hub = StopLocation(
+            id = "hub", name = "hub", latitude = 40.0 / 111_320.0, longitude = 0.0,
+            lines = listOf(LineRef("victoria", "Victoria", "tube"), LineRef("55", "55", "bus")),
+            clusterId = "940GZZLUOXC",
+        )
+        val result = select(
+            listOf(
+                hub,
+                stop("busA", 50.0, "bus", "490G0A"),
+                stop("busB", 120.0, "bus", "490G0B"),
+                stop("busC", 300.0, "bus", "490G0C"),
+            ),
+        )
+        assertEquals(listOf(listOf("hub"), listOf("busA")), result.eager.ids())
+        assertEquals(listOf(listOf("busB"), listOf("busC")), result.more.ids())
+        // No tube left in "more" — the hub covered it.
+        assertTrue(result.more.none { "tube" in it.modes })
+    }
+
+    @Test
+    fun `more is globally ordered and pages per mode`() {
+        val result = select(
+            listOf(
+                stop("b1", 50.0, "bus", "490G0B1"),
+                stop("b2", 120.0, "bus", "490G0B2"),
+                stop("b3", 400.0, "bus", "490G0B3"),
+                stop("u1", 300.0, "tube", "940GZZLU1"),
+                stop("u2", 600.0, "tube", "940GZZLU2"),
+                stop("u3", 900.0, "tube", "940GZZLU3"),
+            ),
+        )
+        // Eager: nearest two of each mode, kept in global distance order.
+        assertEquals(listOf(listOf("b1"), listOf("b2"), listOf("u1"), listOf("u2")), result.eager.ids())
+        // More stays globally ordered; the "More bus"/"More tube" buttons filter it by mode.
+        assertEquals(listOf(listOf("b3"), listOf("u3")), result.more.ids())
+        assertEquals(listOf(listOf("b3")), result.more.filter { "bus" in it.modes }.ids())
+        assertEquals(listOf(listOf("u3")), result.more.filter { "tube" in it.modes }.ids())
+    }
+
+    @Test
+    fun `a tighter per-mode cap pushes more clusters behind More`() {
+        val result = select(
+            listOf(
+                stop("b1", 50.0, "bus", "490G0B1"),
+                stop("b2", 120.0, "bus", "490G0B2"),
+            ),
+            clustersPerMode = 1,
+        )
+        assertEquals(listOf(listOf("b1")), result.eager.ids())
+        assertEquals(listOf(listOf("b2")), result.more.ids())
+    }
+}
