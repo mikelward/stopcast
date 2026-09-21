@@ -149,11 +149,18 @@ object DepartureRows {
      * Distance is the nearby flow's input, not a row's business — [across] stays
      * location-free (D1) — so it arrives as [stopDistanceMeters] (`stopId` → meters). A
      * stop missing from the map sorts last, and equal distances break by `stopId`, so the
-     * kept stop never depends on input order. **Stop-level status rows pass through
-     * untouched**: a closure is about one stop, not a line repeated across stops, so
-     * collapsing two closed stops into one would drop a real warning. Line rows (timed and
-     * line-status) are the ones deduped. Survivors are re-sorted by the same soonest-first
-     * [rowOrder].
+     * kept stop never depends on input order.
+     *
+     * **Stop-level status rows are deduped by their notice text.** A hub-wide disruption — a
+     * lift outage, an accessibility closure — is reported by TfL against every stop point in
+     * the interchange, so the near-me set otherwise shows the identical card once per stop
+     * (St Pancras International and King's Cross St. Pancras both carrying the same "No Step
+     * Free Access" notice). Identical description text is the same notice whatever cluster it
+     * sits in — TfL's text names the affected place — so it is kept once, on the **nearest**
+     * stop carrying it, and suppressed on the farther ones. Two genuinely different closures
+     * carry different text (TfL names the place) and both survive, so no real warning is
+     * dropped (SPEC principle 2). Line rows (timed and line-status) are deduped separately by
+     * their cross-stop (line, direction) key. Survivors are re-sorted by [rowOrder].
      *
      * The dedupe identity is **cross-stop**: line + TfL's `direction`, *not* the row's
      * [DepartureRow.directionKey], which for a timed row can be the stop-local platform
@@ -183,7 +190,18 @@ object DepartureRows {
         // Keep every row from the nearest stop for its key, so two platforms of one service
         // at a single stop both survive; a farther stop's same-service row is dropped.
         val kept = lineRows.filter { nearestStopByKey[dedupeKeyOf(it)] == it.stopId }
-        return (stopStatus + kept).sortedWith(rowOrder)
+        // Keep each distinct disruption notice once, on the nearest stop carrying its text —
+        // an interchange's hub-wide notice is otherwise one identical card per member stop.
+        val nearestStopByNotice = HashMap<String, String>()
+        for (row in stopStatus) {
+            val text = row.stopDisruption ?: continue
+            val incumbent = nearestStopByNotice[text]
+            if (incumbent == null || isCloserStop(row.stopId, incumbent, ::distanceOf)) {
+                nearestStopByNotice[text] = row.stopId
+            }
+        }
+        val keptStatus = stopStatus.filter { nearestStopByNotice[it.stopDisruption] == it.stopId }
+        return (keptStatus + kept).sortedWith(rowOrder)
     }
 
     /**

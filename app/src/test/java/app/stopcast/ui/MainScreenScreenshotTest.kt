@@ -22,6 +22,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.LineRef
@@ -337,6 +338,47 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("(120 m)", substring = true).assertExists()
         composeRule.onNodeWithText("OXFORD CIRCUS").assertExists()
         composeRule.onNodeWithText("(1.2 km)", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a hub-wide alert repeated across an interchange shows once, collapsed`() {
+        // TfL reports a hub-wide notice (a lift outage) against every stop point in an
+        // interchange, so the near-me set carries the identical text once per member. It is
+        // one notice: it shows once, on the nearest member, collapsed to a single line that
+        // taps open to the full text (the farther members' duplicate cards are suppressed).
+        // Synthetic accessibility copy + public station ids/names only (SPEC *Privacy*).
+        val notice =
+            "No step-free access — the lifts to the Thameslink platforms are out of service. " +
+                "Step-free interchange is not available; please use an alternative accessible route."
+        fun member(id: String, name: String) = StopArrivals(
+            id, name, emptyList(),
+            fetchedAt = now.minusSeconds(60),
+            disruptions = listOf(StopDisruption(notice)),
+            arrivalsFresh = false,
+        )
+        val members = listOf(
+            member("910GSTPX", "London St Pancras International"),
+            member("910GSTPXBOX", "London St Pancras International"),
+            member("940GZZLUKSX", "King's Cross St. Pancras"),
+        )
+        val distances = mapOf("910GSTPX" to 120.0, "910GSTPXBOX" to 150.0, "940GZZLUKSX" to 370.0)
+        capture("main-near-me-hub-alert.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(members, now.minusSeconds(60)),
+                now,
+                {},
+                stopDistanceMeters = distances,
+            )
+        }
+        // Deduped to one card — the farther copies (and their headers) are gone.
+        composeRule.onAllNodesWithText(notice).assertCountEquals(1)
+        composeRule.onNodeWithText("LONDON ST PANCRAS INTERNATIONAL", substring = true).assertExists()
+        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertDoesNotExist()
+        // Tapping the collapsed alert expands it in place; the text is the same node, so this
+        // captures the expanded baseline rather than asserting the (unchanged) string.
+        composeRule.onNodeWithText(notice).performClick()
+        composeRule.waitForIdle()
+        captureSnapshot("main-near-me-hub-alert-expanded.png")
     }
 
     @Test

@@ -27,6 +27,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
@@ -732,23 +734,50 @@ private fun DepartureRowCard(
  * error-toned surface. The stop is named by the group header above (a closed stop always
  * shows one); the stop's own departures, if any, show in their own cards below — this card
  * is the closure notice, not a departure (SPEC D3).
+ *
+ * **Collapsed to a single line, tap to expand.** TfL's notices are prose (a paragraph on a
+ * lift outage), and a glance surface shouldn't be dominated by one — so the card shows the
+ * first line and expands to the full text on tap (SPEC *Concise copy* / jank-free UI). The
+ * `Text` exposes its full string to the accessibility tree regardless of the visual clip, so
+ * a screen reader reads the whole notice whether or not it is expanded; the tap only changes
+ * what is drawn. Expanded state is `rememberSaveable`, keyed on the notice text, so it
+ * survives a configuration change and never bleeds onto a different notice when a `LazyColumn`
+ * row is recycled.
  */
 @Composable
 private fun StopClosureContent(disruption: String) {
     // The stop name is not repeated here — the group header above names the stop (a closed
     // stop always shows its header, see StopGrouping.groupByStop). This card is the closure
     // notice alone.
+    var expanded by rememberSaveable(disruption) { mutableStateOf(false) }
+    val clickLabel = stringResource(if (expanded) R.string.alert_collapse else R.string.alert_expand)
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = clickLabel) { expanded = !expanded },
     ) {
-        Text(
-            text = disruption,
-            style = MaterialTheme.typography.bodyMedium,
+        Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        )
+            verticalAlignment = Alignment.Top,
+        ) {
+            Text(
+                text = disruption,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = if (expanded) Int.MAX_VALUE else 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            // A quiet chevron marks the row as expandable; the click label carries the action
+            // for a screen reader, so the icon itself needs no separate description.
+            Icon(
+                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier.padding(start = 8.dp).size(20.dp),
+            )
+        }
     }
 }
 

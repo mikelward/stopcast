@@ -364,6 +364,18 @@ closures currently in effect, so telling current from future needs the dates in 
 and showing a not-yet-current diversion is the safe side (an extra chip beats a hidden
 disruption).
 
+A stop-closure card is **collapsed to a single line and expands to the full text on tap**:
+TfL's stop notices are prose (a paragraph on a lift outage), and a glance surface shouldn't
+be dominated by one, so the card shows the first line with an affordance to open it. On the
+**near-me list** a **hub-wide notice** — a lift outage, an accessibility closure — that TfL
+reports against every stop point in an interchange is shown **once**, on the nearest member
+stop, not once per platform: King's Cross St. Pancras and St Pancras International otherwise
+each carry the identical "no step-free access" card. Identical notice text is the same notice
+whatever cluster it sits in (TfL's text names the affected place), so the farther copies are
+suppressed; two genuinely different closures carry different text and both survive (principle
+1 — no warning is dropped). This dedupes the notice across stations *and* the hub without
+merging their departures, which stay grouped per station (D8).
+
 On a glance surface a disruption is a one-line summary plus a count ("Victoria line:
 severe delays"); in the app it's the full text. A disrupted line/stop is marked even
 when its predictions still look normal, because the prediction is the thing not to be

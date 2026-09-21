@@ -511,7 +511,7 @@ class DepartureRowsTest {
     private fun rowsFor(stopId: String, stopName: String, vararg departures: Departure): List<DepartureRow> =
         DepartureRows.forStop(stopId, stopName, departures.toList(), now)
 
-    private fun stopStatusRow(stopId: String, stopName: String) = DepartureRow(
+    private fun stopStatusRow(stopId: String, stopName: String, text: String = "Stop closed") = DepartureRow(
         stopId = stopId,
         stopName = stopName,
         lineId = "",
@@ -522,7 +522,7 @@ class DepartureRowsTest {
         mode = "",
         upcoming = emptyList(),
         fetchedAt = now,
-        stopDisruption = "Stop closed",
+        stopDisruption = text,
     )
 
     @Test
@@ -586,11 +586,33 @@ class DepartureRowsTest {
     }
 
     @Test
-    fun `nearbyDeduped leaves stop-status rows untouched`() {
-        // Two different closed stops: each closure is about its own stop, so both are kept —
-        // collapsing them by their blank line id would drop a real warning.
+    fun `nearbyDeduped collapses an identical notice repeated across stops to the nearest`() {
+        // A hub-wide notice (a lift outage) is reported by TfL against every stop point in an
+        // interchange, so the near-me set carries the identical text once per member. It is
+        // one notice: keep it once, on the nearest member, and suppress the farther copies.
+        val notice = "No step free access to the Thameslink platforms due to faulty lifts"
         val deduped = DepartureRows.nearbyDeduped(
-            listOf(stopStatusRow("A", "Stop A"), stopStatusRow("B", "Stop B")),
+            listOf(
+                stopStatusRow("STP1", "St Pancras International", notice),
+                stopStatusRow("STP2", "St Pancras International", notice),
+                stopStatusRow("KGX", "King's Cross St. Pancras", notice),
+            ),
+            mapOf("STP1" to 120.0, "STP2" to 150.0, "KGX" to 370.0),
+        )
+
+        assertEquals(1, deduped.size)
+        assertEquals("STP1", deduped[0].stopId)
+    }
+
+    @Test
+    fun `nearbyDeduped keeps two different stop closures`() {
+        // Different notices are different warnings — TfL's text names the affected place — so
+        // both are kept, whatever their distance (SPEC principle 2, no warning dropped).
+        val deduped = DepartureRows.nearbyDeduped(
+            listOf(
+                stopStatusRow("A", "Stop A", "Stop A closed until further notice"),
+                stopStatusRow("B", "Stop B", "Stop B moved to Pancras Road"),
+            ),
             mapOf("A" to 100.0, "B" to 200.0),
         )
 
