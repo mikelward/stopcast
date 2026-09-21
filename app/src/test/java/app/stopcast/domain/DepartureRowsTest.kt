@@ -874,7 +874,7 @@ class DepartureRowsTest {
     @Test
     fun `destinationLines drops the branch at a single-branch stop for a short-working`() {
         // The King's Cross case: a Bank-only stop, a train tagged "Bank" bound for a short-working
-        // the asset models as no pattern's terminus. There is no other trunk to choose, so ", Bank"
+        // the asset models as no pattern's terminus. There is no other trunk to choose, so "/Bank"
         // adds nothing and is dropped (the user's ask) even though grouping falls back to raw.
         val row = rowAt(
             BNK,

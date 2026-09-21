@@ -173,7 +173,7 @@ class WidgetContentTest {
                 now,
             )
         }
-        onNode(hasText("Battersea Power, Charing X")).assertExists()
+        onNode(hasText("Battersea Power/Charing X")).assertExists()
     }
 
     @Test
