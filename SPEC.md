@@ -253,6 +253,12 @@ wrong; the maintainer prefers keeping it over dropping it). That data is a **bun
 asset** (regenerated from TfL, no runtime cost on any path); incomplete or stale data
 degrades to "show what TfL said", never to a confident wrong merge.
 
+The one exception to that raw fallback is a **single-branch stop** — one every serving pattern
+reaches on the same trunk. There the branch names which trunk the train came up behind this
+stop, never a choice, so the label is dropped even for a short-working the asset doesn't model
+as a terminus. King's Cross is Bank-only, so a Bank-branch train there terminating at Golders
+Green or Finchley Central shows no "(Bank)".
+
 The **branch outranks the terminus for space**, because on a branching line the trunk is
 what tells two otherwise-identical trains apart — losing it defeats the row. So where the
 pair won't fit, the branch is kept (its board short form, "Charing X") and the **terminus

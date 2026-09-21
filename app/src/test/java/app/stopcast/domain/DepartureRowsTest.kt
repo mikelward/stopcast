@@ -802,6 +802,21 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `destinationLines drops the branch at a single-branch stop for a short-working`() {
+        // The King's Cross case: a Bank-only stop, a train tagged "Bank" bound for a short-working
+        // the asset models as no pattern's terminus. There is no other trunk to choose, so "(Bank)"
+        // adds nothing and is dropped (the user's ask) even though grouping falls back to raw.
+        val row = rowAt(
+            BNK,
+            departure("northern", "Northern", "northbound", "Golders Green", 120, branch = "Bank"),
+        )
+        val lines = DepartureRows.destinationLines(row, maxTimes = 3, topology = northernTopology)
+        assertEquals(1, lines.size)
+        assertEquals("Golders Green", lines[0].destination)
+        assertNull(lines[0].branch)
+    }
+
+    @Test
     fun `destinationLines with the empty topology keeps every raw branch, merging nothing`() {
         // The default: no topology, so the pre-topology behavior — each branch is its own line.
         val row = rowAt(
