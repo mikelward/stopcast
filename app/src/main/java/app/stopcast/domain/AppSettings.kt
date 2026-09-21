@@ -39,6 +39,17 @@ interface AppSettings {
     /** Set whether a pinch may resize text. Suspending, off the main thread; best-effort. */
     suspend fun setPinchEnabled(enabled: Boolean)
 
+    /**
+     * Whether the user has opted out of the bug-report consent screen ("don't ask again"), so a
+     * later "Send bug report" goes straight to the share sheet. Off by default — the report carries
+     * the exact location, so consent is asked every time until the user themselves turns it off
+     * (SPEC *Privacy*, `TODO.md`). Read before the dialog is shown.
+     */
+    fun skipBugReportConsent(): Flow<Boolean>
+
+    /** Set [skipBugReportConsent]. Suspending, off the main thread; best-effort. */
+    suspend fun setSkipBugReportConsent(enabled: Boolean)
+
     companion object {
         /** A store that persists nothing and always reads the defaults — the default for tests
          *  and a build with no wired DataStore, so the app runs identically minus persistence. */
@@ -48,6 +59,8 @@ interface AppSettings {
             override fun fontSize(): Flow<FontSizeSettings> = flowOf(FontSizeSettings())
             override suspend fun setFontScale(scale: Float) {}
             override suspend fun setPinchEnabled(enabled: Boolean) {}
+            override fun skipBugReportConsent(): Flow<Boolean> = flowOf(false)
+            override suspend fun setSkipBugReportConsent(enabled: Boolean) {}
         }
     }
 }

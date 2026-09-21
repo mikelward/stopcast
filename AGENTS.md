@@ -100,9 +100,16 @@ as a confirmed TfL hex. SPEC has the full scheme and rationale.
   is fine; a coordinate or a watched-stop list lifted from a real device or bug report is
   not. Paraphrase a user's bug report in the commit/PR; don't quote it verbatim. When in
   doubt, ask before pushing.
-- **The on-device debug log is the one exception, and narrow**: coarse diagnostics only —
+- **The on-device debug log is one exception, and narrow**: coarse diagnostics only —
   a stop ID, a line id, an HTTP status — never a raw coordinate or the API key. `docs/
   PRIVACY.md` must describe what the log carries before it ships.
+- **A user-initiated, consent-gated bug report is the other exception** (maintainer,
+  2026-09-20): it may carry the **exact location** and per-stop distances off the device —
+  a routing/location bug is diagnosed from where the user was, so it discloses that on a
+  consent screen the user can decline, rather than pretending a stripped report is
+  location-safe (knowing the nearest stops already reveals about the same). Nothing leaves
+  without that consent; `SPEC.md` and `docs/PRIVACY.md` describe the channel, and the
+  location-redacted export stays a separate tool.
 
 ## Error handling
 

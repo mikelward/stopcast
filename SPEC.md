@@ -627,15 +627,18 @@ never-leaves-the-device wording). This is the platform's user-controlled channel
 the user's own Google account, not an off-device channel stopcast adds: cost £0, and no
 Play Data Safety change (Android Auto Backup is a platform feature, not data stopcast
 collects or transmits). The guarantee is therefore precise, not absolute — the only **user data**
-*stopcast* sends off the device goes in its TfL requests (its one other network call, the
-release-only Play update check, carries none — see *Update indicator*), and the user's own
-backup/transfer carries their config under their control.
+*stopcast* sends off the device on its own goes in its TfL requests (its one other network
+call, the release-only Play update check, carries none — see *Update indicator*); the user's
+own backup/transfer carries their config under their control; and a **consent-gated bug
+report** (see below and `docs/PRIVACY.md`) carries the exact location and per-stop distances
+the user explicitly agrees to share on a screen they can decline.
 
-No **user data** else leaves the device — no analytics over the user's stops or movements,
-and no coordinate, stop list, or API key in logs, commits, PRs, or fixtures. The one
-off-device call that is not a TfL request is the release-only Play update-availability
-check (*Update indicator*): a Play Services query about the app's own version that carries
-no user data and adds no Data Safety surface. The on-device
+No **user data** else leaves the device unbidden — no analytics over the user's stops or
+movements, and no coordinate, stop list, or API key in logs, commits, PRs, or fixtures; the
+consent-gated bug report is the one user-authorized exception, and it discloses exactly what
+it carries before anything leaves. The one off-device call that is not a TfL request is the
+release-only Play update-availability check (*Update indicator*): a Play Services query about
+the app's own version that carries no user data and adds no Data Safety surface. The on-device
 debug log carries coarse diagnostics only: a stop ID, a line id, an HTTP status, or a
 failed Play update check's exception class — never a raw coordinate or the user's API key.
 
@@ -683,9 +686,17 @@ Mirrors the sibling fleet:
   buffered and written to a rotating file in app-private storage that survives a crash or a
   silent process kill, so a misbehaving fix or refresh can be diagnosed after the fact (serves
   *never fail silently*). It stays on the device — no off-device sink — and carries coarse
-  diagnostics only (see *Data source, cost, and reliability*); a redacted, user-shareable
-  export is planned. The implementation is the shared `mikelward/androidlog` buffer, resolved
-  as a published dependency.
+  diagnostics only (see *Data source, cost, and reliability*). The implementation is the shared
+  `mikelward/androidlog` buffer, resolved as a published dependency.
+- **A bug report leaves the device only under explicit consent.** The overflow's *Send bug
+  report* composes the log plus the **exact location** and per-stop distances and hands it to the
+  platform share sheet — user-initiated, £0, no service of stopcast's own. Because it carries the
+  location the log itself never does, it is gated by a consent screen that names exactly what
+  leaves, with a persisted "don't ask again"; nothing is assembled until the user passes it. It is
+  the *honest* report, not a location-safe one — a routing bug is diagnosed from where you were,
+  so it says so rather than stripping that context (a separate location-redacted export stays a
+  distinct, planned tool). It rides the shared `mikelward/androidlog` `DebugReport`; a screenshot
+  is a planned addition, pending that library gaining screenshot support. See `docs/PRIVACY.md`.
 
 ## Non-goals
 

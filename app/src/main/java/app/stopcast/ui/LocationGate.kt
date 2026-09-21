@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -49,11 +51,23 @@ fun LocationGate(
     // only past the gate, so the license attribution isn't stranded when location is denied and
     // departures never resolve (Codex). Default no-op so a screenshot test renders without it.
     onOpenLicenses: () -> Unit = {},
+    // Send a bug report from a stuck gate state (no fix, TfL unreachable, nothing nearby, or a
+    // permanent denial) — exactly the failures the diagnostic log explains (Codex P2 on #86).
+    // Default no-op so a screenshot test renders without it.
+    onSendBugReport: () -> Unit = {},
 ) {
     // Saved so an open About dialog survives rotation on the gate.
     var showAbout by rememberSaveable { mutableStateOf(false) }
+    // fillMaxSize before verticalScroll keeps the column's min height at the viewport, so the
+    // content stays centered when it fits (unchanged look) but scrolls instead of clipping when a
+    // short viewport + large font scale make it taller than the screen — the stuck states now
+    // carry a third action (Send bug report), which can tip a landscape/160% layout over (Codex
+    // P2 on #86). Matches MainScreen's Centered idiom.
     Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -81,7 +95,7 @@ fun LocationGate(
                 Action(stringResource(R.string.try_again), onRetry)
             }
 
-            NearbyStopsViewModel.State.Empty -> {
+            is NearbyStopsViewModel.State.Empty -> {
                 Body(stringResource(R.string.location_no_stops))
                 Action(stringResource(R.string.try_again), onRetry)
             }
@@ -93,6 +107,23 @@ fun LocationGate(
 
             // Ready is the caller's cue to show the departures screen, not the gate.
             is NearbyStopsViewModel.State.Ready -> Unit
+        }
+        // Offered in the states where a fix or lookup actually happened — no fix, nothing nearby,
+        // TfL unreachable — so the diagnostic log (and, for Empty/Failed, the fix) is the point and
+        // departures never resolve to carry the overflow's own item. Not on PermissionRequired
+        // (grant-needed, nothing to diagnose yet — and its permanent-denial isn't reconstructed on
+        // a cold launch) nor the transient Locating spinner.
+        val stuck = when (state) {
+            NearbyStopsViewModel.State.NoLocation,
+            is NearbyStopsViewModel.State.Empty,
+            is NearbyStopsViewModel.State.Failed,
+            -> true
+            else -> false
+        }
+        if (stuck) {
+            TextButton(onClick = onSendBugReport, modifier = Modifier.padding(top = 24.dp)) {
+                Text(stringResource(R.string.menu_send_bug_report))
+            }
         }
         // Always present, below the state's own action: the one way to reach the app version and
         // open-source attribution while stuck on the gate.

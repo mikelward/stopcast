@@ -2,6 +2,7 @@ package app.stopcast.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.stopcast.domain.Coordinates
 import app.stopcast.domain.LocationProvider
 import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.NearestStops
@@ -67,14 +68,29 @@ class NearbyStopsViewModel(
          * stop is collapsed and ordered the same way an eager one is (a line served by several
          * adjacent stops shows once, from its nearest). It stays in memory for that render and
          * never reaches a log or the persisted snapshot (SPEC *Privacy*).
+         *
+         * [location] is the exact fix these stops and distances were resolved from, kept in
+         * memory alongside them so the **consent-gated bug report** can file the coordinate and
+         * the distances from one and the same fix (they would otherwise disagree if it re-fetched
+         * a fresh position at report time). Like [distanceMeters] it never reaches a log or the
+         * persisted snapshot; it leaves the device only inside a report the user has explicitly
+         * consented to share (SPEC *Privacy*).
          */
         data class Ready(
             val eager: List<NearbySelection.NearbyCluster>,
             val more: List<NearbySelection.NearbyCluster>,
             val distanceMeters: Map<String, Double>,
+            val location: Coordinates,
         ) : State {
             /** The eager tier flattened to the stops shown and fetched at once. */
             val eagerStops: List<StopRef> get() = eager.flatMap { c -> c.stops.map { it.toStopRef() } }
+
+            /**
+             * Every resolved nearby stop, both tiers — what [distanceMeters] spans. The bug report
+             * uses this rather than just [eagerStops] so a report sent after a "More" reveal still
+             * carries the farther stops the user is now looking at (SPEC *Finding stops*).
+             */
+            val nearbyStops: List<StopRef> get() = (eager + more).flatMap { c -> c.stops.map { it.toStopRef() } }
 
             /**
              * Order-independent identity of the WHOLE nearby set (both tiers), so a relocation that
@@ -85,14 +101,24 @@ class NearbyStopsViewModel(
             val clusterSetKey: String get() = (eager + more).map { it.key }.sorted().joinToString(",")
         }
 
-        /** Permission held but no position available (location off, or no fix yet). */
+        /** Permission held but no position available (location off, or no fix yet) — so, unlike
+         *  [Empty] and [Failed], there is no fix to carry for a bug report. */
         data object NoLocation : State
 
-        /** The nearby lookup reached TfL and failed — shown by kind, like the departures error. */
-        data class Failed(val kind: DeparturesUiState.Error.Kind) : State
+        /**
+         * The nearby lookup reached TfL and failed — shown by kind, like the departures error.
+         * [location] is the fix the failed lookup was made with, retained (in memory) so a bug
+         * report sent from this gate can carry where the failure happened — the context a
+         * "can't reach TfL" report needs (SPEC *Privacy*: consent-gated report only).
+         */
+        data class Failed(val kind: DeparturesUiState.Error.Kind, val location: Coordinates) : State
 
-        /** Located successfully, but TfL returned no stops within [radiusMeters]. */
-        data object Empty : State
+        /**
+         * Located successfully, but TfL returned no stops within [radiusMeters]. [location] is the
+         * fix that found nothing nearby, retained (in memory) so a bug report from this gate can
+         * carry where "no stops nearby" was reported (SPEC *Privacy*: consent-gated report only).
+         */
+        data class Empty(val location: Coordinates) : State
     }
 
     private val _state = MutableStateFlow<State>(State.PermissionRequired)
@@ -201,14 +227,14 @@ class NearbyStopsViewModel(
             // TflException.message is the coarse kind (offline / rate-limited / …), never
             // the coordinate that was queried (SPEC Privacy).
             warn("nearby stops lookup failed: ${(e as? TflException)?.message ?: e::class.simpleName}")
-            return State.Failed(kindOf(e))
+            return State.Failed(kindOf(e), location = fix)
         }
         val result = NearbySelection.selectClusters(
             found, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters,
         )
         // Eager empty means no clusters at all (each present mode contributes its nearest) —
         // nothing in range.
-        if (result.eager.isEmpty()) return State.Empty
+        if (result.eager.isEmpty()) return State.Empty(location = fix)
         // Distance per stop, over BOTH tiers (in memory only), so a revealed stop is collapsed and
         // ordered like an eager one — the departures list shows a line once, from its nearest stop
         // (SPEC *Finding stops → Near me now*). Never logged or persisted (SPEC *Privacy*).
@@ -219,6 +245,9 @@ class NearbyStopsViewModel(
             eager = result.eager,
             more = result.more,
             distanceMeters = distances,
+            // The exact fix, retained in memory so the consent-gated bug report files the
+            // coordinate and these distances from one and the same fix (SPEC *Privacy*).
+            location = fix,
         )
     }
 

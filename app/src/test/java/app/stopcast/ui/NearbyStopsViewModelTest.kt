@@ -102,6 +102,9 @@ class NearbyStopsViewModelTest {
         assertEquals(setOf("b1", "b2"), ready.distanceMeters.keys)
         assertTrue(ready.distanceMeters.getValue("b1") < ready.distanceMeters.getValue("b2"))
         assertEquals(0.0, finder.lastLatitude!!, 0.0)
+        // The exact fix is retained alongside the distances (in memory) so the consent-gated bug
+        // report files the coordinate and the distances from one and the same fix.
+        assertEquals(origin, ready.location)
     }
 
     @Test
@@ -185,7 +188,8 @@ class NearbyStopsViewModelTest {
         model.locate()
         advanceUntilIdle()
 
-        assertEquals(NearbyStopsViewModel.State.Empty, model.state.value)
+        // Empty carries the fix it found nothing near, so a bug report from that gate can say where.
+        assertEquals(NearbyStopsViewModel.State.Empty(origin), model.state.value)
     }
 
     @Test
@@ -195,8 +199,9 @@ class NearbyStopsViewModelTest {
         model.locate()
         advanceUntilIdle()
 
+        // Failed carries the fix the lookup was made with (for the bug report), alongside the kind.
         assertEquals(
-            NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.RATE_LIMITED),
+            NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.RATE_LIMITED, origin),
             model.state.value,
         )
     }
@@ -209,7 +214,7 @@ class NearbyStopsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(
-            NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.OFFLINE),
+            NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.OFFLINE, origin),
             model.state.value,
         )
     }
@@ -264,7 +269,7 @@ class NearbyStopsViewModelTest {
         model.relocate()
         advanceUntilIdle()
 
-        assertEquals(NearbyStopsViewModel.State.Empty, model.state.value)
+        assertEquals(NearbyStopsViewModel.State.Empty(origin), model.state.value)
     }
 
     @Test

@@ -63,6 +63,13 @@ class DataStoreAppSettings internal constructor(
         dataStore.updateData { (it ?: PersistedSettings()).copy(pinchEnabled = enabled) }
     }
 
+    override fun skipBugReportConsent(): Flow<Boolean> =
+        persisted().map { it?.skipBugReportConsent ?: DEFAULT_SKIP_BUG_REPORT_CONSENT }
+
+    override suspend fun setSkipBugReportConsent(enabled: Boolean) {
+        dataStore.updateData { (it ?: PersistedSettings()).copy(skipBugReportConsent = enabled) }
+    }
+
     // The shared read flow: DataStore's `data`, with a transient I/O read failure retried rather
     // than collapsed to a terminal default. A `catch`-and-emit would end the flow, leaving a
     // long-lived collector stuck at the default after storage recovered (Codex P2 on #56).
@@ -84,6 +91,9 @@ class DataStoreAppSettings internal constructor(
 
         /** Whether a pinch may resize text before the user has chosen otherwise. */
         const val DEFAULT_PINCH_ENABLED = true
+
+        /** Consent is asked every time until the user opts out — the report carries the location. */
+        const val DEFAULT_SKIP_BUG_REPORT_CONSENT = false
 
         /** Backoff between retries of a transient settings read, so [liveWidgetRefresh]'s
          *  retryWhen doesn't hot-loop while storage is briefly unavailable. */
@@ -139,6 +149,7 @@ data class PersistedSettings(
     val liveWidgetRefresh: Boolean = DataStoreAppSettings.DEFAULT_LIVE_WIDGET_REFRESH,
     val fontScale: Float = DEFAULT_FONT_SCALE,
     val pinchEnabled: Boolean = DataStoreAppSettings.DEFAULT_PINCH_ENABLED,
+    val skipBugReportConsent: Boolean = DataStoreAppSettings.DEFAULT_SKIP_BUG_REPORT_CONSENT,
 )
 
 /**

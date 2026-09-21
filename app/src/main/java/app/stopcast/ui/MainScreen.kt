@@ -154,6 +154,9 @@ fun MainScreen(
     // none. [onReveal] is called with the tapped mode.
     revealableModes: Set<String> = emptySet(),
     onReveal: (String) -> Unit = {},
+    // Start the consent-gated bug report (from the overflow). Default no-op so an unwired
+    // build/test renders the menu without one.
+    onSendBugReport: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Overflow-menu and About-dialog visibility. Saved so an open dialog survives rotation.
@@ -264,6 +267,13 @@ fun MainScreen(
                                     onClick = {
                                         menuExpanded = false
                                         onOpenSettings()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.menu_send_bug_report)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onSendBugReport()
                                     },
                                 )
                                 DropdownMenuItem(
