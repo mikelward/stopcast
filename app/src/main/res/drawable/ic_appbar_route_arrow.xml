@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The arrow half of the app mark (rounded tail + shaft + head), for the in-app
+     top-bar icon. Drawn as a single solid shape so the top bar can tint it to contrast
+     with a themed tile — dark on the white light-mode tile, white on the black dark-mode
+     tile. The paths are white here, but the tint always overrides. The launcher icon
+     keeps the combined ic_launcher_foreground with its fixed white arrow. Same 108
+     viewport and coordinates as that foreground, so it registers over the lines layer. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M60.5,54 a3.5,3.5 0 1 0 7,0 a3.5,3.5 0 1 0 -7,0 z" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="butt" android:pathData="M64,54 L84,54" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M77,47 L84,54 L77,61" />
+</vector>
