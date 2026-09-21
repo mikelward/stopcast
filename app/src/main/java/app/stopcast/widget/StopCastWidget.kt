@@ -296,16 +296,16 @@ private fun WidgetMessage(text: String) {
 
 /**
  * The label the widget shows for a destination [group] of [row]: the resolved destination (or
- * the direction-key cue when TfL gives no destination), with the via-branch appended in the
- * board's short form ("Edgware (Charing X)") when the row branches. The branch is
- * [abbreviateBranch]'d unconditionally here — the compact widget can't measure available width
+ * the direction-key cue when TfL gives no destination), with the via-branch joined in plain
+ * list style in the board's short form ("Edgware, Charing X") when the row branches. The branch
+ * is [abbreviateBranch]'d unconditionally here — the compact widget can't measure available width
  * the way the in-app card does, so it shows the short form rather than risk clipping the full
  * one; a branch with no shortenable word comes through unchanged. Combined into one string so
  * the countdown beside it stays column-aligned.
  */
 internal fun widgetLineLabel(row: DepartureRow, group: DestinationGroup): String {
     val base = DepartureLabels.destinationLabel(group.destination, row.directionKey) ?: "—"
-    return if (group.branch != null) "$base (${abbreviateBranch(group.branch)})" else base
+    return if (group.branch != null) "$base, ${abbreviateBranch(group.branch)}" else base
 }
 
 @androidx.compose.runtime.Composable

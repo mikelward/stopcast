@@ -65,7 +65,6 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -888,8 +887,8 @@ private fun DestinationLine(
     stale: Boolean,
     now: Instant,
     modifier: Modifier = Modifier,
-    // The "via" branch (TfL's `towards`), shown parenthesized after the destination — the
-    // cue a rider uses to pick a train ("Battersea Power (Charing X)"). Null for most
+    // The "via" branch (TfL's `towards`), joined to the destination in plain list style —
+    // "Battersea, Charing X" — the cue a rider uses to pick a train. Null for most
     // services; a branch-free row whose name has no abbreviatable word takes the cheap
     // no-measuring path below.
     branch: String? = null,
@@ -945,50 +944,58 @@ private fun DestinationLine(
             BoxWithConstraints(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                 val style = MaterialTheme.typography.titleMedium
                 val measurer = rememberTextMeasurer()
-                val fullBranch = "($branch)"
-                val abbrevBranch = "(${abbreviateBranch(branch)})"
                 val abbreviatedLabel = remember(label) { DestinationAbbreviations.abbreviate(label) }
-                val labelWidth = remember(label) { measurer.measure(label, style, maxLines = 1).size.width }
-                val abbrevLabelWidth = remember(abbreviatedLabel) { measurer.measure(abbreviatedLabel, style, maxLines = 1).size.width }
-                val fullBranchWidth = remember(fullBranch) { measurer.measure(fullBranch, style, maxLines = 1).size.width }
-                val abbrevBranchWidth = remember(abbrevBranch) { measurer.measure(abbrevBranch, style, maxLines = 1).size.width }
-                val gapPx = with(LocalDensity.current) { 8.dp.roundToPx() }
-                // Keep the full branch while even the abbreviated terminus fits beside it.
-                val useFullBranch = abbrevLabelWidth + gapPx + fullBranchWidth <= constraints.maxWidth
-                val branchText = if (useFullBranch) fullBranch else abbrevBranch
-                val branchWidth = if (useFullBranch) fullBranchWidth else abbrevBranchWidth
-                // The terminus takes what the branch leaves: full name if it fits, else the
-                // abbreviated form (then a clean clip if even that is too wide).
-                val availForLabel = constraints.maxWidth - gapPx - branchWidth
-                val displayLabel = if (labelWidth <= availForLabel) label else abbreviatedLabel
+                val shortBranch = remember(branch) { abbreviateBranch(branch) }
+                // Measure each candidate string once; branchedLabel turns the widths into the
+                // terminus/branch strings so the rule (branch outranks terminus; branch-alone and
+                // bare when the terminus has no room at all) is unit-tested apart from the render.
+                fun widthOf(text: String) = measurer.measure(text, style, maxLines = 1).size.width
+                val resolved = branchedLabel(
+                    label = label,
+                    abbreviatedLabel = abbreviatedLabel,
+                    branch = branch,
+                    abbreviatedBranch = shortBranch,
+                    maxWidth = constraints.maxWidth,
+                    labelWidth = remember(label) { widthOf(label) },
+                    abbrevLabelWidth = remember(abbreviatedLabel) { widthOf(abbreviatedLabel) },
+                    fullBranchWidth = remember(branch) { widthOf(", $branch") },
+                    abbrevBranchWidth = remember(shortBranch) { widthOf(", $shortBranch") },
+                    firstGlyphWidth = remember(abbreviatedLabel) { widthOf(abbreviatedLabel.take(1)) },
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = displayLabel,
+                        text = resolved.terminus,
                         style = style,
                         maxLines = 1,
-                        // Hard-clipped (a clean cut, no ellipsis) once abbreviating hasn't made
-                        // it fit; fill = false so a short label doesn't gap before the branch.
+                        // One line, no wrap: without this a two-word terminus ("Battersea Power")
+                        // wraps its second word onto a dropped line while the Text still fills its
+                        // weighted slot, floating the branch off to the far edge — the comma ends up
+                        // detached, as in "Battersea        , Charing X". softWrap = false clips on
+                        // one line so the comma stays against the last visible glyph. Hard clip (a
+                        // clean cut, no ellipsis); fill = false so a short label doesn't gap before
+                        // the branch.
+                        softWrap = false,
                         overflow = TextOverflow.Clip,
                         modifier = Modifier
                             .weight(1f, fill = false)
-                            // Keep the full name for a screen reader when the visible text is shortened.
+                            // Keep the full name for a screen reader when the visible text is shortened or hidden.
                             .then(
-                                if (displayLabel != label) Modifier.semantics { contentDescription = label }
-                                else Modifier,
+                                resolved.contentDescription?.let { full ->
+                                    Modifier.semantics { contentDescription = full }
+                                } ?: Modifier,
                             ),
                     )
                     Text(
-                        text = branchText,
+                        text = resolved.branch,
                         style = style,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         // Hard-clipped too, so the whole destination line cuts cleanly; the
                         // abbreviation ladder above means the branch almost never overflows.
+                        softWrap = false,
                         overflow = TextOverflow.Clip,
-                        modifier = Modifier.padding(start = 8.dp),
                     )
                 }
             }
