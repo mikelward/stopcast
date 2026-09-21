@@ -619,8 +619,10 @@ private fun StopClosureContent(stopName: String, disruption: String) {
  * soonest destination and for each divergent one of a branching direction alike, so they
  * render at the **same weight and the same indentation** (all sit in the card's one
  * destination column, beside the pill). [times] empty is a status row: the line is named
- * with no countdown. The destination elides so a long name truncates rather than crowding
- * out the countdown.
+ * with no countdown. The destination is hard-truncated — a clean cut, no ellipsis
+ * (maintainer preference) — so a long name gives way rather than crowding out the
+ * countdown. The whole destination line — terminus and its branch/via — clips; only the
+ * countdown keeps its ellipsis (below).
  */
 @Composable
 private fun DestinationLine(
@@ -640,12 +642,12 @@ private fun DestinationLine(
     ) {
         if (branch == null) {
             // Common case — no branch, no measuring: the destination takes the space the
-            // countdown leaves and ellipsizes if it must.
+            // countdown leaves and is hard-clipped (a clean cut, no ellipsis) if it must.
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                overflow = TextOverflow.Clip,
                 modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
         } else {
@@ -672,9 +674,12 @@ private fun DestinationLine(
                         text = label,
                         style = style,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        // Hard-clipped (a clean cut, no ellipsis), like the branch beside it —
+                        // though the abbreviation ladder above means the branch almost never
+                        // reaches an overflow.
+                        overflow = TextOverflow.Clip,
                         // Yields to the branch: fill = false so a short label doesn't leave a
-                        // gap before the branch, but it truncates once the branch has taken its
+                        // gap before the branch, but it clips once the branch has taken its
                         // room.
                         modifier = Modifier.weight(1f, fill = false),
                     )
@@ -683,7 +688,9 @@ private fun DestinationLine(
                         style = style,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        // Hard-clipped too, so the whole destination line cuts cleanly; the
+                        // abbreviation ladder above means the branch almost never overflows.
+                        overflow = TextOverflow.Clip,
                         modifier = Modifier.padding(start = 8.dp),
                     )
                 }

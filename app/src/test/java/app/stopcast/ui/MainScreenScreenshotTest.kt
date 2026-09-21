@@ -166,8 +166,8 @@ class MainScreenScreenshotTest {
         // destination-label). Canned public line/place names only (SPEC *Privacy*).
         // Two cards, so the layout shows both behaviors: a short destination lets the branch
         // sit fully beside it (Morden (Bank)), while a long one keeps the branch (the trunk
-        // cue) by shortening it to the board's own form and truncating the destination to make
-        // room (Batter… (Charing X)) — the branch outranks the terminus (SPEC destination-label).
+        // cue) by shortening it to the board's own form and hard-clipping the destination to
+        // make room (Batter (Charing X)) — the branch outranks the terminus (SPEC destination-label).
         val euston = StopArrivals(
             "940GZZLUEUS",
             "Euston",
@@ -549,7 +549,7 @@ class MainScreenScreenshotTest {
         // screen — where an uncapped pill would consume the card and crush the countdown.
         // The pill is capped to half the card, and the countdown is the row's reserved
         // (unweighted) element, so it is measured first and keeps real width while the
-        // destination beside it ellipsizes (SPEC D8). Logic-only — no baseline.
+        // destination beside it is hard-clipped (SPEC D8). Logic-only — no baseline.
         val stop = StopArrivals(
             "940GZZLUHSC",
             "Hammersmith",
