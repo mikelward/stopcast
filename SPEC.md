@@ -92,9 +92,8 @@ The app finds stops two ways:
     London locate effectively always has a stop within a mile — if somehow none does, an honest
     "couldn't find stops" beats reaching arbitrarily far. The list shows the **nearest two
     clusters of each mode**, which keeps a dense interchange scannable and caps how many
-    clusters are fetched; reaching the clusters beyond that cap — a per-mode **"More"** control
-    — is deferred to a later change (see below), so for now the farther clusters within reach
-    aren't surfaced;
+    clusters are fetched; the clusters beyond that cap are reached through a per-mode **"More"**
+    control at the foot of the list, each tap paging that mode's next clusters in (see below);
   - it is **by line, both directions shown** for now — paired stops across a road serve a line
     in opposite directions, so neither direction is dropped; narrowing by direction or
     destination is a later refinement tied to *favorite destinations*;
@@ -111,12 +110,19 @@ The app finds stops two ways:
   fetched — sharply fewer than "everything in reach" at a dense corner. It bounds the cluster
   *count*, not the request count: one large junction cluster is still an arrivals request per
   pole, so a hard per-cluster fetch budget is a `TODO.md` follow-up. The clusters beyond the cap
-  are the *more* tier — the
-  selection computes it, but **surfacing it (a per-mode "More" control that pages the rest on
-  demand) is deferred to its own change** (maintainer, 2026-09-21; `TODO.md`), because keeping
-  a revealed expansion consistent across relocation turned out to need its own design pass. So
-  the shipped near-me list is the eager tier; the widget mirrors it (the widget renders the
-  same last-good snapshot the app writes).
+  are the *more* tier, reached through a per-mode **"More"** control at the foot of the list: a
+  tap pages that mode's next clusters in (a bounded few per tap, so each tap's fetch stays small)
+  and merges them beside the eager ones; a cluster serving two modes appears under each mode's
+  "More". A **revealed expansion survives a relocation** — the near-me set re-resolves only on a
+  user-initiated refresh, and the retained view is keyed on the *whole* nearby cluster set (both
+  tiers, order-independent), so a small move that only reorders the clusters, or shifts one across
+  the eager/more boundary while all stay in range, keeps what the user opened. When a relocation
+  drops a revealed cluster (or one of its poles leaves range), that stop leaves the list at once
+  and the reduced set is persisted, so it can't linger as current (D4). **The widget mirrors the
+  app's current view** — eager plus whatever is revealed, not eager-only — so an in-app expansion
+  grows the set the widget persists and its background refresh keeps polling, until the next
+  relocation resets it (maintainer's lean, 2026-09-21; reversible to an eager-only widget snapshot
+  — `TODO.md`).
 
   To keep the lookup fast and honest: a recent cached position is used at once; if a fresh fix
   is slow or absent, a *somewhat-stale* cached one substitutes for it rather than making the
@@ -126,9 +132,9 @@ The app finds stops two ways:
   diagnosable.
 
   Both tiers draw from one TfL `/StopPoint` lookup within the **~1 mile reach** (the lookup's
-  own radius); only the eager clusters' stops are fetched for arrivals (the *more* tier is
-  computed but not fetched, since its "More" reveal is deferred — above). **The reach and the
-  two-per-mode cap are not yet validated on a device** — whether either wants tuning at a real interchange lives in
+  own radius); the eager clusters' stops are fetched for arrivals at once, and a *more* cluster's
+  stops are fetched when its "More" is tapped (above). **The reach and the two-per-mode cap are
+  not yet validated on a device** — whether either wants tuning at a real interchange lives in
   `TODO.md`; what is durable is the two-tier shape and the constraints above. **The near-me list is ordered
   closest stop first**, with soonest-first breaking a same-stop tie (a stop's several services
   are equidistant); warnings still lead and starred rows are still pinned above it. Distance

@@ -221,8 +221,7 @@ class MainActivity : ComponentActivity() {
                     else -> when (val state = nearby) {
                         is NearbyStopsViewModel.State.Ready ->
                             DeparturesForStops(
-                                state.stops,
-                                state.distanceMeters,
+                                ready = state,
                                 relocate = { onSameSet -> nearbyViewModel.relocate(onSameSet) },
                                 relocating = nearbyViewModel.relocating,
                                 onOpenLicenses = openLicenses,
@@ -314,15 +313,16 @@ class MainActivity : ComponentActivity() {
      */
     @Composable
     private fun DeparturesForStops(
-        stops: List<StopRef>,
-        stopDistanceMeters: Map<String, Double>,
+        ready: NearbyStopsViewModel.State.Ready,
         // A refresh (button or pull) re-resolves the nearby set (a fresh fix) as well as
         // re-fetching departures — so walking to the next stop and refreshing updates both.
-        // Called with the departures-refresh action, which relocate runs only when the fix
-        // confirms the *same* set (a moved-to set gets a fresh ViewModel that fetches on init;
-        // a failed/empty relocation shows the honest gate) — so a refresh never re-fetches the
-        // previous location's stops in parallel with the fix (see relocate).
-        relocate: (onSameSet: () -> Unit) -> Unit,
+        // Called with a reconcile action, which relocate runs only when the fix confirms the
+        // *same* nearby set (a moved-to set gets a fresh ViewModel that fetches on init; a
+        // failed/empty relocation shows the honest gate) — so a refresh never re-fetches the
+        // previous location's stops in parallel with the fix (see relocate). The fresh
+        // [NearbyStopsViewModel.State.Ready] is handed back so the retained ViewModel can
+        // reconcile both tiers in place and keep a revealed expansion.
+        relocate: (onSameSet: (NearbyStopsViewModel.State.Ready) -> Unit) -> Unit,
         // True while a relocate's fresh fix is in flight (the departures screen stays up). ORed
         // into the refresh indicator so pull-to-refresh doesn't retract the instant the fetch
         // is enqueued, leaving the fix to change the set under a screen that reads as settled.
@@ -350,7 +350,11 @@ class MainActivity : ComponentActivity() {
         // survives configuration changes, so a lambda that resolved `applicationContext` on the
         // Activity would keep the destroyed Activity reachable until the ViewModel is cleared.
         val appContext = applicationContext
-        val stopsKey = remember(stops) { stops.joinToString(",") { it.id } }
+        // Key the retained per-set ViewModel on the WHOLE nearby cluster set (order-independent),
+        // not the eager stop ids: a relocation that only reorders the clusters, or shifts one across
+        // the eager/more boundary while all stay in range, keeps the same key and so the same
+        // ViewModel — preserving a revealed "More" expansion, which a rebuild would drop.
+        val stopsKey = remember(ready) { ready.clusterSetKey }
         val stores: NearbyDeparturesStores = viewModel()
         val storeOwner = remember(stopsKey) { stores.ownerFor(stopsKey) }
         CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
@@ -359,7 +363,8 @@ class MainActivity : ComponentActivity() {
                     initializer {
                         MainViewModel(
                             client = KtorTflClient(httpClient),
-                            seedStops = stops,
+                            seedStops = ready.eagerStops,
+                            initialMore = ready.more,
                             // Save-only snapshot store: the app writes each fresh snapshot for
                             // the widget to render, but this nearby set is not restored in-app
                             // (its load() returns null) — a previous location's stops must not
@@ -387,6 +392,8 @@ class MainActivity : ComponentActivity() {
             val starred by viewModel.starred.collectAsStateWithLifecycle()
             val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
             val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
+            // The "More" buttons to offer — modes with a farther cluster still to page in.
+            val revealableModes by viewModel.moreState.collectAsStateWithLifecycle()
             // These background refreshes are composed only while the departures view is shown:
             // the licenses screen is hosted above this subtree (see onCreate), so opening it
             // removes DeparturesForStops from composition and stops the polling (Codex).
@@ -405,12 +412,16 @@ class MainActivity : ComponentActivity() {
                     // parallel with the fix. Cancel any fetch already in flight (initial,
                     // foreground, or timed) before the fix starts, so it can't finish first and
                     // save a fresh snapshot for the old set during the fix window (Codex).
-                    onRefresh = { viewModel.cancelFetch(); relocate { viewModel.refresh() } },
+                    onRefresh = {
+                        viewModel.cancelFetch()
+                        relocate { fresh -> viewModel.reconcile(fresh.eager, fresh.more) }
+                    },
                     refreshing = refreshing,
                     // From "near me now": collapse a line served by several adjacent nearby stops
-                    // to its nearest stop (SPEC *Finding stops → Near me now*). Empty for a
-                    // location-free list (a watched-stops view), which is shown as-is.
-                    stopDistanceMeters = stopDistanceMeters,
+                    // to its nearest stop (SPEC *Finding stops → Near me now*). Spans both tiers, so
+                    // a revealed stop collapses like an eager one. Empty for a location-free list
+                    // (a watched-stops view), which is shown as-is.
+                    stopDistanceMeters = ready.distanceMeters,
                     starred = starred,
                     onToggleStar = viewModel::toggleStar,
                     starringAvailable = starringAvailable,
@@ -420,6 +431,10 @@ class MainActivity : ComponentActivity() {
                     onOpenSettings = onOpenSettings,
                     updateAvailable = updateAvailable,
                     onOpenAppListing = onOpenAppListing,
+                    revealableModes = revealableModes,
+                    // Ignore a "More" tap while a relocation's fresh fix is in flight, so it can't
+                    // page the pre-fix set as current (matches the cancel-on-relocate discipline).
+                    onReveal = { mode -> if (!relocatingNow) viewModel.reveal(mode) },
                 )
             }
         }

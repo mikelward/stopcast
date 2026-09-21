@@ -120,4 +120,18 @@
     <string name="action_close">Close</string>
     <!-- Toast when a device has no browser to open a license's full text online. -->
     <string name="licenses_link_failed">No app to open the license page</string>
+
+    <!-- "More" controls at the foot of the near-me list: reveal the farther clusters of a mode
+         (SPEC *Finding stops → Near me now*). One per mode still holding an unrevealed cluster.
+         PROVISIONAL WORDING — pending the maintainer's sign-off before translation. -->
+    <string name="more_stops">More stops</string>
+    <string name="more_stops_bus">More bus stops</string>
+    <string name="more_stops_tube">More Tube stations</string>
+    <string name="more_stops_dlr">More DLR stations</string>
+    <string name="more_stops_overground">More Overground stations</string>
+    <string name="more_stops_elizabeth">More Elizabeth line stations</string>
+    <string name="more_stops_tram">More tram stops</string>
+    <string name="more_stops_rail">More rail stations</string>
+    <string name="more_stops_coach">More coach stops</string>
+    <string name="more_stops_river">More river bus piers</string>
 </resources>

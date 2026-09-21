@@ -46,6 +46,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -148,6 +149,12 @@ fun MainScreen(
     updateAvailable: Boolean = false,
     // Open the Play Store listing (from the "Update available" item). Default no-op.
     onOpenAppListing: () -> Unit = {},
+    // The modes (or the generic bucket, an empty string) that still have a farther "More" cluster
+    // to page in (SPEC *Finding stops → Near me now*). A "More …" button per mode is shown at the
+    // foot of the near-me list. Empty by default so a location-free or fully-revealed list shows
+    // none. [onReveal] is called with the tapped mode.
+    revealableModes: Set<String> = emptySet(),
+    onReveal: (String) -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Overflow-menu and About-dialog visibility. Saved so an open dialog survives rotation.
@@ -289,7 +296,7 @@ fun MainScreen(
             is DeparturesUiState.Loaded ->
                 LoadedContent(
                     state, now, onRefresh, refreshing, content, stopDistanceMeters,
-                    starred, onToggleStar, starringAvailable,
+                    starred, onToggleStar, starringAvailable, revealableModes, onReveal,
                 )
 
             is DeparturesUiState.Error ->
@@ -328,6 +335,8 @@ private fun LoadedContent(
     starred: Set<StarredRow> = emptySet(),
     onToggleStar: (DepartureRow) -> Unit = {},
     starringAvailable: Boolean = true,
+    revealableModes: Set<String> = emptySet(),
+    onReveal: (String) -> Unit = {},
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -404,9 +413,15 @@ private fun LoadedContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     RefreshButton(onRefresh, Modifier.padding(top = 16.dp))
+                    // Keep "More" reachable even when the nearest clusters returned nothing — that's
+                    // exactly when the farther ones are most useful (SPEC principle 2).
+                    MoreControls(revealableModes, onReveal, Modifier.padding(top = 16.dp))
                 }
             } else {
-                DepartureList(rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters, Modifier.fillMaxSize())
+                DepartureList(
+                    rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
+                    revealableModes, onReveal, Modifier.fillMaxSize(),
+                )
             }
         }
     }
@@ -461,6 +476,8 @@ private fun DepartureList(
     onToggleStar: (DepartureRow) -> Unit,
     starringAvailable: Boolean,
     stopDistanceMeters: Map<String, Double>,
+    revealableModes: Set<String>,
+    onReveal: (String) -> Unit,
     modifier: Modifier,
 ) {
     // Cluster the flat rows into per-place groups (stops sharing a name — a junction's poles, a
@@ -502,7 +519,51 @@ private fun DepartureList(
                 )
             }
         }
+        if (revealableModes.isNotEmpty()) {
+            // A per-mode "More" footer pages the farther clusters on demand (SPEC principle 2).
+            // The extra top padding, past the list's 8dp item gap, sets the footer apart from the
+            // last group — asymmetric on purpose: it's a trailing section, not another row.
+            item(key = "more-controls") {
+                MoreControls(revealableModes, onReveal, Modifier.padding(top = 8.dp))
+            }
+        }
     }
+}
+
+/**
+ * The per-mode "More" controls at the foot of the near-me list (SPEC *Finding stops → Near me
+ * now*): one full-width button per mode still holding an unrevealed farther cluster, tapping which
+ * pages that mode's next clusters in. Rendered nowhere when [revealableModes] is empty. Named modes
+ * come first (alphabetical), the generic bucket (a modeless cluster) last, for a stable order.
+ * A `TextButton` carries Material's ≥48dp interactive touch target, clearing the 44dp floor.
+ */
+@Composable
+private fun MoreControls(revealableModes: Set<String>, onReveal: (String) -> Unit, modifier: Modifier = Modifier) {
+    if (revealableModes.isEmpty()) return
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (mode in revealableModes.sortedWith(compareBy({ it.isEmpty() }, { it }))) {
+            TextButton(onClick = { onReveal(mode) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(moreLabelRes(mode)))
+            }
+        }
+    }
+}
+
+/** The "More …" label for a reveal bucket — a dedicated string per mode the nearby search can
+ *  return (its `StopFinder.DEFAULT_NEARBY_STOP_TYPES`), so two revealable buckets never share the
+ *  generic "More stops" and become indistinguishable (Codex, PR #87). The generic label is left for
+ *  the modeless bucket ([NearbySelection.GENERIC_MORE]) and any mode outside that fetched set. */
+internal fun moreLabelRes(mode: String): Int = when (mode) {
+    "bus" -> R.string.more_stops_bus
+    "tube" -> R.string.more_stops_tube
+    "dlr" -> R.string.more_stops_dlr
+    "overground" -> R.string.more_stops_overground
+    "elizabeth-line" -> R.string.more_stops_elizabeth
+    "tram" -> R.string.more_stops_tram
+    "national-rail" -> R.string.more_stops_rail
+    "coach" -> R.string.more_stops_coach
+    "river-bus" -> R.string.more_stops_river
+    else -> R.string.more_stops
 }
 
 /**

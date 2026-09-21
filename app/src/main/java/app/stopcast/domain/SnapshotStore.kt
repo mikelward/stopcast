@@ -47,6 +47,22 @@ interface SnapshotStore {
         expectedStopIds: List<String>,
     ): Boolean
 
+    /**
+     * Remove [departedStopIds] from the stored snapshot, keeping the rest at their existing ages,
+     * and re-derive the whole-snapshot stamp from what remains — so a stop that has left the nearby
+     * set stops being rendered (by the widget) at once, without waiting on the next full [save]. A
+     * no-op when nothing is stored or none of the ids are present.
+     *
+     * This is a **targeted, save-independent** removal, on purpose. Pruning is otherwise coupled to
+     * the app's next authoritative save, which a failed/canceled refresh — or a relocation that
+     * discards the per-set ViewModel driving that refresh — can skip, leaving a departed stop on
+     * disk for the widget worker to keep polling as current (SPEC D4 / principle 2). Doing the
+     * removal here, atomically with the read (under the store's write lock, so no reload→save window
+     * a concurrent writer could slip through) and off the ViewModel's lifecycle, closes that class
+     * of holes rather than the instance. Best-effort like [save].
+     */
+    suspend fun pruneStops(departedStopIds: Collection<String>)
+
     companion object {
         /** A store that persists nothing — the default for tests and for a build with no
          *  wired DataStore, so the app runs identically minus the cross-session restore. */
@@ -58,6 +74,9 @@ interface SnapshotStore {
                 snapshot: DeparturesSnapshot,
                 expectedStopIds: List<String>,
             ): Boolean = false
+
+            // Nothing is stored, so there is nothing to prune.
+            override suspend fun pruneStops(departedStopIds: Collection<String>) {}
         }
     }
 }

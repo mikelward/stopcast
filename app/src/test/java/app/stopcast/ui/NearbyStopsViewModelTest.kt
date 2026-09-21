@@ -95,8 +95,8 @@ class NearbyStopsViewModelTest {
 
         val ready = model.state.value as NearbyStopsViewModel.State.Ready
         // The two nearest bus clusters are eager, nearest-first; the 2 km one is out of range.
-        assertEquals(listOf("b1", "b2"), ready.stops.map { it.id })
-        assertEquals(listOf(LineRef("bus-b1", "b1", "bus")), ready.stops.first().lines)
+        assertEquals(listOf("b1", "b2"), ready.eagerStops.map { it.id })
+        assertEquals(listOf(LineRef("bus-b1", "b1", "bus")), ready.eagerStops.first().lines)
         // Distance from the fix is carried (in memory, from #36) so the departures list can
         // collapse a line served by adjacent stops down to its nearest.
         assertEquals(setOf("b1", "b2"), ready.distanceMeters.keys)
@@ -120,8 +120,8 @@ class NearbyStopsViewModelTest {
         advanceUntilIdle()
 
         val ready = model.state.value as NearbyStopsViewModel.State.Ready
-        assertTrue("the Tube stop survives the near buses", ready.stops.any { it.id == "tube" })
-        assertTrue("the near buses are still shown", ready.stops.any { it.id == "bus1" })
+        assertTrue("the Tube stop survives the near buses", ready.eagerStops.any { it.id == "tube" })
+        assertTrue("the near buses are still shown", ready.eagerStops.any { it.id == "bus1" })
     }
 
     @Test
@@ -139,11 +139,13 @@ class NearbyStopsViewModelTest {
 
         val ready = model.state.value as NearbyStopsViewModel.State.Ready
         // Eager is the two nearest bus clusters plus the lone tube — the third bus is beyond the
-        // per-mode cap and is not surfaced (the "More" paging that would reach it is deferred; the
-        // eager/`more` split itself is covered by NearbyClustersTest). Distances cover eager only.
-        assertEquals(listOf("bus1", "bus2", "tube"), ready.stops.map { it.id })
-        assertTrue("bus3" !in ready.stops.map { it.id })
-        assertTrue("bus3" !in ready.distanceMeters)
+        // per-mode cap, so it sits in the `more` tier (paged in by a "More" tap), not eager. (The
+        // eager/`more` split itself is covered by NearbyClustersTest.)
+        assertEquals(listOf("bus1", "bus2", "tube"), ready.eagerStops.map { it.id })
+        assertTrue("bus3" !in ready.eagerStops.map { it.id })
+        assertEquals(listOf("bus3"), ready.more.flatMap { c -> c.stops.map { it.id } })
+        // Distances span both tiers, so a revealed `more` stop is collapsed and ordered like an eager one.
+        assertTrue("bus3" in ready.distanceMeters)
     }
 
     @Test
@@ -218,7 +220,7 @@ class NearbyStopsViewModelTest {
         val model = vm(MutableLocation(origin), FakeFinder { stops })
         model.locate()
         advanceUntilIdle()
-        assertEquals(listOf("a"), (model.state.value as NearbyStopsViewModel.State.Ready).stops.map { it.id })
+        assertEquals(listOf("a"), (model.state.value as NearbyStopsViewModel.State.Ready).eagerStops.map { it.id })
 
         // Refresh after walking on: a different nearby set resolves and replaces the old one.
         stops = listOf(stop("b", 60.0, "tube"))
@@ -227,7 +229,7 @@ class NearbyStopsViewModelTest {
 
         assertEquals(
             listOf("b"),
-            (model.state.value as NearbyStopsViewModel.State.Ready).stops.map { it.id },
+            (model.state.value as NearbyStopsViewModel.State.Ready).eagerStops.map { it.id },
         )
     }
 
@@ -315,7 +317,7 @@ class NearbyStopsViewModelTest {
         advanceUntilIdle()
 
         val after = model.state.value as NearbyStopsViewModel.State.Ready
-        assertEquals(listOf("a"), after.stops.map { it.id })
+        assertEquals(listOf("a"), after.eagerStops.map { it.id })
         assertTrue("same set still refreshes departures in place", refreshed)
         assertTrue("the fresh, nearer distance replaces the old one", after.distanceMeters.getValue("a") < beforeDistance)
     }

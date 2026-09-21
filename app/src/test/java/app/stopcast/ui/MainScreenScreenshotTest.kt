@@ -35,6 +35,7 @@ import app.stopcast.domain.StopDisruption
 import app.stopcast.ui.theme.StopCastTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import java.time.Instant
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -382,6 +383,70 @@ class MainScreenScreenshotTest {
         // hidden — the nearest (St Pancras) is the header, King's Cross is named below the text.
         composeRule.onNodeWithText("Also affects King's Cross St. Pancras").assertExists()
         captureSnapshot("main-near-me-hub-alert-expanded.png")
+    }
+
+    @Test
+    fun `the near-me list shows per-mode More controls`() {
+        // At a dense corner the farther clusters wait behind a per-mode "More" control at the foot
+        // of the list (SPEC *Finding stops → Near me now*) — one per mode still holding an
+        // unrevealed cluster. Captured as a baseline so the footer layout is covered visually; a
+        // short (one-stop) list keeps the footer on screen. Public names, synthetic distance.
+        capture("main-more-controls.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
+                now,
+                {},
+                stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
+                revealableModes = setOf("bus", "tube"),
+            )
+        }
+        composeRule.onNodeWithText("More bus stops").assertExists()
+        composeRule.onNodeWithText("More Tube stations").assertExists()
+    }
+
+    @Test
+    fun `More stays reachable when the near-me list is empty`() {
+        // When the nearest clusters return nothing, the farther ones are most useful — the "More"
+        // controls render in the empty loaded state too (SPEC principle 2). Logic-only, no baseline.
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(emptyList(), now.minusSeconds(30)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
+                        revealableModes = setOf("bus"),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("No upcoming departures").assertExists()
+        composeRule.onNodeWithText("More bus stops").assertExists()
+    }
+
+    @Test
+    fun `tapping a More control reveals that mode`() {
+        // The footer button hands its mode to onReveal, so the ViewModel pages that mode's clusters.
+        var revealed: String? = null
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
+                        revealableModes = setOf("bus"),
+                        onReveal = { revealed = it },
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("More bus stops").performClick()
+        composeRule.runOnIdle { assertEquals("bus", revealed) }
     }
 
     @Test

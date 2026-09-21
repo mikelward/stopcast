@@ -54,6 +54,27 @@ class DataStoreSnapshotStore internal constructor(
         return written == desired
     }
 
+    override suspend fun pruneStops(departedStopIds: Collection<String>) {
+        if (departedStopIds.isEmpty()) return
+        val departed = departedStopIds.toSet()
+        // Pure function of `current` (DataStore may re-run it on a write conflict, so it captures
+        // only the immutable `departed`): drop the departed stops and re-derive the whole-snapshot
+        // stamp from what remains, leaving the kept stops at their own ages. Atomic with the read
+        // under the write lock, so a concurrent save can't be lost through a reload→save window.
+        dataStore.updateData { current ->
+            if (current == null) return@updateData null
+            val kept = current.stops.filterNot { it.stopId in departed }
+            if (kept.size == current.stops.size) {
+                current
+            } else {
+                current.copy(
+                    stops = kept,
+                    fetchedAtMillis = kept.maxOfOrNull { it.fetchedAtMillis } ?: current.fetchedAtMillis,
+                )
+            }
+        }
+    }
+
     companion object {
         /** The file name DataStore owns under the app's files dir. */
         private const val FILE_NAME = "departures-snapshot.json"

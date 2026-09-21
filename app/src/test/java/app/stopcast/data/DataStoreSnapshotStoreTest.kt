@@ -105,4 +105,52 @@ class DataStoreSnapshotStoreTest {
         assertEquals(false, applied)
         assertNull(store.load())
     }
+
+    /** Two stops at different ages — Oxford Circus is the freshest, King's Cross is a minute older. */
+    private fun twoStopSnapshot() = DeparturesSnapshot(
+        stops = listOf(
+            StopArrivals(
+                stopId = "940GZZLUOXC",
+                stopName = "Oxford Circus",
+                departures = listOf(
+                    Departure("victoria", "Victoria", "inbound", "Brixton", null, now.plusSeconds(180), "tube"),
+                ),
+                fetchedAt = now,
+            ),
+            StopArrivals(
+                stopId = "940GZZLUKSX",
+                stopName = "King's Cross",
+                departures = listOf(
+                    Departure("northern", "Northern", "southbound", "Morden", null, now.plusSeconds(120), "tube"),
+                ),
+                fetchedAt = now.minusSeconds(60),
+            ),
+        ),
+        fetchedAt = now,
+    )
+
+    @Test
+    fun `pruneStops removes the departed stop and re-derives the stamp from the rest`() = runTest {
+        val store = DataStoreSnapshotStore(FakeDataStore(twoStopSnapshot().toPersisted()))
+        store.pruneStops(listOf("940GZZLUOXC"))
+        val loaded = store.load()!!
+        assertEquals(listOf("940GZZLUKSX"), loaded.stops.map { it.stopId })
+        // The whole-snapshot stamp drops to the freshest remaining stop — Oxford Circus was the
+        // newest, so removing it ages the snapshot's stamp to King's Cross's.
+        assertEquals(now.minusSeconds(60), loaded.fetchedAt)
+    }
+
+    @Test
+    fun `pruneStops leaves the snapshot untouched when no id is present`() = runTest {
+        val store = DataStoreSnapshotStore(FakeDataStore(snapshot().toPersisted()))
+        store.pruneStops(listOf("940GZZLUKSX")) // not in the stored single-stop set
+        assertEquals(snapshot(), store.load())
+    }
+
+    @Test
+    fun `pruneStops is a no-op when nothing is stored`() = runTest {
+        val store = DataStoreSnapshotStore(FakeDataStore(null))
+        store.pruneStops(listOf("940GZZLUOXC"))
+        assertNull(store.load())
+    }
 }

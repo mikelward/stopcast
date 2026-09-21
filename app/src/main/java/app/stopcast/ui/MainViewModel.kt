@@ -6,6 +6,7 @@ import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
+import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.Snapshot
 import app.stopcast.domain.SnapshotStore
 import app.stopcast.domain.StarredRow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,7 +56,10 @@ data class StopRef(
  */
 class MainViewModel(
     private val client: TflClient,
-    private val seedStops: List<StopRef>,
+    seedStops: List<StopRef>,
+    // The farther "more" clusters (SPEC *Finding stops → Near me now*), paged in on a per-mode
+    // "More" tap. Empty for a watched-stops view or a nearby set with nothing beyond the eager tier.
+    initialMore: List<NearbySelection.NearbyCluster> = emptyList(),
     private val clock: () -> Instant = Instant::now,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     // Persists the last-good snapshot across sessions and to the widget. No-op by default so
@@ -74,6 +79,28 @@ class MainViewModel(
     // persist anything. No-op by default; MainActivity supplies the widget update.
     private val redrawWidget: suspend () -> Unit = {},
 ) : ViewModel() {
+    // The near-me tiers, updatable IN PLACE so a relocation that keeps the same nearby set can
+    // reconcile them without rebuilding this ViewModel (which would drop a revealed expansion —
+    // the redesign this reveal is for). The eager tier is fetched and shown at once; a `more`
+    // cluster's stops join the fetched set once its key is revealed.
+    private var eagerStops: List<StopRef> = seedStops
+    private var more: List<NearbySelection.NearbyCluster> = initialMore
+    private var revealedKeys: Set<String> = emptySet()
+
+    // The set actually fetched and shown: the eager tier plus every revealed `more` cluster's
+    // stops. DERIVED — so a cluster dropped on a relocation leaves the fetched set automatically,
+    // with no parallel list to fall out of sync (the single-owner reveal design).
+    private val fetchedStops: List<StopRef>
+        get() = eagerStops + more.asSequence()
+            .filter { it.key in revealedKeys }
+            .flatMap { cluster -> cluster.stops.asSequence().map { it.toStopRef() } }
+            .toList()
+
+    // The "More" buttons to offer: the modes (or the generic bucket) that still have an unrevealed
+    // `more` cluster (SPEC *Finding stops → Near me now*). Empty when nothing is left to page.
+    private val _moreState = MutableStateFlow(NearbySelection.revealableBuckets(initialMore, emptySet()))
+    val moreState: StateFlow<Set<String>> = _moreState.asStateFlow()
+
     private val _state = MutableStateFlow<DeparturesUiState>(DeparturesUiState.Loading)
     val state: StateFlow<DeparturesUiState> = _state.asStateFlow()
 
@@ -183,7 +210,7 @@ class MainViewModel(
         _refreshing.value = false
     }
 
-    /** Re-fetch every seed stop and swap in a fresh snapshot; safe to call repeatedly. */
+    /** Re-fetch every fetched stop and swap in a fresh snapshot; safe to call repeatedly. */
     fun refresh() {
         fetchJob?.cancel()
         val previous = _state.value
@@ -252,7 +279,7 @@ class MainViewModel(
             var anyFreshArrivals = false
             var disruptionUnknown = false
 
-            for (stop in seedStops) {
+            for (stop in fetchedStops) {
                 val departures = try {
                     withContext(io) { client.arrivals(stop.id) }
                 } catch (e: CancellationException) {
@@ -395,13 +422,20 @@ class MainViewModel(
             // one where only a disruption returned (disruptions aren't persisted) — has no
             // durable content to save, and saving it would rewrite every stop to
             // `arrivalsFresh = false` and so degrade a previously-complete saved snapshot into
-            // one that restores as partial. Best-effort, off the render path.
+            // one that restores as partial. Best-effort, off the render path. (Removing a
+            // departed stop from the widget snapshot is NOT done here — it happens at prune time
+            // in [reconcile], independent of this save, so a failed/canceled refresh can't strand
+            // it; see [pruneDepartedFromWidget].)
             val authoritative = anyFreshArrivals || (merged.isEmpty() && firstError == null)
-            if (newState is DeparturesUiState.Loaded && authoritative) {
+            val toSave: DeparturesSnapshot? =
+                if (newState is DeparturesUiState.Loaded && authoritative) {
+                    DeparturesSnapshot(newState.stops, newState.fetchedAt)
+                } else {
+                    null
+                }
+            if (toSave != null) {
                 try {
-                    withContext(io) {
-                        snapshotStore.save(DeparturesSnapshot(newState.stops, newState.fetchedAt))
-                    }
+                    withContext(io) { snapshotStore.save(toSave) }
                     // save() pokes the widget itself (WidgetSnapshotStore), so it re-renders with
                     // the fresh snapshot; no separate redraw needed on this path.
                 } catch (e: CancellationException) {
@@ -422,6 +456,97 @@ class MainViewModel(
         // Clear the in-flight flag only when this job settles — a job superseded by a
         // newer refresh doesn't clear the newer one's indicator.
         job.invokeOnCompletion { if (fetchJob === job) _refreshing.value = false }
+    }
+
+    /**
+     * Reveal the next page of [bucket]'s farther clusters (SPEC *Finding stops → Near me now*):
+     * add them to the fetched set and re-fetch so they merge in beside the eager stops. A no-op
+     * when the bucket has nothing left to page; the caller ignores a tap while a relocation's
+     * fresh fix is in flight, so a "More" never pages the pre-fix set. Reveal only *adds* stops,
+     * so no prune is needed — an already-present stop keeps its aged rows until its fetch returns.
+     */
+    fun reveal(bucket: String) {
+        val next = NearbySelection.nextReveal(more, bucket, revealedKeys)
+        if (next.isEmpty()) return
+        revealedKeys = revealedKeys + next
+        _moreState.value = NearbySelection.revealableBuckets(more, revealedKeys)
+        refresh()
+    }
+
+    /**
+     * Reconcile the tiers to a fresh fix of the SAME nearby set (both tiers, order-independent — see
+     * [NearbyStopsViewModel.State.Ready.clusterSetKey]), keeping a revealed expansion across the
+     * relocation. Updates the tiers, drops a revealed cluster the fresh fix no longer offers,
+     * **synchronously prunes** a departed revealed stop from the shown state (before the re-fetch,
+     * so it can't linger with stale departures through the fetch window — SPEC D4 / principle 1),
+     * then re-fetches. A revealed cluster promoted into the eager tier stays fetched (it's eager
+     * now) *and* keeps its reveal identity, so a later relocation that demotes it back into *more*
+     * keeps it expanded; a member that crossed the radius is pruned here and its replacement
+     * fetched by [refresh].
+     */
+    fun reconcile(newEager: List<NearbySelection.NearbyCluster>, newMore: List<NearbySelection.NearbyCluster>) {
+        val before = fetchedStops.mapTo(mutableSetOf()) { it.id }
+        eagerStops = newEager.flatMap { cluster -> cluster.stops.map { it.toStopRef() } }
+        more = newMore
+        // Keep a revealed cluster's identity while it is present in EITHER tier. A cluster promoted
+        // into the eager tier is still fetched (via eager) AND stays revealed, so a later relocation
+        // that demotes it back into *more* while the whole set is unchanged keeps it expanded rather
+        // than reverting it to a "More" button (SPEC — a revealed expansion survives an eager/more
+        // boundary shift). Intersecting with `newMore` alone would drop it on the promotion and lose
+        // that on the demotion. A key kept here that is currently eager doesn't affect paging (it
+        // isn't in `more`, so `revealableBuckets`/`nextReveal` never see it).
+        val presentKeys = (newEager + newMore).mapTo(mutableSetOf()) { it.key }
+        revealedKeys = revealedKeys intersect presentKeys
+        _moreState.value = NearbySelection.revealableBuckets(more, revealedKeys)
+        val departed = before - fetchedStops.mapTo(mutableSetOf()) { it.id }
+        if (departed.isNotEmpty()) {
+            (_state.value as? DeparturesUiState.Loaded)?.let { loaded ->
+                val kept = loaded.stops.filterNot { it.stopId in departed }
+                _state.value = if (kept.isEmpty()) {
+                    // Every shown stop departed; don't leave a trusted, recent-stamped empty
+                    // "No departures" up through the replacement fetch (which hasn't been checked)
+                    // — show the loading placeholder until it returns (SPEC principle 2; Codex).
+                    DeparturesUiState.Loading
+                } else {
+                    // The shown set just lost stops and a re-fetch is pending, so it is genuinely
+                    // incomplete — flag it partial rather than pass the reduced list off as a
+                    // complete, uniformly-fresh whole (SPEC principle 2).
+                    loaded.copy(
+                        stops = kept,
+                        fetchedAt = kept.maxOfOrNull { it.fetchedAt } ?: loaded.fetchedAt,
+                        partialRefresh = true,
+                    )
+                }
+            }
+            // Remove the departed stops from the widget snapshot NOW — at prune time, on a scope
+            // that outlives both the re-fetch below and this per-set ViewModel (a different-set
+            // relocation discards it via NearbyDeparturesStores.ownerFor). Coupling the removal to
+            // the re-fetch's save left a departed stop on disk whenever that save was skipped
+            // (a non-authoritative or Error cycle), canceled, or lost with the ViewModel — three
+            // findings on one mechanism (#87). A direct, save-independent removal closes the class
+            // (SPEC D4 / principle 1).
+            pruneDepartedFromWidget(departed)
+        }
+        refresh()
+    }
+
+    /**
+     * Remove [departed] from the persisted widget snapshot, off this ViewModel's lifecycle. Launched
+     * under [NonCancellable] so it completes even if a following different-set relocation cancels
+     * [viewModelScope] (`ownerFor` clears the old set's store) before the write lands — the whole
+     * point is that the removal does not depend on the re-fetch's save or this ViewModel surviving.
+     * Best-effort like the snapshot save: a failure is logged, sanitized, and swallowed.
+     */
+    private fun pruneDepartedFromWidget(departed: Set<String>) {
+        viewModelScope.launch {
+            try {
+                withContext(NonCancellable + io) { snapshotStore.pruneStops(departed) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                warn("widget snapshot prune failed: ${reason(e)}")
+            }
+        }
     }
 
     /**
@@ -473,7 +598,7 @@ class MainViewModel(
     }
 
     /**
-     * Whether a saved snapshot is incomplete relative to [seedStops] — a seed stop is missing
+     * Whether a saved snapshot is incomplete relative to the fetched set — a fetched stop is missing
      * (an earlier partial refresh saved only the stops that succeeded), or a stop is present
      * but was carried-forward-stale when saved (`arrivalsFresh == false`), so the snapshot is
      * mixed-age. Either way it's shown as partial rather than passed off as a complete,
@@ -482,7 +607,7 @@ class MainViewModel(
      * complete incompleteness test.
      */
     private fun isIncomplete(stops: List<StopArrivals>): Boolean =
-        seedStops.any { seed -> stops.none { it.stopId == seed.id } } ||
+        fetchedStops.any { seed -> stops.none { it.stopId == seed.id } } ||
             stops.any { !it.arrivalsFresh }
 
     /**

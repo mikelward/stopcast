@@ -534,6 +534,31 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         own change; it pairs naturally with the "More" reveal, which also reshapes how a junction
         expands. Until then SPEC/`NearbySelection` say plainly the cap bounds clusters, not
         requests.
+  - [ ] **A "More" tap should fetch only the newly revealed page, not re-fetch the whole set**
+        (Codex, PR #87 — deferred there as out of scope). `reveal()` adds the new cluster keys and
+        calls `refresh()`, which re-fetches every already-shown stop too (the derived `fetchedStops`),
+        so the Nth tap issues an N-pages-wide burst and delays the new results behind the old ones —
+        raising keyless-rate-limit exposure, the same family as the eager-request-count cap above.
+        It's correct today (the whole-set refresh is the app's established model, and the already-
+        shown stops just carry their recent ages), only wasteful; a fix wants an incremental fetch
+        path (fetch just the added keys, merge into the current `Loaded` state, persist) rather than
+        bolting a second fetch path onto the fragile refresh/persist code late in the reveal PR. Pairs
+        with the eager-request-count cap — both are about bounding the near-me request burst.
+  - [ ] **A revealed stop whose first fetch fails isn't in the widget's polling set** (Codex P2, PR
+        #87 — deferred there). When a newly revealed stop's first arrivals request fails with no prior
+        while an eager stop succeeds, the authoritative save persists only the merged (eager) stops, so
+        the revealed stop is absent from the saved snapshot — and `WidgetRefreshWorker` derives its
+        polling ids from that snapshot, so if the app closes before a later in-app refresh succeeds,
+        the widget never polls or shows that revealed stop. In-app it's fine (the key stays in
+        `revealedKeys`, so the next refresh retries it); the gap is widget-only and narrow (first
+        fetch fails AND app closed before any successful in-app refresh). It is **pre-existing** to the
+        prune-persistence redesign (reveal has always used the authoritative-only save; reveal prunes
+        nothing). A proper fix persists the revealed *identity* even before it has data — a placeholder
+        "known but unfetched" entry the widget worker would poll — which is a change to the snapshot
+        model (today a stop with no arrivals, no disruption and no prior is dropped from the snapshot,
+        by design). **Tied to the widget-mirrors-current-view vs eager-only decision** (see *Decisions
+        needing review*): under eager-only the widget never carries revealed stops, so this moots.
+        Settle that decision first, then fix or drop this accordingly.
   - [ ] **Coarsen the cluster key so one logical station's several naptans merge** (maintainer,
         2026-09-21, screenshot). TfL's `stationNaptan` is more granular than the logical station
         at a big multi-operator interchange: St Pancras International has separate naptans for its
@@ -543,29 +568,21 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         over-merges King's Cross with St Pancras, which the maintainer wants kept apart, so the
         right granularity sits between `stationNaptan` and hub (needs a TfL-data look: hub id vs.
         a name/parent normalization). Its own PR.
-  - [ ] **The "More" reveal — page the *more* tier on demand** (maintainer, 2026-09-21; deferred
-        from PR #85). `NearbySelection.selectClusters` already returns the *more* tier; what's
-        deferred is surfacing it: a per-mode "More" control at the foot of the near-me list that
-        fetches that mode's next clusters on tap and merges them into the list, so a dense
-        interchange's farther poles are reachable without lengthening the list up front
-        (principle 2). **Why it's its own PR:** an in-app expansion has to survive relocation
-        (a small move must not discard what the user opened — maintainer), and getting that
-        consistent generated seven Codex rounds on PR #85 across two roots:
-        - **In-app retention.** The per-set `MainViewModel` is *seeded* with the eager set and
-          keyed on it, so an expansion is lost whenever the eager set's identity changes — a
-          distance reorder of the same clusters, or an eager-boundary shift (a cluster moving
-          between the eager pair and the *more* tier) while everything stays nearby. Doing this
-          right means the retained ViewModel reconciles **both** tiers against each relocation
-          and is keyed on the whole nearby cluster set (not just the eager ids), which in turn
-          means the eager tier itself must be updatable in-place rather than fixed at
-          construction. That's the redesign this item is for.
-        - **Persistence to disk/widget.** If the expanded set reaches the persisted snapshot,
-          the widget's refresh worker keeps polling it and a dropped stop can linger on disk
-          (the non-authoritative refresh skips the save). Decide up front whether the reveal is
-          in-app-only (widget/persisted snapshot stays eager) or reaches the widget; if it
-          reaches the widget, a pruned set must be persisted even when it empties.
-        Sub-features that ride on the reveal once it exists: a **widget "More"** that just opens
-        the app (the widget can't expand in place; keep widget + main-screen rendering one
+  - [x] **The "More" reveal — page the *more* tier on demand** (landed — the deferred half of
+        PR #85, in its follow-up). A per-mode "More" control at the foot of the near-me list pages
+        that mode's next clusters on tap (`NearbySelection.nextReveal`, a bounded few per tap) and
+        merges them beside the eager ones; a cluster serving two modes appears under each mode's
+        "More", and a modeless overflow cluster gets a generic "More stops". **A revealed expansion
+        survives a relocation:** the retained `MainViewModel` owns *both* tiers (the eager tier
+        updatable in place), keyed — via `Ready.clusterSetKey` in `MainActivity` — on the whole
+        nearby cluster set (order-independent), so a reorder or an eager/more-boundary shift keeps
+        it; a dropped revealed cluster (or a departed pole) is pruned synchronously and the reduced
+        set persisted even on a non-authoritative refresh, so it can't linger for the widget worker
+        to resurrect. The widget mirrors the app's current view — see *Decisions needing review*.
+        This closed the two roots the seven PR #85 rounds exposed (in-app retention; disk/widget
+        persistence).
+  - [ ] **"More" reveal riders** (the reveal now exists, above): a **widget "More"** that just
+        opens the app (the widget can't expand in place; keep widget + main-screen rendering one
         parameterized implementation, and consider hiding "More" on the widget); **line hints**
         (a tappable "VIC" chip for a line nearby but not eager); and a **radius-expand chip**
         (widen the TfL query radius per tap, distinct from paging clusters already within range).
@@ -1171,6 +1188,53 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
 
 ## Decisions needing review
 
+- **The "More" reveal widget mirrors the app's *current* view, not eager-only (autopilot,
+  2026-09-21).** The reveal follow-up had to decide whether a revealed expansion reaches the
+  persisted snapshot — which the widget renders and its background worker keeps polling — or
+  stays in-app only. Taken as **Option A (reaches the widget)**, the maintainer's stated lean on
+  the PR #85 threads ("the widget should be the same as the main screen"), with the pruning
+  correctness it needs (a dropped stop is persisted out of the snapshot even on a non-authoritative
+  refresh, so the worker can't resurrect it). *Cost:* an in-app expansion grows the widget's
+  ongoing 1/min polling set (one arrivals + one disruption request per revealed pole) until the
+  next relocation resets it — a battery/request-load change (§9). *Alternative:* Option B, an
+  eager-only widget snapshot — bounds the widget's load but splits what the screen shows from what
+  it saves and the widget never shows revealed stops. **Reversible:** Option B is a filter on the
+  snapshot save (persist only the eager stops), no data-model change. Confirm the widget-load cost
+  is acceptable, or flip to B.
+- **"More" button copy is provisional, pending sign-off before translation (autopilot,
+  2026-09-21).** A dedicated label per mode the nearby search can return — `more_stops_bus` /
+  `_tube` / `_dlr` / `_overground` / `_elizabeth` / `_tram` / `_rail` / `_coach` / `_river`
+  ("More bus stops", "More Tube stations", "More rail stations", "More river bus piers", …), with
+  the generic `more_stops` ("More stops") left only for a modeless cluster. Every fetched mode has
+  its own label so two "More" buttons never collide as indistinguishable (Codex P2 on #87). Wording
+  and per-mode noun (stops vs stations vs piers) are the maintainer's call; no other locale exists
+  yet, so nothing is translated — settle the English first. Reversible (string values only).
+- **"More" pages `CLUSTERS_PER_MODE` (2) clusters per tap (autopilot, 2026-09-21).** Symmetric
+  with the eager cap, and keeps each tap's fetch burst bounded; "reveal all of the mode at once"
+  is the alternative. Reversible — the `pageSize` argument to `NearbySelection.nextReveal`.
+- **Prune-persistence redesigned — RESOLVED (maintainer approved "you choose", 2026-09-21).** Three
+  Codex findings on #87 landed on one mechanism: shrink-to-Error skipped the save (round 1); the
+  `pruneNeedsPersist` flag was cleared before the async save durably completed (round 3); and the
+  flag lived on a per-set `MainViewModel` that a different-set relocation discards via
+  `NearbyDeparturesStores.ownerFor` (round 4). All the same shape — the pruned in-memory set and the
+  widget's disk snapshot diverge, and a transient VM-local flag + the refetch's save reconcile them,
+  so every way that save can be missed (Error state, cancel, ViewModel discard) is a new hole. Rather
+  than a fourth patch: the flag and the save-gate special-case are gone, and `reconcile` now calls
+  `SnapshotStore.pruneStops(departed)` at prune time, launched under `NonCancellable` so it outlives
+  both the refetch and the per-set ViewModel. The removal is atomic on disk (DataStore update
+  transform) and independent of the save, closing the class. The round-4 P2 (a pruned state
+  asserting a trusted empty "No departures" through the replacement fetch) is fixed in the same
+  change: an all-departed prune shows the loading placeholder; a partial prune flags the shown set
+  incomplete. (`saveIfStopsMatch`'s still-deferred "widget-snapshot-scope redesign" — a full
+  prior/revision compare for the *same-set* concurrent-writer race — is adjacent but broader and
+  left as-is.) **Round 6 (maintainer accepted best-effort, 2026-09-21):** Codex then flagged
+  that `pruneStops`'s own write can throw and its `catch` only logs, so a departed stop could
+  linger on disk. Declined a durable pending-prune (it would partly re-introduce the persisted
+  state this redesign removed): `pruneStops` is a best-effort fast path that swallows a write
+  failure exactly as `save` does, the next authoritative refresh save writes `merged` without the
+  departed stop regardless, and the residual window (write throws *and* app stays closed while the
+  worker runs) is narrow and self-heals on next foreground. The maintainer confirmed best-effort
+  is fine, so no durable mechanism was added.
 - **App-bar action row is temporarily crowded by the launcher icon — accepted for now
   (maintainer, 2026-09-20).** PR #67 adds the app icon in the `TopAppBar` nav slot. In the
   production loaded state (`onLocateHere` non-null) the bar also carries the freshness stamp
@@ -1196,17 +1260,17 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   `TYPE_SIGNIFICANT_MOTION` trigger) is the mitigation if that proves costly. Throttle the
   TfL re-resolve to **≤ ~once/min** regardless of how often the distance filter fires
   (maintainer's rate goal). No new dependency (framework `FUSED_PROVIDER`, already used).
-- **Same-set re-locate discards updated stop metadata (Codex P2 on #70,
-  `discussion_r4057899804`, deferred here 2026-09-20).** `relocate()`'s same-set check
-  compares stop IDs only, so a refresh that returns the *same* IDs but updated `name`/`lines`
-  (e.g. a stop now serves a new line) takes the in-place `onSameSet` path and keeps the old
-  `MainViewModel`, whose `seedStops` are fixed at init — so a newly-served line with no
-  predictions never enters `declaredLineIds` and its disruption can't surface. Real but
-  narrow (same stops, a new line, no predictions, an active disruption). The clean fix re-keys
-  the per-set store by full `StopRef` (id+name+lines) so a metadata change spins up a fresh VM
-  — that touches the `NearbyDeparturesStores` keying, which is the *third* finding in the
-  same-set optimization (after the parallel-refresh and cached-fix ones), so it's a design
-  question for the maintainer rather than a fourth point fix. Reversible; tracked here.
+- **Same-set re-locate discards updated stop metadata (Codex P2 on #70) — RESOLVED by the
+  #87 reveal redesign (2026-09-21).** The old gap: `relocate()`'s same-set path kept the old
+  `MainViewModel`, whose `seedStops` were fixed at init, so a refresh returning the *same* IDs
+  with updated `name`/`lines` (a stop now serving a new line) never propagated — the new line
+  never entered `declaredLineIds` and its disruption couldn't surface. The reveal redesign closed
+  it without the re-keying originally prescribed: the retained `MainViewModel`'s eager tier is no
+  longer fixed at init — `reconcile` reassigns `eagerStops` from the fresh lookup's clusters on
+  every same-set relocation (`clusterSetKey` is cluster-key/ID based, so a metadata-only change
+  still routes through `reconcile`), and `fetchedStops`/`declaredLineIds` derive from it. So a
+  changed name/line now refreshes in place and a newly-served line's disruption surfaces. No
+  `NearbyDeparturesStores` re-keying was needed.
 - **Widget-snapshot-scope (Codex P1 from #44) deferred: PR #53 closed unmerged; aging stamp
   is the honesty floor and the render-path scoping stays an open task (not closed by Phase 2)**
   (autopilot, maintainer said "defer 53"). The gap is
@@ -1251,6 +1315,32 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   leaves the previous set's departures on the widget, so the render-path scoping (or a
   render-time compare against an independently-persisted watched set) stays worthwhile even
   then, not fully mooted (Codex P1). **Maintainer's call.**
+  - **The "More" reveal is an instance of this same gap, deferred with it (Codex P1 on #87,
+    `discussion_r4064937114`, 2026-09-21).** On a relocation to a *different* cluster set,
+    `relocate()` takes the new-set path (not `onSameSet`), so `reconcile` — the only caller of
+    `pruneDepartedFromWidget` — never runs for the departed set; `NearbyDeparturesStores.ownerFor`
+    clears the old ViewModel, and if the new set's fetch fails (non-authoritative) the old
+    snapshot isn't overwritten, so the previous set's stops linger on the widget. This is exactly
+    the deferred gap above ("after a move whose new-set fetch fails, the previous area's departures
+    linger"). Codex's suggested fix — a durable prune *on the new-set transition* — is precisely
+    what PR #53 attempted (an activity/owner-level clear racing the per-set writer), which drew the
+    seven race findings that got the whole class deferred; adding it here re-opens that design, so
+    it stays the maintainer's call, not a mid-PR patch. The reveal's only *new* contribution is
+    that the lingering set can now include **revealed** stops (not just eager), and that delta is a
+    direct consequence of the widget-mirrors-current-view decision (Decision A above): flipping to
+    an eager-only widget snapshot would exclude revealed stops from the lingering set and shrink
+    this to the pre-reveal baseline. The honesty floor is unchanged — the aging stamp ages the
+    lingering stops to `?` (SPEC D4), so the failure mode stays "old area's trains until the stamp
+    ages them", not "shown live forever".
+  - **`pruneStops` has no prior/revision compare — accepted as this class (Codex P2 on #87,
+    `discussion_r4064999935`, maintainer accepted 2026-09-21).** Because the prune runs
+    `NonCancellable`, it can land after a newer ViewModel saved a different location's snapshot; it
+    then removes the departed IDs from whatever DataStore holds, so if the newer set legitimately
+    re-includes a departed stop (two quick relocations, slow write) that valid stop is dropped from
+    the widget until the next in-app refresh re-saves. Narrow and self-healing; in-app is never
+    affected. The fix is the compare-and-set the redesign deferred — carry the expected set/
+    generation and only prune if the stored set still matches, mirroring `saveIfStopsMatch`. Left
+    as a follow-up under this class rather than added mid-PR (the same concurrent-writer race).
 - **About/Licenses entry point is an overflow menu → About dialog → full-screen Licenses
   overlay, reachable from every state** (autopilot, licenses-screen PR). StopCast has no nav
   graph and, until now, no About/Settings surface, so the licenses screen needed a home.
