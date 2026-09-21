@@ -72,6 +72,18 @@ class RouteTopologyTest {
     }
 
     @Test
+    fun `a single-trunk stop drops the label for an unmodeled short-working too`() {
+        // The King's Cross case. Bank station is Bank-only, so a train tagged "Bank" bound for a
+        // stop the asset models as no pattern's terminus (a short working, like Golders Green or
+        // Finchley Central from King's Cross) has no alternative trunk to choose. Resolution falls
+        // back to raw, but the redundant "Bank" is still dropped.
+        assertNull(label(BNK, "Highgate", "Bank"))
+        // A two-branch stop keeps the raw label for the same unmodeled destination — there a "Bank"
+        // train really is one of two trunks, so we don't guess it away.
+        assertEquals("Bank", label(CTN, "Highgate", "Bank"))
+    }
+
+    @Test
     fun `an arrival whose branch matches no serving pattern keeps it raw`() {
         // TfL tags a Battersea train "via Charing Cross" (branch "Charing X"), but the Battersea
         // pattern carries no via — the branch matches no serving pattern, so it stays raw. The

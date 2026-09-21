@@ -73,9 +73,21 @@ class RouteTopology(patternsByLine: Map<String, List<RoutePattern>>) {
      * Cross" against an unlabeled Battersea pattern — it keeps `(Charing X)`, the trunk it runs;
      * a rename or extension the asset predates). Incomplete or stale data degrades to "show what
      * TfL said", never a confident wrong merge (maintainer, 2026-09-20).
+     *
+     * **A single-branch stop drops the label**, even on that raw fallback: where every pattern
+     * calling here carries the arrival's own branch, the branch names which trunk the train came
+     * up behind this stop, not a choice a rider makes — so it adds nothing. King's Cross is
+     * Bank-only, so a Bank-branch short-working there (Golders Green, Finchley Central — no
+     * pattern's terminus, so otherwise raw) shows no `(Bank)` (maintainer, 2026-09-21).
      */
     fun grouping(lineId: String, stopId: String, destination: String, branch: String?): BranchGrouping {
         val patterns = byLine[lineId] ?: return raw(branch)
+        // A single-branch stop: every pattern that calls here carries this arrival's own branch,
+        // so there is no alternative trunk to choose and the label is redundant. Computed up front
+        // because it also governs the raw fallback below (an unmodeled short-working), which the
+        // per-leg segment test never reaches.
+        val here = patterns.filter { stopId in it.stops }
+        val singleBranchHere = here.isNotEmpty() && here.all { it.branch == branch }
         // The approach-inclusive segment (one stop before this stop, through to the terminus) for
         // every pattern that serves the leg, plus this departure's own (the pattern whose branch
         // matches exactly).
@@ -86,14 +98,17 @@ class RouteTopology(patternsByLine: Map<String, List<RoutePattern>>) {
             segments += segment
             if (pattern.branch == branch) mine = segment
         }
-        val forward = mine ?: return raw(branch)
+        // Unresolved destination (no pattern's terminus from here): keep TfL's raw label and merge
+        // nothing — unless this is a single-branch stop, where the label is redundant and dropped.
+        val forward = mine ?: return if (singleBranchHere) raw(branch).copy(label = null) else raw(branch)
         // A choice iff more than one distinct segment serves the leg — either the trunks diverge
         // ahead (High Barnet → Morden), or they reach this very stop by different approaches (the
         // junction: Camden Town, Euston, Kennington), where the rider still picks a trunk/platform.
-        // Only past the junction, on the single shared track, do the segments match and rows merge.
+        // Only past the junction, on the single shared track, do the segments match and rows merge;
+        // and a single-branch stop never labels, whatever the segments say.
         return BranchGrouping(
             mergeKey = signatureOf(forward),
-            label = if (segments.toHashSet().size >= 2) branch else null,
+            label = if (!singleBranchHere && segments.toHashSet().size >= 2) branch else null,
         )
     }
 
