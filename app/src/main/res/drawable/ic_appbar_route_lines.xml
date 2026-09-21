@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The route-lines half of the app mark (three TfL-color bars), for the in-app
+     top-bar icon. The arrow is a separate, tintable drawable (ic_appbar_route_arrow)
+     so the top bar can flip it per theme; the launcher icon keeps the combined
+     ic_launcher_foreground. Same 108 viewport and coordinates as that foreground, so
+     the two layers register exactly. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#E32017" android:pathData="M25.5,39.5 h37 a3.5,3.5 0 0 1 0,7 h-37 a3.5,3.5 0 0 1 0,-7 z" />
+    <path android:fillColor="#0098D4" android:pathData="M25.5,50.5 h37 a3.5,3.5 0 0 1 0,7 h-37 a3.5,3.5 0 0 1 0,-7 z" />
+    <path android:fillColor="#FFD300" android:pathData="M25.5,61.5 h37 a3.5,3.5 0 0 1 0,7 h-37 a3.5,3.5 0 0 1 0,-7 z" />
+</vector>

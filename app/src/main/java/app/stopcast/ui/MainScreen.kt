@@ -55,10 +55,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -150,26 +152,35 @@ fun MainScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 navigationIcon = {
-                    // The app's own launcher mark, rendered on its dark icon background so it
-                    // reads the same in either theme. The foreground fills only the ~72/108
-                    // adaptive-icon safe zone, so it's drawn larger than the clipping box —
-                    // requiredSize overrides the box's 32dp max constraint (a plain size would
-                    // be coerced back to 32dp, leaving the padded artwork tiny) — and the box
-                    // clips it back to 32dp, offsetting the padding rather than sitting tiny in
-                    // the middle. Decorative — the title already names the app, so no content
-                    // description.
+                    // The app's route-lines mark on a themed tile — white in light, black in
+                    // dark — so it sits on the app bar without a fixed dark box. The arrow is a
+                    // separate, tintable layer flipped to contrast the tile (dark on white, white
+                    // on black); the colored lines stay put. The marks fill only the ~72/108
+                    // adaptive-icon safe zone, so requiredSize(48dp) draws them larger than the
+                    // 32dp box and the box clips back, rather than sitting tiny in the middle.
+                    // Decorative — the title already names the app, so no content description.
+                    // Follow the active Material theme (which may be dark from the system or an
+                    // explicit override), not the raw system setting, so the tile matches the
+                    // surface it sits on.
+                    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
                     Box(
                         modifier = Modifier
                             .padding(start = 8.dp)
                             .size(32.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(colorResource(R.color.ic_launcher_background)),
+                            .background(if (darkTheme) Color.Black else Color.White),
                         contentAlignment = Alignment.Center,
                     ) {
                         Image(
-                            painter = painterResource(R.drawable.ic_launcher_foreground),
+                            painter = painterResource(R.drawable.ic_appbar_route_lines),
                             contentDescription = null,
                             modifier = Modifier.requiredSize(48.dp),
+                        )
+                        Image(
+                            painter = painterResource(R.drawable.ic_appbar_route_arrow),
+                            contentDescription = null,
+                            modifier = Modifier.requiredSize(48.dp),
+                            colorFilter = ColorFilter.tint(if (darkTheme) Color.White else Color.Black),
                         )
                     }
                 },
