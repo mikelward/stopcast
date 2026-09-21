@@ -73,6 +73,13 @@
          announce it as any single one. -->
     <string name="menu_more">More options</string>
 
+    <!-- Marks the overflow menu with a red dot, and appears as a menu item, when a newer
+         version is available on Google Play; the item opens the Play listing. Used as the
+         dot's accessible description too. -->
+    <string name="update_available">Update available</string>
+    <!-- Toast when neither the Play app nor a browser can open the Play listing. -->
+    <string name="update_open_failed">No app to open Google Play</string>
+
     <!-- Settings screen. -->
     <string name="menu_settings">Settings</string>
     <string name="settings_title">Settings</string>

@@ -415,6 +415,27 @@ for now (the gate's own menu offers About alone). Opening either takes the depar
 (and its background refresh) out of the picture, so nothing polls TfL behind the static
 screen.
 
+### Update indicator
+
+When Google Play reports a newer version, the departures overflow (⋮) icon carries a small
+red dot, and the menu gains an "Update available" item that opens the Play listing — Play
+does the download and install. It is a lightweight nudge, not a banner: a dot costs no row
+or top-bar width, and there is no in-app update flow to shoehorn a download/restart UI into.
+Availability is Play's own answer, checked in the background on each foreground (never on a
+render path). The check is release-only: a debug build's `.debug` applicationId isn't a Play
+app, so it would only ever fail. An inconclusive check (Play absent or erroring) hides the
+dot rather than guessing — the worst case is a missed nudge, and Play still updates the app
+on its own schedule regardless.
+
+This is stopcast's one off-device call that is not a TfL request. The Play In-App Update
+library (`com.google.android.play:app-update`) is **free** and its check is off every render
+path (a background Play `Task`). It sends **no user data** — no location, no watched stops,
+no API key: it is a Play Services query about the app's *own* update availability (the
+package and installed version Google Play already knows as the app's distributor), so it
+adds **no new Play Data Safety surface**. If Play is unavailable the feature silently no-ops
+(dot hidden). A failed check logs the exception's class name only (PII-free) — see
+`docs/PRIVACY.md`.
+
 ## Architecture
 
 - **Kotlin + Jetpack Compose**, a single `:app` module (mirroring simmo and Type
@@ -440,7 +461,10 @@ screen.
 
 ## Data source, cost, and reliability
 
-StopCast's one external dependency is the **TfL Unified API** — free and public.
+StopCast's one **data** dependency is the **TfL Unified API** — free and public. (A
+release build also makes one non-data Play Services call to check for app updates — see
+*Update indicator* above; it is free, carries no user data, and adds no Data Safety
+surface.)
 
 - Endpoints: `/StopPoint` (nearby by lat/lon + stop types + radius) and `/StopPoint/
   Search` for finding stops by name, plus `/Line/Search/{query}` then `/Line/{id}/
@@ -513,14 +537,18 @@ both, deliberately, so a phone swap keeps the user's setup rather than losing it
 never-leaves-the-device wording). This is the platform's user-controlled channel tied to
 the user's own Google account, not an off-device channel stopcast adds: cost £0, and no
 Play Data Safety change (Android Auto Backup is a platform feature, not data stopcast
-collects or transmits). The guarantee is therefore precise, not absolute — *stopcast*
-adds no off-device channel beyond the TfL requests, and the user's own backup/transfer
-carries their config under their control.
+collects or transmits). The guarantee is therefore precise, not absolute — the only **user data**
+*stopcast* sends off the device goes in its TfL requests (its one other network call, the
+release-only Play update check, carries none — see *Update indicator*), and the user's own
+backup/transfer carries their config under their control.
 
-Nothing else leaves the device — no analytics over the user's stops or movements, and no
-coordinate, stop list, or API key in logs, commits, PRs, or fixtures. The on-device
-debug log carries coarse diagnostics only: a stop ID, a line id, an HTTP status — never
-a raw coordinate or the user's API key.
+No **user data** else leaves the device — no analytics over the user's stops or movements,
+and no coordinate, stop list, or API key in logs, commits, PRs, or fixtures. The one
+off-device call that is not a TfL request is the release-only Play update-availability
+check (*Update indicator*): a Play Services query about the app's own version that carries
+no user data and adds no Data Safety surface. The on-device
+debug log carries coarse diagnostics only: a stop ID, a line id, an HTTP status, or a
+failed Play update check's exception class — never a raw coordinate or the user's API key.
 
 ## Engineering quality bar
 

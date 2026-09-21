@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -90,6 +91,12 @@ class MainActivity : ComponentActivity() {
     // the async load below fills it the instant the asset is ready, well before the network
     // snapshot arrives. The widget loads the same cached instance in its own coroutine.
     private val routeTopology = mutableStateOf(RouteTopologyStore.cached())
+
+    // Whether Google Play reports a newer version — drives the overflow "update available" dot
+    // (SPEC *Update indicator*). Rechecked on each foreground ([onResume]); a background Play
+    // Task, never on a render path. False on debug (checks are disabled there).
+    private val updateAvailable = mutableStateOf(false)
+    private val playUpdateChecker by lazy { PlayUpdateChecker(application, warn = ::logUpdateWarning) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -215,6 +222,8 @@ class MainActivity : ComponentActivity() {
                                 relocating = nearbyViewModel.relocating,
                                 onOpenLicenses = openLicenses,
                                 onOpenSettings = { settingsOpen = true },
+                                updateAvailable = updateAvailable.value,
+                                onOpenAppListing = ::openPlayListing,
                             )
                         else -> {
                             // While the gate is up (a failed/empty relocate, or a retry), drop
@@ -244,6 +253,41 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-check on every foreground (covers first launch, since onResume follows onCreate,
+        // and a return from the Play listing or the background). Cheap and off the main thread.
+        playUpdateChecker.checkForUpdate { available -> updateAvailable.value = available }
+    }
+
+    /**
+     * Opens this app's Google Play listing so the user can update, tried Play-app-first then the
+     * web listing. Reached only from the release build's overflow "update available" item, where
+     * [packageName] is the real `app.stopcast` id (debug disables the check). If neither opens
+     * (no Play app and no browser — rare, since the item only shows once Play's own check reported
+     * an update), the tap would otherwise do nothing, so it shows a toast and logs rather than
+     * failing silently (SPEC principle 2), mirroring the license-link flow in [LicensesScreen].
+     */
+    private fun openPlayListing() {
+        for (uri in PLAY_LISTING_URIS) {
+            try {
+                startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse("$uri$packageName"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+                return
+            } catch (e: android.content.ActivityNotFoundException) {
+                // No handler for this target (e.g. no Play app for market://). Log the miss —
+                // sanitized, the exception class only — so a browser-only fallback is
+                // diagnosable, then try the next URI (a later success returns before the
+                // toast + summary below). The scheme is a fixed constant, not user data.
+                logUpdateWarning("Play listing target unavailable: ${e.javaClass.simpleName}")
+            }
+        }
+        Toast.makeText(this, R.string.update_open_failed, Toast.LENGTH_SHORT).show()
+        logUpdateWarning("No app to open the Play listing")
     }
 
     /**
@@ -280,6 +324,10 @@ class MainActivity : ComponentActivity() {
         relocating: StateFlow<Boolean>,
         onOpenLicenses: () -> Unit,
         onOpenSettings: () -> Unit,
+        // Play reports a newer version — the overflow gets its red dot and "Update available"
+        // item. Threaded from the activity's [updateAvailable] state, refreshed on each resume.
+        updateAvailable: Boolean,
+        onOpenAppListing: () -> Unit,
     ) {
         // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
         // the set changes (the user moved and re-located) rather than left keyed in the
@@ -365,6 +413,8 @@ class MainActivity : ComponentActivity() {
                     onStarWriteFailureShown = viewModel::starWriteFailureShown,
                     onOpenLicenses = onOpenLicenses,
                     onOpenSettings = onOpenSettings,
+                    updateAvailable = updateAvailable,
+                    onOpenAppListing = onOpenAppListing,
                 )
             }
         }
@@ -412,6 +462,13 @@ class MainActivity : ComponentActivity() {
         )
 
         private const val KEY_PRECISE_PROMPTED = "precise_prompted"
+
+        // The Play listing, Play-app scheme first then the web fallback; the applicationId is
+        // appended at open time (see [openPlayListing]).
+        private val PLAY_LISTING_URIS = listOf(
+            "market://details?id=",
+            "https://play.google.com/store/apps/details?id=",
+        )
 
         // Process-scoped: one OkHttp engine and connection pool shared by every ViewModel
         // the process creates, rather than a fresh client leaked per ViewModel (nothing
@@ -671,3 +728,10 @@ private fun logDepartureWarning(message: String) = Log.w("StopCast.Departures", 
  * no-Activity-capture reason.
  */
 private fun logStarWarning(message: String) = Log.w("StopCast.Stars", message)
+
+/**
+ * The production sink for the Play update checker's warnings — a failed availability fetch.
+ * Coarse and PII-free (an exception class name, no user data); Logcat only, like
+ * [logLocationWarning], for the same no-Activity-capture reason.
+ */
+private fun logUpdateWarning(message: String) = Log.w("StopCast.Update", message)

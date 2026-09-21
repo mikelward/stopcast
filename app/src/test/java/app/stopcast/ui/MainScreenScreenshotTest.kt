@@ -20,6 +20,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRows
@@ -667,6 +668,36 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("Gt Portland St").assertExists()
         // ...and a screen reader still hears the full destination.
         composeRule.onNodeWithContentDescription("Great Portland Street").assertExists()
+    }
+
+    @Test
+    fun `update dot shows on the overflow when an update is available`() {
+        capture("main-update-dot.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(stops(now.minusSeconds(120)), now.minusSeconds(120), lineStatuses = statuses()),
+                now,
+                {},
+                updateAvailable = true,
+            )
+        }
+        composeRule.onNodeWithTag(UPDATE_AVAILABLE_DOT_TAG, useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun `no update dot when no update is available`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(stops(now.minusSeconds(120)), now.minusSeconds(120)),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(UPDATE_AVAILABLE_DOT_TAG, useUnmergedTree = true).assertDoesNotExist()
     }
 
     private fun capture(name: String, dark: Boolean = false, content: @Composable () -> Unit) {

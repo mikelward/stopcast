@@ -104,11 +104,17 @@ android {
             if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            // Only the release build is a real Play app, so only it checks Play for an
+            // available update (drives the overflow "update available" dot).
+            buildConfigField("boolean", "PLAY_UPDATE_CHECKS_ENABLED", "true")
         }
         debug {
             // Suffixed so a debug build co-installs beside a release-signed
             // build instead of colliding on the package name.
             applicationIdSuffix = ".debug"
+            // The `.debug` applicationId isn't a Play app, so an update check there only
+            // ever fails — never run it (PlayUpdateChecker gates on this).
+            buildConfigField("boolean", "PLAY_UPDATE_CHECKS_ENABLED", "false")
         }
     }
 
@@ -229,6 +235,11 @@ dependencies {
     // deferrable wake per snapshot flips a widget left untouched after the app closes to the
     // stale treatment, since updatePeriodMillis="0" means the host never re-renders it.
     implementation(libs.androidx.work.runtime)
+
+    // Google Play In-App Update: read-only here — checks whether an update is available to
+    // drive the overflow "update available" dot. Free, no runtime cost on any hot path (a
+    // background Play `Task`, release-only), and it degrades to "no update" if Play is absent.
+    implementation(libs.play.app.update)
 
     // The shared on-device debug log, mikelward/androidlog — resolved from the
     // Maven repository declared in settings.gradle.kts. `logging-android`

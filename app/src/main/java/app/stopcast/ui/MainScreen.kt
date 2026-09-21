@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -61,6 +63,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -89,6 +92,9 @@ import app.stopcast.ui.theme.LocalStarredBorderColor
 import java.time.Duration
 import java.time.Instant
 import kotlin.time.toKotlinDuration
+
+/** Test tag on the red "update available" dot overlaying the overflow menu icon. */
+internal const val UPDATE_AVAILABLE_DOT_TAG = "update_available_dot"
 
 /**
  * The departures view (SPEC D8): a flat list, one row per (service, stop, direction),
@@ -133,6 +139,12 @@ fun MainScreen(
     // Open the Settings screen (from the overflow menu). Default no-op so an unwired build/test
     // renders the screen without a settings destination.
     onOpenSettings: () -> Unit = {},
+    // True when Google Play reports a newer version is available: the overflow icon gets a red
+    // dot and the menu gains an "Update available" item. Off by default (and in debug — see
+    // PlayUpdateChecker), so the common build/test renders the plain overflow.
+    updateAvailable: Boolean = false,
+    // Open the Play Store listing (from the "Update available" item). Default no-op.
+    onOpenAppListing: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Overflow-menu and About-dialog visibility. Saved so an open dialog survives rotation.
@@ -200,9 +212,34 @@ fun MainScreen(
                     // slot instead and drops from the wrong place.
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.menu_more))
+                            Box {
+                                Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.menu_more))
+                                if (updateAvailable) {
+                                    val updateDescription = stringResource(R.string.update_available)
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            // Off-grid 2dp: an optical nudge seating the dot into
+                                            // the icon's top-right corner (the standard badge spot).
+                                            .offset(x = 2.dp, y = (-2).dp)
+                                            .size(8.dp)
+                                            .background(MaterialTheme.colorScheme.error, CircleShape)
+                                            .semantics { contentDescription = updateDescription }
+                                            .testTag(UPDATE_AVAILABLE_DOT_TAG),
+                                    )
+                                }
+                            }
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            if (updateAvailable) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.update_available)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onOpenAppListing()
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.menu_settings)) },
                                 onClick = {
