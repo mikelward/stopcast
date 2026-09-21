@@ -371,13 +371,16 @@ be dominated by one, so the card shows the first line with an affordance to open
 reports against every stop point in an interchange is shown **once**, on the nearest member
 stop, not once per platform: King's Cross St. Pancras and St Pancras International otherwise
 each carry the identical "no step-free access" card. Identical notice text is the same notice
-whatever cluster it sits in, so it is kept once — and the expanded card **names the other stops
-it covers** ("Also affects King's Cross St. Pancras"), so none is hidden. Naming the affected
-stops, rather than a shared cluster/hub identity, is what makes the text-only collapse safe:
-TfL's text does not always name its own stop (a place-less "Station closed"), so two unrelated
-closures with identical text still surface both stops rather than dropping the farther warning
-(principle 1). This dedupes the notice across stations *and* the hub without merging their
-departures, which stay grouped per station (D8).
+whatever cluster it sits in, so it is kept once — and the expanded card **names the other
+differently-named stops it covers** ("Also affects King's Cross St. Pancras"). Naming the
+affected stops, rather than a shared cluster/hub identity, is what makes the text-only collapse
+safe: TfL's text does not always name its own stop (a place-less "Station closed"), so an
+unrelated closure at a differently-named stop still surfaces rather than being dropped
+(principle 1). Farther stops sharing the nearest's *name* fold under it — a station's own
+platforms read as one place; the residual, two unrelated same-named places both closed with
+identical text, needs the hub/geography identity to separate and is a deferred limit (`TODO.md`).
+This dedupes the notice across stations *and* the hub without merging their departures, which
+stay grouped per station (D8).
 
 On a glance surface a disruption is a one-line summary plus a count ("Victoria line:
 severe delays"); in the app it's the full text. A disrupted line/stop is marked even

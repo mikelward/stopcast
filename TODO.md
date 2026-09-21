@@ -335,6 +335,19 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           its stop (a place-less "Station closed"), so a text-only collapse alone could hide an
           unrelated warning; naming every affected stop means none is dropped (principle 1),
           without needing the `hubNaptanCode` plumbing.
+    - [ ] **Alert with no stop-name heading, just the text** (maintainer, 2026-09-21). The
+          preferred shape: the alert card carries its own text (and affected stops) and is not
+          grouped under a per-stop name header at all. Reconsider `StopGrouping`'s closure-carve-out
+          and the header for a stop-status row once the dedup settles on a device.
+    - [ ] **Same-named unrelated places both closed with identical text** (Codex P2, PR #90). The
+          affected-stops dedup keys `alsoAt` by display name so a station's own platforms fold to
+          one (St Pancras spells one name across several `stationNaptan`s). The residual: two
+          *genuinely unrelated* stops that share a name and both carry an identical place-less
+          notice — the farther folds under the nearest and isn't separately surfaced. Rare, and
+          separating "a station's platforms" from "two unrelated same-named places" needs the
+          hub/geography identity deliberately left out of the text-only dedup; revisit with that
+          identity (or once the no-heading shape above lands, which may change how a stop-status
+          row is attributed).
     - [ ] **Where the deduped alert renders.** It stays on the nearest member's card today
           (option 3a). A dedicated **hub alert band** titled with TfL's interchange name (3b)
           or **floating all alerts to a top block** were mocked in chat; both are a render
