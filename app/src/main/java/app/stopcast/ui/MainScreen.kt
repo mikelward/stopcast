@@ -480,15 +480,27 @@ private fun DepartureList(
     onReveal: (String) -> Unit,
     modifier: Modifier,
 ) {
-    // Cluster the flat rows into per-place groups (stops sharing a name — a junction's poles, a
-    // station's platforms) so each gets a name header — the flat list gives a card no boarding
-    // location once >1 place is on screen (SPEC D8). Pure and cheap; the caller ordered the rows.
+    // Stop-closure alerts render as standalone, header-less cards at the top of the list —
+    // warnings lead (the caller ordered them first). Each self-titles by its interchange (or its
+    // stop) only on expand, so it needs no group header and no distance label above it (SPEC
+    // *Disruptions*). The remaining rows (timed and line-status) cluster into per-place groups so
+    // each gets a name header — the flat list gives a card no boarding location once >1 place is
+    // on screen (SPEC D8). Pure and cheap; the caller ordered the rows.
+    val closureRows = remember(rows) { rows.filter { it.stopDisruption != null } }
+    // Pass the full row set: groupByStop groups only the non-closure rows but counts each closure
+    // alert's stop as a place, so a lone departures group beside a closure-only stop still shows
+    // its header (SPEC *Disruptions*).
     val groups = remember(rows) { StopGrouping.groupByStop(rows) }
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // A closure alert keys on its stop and hub so a recycled row can't carry another
+        // alert's expanded state onto it.
+        items(closureRows, key = { "closure|${it.stopId}|${it.hubId}" }) { row ->
+            DepartureRowCard(row, now)
+        }
         groups.forEachIndexed { index, group ->
             // The near-me list carries a per-stop distance; the watched list doesn't, so the
             // label is present only when this place's stops are in the map (D1). A place groups
@@ -506,7 +518,13 @@ private fun DepartureList(
             // would drop both the promised distance and the place name (Codex, PR #82).
             if (group.showHeader || distanceLabel != null) {
                 item(key = "header|${group.key}") {
-                    StopGroupHeader(group.stopName, distanceLabel, firstGroup = index == 0)
+                    // The first group takes no extra top break — unless a closure alert precedes
+                    // it, where the break separates the alert band from the departures.
+                    StopGroupHeader(
+                        group.stopName,
+                        distanceLabel,
+                        firstGroup = index == 0 && closureRows.isEmpty(),
+                    )
                 }
             }
             items(group.rows, key = { "${it.stopId}|${it.lineId}|${it.directionKey}" }) { row ->
@@ -690,9 +708,10 @@ private fun DepartureRowCard(
         // actionable before its warning (SPEC principle 2).
         Column(modifier = Modifier.padding(16.dp).semantics { isTraversalGroup = true }) {
             if (row.stopDisruption != null) {
-                // A stop-level status row: the whole stop is disrupted (a closure), so it
-                // leads with the stop, not a line pill (SPEC D3).
-                StopClosureContent(row.stopDisruption, row.alsoAt)
+                // A stop-level status row: the whole stop is disrupted (a closure). It carries no
+                // header of its own (SPEC D3) — collapsed it is the notice's first line; on expand
+                // it titles itself by the interchange, else the stop when there's no hub name.
+                StopClosureContent(row.stopDisruption, title = row.hubName.ifBlank { row.stopName })
                 return@Column
             }
 
@@ -792,33 +811,24 @@ private fun DepartureRowCard(
 
 /**
  * A stop closure (a stop-level disruption) as the card's content: the disruption in an
- * error-toned surface. The stop is named by the group header above (a closed stop always
- * shows one); the stop's own departures, if any, show in their own cards below — this card
- * is the closure notice, not a departure (SPEC D3).
+ * error-toned surface, with no header of its own — the notice text carries its own context
+ * (TfL writes the station into it), so the card floats free of the per-place headers the
+ * departures group under (SPEC D3 / *Disruptions*). The stop's own departures, if any, show in
+ * their own cards below.
  *
- * **Collapsed to a single line, tap to expand.** TfL's notices are prose (a paragraph on a
- * lift outage), and a glance surface shouldn't be dominated by one — so the card shows the
- * first line and expands to the full text on tap (SPEC *Concise copy* / jank-free UI). The
- * `Text` exposes its full string to the accessibility tree regardless of the visual clip, so
- * a screen reader reads the whole notice whether or not it is expanded; the tap only changes
- * what is drawn. Expanded state is `rememberSaveable`, keyed on the notice text, so it
- * survives a configuration change and never bleeds onto a different notice when a `LazyColumn`
- * row is recycled.
- *
- * When the notice was deduped across an interchange (the same text reported at several stops,
- * see [DepartureRows.nearbyDeduped]), [alsoAt] names the OTHER affected stops; the expanded card
- * lists them under the text so none is hidden (SPEC *Disruptions*, principle 1). The header names
- * the nearest, so [alsoAt] excludes it.
+ * **Collapsed to a single line; the title appears on tap.** TfL's notices are prose (a paragraph
+ * on a lift outage), and a glance surface shouldn't be dominated by one — so collapsed the card is
+ * the notice's first line alone, and tapping expands it to the [title] (the interchange name, else
+ * the stop) over the full text (SPEC *Concise copy* / jank-free UI). The notice `Text` exposes its
+ * full string to the accessibility tree regardless of the visual clip, so a screen reader reads the
+ * whole notice — which names the place — whether or not it is expanded; the tap only changes what is
+ * drawn. Expanded state is `rememberSaveable`, keyed on the notice text, so it survives a
+ * configuration change and never bleeds onto a different notice when a `LazyColumn` row is recycled.
  */
 @Composable
-private fun StopClosureContent(disruption: String, alsoAt: List<String> = emptyList()) {
-    // The stop name is not repeated here — the group header above names the stop (a closed
-    // stop always shows its header, see StopGrouping.groupByStop). This card is the closure
-    // notice alone.
+private fun StopClosureContent(disruption: String, title: String) {
     var expanded by rememberSaveable(disruption) { mutableStateOf(false) }
     val clickLabel = stringResource(if (expanded) R.string.alert_collapse else R.string.alert_expand)
-    val alsoAtLine =
-        if (alsoAt.isEmpty()) null else stringResource(R.string.alert_also_affects, alsoAt.joinToString(", "))
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -832,21 +842,22 @@ private fun StopClosureContent(disruption: String, alsoAt: List<String> = emptyL
             verticalAlignment = Alignment.Top,
         ) {
             Column(modifier = Modifier.weight(1f)) {
+                // The interchange (or stop) name titles the alert, shown only on expand — the
+                // collapsed card is the notice's first line alone.
+                if (expanded) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 Text(
                     text = disruption,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = if (expanded) Int.MAX_VALUE else 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = if (expanded) Modifier.padding(top = 4.dp) else Modifier,
                 )
-                // The other stops the notice covers, shown only when expanded — the header already
-                // names the nearest one, so a collapsed card stays a single line.
-                if (expanded && alsoAtLine != null) {
-                    Text(
-                        text = alsoAtLine,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
             }
             // A quiet chevron marks the row as expandable; the click label carries the action
             // for a screen reader, so the icon itself needs no separate description.

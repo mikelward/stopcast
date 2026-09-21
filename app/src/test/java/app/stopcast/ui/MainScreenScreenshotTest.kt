@@ -342,20 +342,24 @@ class MainScreenScreenshotTest {
     }
 
     @Test
-    fun `a hub-wide alert repeated across an interchange shows once, collapsed`() {
+    fun `a hub-wide alert repeated across an interchange shows once, titled on expand`() {
         // TfL reports a hub-wide notice (a lift outage) against every stop point in an
-        // interchange, so the near-me set carries the identical text once per member. It is
-        // one notice: it shows once, on the nearest member, collapsed to a single line that
-        // taps open to the full text (the farther members' duplicate cards are suppressed).
-        // Synthetic accessibility copy + public station ids/names only (SPEC *Privacy*).
+        // interchange, so the near-me set carries the identical text once per member. Those
+        // members share one hubNaptanCode, so the notice folds by hub identity to a single
+        // header-less card — collapsed it is the notice's first line, and tapping expands it to
+        // the interchange name over the full text. Synthetic accessibility copy + public station
+        // ids/names only (SPEC *Privacy*).
         val notice =
             "No step-free access — the lifts to the Thameslink platforms are out of service. " +
                 "Step-free interchange is not available; please use an alternative accessible route."
+        val hubName = "King's Cross & St Pancras International"
         fun member(id: String, name: String) = StopArrivals(
             id, name, emptyList(),
             fetchedAt = now.minusSeconds(60),
             disruptions = listOf(StopDisruption(notice)),
             arrivalsFresh = false,
+            hubId = "HUBKGX",
+            hubName = hubName,
         )
         val members = listOf(
             member("910GSTPX", "London St Pancras International"),
@@ -371,17 +375,17 @@ class MainScreenScreenshotTest {
                 stopDistanceMeters = distances,
             )
         }
-        // Deduped to one card — the farther copies (and their headers) are gone.
+        // Deduped to one card, header-less — no per-member name header, collapsed or otherwise.
         composeRule.onAllNodesWithText(notice).assertCountEquals(1)
-        composeRule.onNodeWithText("LONDON ST PANCRAS INTERNATIONAL", substring = true).assertExists()
+        composeRule.onNodeWithText("LONDON ST PANCRAS INTERNATIONAL", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertDoesNotExist()
-        // Tapping the collapsed alert expands it in place; the text is the same node, so this
-        // captures the expanded baseline rather than asserting the (unchanged) string.
+        // The interchange title appears only on expand, not on the collapsed card.
+        composeRule.onNodeWithText(hubName).assertDoesNotExist()
+        // Tapping the collapsed alert expands it in place: the interchange name titles it, over
+        // the full notice text.
         composeRule.onNodeWithText(notice).performClick()
         composeRule.waitForIdle()
-        // Expanding names the other stops the notice covers, so the deduped King's Cross copy isn't
-        // hidden — the nearest (St Pancras) is the header, King's Cross is named below the text.
-        composeRule.onNodeWithText("Also affects King's Cross St. Pancras").assertExists()
+        composeRule.onNodeWithText(hubName).assertExists()
         captureSnapshot("main-near-me-hub-alert-expanded.png")
     }
 

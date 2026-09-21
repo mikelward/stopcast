@@ -36,10 +36,6 @@
          ("double tap to Show full alert"); the notice text itself is read from the card. -->
     <string name="alert_expand">Show full alert</string>
     <string name="alert_collapse">Show less</string>
-    <!-- Shown under an expanded alert that was deduped across an interchange, naming the other
-         stops the same notice covers (the header names the nearest). %1$s is a comma-separated
-         list of stop names. -->
-    <string name="alert_also_affects">Also affects %1$s</string>
     <!-- On a status row: a disrupted line (e.g. suspended) returning no predictions. Sits
          where a countdown would, as a short dash meaning "none" — distinct from the "?" a
          stale timed row shows for an unknown/withheld countdown. The chip beside it names

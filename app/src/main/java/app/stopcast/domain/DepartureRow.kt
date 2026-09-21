@@ -58,13 +58,16 @@ data class DepartureRow(
     val fetchedAt: Instant,
     val status: LineStatus? = null,
     val stopDisruption: String? = null,
-    // Other distinctly-named stops the SAME [stopDisruption] notice was reported at, by display
-    // name, nearest-first (this row's own [stopName], and any farther stop sharing it, excluded).
-    // Set only on a near-me stop-status row that deduped an identical notice reported across
-    // several stops (a hub-wide lift outage): the card keeps one copy on the nearest stop but names
-    // the other affected stops on expand, so a differently-named stop is not hidden even when TfL's
-    // text doesn't name its own stop (SPEC *Disruptions*, principle 1). Empty on every other row.
-    val alsoAt: List<String> = emptyList(),
+    // The interchange this stop belongs to, TfL's `hubNaptanCode` ([StopLocation.hubId]): `HUBKGX`
+    // ties King's Cross and St Pancras together. Blank for a stop in no hub. A near-me stop-status
+    // row folds by this so an interchange's shared disruption is one alert, and two genuinely
+    // distinct same-named places (different or absent hub) stay apart (SPEC *Disruptions*).
+    val hubId: String = "",
+    // The interchange's display name (TfL's own, e.g. "King's Cross & St Pancras International"),
+    // resolved for a hub with a disruption. Blank when there's no hub or the lookup failed; the
+    // alert then titles itself by the stop's own [stopName] instead. Titles a folded alert by the
+    // interchange rather than one member stop (SPEC *Disruptions*).
+    val hubName: String = "",
 )
 
 /**

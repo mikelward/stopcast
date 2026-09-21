@@ -322,41 +322,43 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [x] **Dedupe a hub-wide alert; collapse the closure card** (maintainer, 2026-09-21).
         v122 showed the same interchange notice as three full-height cards (King's Cross St.
         Pancras + St Pancras International both carrying TfL's "no step-free access" text).
-        The near-me path now keeps each distinct notice once, on the nearest member carrying
-        its text (`DepartureRows.nearbyDeduped`), and the closure card collapses to one line,
-        tap-to-expand (`StopClosureContent`). Deduped by text — TfL names the place, so
-        identical text is the same notice — so it spans stations *and* the hub with no
-        `hubNaptanCode` plumbing; departures stay grouped per station (SPEC *Disruptions*).
-        Follow-ups deferred here:
-    - [x] **Name the affected stops on tap** (maintainer, 2026-09-21). The kept card records the
-          other stops the notice covers (`DepartureRow.alsoAt`, distinct display names,
-          nearest-first) and the expanded card lists them ("Also affects King's Cross St.
-          Pancras"). This resolves the Codex P1 on PR #89: TfL's text is not guaranteed to name
-          its stop (a place-less "Station closed"), so a text-only collapse alone could hide an
-          unrelated warning; naming every affected stop means none is dropped (principle 1),
-          without needing the `hubNaptanCode` plumbing.
-    - [ ] **Alert with no stop-name heading, just the text** (maintainer, 2026-09-21). The
-          preferred shape: the alert card carries its own text (and affected stops) and is not
-          grouped under a per-stop name header at all. Reconsider `StopGrouping`'s closure-carve-out
-          and the header for a stop-status row once the dedup settles on a device.
-    - [ ] **Same-named unrelated places both closed with identical text** (Codex P2, PR #90). The
-          affected-stops dedup keys `alsoAt` by display name so a station's own platforms fold to
-          one (St Pancras spells one name across several `stationNaptan`s). The residual: two
-          *genuinely unrelated* stops that share a name and both carry an identical place-less
-          notice — the farther folds under the nearest and isn't separately surfaced. Rare, and
-          separating "a station's platforms" from "two unrelated same-named places" needs the
-          hub/geography identity deliberately left out of the text-only dedup; revisit with that
-          identity (or once the no-heading shape above lands, which may change how a stop-status
-          row is attributed).
-    - [ ] **Where the deduped alert renders.** It stays on the nearest member's card today
-          (option 3a). A dedicated **hub alert band** titled with TfL's interchange name (3b)
-          or **floating all alerts to a top block** were mocked in chat; both are a render
-          swap on the same dedup, judged on a device. The band needs the hub's display name,
-          which the nearby `/StopPoint` payload gives only as `hubNaptanCode`.
-    - [ ] **Per-description dedup.** A stop's disruptions are joined into one row's text, so
-          the dedup is on the joined string; a stop carrying a hub notice *plus* a local one
-          won't collapse the shared notice against a stop carrying only the hub notice. Rare
-          (mostly one notice per stop); split per description if it bites.
+        The near-me path keeps each distinct notice once, on the nearest member
+        (`DepartureRows.nearbyDeduped`), and the closure card collapses to one line,
+        tap-to-expand (`StopClosureContent`). #89 folded by notice text; the follow-ups below
+        then moved the fold to **hub identity** and the card to a **header-less, titled-on-expand**
+        shape (both landed). Departures stay grouped per station (SPEC *Disruptions*). Follow-ups:
+    - [x] **Alert with no stop-name heading, titled on expand** (maintainer, 2026-09-21). The
+          preferred shape landed: a stop-closure alert renders as a **header-less card** ahead of
+          the grouped departures — collapsed it is the notice's first line, and tapping titles it
+          by the **interchange name** (else the stop) over the full text (`StopClosureContent`).
+          `StopGrouping` no longer carves out or headers a closure (the screen filters closures
+          out before grouping); the line-status ("No departures") carve-out stays. This replaced
+          the earlier `alsoAt` "Also affects …" line from PR #90 (removed): the hub-identity fold
+          below makes it unnecessary, and the notice text names the place itself.
+    - [x] **Fold by hub identity — resolves "same-named unrelated places"** (Codex P2, PR #90).
+          `nearbyDeduped` now keys the closure fold on `(hubId, text)` — TfL's `hubNaptanCode`,
+          plumbed from the nearby lookup through `StopLocation`/`StopArrivals`/`DepartureRow`.
+          King's Cross and St Pancras share `HUBKGX`, so the hub-wide notice folds to one card;
+          two *genuinely unrelated* closures with identical place-less text ("Station closed")
+          have different (or blank) hubs, so each keeps its card — the residual the text-only
+          dedup couldn't separate. A hub with two different notices keeps a card for each. The
+          interchange **display name** is resolved once per hub (cached) via a new
+          `TflClient.hubName` (`/StopPoint/{hubId}`), off the render path, degrading to the
+          stop's own name on failure (SPEC *Disruptions*).
+    - [ ] **A dedicated, persistent hub alert band?** Alerts now float to a top block of
+          header-less cards, titled by the interchange on expand (option 3a+). A **standing
+          band** with the interchange name always visible (3b), rather than only on expand, was
+          also mocked; a render swap on the same dedup, judged on a device.
+    - [ ] **Per-description dedup** (Codex P2, PR #91). A stop's disruptions are joined into its one
+          stop-status row's text (`stopStatusRow`), so the hub fold keys on the joined string: where
+          two members of a hub carry *different sets* of notices — one reports X, the other X · Y —
+          the shared X is not folded per individual notice and can show on both cards. Pre-existing
+          (the join predates the hub fold; #89 deduped on joined text too), and rare (mostly one
+          notice per stop). The fix — split a stop's disruptions into one stop-status row **per
+          notice** before the hub fold — changes how multiple notices at one stop render (a card
+          each rather than one joined card), so it's a **product/design decision** for the
+          maintainer, not autopilot's to take. SPEC *Disruptions* now states the joined-text limit
+          plainly rather than over-promising a per-notice fold.
     - [ ] **Merge the interchange's departures to the hub?** SPEC keeps King's Cross and St
           Pancras as separate departure headers (they are different buildings). Clustering on
           `hubNaptanCode` would merge them into one place; the next grain down is

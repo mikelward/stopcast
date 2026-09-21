@@ -748,6 +748,130 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `a disrupted hub stop resolves its interchange name once and threads it`() = runTest(dispatcher) {
+        // Two members of one interchange, both disrupted. The hub name is looked up once for the
+        // shared hub (cached across the members and across refreshes) and threaded onto each
+        // stop, so the folded near-me alert titles by the interchange (SPEC *Disruptions*).
+        var hubNameCalls = 0
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String) = emptyList<Departure>()
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String) =
+                listOf(StopDisruption("No step free access"))
+
+            override suspend fun hubName(hubId: String): String {
+                hubNameCalls++
+                return "King's Cross & St Pancras International"
+            }
+        }
+        val hubSeeds = listOf(
+            StopRef("910GSTPX", "St Pancras International", hubId = "HUBKGX"),
+            StopRef("940GZZLUKSX", "King's Cross St. Pancras", hubId = "HUBKGX"),
+        )
+        val vm = MainViewModel(client, hubSeeds, clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+
+        val state = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(state.stops.all { it.hubId == "HUBKGX" })
+        assertTrue(state.stops.all { it.hubName == "King's Cross & St Pancras International" })
+        // Resolved once for the shared hub, not once per member.
+        assertEquals(1, hubNameCalls)
+
+        // A second refresh reuses the cached name — no further lookup.
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(1, hubNameCalls)
+    }
+
+    @Test
+    fun `a clear hub stop looks up no hub name`() = runTest(dispatcher) {
+        // A hub stop with no disruption needs no title, so no lookup is made — the cost is paid
+        // only when there is actually an alert to title.
+        var hubNameCalls = 0
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String) = listOf(departure("victoria", "Victoria", 300))
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+            override suspend fun hubName(hubId: String): String {
+                hubNameCalls++
+                return "X"
+            }
+        }
+        val vm = MainViewModel(
+            client,
+            listOf(StopRef("910GSTPX", "St Pancras International", hubId = "HUBKGX")),
+            clock = { now },
+            io = dispatcher,
+        )
+        advanceUntilIdle()
+        assertEquals(0, hubNameCalls)
+    }
+
+    @Test
+    fun `a failed hub name lookup leaves the alert titling by the stop, and is retried`() = runTest(dispatcher) {
+        // A blank/failed lookup is not cached, so a transient failure never permanently blanks
+        // the title: the alert falls back to the stop's own name this cycle and retries next.
+        var fail = true
+        var hubNameCalls = 0
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String) = emptyList<Departure>()
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String) = listOf(StopDisruption("Closed"))
+            override suspend fun hubName(hubId: String): String {
+                hubNameCalls++
+                if (fail) throw TflException.Unreachable("boom", null)
+                return "King's Cross & St Pancras International"
+            }
+        }
+        val vm = MainViewModel(
+            client,
+            listOf(StopRef("940GZZLUKSX", "King's Cross St. Pancras", hubId = "HUBKGX")),
+            clock = { now },
+            io = dispatcher,
+        )
+        advanceUntilIdle()
+        // Lookup failed → blank hub name; the stop still surfaces its disruption.
+        val first = vm.state.value as DeparturesUiState.Loaded
+        assertEquals("", first.stops.single().hubName)
+        assertEquals(1, hubNameCalls)
+
+        // Not cached, so the next refresh retries — and now succeeds.
+        fail = false
+        vm.refresh()
+        advanceUntilIdle()
+        val second = vm.state.value as DeparturesUiState.Loaded
+        assertEquals("King's Cross & St Pancras International", second.stops.single().hubName)
+        assertEquals(2, hubNameCalls)
+    }
+
+    @Test
+    fun `a failing hub lookup is requested once per refresh, not once per member`() = runTest(dispatcher) {
+        // Several disrupted stops share one hub whose name lookup fails. Without per-refresh
+        // memoization the loop would re-request (and re-time-out) once per member; with it there
+        // is one failing call this refresh and every member falls back to its own name, agreeing.
+        var hubNameCalls = 0
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String) = emptyList<Departure>()
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String) = listOf(StopDisruption("Closed"))
+            override suspend fun hubName(hubId: String): String {
+                hubNameCalls++
+                throw TflException.Unreachable("boom", null)
+            }
+        }
+        val hubSeeds = listOf(
+            StopRef("910GSTPX", "St Pancras International", hubId = "HUBKGX"),
+            StopRef("940GZZLUKSX", "King's Cross St. Pancras", hubId = "HUBKGX"),
+        )
+        val vm = MainViewModel(client, hubSeeds, clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+
+        val state = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(state.stops.all { it.hubName == "" })
+        assertEquals(1, hubNameCalls)
+    }
+
+    @Test
     fun `a successful snapshot is persisted for the next launch and the widget`() =
         runTest(dispatcher) {
             val store = FakeStore()

@@ -38,6 +38,10 @@ data class TflStopPointDto(
     // then the grouping falls back to the display name. Used only for grouping (SPEC D8), never a
     // coordinate.
     val stationNaptan: String = "",
+    // TfL's interchange for this stop, above `stationNaptan`: `HUBKGX` ties King's Cross and St
+    // Pancras together. Blank for a stop in no hub. Used to fold an interchange's shared disruption
+    // (SPEC *Disruptions*); a public id, never a coordinate.
+    val hubNaptanCode: String = "",
 )
 
 @Serializable
@@ -81,5 +85,6 @@ fun TflStopPointDto.toStopLocationOrNull(): StopLocation? {
         // station's same-named poles still merge (SPEC *Finding stops*). Keying on the id when TfL
         // provides it is what keeps a station whose name it spells several ways together.
         clusterId = stationNaptan.ifBlank { stopName },
+        hubId = hubNaptanCode,
     )
 }

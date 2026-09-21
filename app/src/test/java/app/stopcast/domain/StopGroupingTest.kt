@@ -113,26 +113,6 @@ class StopGroupingTest {
     }
 
     @Test
-    fun `a disrupted pole stays its own group, not merged with a clear same-named pole`() {
-        // One pole of a junction is closed, the other running. Clustering them by name would put
-        // the closure (which names no stop — the header does) beside the other pole's catchable
-        // departures under one header, leaving a rider unable to tell which pole is closed (SPEC
-        // principle 2). So a disrupted stop keeps its own group; only clear poles merge.
-        val rows = listOf(
-            row("P1", "Turnpike Lane", clusterId = "490G0TPL", destination = "", stopDisruption = "Closed", upcoming = emptyList()),
-            row("P2", "Turnpike Lane", clusterId = "490G0TPL", direction = "outbound", destination = "Palmers Green"),
-        )
-        val groups = StopGrouping.groupByStop(rows)
-        // Same cluster, so they would merge — but the closed pole is carved out to its own group.
-        assertEquals(2, groups.size)
-        // The closed pole leads (warning), on its own; the running pole is a separate group.
-        assertEquals(setOf("P1"), groups.first().rows.mapTo(mutableSetOf()) { it.stopId })
-        assertTrue(groups.first().rows.single().stopDisruption != null)
-        assertEquals(setOf("P2"), groups.last().rows.mapTo(mutableSetOf()) { it.stopId })
-        assertTrue(groups.all { it.showHeader })
-    }
-
-    @Test
     fun `a pole with a suspended-line warning stays its own group`() {
         // Same class as the closure case, one line down: a line-status "No departures" row (a
         // suspended line, no predictions) also names no pole or direction, so merging it beside a
@@ -160,25 +140,43 @@ class StopGroupingTest {
     }
 
     @Test
-    fun `a closed stop is one group with a header naming it`() {
+    fun `a closure-only stop counts as a place, so a lone departures stop keeps its header`() {
+        // Codex P1 (PR #91): on a location-free list, one stop's arrivals failed leaving only a
+        // closure (rendered header-less, outside grouping) while another stop has departures. The
+        // closure's stop is still a place, so the departures stop must show its name header rather
+        // than read as a single-place list and drop it.
         val rows = listOf(
-            row("OXC", "Oxford Circus", destination = "", stopDisruption = "Closed", upcoming = emptyList()),
-            row("OXC", "Oxford Circus", destination = "Hainault"),
+            row("A", "Archway", destination = "", stopDisruption = "Closed", upcoming = emptyList()),
+            row("B", "Brixton", destination = "Morden"),
         )
-        val group = StopGrouping.groupByStop(rows).single()
-        // A closed stop always shows its header, since the closure card no longer repeats the
-        // name, even though it is the only stop on screen.
-        assertTrue(group.showHeader)
-        assertTrue(group.rows.any { it.stopDisruption != null })
+        val groups = StopGrouping.groupByStop(rows)
+        // Only the departures stop is grouped; the closure forms no group.
+        assertEquals(listOf("Brixton"), groups.map { it.stopName })
+        // It still shows its header, because Archway (the closure) is a second place on screen.
+        assertTrue(groups.single().showHeader)
+    }
+
+    @Test
+    fun `a lone stop with both a closure and departures still implies its place`() {
+        // The single-place case is preserved: one stop carries both a closure (header-less) and its
+        // own departures. One place, so the departures header stays hidden.
+        val rows = listOf(
+            row("A", "Archway", destination = "", stopDisruption = "Closed", upcoming = emptyList()),
+            row("A", "Archway", destination = "Morden"),
+        )
+        val groups = StopGrouping.groupByStop(rows)
+        assertEquals(listOf("Archway"), groups.map { it.stopName })
+        assertFalse(groups.single().showHeader)
     }
 
     @Test
     fun `a stop with a warning leads an ordinary-only stop`() {
-        // Grouping must not rely on the caller pre-sorting warnings first: even with the
-        // ordinary stop's row first in the input, the closed stop's group leads.
+        // Grouping must not rely on the caller pre-sorting warnings first: even with the ordinary
+        // stop's row first in the input, the warned stop's group leads. Stop closures render
+        // outside grouping now, so a line-status "No departures" warning stands for the class here.
         val rows = listOf(
             row("A", "Archway", destination = "Morden"),
-            row("B", "Brixton", destination = "", stopDisruption = "Closed", upcoming = emptyList()),
+            row("B", "Brixton", lineId = "vic", upcoming = emptyList()),
         )
         assertEquals(listOf("Brixton", "Archway"), StopGrouping.groupByStop(rows).map { it.stopName })
     }
@@ -187,16 +185,17 @@ class StopGroupingTest {
     fun `each stop's rows stay contiguous even when two stops carry warnings`() {
         // Two warned stops: each stays one block led by its warning (option B). The cost the
         // maintainer accepted is that stop A's ordinary rows can sit above stop B's warning,
-        // rather than a single global warning band across stops.
+        // rather than a single global warning band across stops. (Line-status warnings — closures
+        // no longer group here.)
         val rows = listOf(
-            row("A", "Archway", destination = "", stopDisruption = "Closed", upcoming = emptyList()),
+            row("A", "Archway", lineId = "vic", upcoming = emptyList()),
             row("A", "Archway", destination = "Morden"),
-            row("B", "Brixton", destination = "", stopDisruption = "Closed", upcoming = emptyList()),
+            row("B", "Brixton", lineId = "vic", upcoming = emptyList()),
             row("B", "Brixton", destination = "Walthamstow"),
         )
         val groups = StopGrouping.groupByStop(rows)
         assertEquals(listOf("Archway", "Brixton"), groups.map { it.stopName })
-        // Each group's own warning row leads its own rows.
-        assertTrue(groups.all { it.rows.first().stopDisruption != null })
+        // Each group's own warning row (no countdown) leads its own rows.
+        assertTrue(groups.all { it.rows.first().upcoming.isEmpty() })
     }
 }
