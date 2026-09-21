@@ -157,6 +157,10 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithContentDescription("No departures").assertExists()
         // Oxford Circus has a stop-level disruption, shown as a stop-status row.
         composeRule.onNodeWithText("Station closed until further notice").assertExists()
+        // Cards are grouped under one bare stop-name header per stop (SPEC D8). The
+        // direction/terminus qualifier is a follow-up, so the header is the name alone.
+        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertExists()
+        composeRule.onNodeWithText("OXFORD CIRCUS").assertExists()
     }
 
     @Test

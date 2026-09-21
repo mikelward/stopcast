@@ -72,6 +72,7 @@ import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.stopcast.R
 import app.stopcast.domain.Countdown
 import app.stopcast.domain.Departure
@@ -82,6 +83,7 @@ import app.stopcast.domain.DestinationAbbreviations
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
+import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.ui.theme.LocalStarredBorderColor
 import java.time.Duration
@@ -409,21 +411,59 @@ private fun DepartureList(
     starringAvailable: Boolean,
     modifier: Modifier,
 ) {
+    // Cluster the flat rows into per-stop, per-direction groups so each gets a stop-name
+    // header — the flat list gives a card no boarding location once >1 stop is on screen
+    // (SPEC D8). Pure and cheap; the caller has already ordered the rows.
+    val groups = remember(rows) { StopGrouping.groupByStop(rows) }
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(rows, key = { "${it.stopId}|${it.lineId}|${it.directionKey}" }) { row ->
-            DepartureRowCard(
-                row,
-                now,
-                isStarred = StarredRow.of(row) in starred,
-                onToggleStar = { onToggleStar(row) },
-                starAvailable = starringAvailable,
-            )
+        groups.forEachIndexed { index, group ->
+            if (group.showHeader) {
+                item(key = "header|${group.key}") {
+                    StopGroupHeader(group.stopName, firstGroup = index == 0)
+                }
+            }
+            items(group.rows, key = { "${it.stopId}|${it.lineId}|${it.directionKey}" }) { row ->
+                DepartureRowCard(
+                    row,
+                    now,
+                    isStarred = StarredRow.of(row) in starred,
+                    onToggleStar = { onToggleStar(row) },
+                    starAvailable = starringAvailable,
+                )
+            }
         }
     }
+}
+
+/**
+ * The small stop-name header above a group of same-stop cards (SPEC D8): the stop name in
+ * spaced small caps, text only — no border, no background, the muted `onSurfaceVariant`
+ * role. The name hard-truncates (no ellipsis) at the edge. Extra top space (past the list's
+ * 8dp item gap) marks the group break; the first group takes none. The mode-aware
+ * direction/terminus qualifier is deferred to a follow-up (see `StopGrouping`).
+ */
+@Composable
+private fun StopGroupHeader(name: String, firstGroup: Boolean) {
+    // labelMedium is the same role the freshness stamp uses; the tracking gives the small-caps
+    // read. uppercase() is Kotlin's locale-invariant overload (safe from the Turkish-ı trap).
+    val style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.8.sp)
+    Text(
+        text = name.uppercase(),
+        style = style,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        softWrap = false,
+        // Truncate at the edge rather than elide — a stop name is recognized from its start.
+        overflow = TextOverflow.Clip,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, end = 4.dp, top = if (firstGroup) 0.dp else 12.dp, bottom = 0.dp),
+    )
 }
 
 @Composable
@@ -490,7 +530,7 @@ private fun DepartureRowCard(
             if (row.stopDisruption != null) {
                 // A stop-level status row: the whole stop is disrupted (a closure), so it
                 // leads with the stop, not a line pill (SPEC D3).
-                StopClosureContent(row.stopName, row.stopDisruption)
+                StopClosureContent(row.stopDisruption)
                 return@Column
             }
 
@@ -589,23 +629,21 @@ private fun DepartureRowCard(
 }
 
 /**
- * A stop closure (a stop-level disruption) as the card's content: the stop name, then the
- * disruption in an error-toned surface. The stop's own departures, if any, show in their
- * own cards elsewhere — this card is the closure notice, not a departure (SPEC D3).
+ * A stop closure (a stop-level disruption) as the card's content: the disruption in an
+ * error-toned surface. The stop is named by the group header above (a closed stop always
+ * shows one); the stop's own departures, if any, show in their own cards below — this card
+ * is the closure notice, not a departure (SPEC D3).
  */
 @Composable
-private fun StopClosureContent(stopName: String, disruption: String) {
-    Text(
-        text = stopName,
-        style = MaterialTheme.typography.titleMedium,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+private fun StopClosureContent(disruption: String) {
+    // The stop name is not repeated here — the group header above names the stop (a closed
+    // stop always shows its header, see StopGrouping.groupByStop). This card is the closure
+    // notice alone.
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Text(
             text = disruption,

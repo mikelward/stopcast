@@ -139,12 +139,19 @@ when imminent, "3 min", "12 min" — sorted soonest-first.
 **The unit of display is a flat row per (service, stop, direction)** — a *service*
 being a line (or bus route) at a stop — presented as a **compact card**: the line pill
 and its destination as the headline, and the service's **next few countdowns merged onto
-one line** ("Due · 3 · 6 min", the "min" unit written once). The **stop name is not shown
-on the card for now**: it read as clutter in the compact layout, and on the lock-screen
-widget — the surface this model is aiming at — the stop is implied by the context the user
-set up, not something a glance needs restated per card. It returns with **multi-stop
-watching** (Phase 2), where several stops share the list and the card must say which one
-it is. A two-way service
+one line** ("Due · 3 · 6 min", the "min" unit written once). The **stop name is not
+repeated on every card**: it read as clutter restated per row, and on the lock-screen
+widget the stop is implied by the context the user set up. Instead, once the list spans
+more than one stop, a **small header above each group of same-stop cards** names the stop,
+in spaced small caps (**one header per stop**). The first step ships the **bare stop name**
+alone. A **mode-aware direction/terminus qualifier** for which way the stop is headed — the
+stop letter `(S)` or compass bearing `(→S)` TfL prints for a bus stop, a rail platform's
+`· Southbound`, or `→ Terminus` toward a single destination, shown only when the whole stop
+shares one direction/terminus — is the maintainer's lean for the header (settled from the
+mocks, 2026-09-21) but is **deferred to a follow-up** so it can be designed on its own, and
+the letter/bearing forms in any case await capturing TfL's StopPoint indicator (`TODO.md`).
+A finer per-direction header, and the qualifier's grain at a busy interchange, were mocked
+and are part of that same follow-up. A two-way service
 at a stop is two cards, one per direction; a one-directional case (a terminus platform, a
 one-way-street stop, a single branch) is one. Nothing is hidden behind a gesture, which
 is what a glance surface needs (**D8**). TfL's `direction` is the primary key and the
@@ -635,14 +642,21 @@ Mirrors the sibling fleet:
   line pill + destination headline, the next few countdowns merged onto one line — so the
   list scans evenly; only genuinely extra information (a disruption chip, a branch's second
   destination) adds height. The destination **elides** to one line so a long name never
-  wraps or crowds out the countdown. **Platform, the "inbound/outbound" direction word, and
-  (for now) the stop name are dropped from the card** — the destination is the direction
-  signal a rider reads; the stop is implied by the widget's chosen context and returns with
-  multi-stop watching (Phase 2); platform stays in the model for a later detail surface. Its cost is length — a busy stop is many cards — which starring (ranking,
+  wraps or crowds out the countdown. **Platform and the "inbound/outbound" direction word are dropped from the card** — the
+  destination is the direction signal a rider reads; platform stays in the model for a
+  later detail surface. **The stop name is not on the card but returns as a group header**:
+  the list is **clustered by stop, one header per stop**, showing the **bare stop name** in
+  this step. A mode-aware direction/terminus qualifier (stop letter `(S)` / bearing `(→S)`
+  for a bus, `· Southbound` for a rail platform, else `→ Terminus`, only when the whole stop
+  shares one) is the maintainer's lean but is **deferred to a follow-up**, along with the
+  per-direction grain at a busy interchange (both mocked 2026-09-21; letter/bearing also
+  pending capture of TfL's StopPoint indicator — `TODO.md`). Its cost is length — a busy stop is many cards — which starring (ranking,
   distinct from watched-stop membership) and, later, smarter selection are meant to manage.
   The list orders the watched stops' cards location-free (soonest-first, starred pinned),
-  so it works with location denied; distance ranking is for *finding* stops, not ordering
-  this list (D1). A more compact **(service, stop) card that swipes between directions** is
+  so it works with location denied; the stop grouping then clusters that order by stop (a
+  stop's cards stay adjacent, led by its soonest) without changing which stop leads.
+  Distance ranking is for *finding* stops, not ordering this list (D1). A more compact
+  **(service, stop) card that swipes between directions** is
   the leading candidate to iterate toward, but it hides the other direction behind a
   gesture the widget host owns, so it is deferred until the flat list has been used on a
   device — not a prerequisite. TfL's `direction` is the primary key and is retained (it
