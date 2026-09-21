@@ -42,6 +42,10 @@ internal data class PersistedStop(
     val fetchedAtMillis: Long = 0L,
     val lines: List<PersistedLine> = emptyList(),
     val arrivalsFresh: Boolean = true,
+    // The stop's cluster for per-place grouping (SPEC D8). Defaulted, so a snapshot written by an
+    // older build reads back blank — that stop groups on its own until the next refresh restamps
+    // it — no version bump needed.
+    val clusterId: String = "",
 )
 // Stop disruptions (closures) are deliberately NOT persisted: a closure is a point-in-time
 // claim the screen renders unconditionally, with no stale-safe rendering (unlike a countdown,
@@ -99,6 +103,7 @@ private fun StopArrivals.toPersisted(): PersistedStop =
         lines = lines.map { PersistedLine(it.id, it.name, it.mode) },
         // Stop disruptions are intentionally not carried to disk (point-in-time; see above).
         arrivalsFresh = arrivalsFresh,
+        clusterId = clusterId,
     )
 
 private fun PersistedStop.toDomain(): StopArrivals =
@@ -110,6 +115,7 @@ private fun PersistedStop.toDomain(): StopArrivals =
         lines = lines.map { LineRef(it.id, it.name, it.mode) },
         // No disruptions restored — the immediate refresh re-establishes any current one.
         arrivalsFresh = arrivalsFresh,
+        clusterId = clusterId,
     )
 
 private fun Departure.toPersisted(): PersistedDeparture =

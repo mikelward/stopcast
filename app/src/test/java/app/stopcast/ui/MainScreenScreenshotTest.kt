@@ -262,6 +262,57 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("(Bank)").assertDoesNotExist()
     }
 
+    // Two poles of one place: a northbound and a southbound bus stop that share a display name are
+    // separate TfL stop ids, so grouping by name reads them as one boarding location under a single
+    // header — the junction case behind the large-station grain work (SPEC *Finding stops*).
+    // Public route/place names only (SPEC *Privacy*).
+    private fun turnpikeLaneNorth() = StopArrivals(
+        "490009TPL1",
+        "Turnpike Lane",
+        listOf(dep("141", "141", "outbound", "Palmers Green", 120, "", mode = "bus")),
+        fetchedAt = now.minusSeconds(60),
+        clusterId = "490G0TPL",
+    )
+
+    private fun turnpikeLaneSouth() = StopArrivals(
+        "490009TPL2",
+        "Turnpike Lane",
+        listOf(dep("141", "141", "inbound", "London Bridge", 180, "", mode = "bus")),
+        fetchedAt = now.minusSeconds(60),
+        clusterId = "490G0TPL",
+    )
+
+    private fun manorHouse() = StopArrivals(
+        "940GZZLUMRH",
+        "Manor House",
+        listOf(dep("piccadilly", "Piccadilly", "westbound", "Cockfosters", 240, "Westbound - Platform 2")),
+        fetchedAt = now.minusSeconds(60),
+    )
+
+    @Test
+    fun `two poles of one place render under a single cluster header`() {
+        // The junction's north and south poles are distinct stop ids sharing one cluster
+        // (TfL's stationNaptan); grouped by it they sit under one header (not two identical ones), with both directions'
+        // cards beneath it. Manor House is the second place that makes the merged header show (a
+        // lone place implies itself).
+        capture("main-cluster-header.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(
+                    listOf(turnpikeLaneNorth(), turnpikeLaneSouth(), manorHouse()),
+                    now.minusSeconds(60),
+                ),
+                now,
+                {},
+            )
+        }
+        // One "TURNPIKE LANE" header, not two — the two poles merged into one place.
+        composeRule.onAllNodesWithText("TURNPIKE LANE").assertCountEquals(1)
+        composeRule.onNodeWithText("MANOR HOUSE").assertExists()
+        // Both poles' cards render under that one header.
+        composeRule.onNodeWithText("Palmers Green").assertExists()
+        composeRule.onNodeWithText("London Bridge").assertExists()
+    }
+
     @Test
     fun `via branch shown in parens`() {
         // The Northern line's branch (TfL's `towards` "via Charing Cross") shows parenthesized

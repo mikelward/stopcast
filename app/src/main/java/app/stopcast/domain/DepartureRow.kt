@@ -43,6 +43,11 @@ import java.time.Instant
 data class DepartureRow(
     val stopId: String,
     val stopName: String,
+    // The cluster this stop belongs to — TfL's `stationNaptan` else the display name (see
+    // [StopArrivals.clusterId]). The screen groups rows into per-place headers by this, not by
+    // [stopName], so a station whose poles TfL spells differently still reads as one place, and two
+    // genuinely distinct stops that share a name stay apart (SPEC D8). Blank groups the stop alone.
+    val clusterId: String = "",
     val lineId: String,
     val lineName: String,
     val direction: String,

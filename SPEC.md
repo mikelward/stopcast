@@ -142,9 +142,18 @@ and its destination as the headline, and the service's **next few countdowns mer
 one line** ("Due · 3 · 6 min", the "min" unit written once). The **stop name is not
 repeated on every card**: it read as clutter restated per row, and on the lock-screen
 widget the stop is implied by the context the user set up. Instead, once the list spans
-more than one stop, a **small header above each group of same-stop cards** names the stop,
-in spaced small caps (**one header per stop**). The first step ships the **bare stop name**
-alone. A **mode-aware direction/terminus qualifier** for which way the stop is headed — the
+more than one place, a **small header above each group of same-place cards** names it,
+in spaced small caps (**one header per place**). A *place* is the set of stops that share a
+**cluster** — a bus junction's two poles, a station's several platforms — grouped together so
+they read as one boarding location, the way a Tube station (a single stop id aggregating its
+platforms) already did; grouping by stop id instead split a junction's northbound and southbound
+poles into two identical headers (settled 2026-09-21). The cluster key is TfL's **`stationNaptan`**
+where the nearby lookup gives one, else the cleaned display name. Keying on TfL's own cluster is
+what keeps a station it spells several ways together (King's Cross St. Pancras has several forms,
+so the name alone is an unreliable key) while holding genuinely distinct adjacent stations apart
+where TfL gives them different clusters — the maintainer's worked example is keeping King's Cross
+St. Pancras separate from St Pancras International (2026-09-21). The first step ships the **bare
+name** alone. A **mode-aware direction/terminus qualifier** for which way the stop is headed — the
 stop letter `(S)` or compass bearing `(→S)` TfL prints for a bus stop, a rail platform's
 `· Southbound`, or `→ Terminus` toward a single destination, shown only when the whole stop
 shares one direction/terminus — is the maintainer's lean for the header (settled from the
@@ -699,16 +708,20 @@ Mirrors the sibling fleet:
   wraps or crowds out the countdown. **Platform and the "inbound/outbound" direction word are dropped from the card** — the
   destination is the direction signal a rider reads; platform stays in the model for a
   later detail surface. **The stop name is not on the card but returns as a group header**:
-  the list is **clustered by stop, one header per stop**, showing the **bare stop name** in
-  this step. A mode-aware direction/terminus qualifier (stop letter `(S)` / bearing `(→S)`
+  the list is **clustered by place (stops sharing a cluster — a junction's poles, a
+  station's platforms), one header per place**, showing the **bare name** in
+  this step. The cluster key is TfL's `stationNaptan` where the nearby lookup gives one,
+  else the cleaned display name — keying on TfL's own cluster keeps a station it spells
+  several ways together while holding distinct adjacent stations (King's Cross St. Pancras
+  vs St Pancras International) apart. A mode-aware direction/terminus qualifier (stop letter `(S)` / bearing `(→S)`
   for a bus, `· Southbound` for a rail platform, else `→ Terminus`, only when the whole stop
   shares one) is the maintainer's lean but is **deferred to a follow-up**, along with the
   per-direction grain at a busy interchange (both mocked 2026-09-21; letter/bearing also
   pending capture of TfL's StopPoint indicator — `TODO.md`). Its cost is length — a busy stop is many cards — which starring (ranking,
   distinct from watched-stop membership) and, later, smarter selection are meant to manage.
   The list orders the watched stops' cards location-free (soonest-first, starred pinned),
-  so it works with location denied; the stop grouping then clusters that order by stop (a
-  stop's cards stay adjacent, led by its soonest) without changing which stop leads.
+  so it works with location denied; the grouping then clusters that order by place (a
+  place's cards stay adjacent, led by its soonest) without changing which place leads.
   Distance ranking is for *finding* stops, not ordering this list (D1). A more compact
   **(service, stop) card that swipes between directions** is
   the leading candidate to iterate toward, but it hides the other direction behind a

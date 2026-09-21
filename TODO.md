@@ -264,6 +264,17 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       showing the **bare stop name**, with each stop's own warning leading its block (option
       B, warnings-lead-their-stop). `StopGrouping` + `StopGroupHeader` in `MainScreen`. The
       direction/terminus qualifier was deliberately left out of this step — see below.
+- [x] **Group by place, not stop id — merge poles under one header, keyed on TfL's cluster**
+      (maintainer, 2026-09-21). Two poles of a bus junction (or a station's platforms) are
+      distinct stop ids for one boarding place; grouping by id split them into two identical
+      headers. `StopGrouping.groupByStop` now clusters by `clusterId` (`clusterKeyOf`), so a
+      junction reads as one place — the way a Tube station's single id already did — with both
+      directions' cards under one header. `StopGroup` drops its single `stopId` (a group may
+      span poles). The cluster key is TfL's `stationNaptan` from the nearby lookup where it
+      gives one, else the cleaned display name — the name alone was an unreliable key (TfL
+      spells one station several ways), and TfL's own cluster holds distinct adjacent stations
+      (King's Cross St. Pancras vs St Pancras International) apart. Not the final grain design;
+      the per-direction subhead (below) rides on top.
   - [ ] **Add the direction/terminus qualifier to the header** (maintainer's lean, settled
         from mocks 2026-09-21). A mode-aware suffix beside the stop name, best form first:
         `(S)` stop letter → `(→S)` compass bearing (bus) → `· Southbound` (rail platform) →
