@@ -314,6 +314,99 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `near-me headers show each stop's distance`() {
+        // On the near-me list (distances present) each stop's header carries its own distance in
+        // parens after the name, so a rider can judge which nearby stop to walk to; the watched
+        // list (no distances) shows none (D1). Captured as a baseline so the near-me header
+        // layout is covered visually (Codex, PR #82), not only by the assertions below. Synthetic
+        // distances and public stop ids/names only (SPEC *Privacy*).
+        capture("main-near-me.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), lineStatuses = statuses()),
+                now,
+                {},
+                stopDistanceMeters = mapOf(
+                    "940GZZLUKSX" to 120.0,
+                    "940GZZLUOXC" to 1200.0,
+                ),
+            )
+        }
+        // Meters below a kilometer, km above — each stop's own distance, not one shared value.
+        // The distance is a reserved node beside the name, so name and distance read separately.
+        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertExists()
+        composeRule.onNodeWithText("(120 m)", substring = true).assertExists()
+        composeRule.onNodeWithText("OXFORD CIRCUS").assertExists()
+        composeRule.onNodeWithText("(1.2 km)", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a lone near-me stop still shows its name and distance`() {
+        // A single nearby stop suppresses the watched-list header (StopGroup.showHeader is false
+        // for a lone non-closed stop), but on the near-me path the name and distance must still
+        // show — otherwise a one-stop result (nothing inside the inner radius, or dedup
+        // collapsing to one group) drops both (Codex, PR #82). Logic-only — no baseline.
+        // Synthetic distance and public stop id/name only (SPEC *Privacy*).
+        val stop = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            listOf(dep("victoria", "Victoria", "southbound", "Brixton", 120, "Platform 1")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUKSX" to 300.0),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertExists()
+        composeRule.onNodeWithText("(300 m)", substring = true).assertExists()
+    }
+
+    @Test
+    fun `the near-me distance stays visible when a long stop name clips`() {
+        // A long stop name at a large font on a narrow row must not push the distance off the
+        // end: the name clips, the distance is reserved and stays within the row (Codex, PR #82) —
+        // the same reserved-trailing-element discipline as the departure row's countdown.
+        // Logic-only — no baseline. Public station name + synthetic distance only (SPEC *Privacy*).
+        val stop = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras International",
+            listOf(dep("victoria", "Victoria", "southbound", "Brixton", 120, "Platform 1")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                val base = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density = base.density, fontScale = 2f),
+                ) {
+                    Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // The distance keeps real width and stays within the row rather than clipping off the end
+        // behind the long name (which itself clips, as the reserved element is measured first).
+        val bounds = composeRule.onNodeWithText("(120 m)", substring = true).getUnclippedBoundsInRoot()
+        assertTrue("distance should keep width, was ${bounds.right - bounds.left}", bounds.right - bounds.left > 0.dp)
+        assertTrue("distance should stay within the row, right was ${bounds.right}", bounds.right <= 412.dp)
+    }
+
+    @Test
     fun `via branch shown in parens`() {
         // The Northern line's branch (TfL's `towards` "via Charing Cross") shows parenthesized
         // after the terminus, so a rider can pick the train by its central trunk (SPEC
