@@ -133,6 +133,46 @@ object NearbySelection {
         )
     }
 
+    /**
+     * The "More" bucket for a modeless cluster — one TfL listed no lines for, so its [NearbyCluster.modes]
+     * is empty. Its own "More stops" button rather than being dropped from every mode's paging (a modeless
+     * overflow cluster must stay reachable, SPEC principle 2). Empty so it never collides with a real mode.
+     */
+    const val GENERIC_MORE = ""
+
+    /** The "More" buckets a cluster is reachable under: its modes, or [GENERIC_MORE] when it has none. */
+    fun revealBuckets(cluster: NearbyCluster): Set<String> = cluster.modes.ifEmpty { setOf(GENERIC_MORE) }
+
+    /**
+     * The buckets that still have an unrevealed *more* cluster — the "More" controls to show. A mode
+     * whose farther clusters are all revealed (or has none) drops out, so its button disappears.
+     * [revealed] is the set of already-revealed cluster keys.
+     */
+    fun revealableBuckets(more: List<NearbyCluster>, revealed: Set<String>): Set<String> =
+        more.asSequence()
+            .filterNot { it.key in revealed }
+            .flatMapTo(sortedSetOf()) { revealBuckets(it) }
+
+    /**
+     * The next *more* cluster keys to reveal when the user taps "More" for [bucket] — the nearest
+     * [pageSize] of that bucket's clusters not yet revealed, in the global distance order [more] already
+     * carries. Keys (not clusters) so a caller tracking revealed identities adds them directly; empty when
+     * the bucket has nothing left to reveal. Paging [pageSize] at a time keeps each tap's fetch burst
+     * bounded, matching the eager cap.
+     */
+    fun nextReveal(
+        more: List<NearbyCluster>,
+        bucket: String,
+        revealed: Set<String>,
+        pageSize: Int = CLUSTERS_PER_MODE,
+    ): List<String> =
+        more.asSequence()
+            .filterNot { it.key in revealed }
+            .filter { bucket in revealBuckets(it) }
+            .map { it.key }
+            .take(pageSize)
+            .toList()
+
     /** The distinct transport modes a stop serves, from its lines (blank modes ignored). */
     private fun StopLocation.modes(): Set<String> =
         lines.mapNotNullTo(mutableSetOf()) { it.mode.takeIf(String::isNotBlank) }

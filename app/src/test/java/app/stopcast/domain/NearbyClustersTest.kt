@@ -183,4 +183,51 @@ class NearbyClustersTest {
         assertEquals(listOf(listOf("b1")), result.eager.ids())
         assertEquals(listOf(listOf("b2")), result.more.ids())
     }
+
+    // --- The "More" reveal paging (NearbySelection.nextReveal / revealableBuckets) ---
+
+    // A single-stop cluster [meters] out serving [modes] (none = a modeless cluster).
+    private fun cluster(key: String, meters: Double, vararg modes: String) =
+        NearbySelection.NearbyCluster(
+            key = key,
+            stops = listOf(
+                StopLocation(
+                    id = key, name = key, latitude = meters / 111_320.0, longitude = 0.0,
+                    lines = modes.map { LineRef("$it-$key", key, it) },
+                ),
+            ),
+            distanceMeters = meters,
+        )
+
+    @Test
+    fun `nextReveal pages a bucket's clusters nearest-first, skipping revealed`() {
+        val more = listOf(cluster("C3", 300.0, "bus"), cluster("C4", 400.0, "bus"), cluster("C5", 500.0, "bus"))
+        // One tap reveals the nearest two, the next tap the last, then nothing is left.
+        assertEquals(listOf("C3", "C4"), NearbySelection.nextReveal(more, "bus", emptySet()))
+        assertEquals(listOf("C5"), NearbySelection.nextReveal(more, "bus", setOf("C3", "C4")))
+        assertEquals(emptyList<String>(), NearbySelection.nextReveal(more, "bus", setOf("C3", "C4", "C5")))
+    }
+
+    @Test
+    fun `a two-mode cluster is revealable under either mode`() {
+        val more = listOf(cluster("HUB", 500.0, "tube", "bus"), cluster("CX", 600.0, "bus"))
+        assertEquals(listOf("HUB"), NearbySelection.nextReveal(more, "tube", emptySet()))
+        assertEquals(listOf("HUB", "CX"), NearbySelection.nextReveal(more, "bus", emptySet()))
+    }
+
+    @Test
+    fun `a modeless cluster reveals under the generic bucket, not a real mode`() {
+        val more = listOf(cluster("M1", 300.0))
+        assertEquals(setOf(NearbySelection.GENERIC_MORE), NearbySelection.revealableBuckets(more, emptySet()))
+        assertEquals(listOf("M1"), NearbySelection.nextReveal(more, NearbySelection.GENERIC_MORE, emptySet()))
+        assertEquals(emptyList<String>(), NearbySelection.nextReveal(more, "bus", emptySet()))
+    }
+
+    @Test
+    fun `revealableBuckets lists only buckets with an unrevealed cluster`() {
+        val more = listOf(cluster("C3", 300.0, "bus"), cluster("U3", 600.0, "tube"))
+        assertEquals(setOf("bus", "tube"), NearbySelection.revealableBuckets(more, emptySet()))
+        assertEquals(setOf("tube"), NearbySelection.revealableBuckets(more, setOf("C3")))
+        assertEquals(emptySet<String>(), NearbySelection.revealableBuckets(more, setOf("C3", "U3")))
+    }
 }
