@@ -86,6 +86,7 @@ import app.stopcast.domain.DestinationAbbreviations
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
+import app.stopcast.domain.StopDistance
 import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.ui.theme.LocalStarredBorderColor
@@ -403,7 +404,7 @@ private fun LoadedContent(
                     RefreshButton(onRefresh, Modifier.padding(top = 16.dp))
                 }
             } else {
-                DepartureList(rows, now, starred, onToggleStar, starringAvailable, Modifier.fillMaxSize())
+                DepartureList(rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters, Modifier.fillMaxSize())
             }
         }
     }
@@ -457,6 +458,7 @@ private fun DepartureList(
     starred: Set<StarredRow>,
     onToggleStar: (DepartureRow) -> Unit,
     starringAvailable: Boolean,
+    stopDistanceMeters: Map<String, Double>,
     modifier: Modifier,
 ) {
     // Cluster the flat rows into per-place groups (stops sharing a name — a junction's poles, a
@@ -469,9 +471,23 @@ private fun DepartureList(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         groups.forEachIndexed { index, group ->
-            if (group.showHeader) {
+            // The near-me list carries a per-stop distance; the watched list doesn't, so the
+            // label is present only when this place's stops are in the map (D1). A place groups
+            // several stops (a junction's poles), so the header shows the distance to the
+            // *closest* of them — the one a rider walks to.
+            val distanceLabel = group.rows
+                .mapNotNull { stopDistanceMeters[it.stopId] }
+                .minOrNull()
+                ?.let(StopDistance::label)
+            // Draw the header when the grouping asks for it (more than one place, or a closure)
+            // OR whenever there's a distance to show. A lone near-me place suppresses the
+            // watched-list header (StopGroup.showHeader is false for a single non-closed place),
+            // but on the near-me path it must still show its name and distance — otherwise a
+            // one-place result (nothing inside the inner radius, or dedup collapsing to one group)
+            // would drop both the promised distance and the place name (Codex, PR #82).
+            if (group.showHeader || distanceLabel != null) {
                 item(key = "header|${group.key}") {
-                    StopGroupHeader(group.stopName, firstGroup = index == 0)
+                    StopGroupHeader(group.stopName, distanceLabel, firstGroup = index == 0)
                 }
             }
             items(group.rows, key = { "${it.stopId}|${it.lineId}|${it.directionKey}" }) { row ->
@@ -493,25 +509,60 @@ private fun DepartureList(
  * role. The name hard-truncates (no ellipsis) at the edge. Extra top space (past the list's
  * 8dp item gap) marks the group break; the first group takes none. The mode-aware
  * direction/terminus qualifier is deferred to a follow-up (see `StopGrouping`).
+ *
+ * [distanceLabel], when set, follows the name in parens ("… (120 m)") — the near-me list's own
+ * distance to this stop, so a rider can judge which nearby stop to walk to. It is null on the
+ * location-free watched list, which carries no distance (D1). The distance is not uppercased, so
+ * its unit stays lowercase, and it is a **reserved** trailing element: a long name clips rather
+ * than pushing the distance off the edge (the same discipline as the departure row's countdown).
  */
 @Composable
-private fun StopGroupHeader(name: String, firstGroup: Boolean) {
+private fun StopGroupHeader(name: String, distanceLabel: String?, firstGroup: Boolean) {
     // labelMedium is the same role the freshness stamp uses; the tracking gives the small-caps
     // read. uppercase() is Kotlin's locale-invariant overload (safe from the Turkish-ı trap).
     val style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.8.sp)
-    Text(
-        text = name.uppercase(),
-        style = style,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        softWrap = false,
-        // Truncate at the edge rather than elide — a stop name is recognized from its start.
-        overflow = TextOverflow.Clip,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 4.dp, end = 4.dp, top = if (firstGroup) 0.dp else 12.dp, bottom = 0.dp),
-    )
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    val headerModifier = Modifier
+        .fillMaxWidth()
+        .padding(start = 4.dp, end = 4.dp, top = if (firstGroup) 0.dp else 12.dp, bottom = 0.dp)
+    if (distanceLabel == null) {
+        // Watched list: no distance, so the header is the bare name (rendering unchanged).
+        Text(
+            text = name.uppercase(),
+            style = style,
+            fontWeight = FontWeight.SemiBold,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+            // Truncate at the edge rather than elide — a stop name is recognized from its start.
+            overflow = TextOverflow.Clip,
+            modifier = headerModifier,
+        )
+        return
+    }
+    // Near-me list: the distance is an unweighted trailing element (measured first), so a long
+    // name clips instead of pushing the distance off the end (Codex, PR #82). fill = false lets
+    // the distance sit right after a short name rather than pinned to the far edge.
+    Row(modifier = headerModifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = name.uppercase(),
+            style = style,
+            fontWeight = FontWeight.SemiBold,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Text(
+            text = " ($distanceLabel)",
+            style = style,
+            fontWeight = FontWeight.SemiBold,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
 }
 
 @Composable

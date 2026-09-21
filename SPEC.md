@@ -122,7 +122,12 @@ The app finds stops two ways:
   closest stop first**, with soonest-first breaking a same-stop tie (a stop's several services
   are equidistant); warnings still lead and starred rows are still pinned above it. Distance
   orders only this location-derived list — never the location-free watched list, which stays
-  soonest-first (D1). That order is a provisional starting point to judge on a device (it keeps
+  soonest-first (D1). Each near-me stop's header also **shows its distance** in parens after
+  the name ("Oxford Circus (120 m)"), so a rider can judge which of two nearby stops to walk
+  to rather than only reading the order; the watched list carries no distance and shows none
+  (D1). The unit is metric (m/km) for now; making it follow the user's locale (m/yd, km/mi) and
+  switching to a fractional large unit for longer distances are in `TODO.md`. That order is a
+  provisional starting point to judge on a device (it keeps
   what's nearest on top and cuts reshuffles, at the cost of the closest stop leading even when
   nothing leaves it soon); the reasoning and alternatives live in `TODO.md`. (How the
   *services* a line repeats across adjacent stops collapse to one row is *Departures*; this is

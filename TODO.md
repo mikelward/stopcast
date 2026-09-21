@@ -421,6 +421,19 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       "far coverage stop doesn't jump the queue" outcome without a threshold to tune, so the
       band split is dropped as the starting point; revisit only if pure distance reads worse on
       a device than banding would.
+  - [x] **Show each near-me stop's distance in its group header** (landed here). The near-me
+        list shows each stop's distance in parens after the name ("Oxford Circus (120 m)"), so a
+        rider can judge which nearby stop to walk to rather than only reading the order; the
+        watched list stays location-free and shows none (D1). Interim unit is **metric, m/km**
+        via the pure `StopDistance.label` (nearest 10 m below 1 km, nearest 0.1 km above, floored
+        at "10 m" so a fix on the stop doesn't read "0 m"). SPEC *Finding stops* updated.
+  - [ ] **Distance unit: follow the user's locale, and switch to a fractional large unit past
+        ~500 m** (maintainer, 2026-09-21). The header distance should use the **locale** — meters
+        or **yards** for short distances, **km or miles** for long — and switch from the small
+        unit to a **fraction of the large unit at ~500 m** ("0.6 km" / "0.4 mi") rather than
+        staying in the small unit up to ~1 km as the interim `StopDistance.label` does. Feed the
+        locale/unit choice into the pure formatter (don't read locale inside it) so the rounding
+        stays JVM-testable. Until then the interim metric m/km ships.
 - [ ] **Search for a stop by name or line, and pin it.** Beyond nearby discovery, let the
       user type a **stop/station name** (TfL `/StopPoint/Search`) *or* a **line**
       (`/Line/Search/{query}` — the query is a path segment, not a `?query=` parameter like the
