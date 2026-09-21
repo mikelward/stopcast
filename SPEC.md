@@ -223,12 +223,17 @@ degrades to "show what TfL said", never to a confident wrong merge.
 
 The **branch outranks the terminus for space**, because on a branching line the trunk is
 what tells two otherwise-identical trains apart — losing it defeats the row. So where the
-pair won't fit, the branch is kept and the **destination is truncated with a clean cut**
-— hard-clipped, no ellipsis (maintainer preference: a `…` on a narrow row crushed the
-name to a glyph and read as a glitch) — to make room ("Batter (Charing X)"). A
-width-adaptive form that shortens the branch further under pressure (to `Charing`, then
-`CX`), keeping more of the destination than a clean cut does, is a tracked refinement
-(`TODO.md`).
+pair won't fit, the branch is kept (its board short form, "Charing X") and the **terminus
+yields**, in two steps: it first shortens common whole words to a compact form
+(`East`→`E.`, `Street`→`St`, and the rest — `DestinationAbbreviations`), and only a name
+still too long after that is **hard-clipped with a clean cut** — no ellipsis (maintainer
+preference: a `…` on a narrow row crushed the name to a glyph and read as a glitch). So a
+tight row reads "E. Finchley", or "Batter (Charing X)" at the extreme. The full name shows
+whenever it fits and stays the accessible label throughout. Giving branch and terminus
+equal width was considered and declined: the branch is always short, so equal space would
+only clip the terminus sooner. A fuller rider-readable branch form under pressure
+("Charing X"→"via Charing Cross"), which would reopen that balance, remains a tracked
+refinement (`TODO.md`).
 
 The row set is not purely prediction-derived: a watched stop or line with a **known
 disruption** but **zero predictions** still contributes a row — a status row (for the

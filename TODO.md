@@ -249,6 +249,16 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       folded to one spelling per trunk, on fetch and on snapshot restore. The
       width-adaptive shortening above (one full word per half, the `Charing` / `CX` rungs,
       truncation rather than elision) stays this item's remaining follow-up.
+      **Partly shipped (PR #76):** the *destination* now word-abbreviates before it clips —
+      a whole-word map (`DestinationAbbreviations`: `East`→`E.`, `Street`→`St`, …, single
+      letters dotted, multi-letter bare) applied only when the full name wouldn't fit, then a
+      clean clip (no ellipsis). Still to do here: the *branch* side of the same treatment and
+      the one-full-word-per-half allocation across both halves. Note there are now two maps —
+      `abbreviateBranch` (branch) and `DestinationAbbreviations` (terminus) — that a fuller
+      version might converge. Equal branch/terminus width was considered and **declined**
+      (2026-09-21): the branch is always the short board form, so equal space would only clip
+      the terminus sooner; revisit as proportional balancing only if a fuller branch form
+      (`via Charing Cross`) is ever shown.
 - [ ] **Show the bus-stop letter (and direction) in the stop name** (maintainer, 2026-09-20).
       A bus stop's letter and served direction are what disambiguate several "Queens Avenue"
       stops; explore the format. Candidates: full "Queens Avenue · Stop E · towards Archway";

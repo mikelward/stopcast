@@ -615,6 +615,56 @@ class MainScreenScreenshotTest {
         }
     }
 
+    @Test
+    fun `a destination that fits keeps its full name`() {
+        // Shrink step, not always-on: at a normal width the full name shows, unabbreviated.
+        val stop = StopArrivals(
+            "940GZZLUEFY",
+            "East Finchley",
+            listOf(dep("northern", "Northern", "northbound", "East Finchley", 120, "Platform 1")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("East Finchley").assertExists()
+    }
+
+    @Test
+    fun `a long destination abbreviates common words before truncating`() {
+        // At a large font on a narrow row the full name won't fit, so common whole words are
+        // shortened ("Great Portland Street" -> "Gt Portland St") before any clean cut — while
+        // the full name stays the accessible label. Logic-only — no baseline.
+        val stop = StopArrivals(
+            "940GZZLUGPS",
+            "Great Portland Street",
+            listOf(dep("hammersmith-city", "Hammersmith & City", "eastbound", "Great Portland Street", 60, "Platform 1")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                val base = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density = base.density, fontScale = 2f),
+                ) {
+                    Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
+                        MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // The abbreviated form is what's rendered...
+        composeRule.onNodeWithText("Gt Portland St").assertExists()
+        // ...and a screen reader still hears the full destination.
+        composeRule.onNodeWithContentDescription("Great Portland Street").assertExists()
+    }
+
     private fun capture(name: String, dark: Boolean = false, content: @Composable () -> Unit) {
         composeRule.setContent {
             StopCastTheme(darkTheme = dark, dynamicColor = false) {
