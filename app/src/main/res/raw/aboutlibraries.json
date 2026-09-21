@@ -170,6 +170,28 @@
             ]
         },
         {
+            "uniqueId": "androidx.asynclayoutinflater:asynclayoutinflater",
+            "artifactVersion": "1.0.0",
+            "name": "Support Async Layout Inflater",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
             "uniqueId": "androidx.autofill:autofill",
             "artifactVersion": "1.0.0",
             "name": "AndroidX Autofill",
@@ -736,6 +758,28 @@
             ]
         },
         {
+            "uniqueId": "androidx.coordinatorlayout:coordinatorlayout",
+            "artifactVersion": "1.0.0",
+            "name": "Support Coordinator Layout",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
             "uniqueId": "androidx.core:core",
             "artifactVersion": "1.19.0",
             "name": "Core",
@@ -827,6 +871,50 @@
             "scm": {
                 "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
                 "url": "https://cs.android.com/androidx/platform/frameworks/support"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "androidx.cursoradapter:cursoradapter",
+            "artifactVersion": "1.0.0",
+            "name": "Support Cursor Adapter",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "androidx.customview:customview",
+            "artifactVersion": "1.0.0",
+            "name": "Support Custom View",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
             },
             "licenses": [
                 "Apache-2.0"
@@ -1033,6 +1121,50 @@
             ]
         },
         {
+            "uniqueId": "androidx.documentfile:documentfile",
+            "artifactVersion": "1.0.0",
+            "name": "Support Document File",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "androidx.drawerlayout:drawerlayout",
+            "artifactVersion": "1.0.0",
+            "name": "Support Drawer Layout",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
             "uniqueId": "androidx.emoji2:emoji2",
             "artifactVersion": "1.4.0",
             "name": "Emoji2",
@@ -1046,6 +1178,28 @@
             "scm": {
                 "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
                 "url": "https://cs.android.com/androidx/platform/frameworks/support"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "androidx.fragment:fragment",
+            "artifactVersion": "1.0.0",
+            "name": "Support fragment",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
             },
             "licenses": [
                 "Apache-2.0"
@@ -1183,6 +1337,50 @@
             "uniqueId": "androidx.interpolator:interpolator",
             "artifactVersion": "1.0.0",
             "name": "Support Interpolators",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "androidx.legacy:legacy-support-core-ui",
+            "artifactVersion": "1.0.0",
+            "name": "Support core UI",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "androidx.legacy:legacy-support-core-utils",
+            "artifactVersion": "1.0.0",
+            "name": "Support core utils",
             "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
             "website": "http://developer.android.com/tools/extras/support-library.html",
             "developers": [
@@ -1452,6 +1650,31 @@
             ]
         },
         {
+            "uniqueId": "androidx.lifecycle:lifecycle-viewmodel",
+            "artifactVersion": "2.11.0",
+            "name": "Lifecycle ViewModel",
+            "description": "Android Lifecycle ViewModel",
+            "website": "https://developer.android.com/jetpack/androidx/releases/lifecycle#2.11.0",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "organization": {
+                "name": "The Android Open Source Project"
+            },
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "https://cs.android.com/androidx/platform/frameworks/support"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
             "uniqueId": "androidx.lifecycle:lifecycle-viewmodel-android",
             "artifactVersion": "2.11.0",
             "name": "Lifecycle ViewModel",
@@ -1552,6 +1775,50 @@
             ]
         },
         {
+            "uniqueId": "androidx.loader:loader",
+            "artifactVersion": "1.0.0",
+            "name": "Support loader",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "androidx.localbroadcastmanager:localbroadcastmanager",
+            "artifactVersion": "1.0.0",
+            "name": "Support Local Broadcast Manager",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
             "uniqueId": "androidx.navigationevent:navigationevent-android",
             "artifactVersion": "1.0.0",
             "name": "Navigation Event",
@@ -1593,6 +1860,28 @@
             "scm": {
                 "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
                 "url": "https://cs.android.com/androidx/platform/frameworks/support"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "androidx.print:print",
+            "artifactVersion": "1.0.0",
+            "name": "Support Print",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
             },
             "licenses": [
                 "Apache-2.0"
@@ -1752,6 +2041,28 @@
             ]
         },
         {
+            "uniqueId": "androidx.slidingpanelayout:slidingpanelayout",
+            "artifactVersion": "1.0.0",
+            "name": "Support Sliding Pane Layout",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
             "uniqueId": "androidx.sqlite:sqlite-android",
             "artifactVersion": "2.5.0",
             "name": "SQLite",
@@ -1824,6 +2135,28 @@
             ]
         },
         {
+            "uniqueId": "androidx.swiperefreshlayout:swiperefreshlayout",
+            "artifactVersion": "1.0.0",
+            "name": "Support Custom View",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
             "uniqueId": "androidx.tracing:tracing",
             "artifactVersion": "1.2.0",
             "name": "Android Tracing",
@@ -1872,6 +2205,28 @@
             "artifactVersion": "1.1.1",
             "name": "VersionedParcelable",
             "description": "Provides a stable but relatively compact binary serialization format that can be passed across processes or persisted safely.",
+            "website": "http://developer.android.com/tools/extras/support-library.html",
+            "developers": [
+                {
+                    "name": "The Android Open Source Project"
+                }
+            ],
+            "scm": {
+                "connection": "scm:git:https://android.googlesource.com/platform/frameworks/support",
+                "url": "http://source.android.com"
+            },
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "androidx.viewpager:viewpager",
+            "artifactVersion": "1.0.0",
+            "name": "Support View Pager",
+            "description": "The Support Library is a static library that you can add to your Android application in order to use APIs that are either not available for older platform versions or utility APIs that aren't a part of the framework APIs. Compatible on devices running API 14 or later.",
             "website": "http://developer.android.com/tools/extras/support-library.html",
             "developers": [
                 {
@@ -1984,6 +2339,66 @@
             },
             "licenses": [
                 "Apache-2.0"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "com.google.android.gms:play-services-basement",
+            "artifactVersion": "18.1.0",
+            "name": "play-services-basement",
+            "description": "",
+            "developers": [
+                
+            ],
+            "licenses": [
+                "ASDKL"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "com.google.android.gms:play-services-tasks",
+            "artifactVersion": "18.0.2",
+            "name": "play-services-tasks",
+            "description": "",
+            "developers": [
+                
+            ],
+            "licenses": [
+                "ASDKL"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "com.google.android.play:app-update",
+            "artifactVersion": "2.1.0",
+            "name": "app-update",
+            "description": "",
+            "developers": [
+                
+            ],
+            "licenses": [
+                "PCSDKToS"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
+            "uniqueId": "com.google.android.play:core-common",
+            "artifactVersion": "2.0.3",
+            "name": "core-common",
+            "description": "",
+            "developers": [
+                
+            ],
+            "licenses": [
+                "PCSDKToS"
             ],
             "funding": [
                 
@@ -2815,6 +3230,13 @@
         }
     ],
     "licenses": {
+        "ASDKL": {
+            "name": "Android Software Development Kit License",
+            "url": "https://developer.android.com/studio/terms.html",
+            "internalHash": "ASDKL",
+            "spdxId": "ASDKL",
+            "hash": "ASDKL"
+        },
         "Apache-2.0": {
             "name": "Apache License 2.0",
             "url": "https://spdx.org/licenses/Apache-2.0.html",
@@ -2835,6 +3257,13 @@
             "internalHash": "MIT",
             "spdxId": "MIT",
             "hash": "MIT"
+        },
+        "PCSDKToS": {
+            "name": "Play Core Software Development Kit Terms of Service",
+            "url": "https://developer.android.com/guide/playcore/license",
+            "internalHash": "PCSDKToS",
+            "spdxId": "PCSDKToS",
+            "hash": "PCSDKToS"
         }
     }
 }

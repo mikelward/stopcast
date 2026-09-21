@@ -909,6 +909,14 @@ and these carry the rest as their own PRs:
 
 ## Phase 5 — Distribution and polish
 
+- [x] **"Update available" indicator (maintainer, 2026-09-21).** A red dot on the
+      departures overflow (⋮) icon plus an "Update available" menu item that opens the Play
+      listing, driven by a release-only Play In-App Update *availability* check
+      (`PlayUpdateChecker`, gated by `PLAY_UPDATE_CHECKS_ENABLED`), rechecked on each
+      foreground. Detection copied from the sibling repos; the presentation is a dot, not
+      their banner (maintainer's call), and the tap opens Play rather than running the
+      in-app flexible flow. Follow-up if ever wanted: the full in-app flexible download +
+      restart flow (the peers' behavior) behind the item.
 - [ ] Play internal-track deploy proven end to end; signing keystore via secrets. **The
       pipeline itself landed in Phase 0** (see the Deploy-job item there and
       `dev-docs/play-store-internal-track.md`); what remains is the human setup — upload keystore,
