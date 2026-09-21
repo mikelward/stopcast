@@ -78,6 +78,7 @@ import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureLabels
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.DestinationAbbreviations
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
@@ -619,10 +620,11 @@ private fun StopClosureContent(stopName: String, disruption: String) {
  * soonest destination and for each divergent one of a branching direction alike, so they
  * render at the **same weight and the same indentation** (all sit in the card's one
  * destination column, beside the pill). [times] empty is a status row: the line is named
- * with no countdown. The destination is hard-truncated — a clean cut, no ellipsis
- * (maintainer preference) — so a long name gives way rather than crowding out the
- * countdown. The whole destination line — terminus and its branch/via — clips; only the
- * countdown keeps its ellipsis (below).
+ * with no countdown. A long destination first shortens common whole words
+ * ([DestinationAbbreviations]) and then, if it still doesn't fit, is hard-truncated with a
+ * clean cut — no ellipsis (maintainer preference) — rather than crowding out the countdown.
+ * The whole destination line — terminus and its branch/via — clips; only the countdown
+ * keeps its ellipsis (below).
  */
 @Composable
 private fun DestinationLine(
@@ -633,7 +635,8 @@ private fun DestinationLine(
     modifier: Modifier = Modifier,
     // The "via" branch (TfL's `towards`), shown parenthesized after the destination — the
     // cue a rider uses to pick a train ("Battersea Power (Charing X)"). Null for most
-    // services, so the common row never pays the measuring path below.
+    // services; a branch-free row whose name has no abbreviatable word takes the cheap
+    // no-measuring path below.
     branch: String? = null,
 ) {
     Row(
@@ -641,47 +644,86 @@ private fun DestinationLine(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (branch == null) {
-            // Common case — no branch, no measuring: the destination takes the space the
-            // countdown leaves and is hard-clipped (a clean cut, no ellipsis) if it must.
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                modifier = Modifier.weight(1f).padding(end = 12.dp),
-            )
+            val style = MaterialTheme.typography.titleMedium
+            val abbreviated = remember(label) { DestinationAbbreviations.abbreviate(label) }
+            if (abbreviated == label) {
+                // Nothing to abbreviate — keep the cheap no-measuring path: the destination
+                // takes the space the countdown leaves and is hard-clipped (a clean cut, no
+                // ellipsis) if it must.
+                Text(
+                    text = label,
+                    style = style,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                )
+            } else {
+                // The name has a word we can shorten, so measure: show it in full when it
+                // fits, shrink to the abbreviated form when it wouldn't, and clip only if even
+                // that is too wide (SPEC destination-label — abbreviate before truncating).
+                BoxWithConstraints(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    val measurer = rememberTextMeasurer()
+                    val fullWidth = remember(label) { measurer.measure(label, style, maxLines = 1).size.width }
+                    val display = if (fullWidth <= constraints.maxWidth) label else abbreviated
+                    Text(
+                        text = display,
+                        style = style,
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                        // Keep the full name for a screen reader when the visible text is shortened.
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (display != label) Modifier.semantics { contentDescription = label }
+                                else Modifier,
+                            ),
+                    )
+                }
+            }
         } else {
             // The branch is the cue that tells a branching line's two trunks apart, so it
-            // outranks the terminus for space: it keeps its label and the destination
-            // truncates to make the room (SPEC destination-label). The label is already the
-            // normalized short board form ("Charing X"), so [abbreviateBranch] is a no-op here; a
-            // fuller rider-readable form under width pressure is a tracked follow-up (TODO).
+            // outranks the terminus for space: the full branch is kept while an abbreviated
+            // terminus can sit beside it, and the terminus yields first — full name, then its
+            // abbreviated form, then a clean clip (SPEC destination-label). The branch's own
+            // label is already the board short form ("Charing X"), so [abbreviateBranch] is a
+            // no-op here; a fuller rider-readable form under width pressure is a follow-up (TODO).
             BoxWithConstraints(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                 val style = MaterialTheme.typography.titleMedium
                 val measurer = rememberTextMeasurer()
-                val full = "($branch)"
+                val fullBranch = "($branch)"
+                val abbrevBranch = "(${abbreviateBranch(branch)})"
+                val abbreviatedLabel = remember(label) { DestinationAbbreviations.abbreviate(label) }
                 val labelWidth = remember(label) { measurer.measure(label, style, maxLines = 1).size.width }
-                val fullWidth = remember(full) { measurer.measure(full, style, maxLines = 1).size.width }
+                val abbrevLabelWidth = remember(abbreviatedLabel) { measurer.measure(abbreviatedLabel, style, maxLines = 1).size.width }
+                val fullBranchWidth = remember(fullBranch) { measurer.measure(fullBranch, style, maxLines = 1).size.width }
+                val abbrevBranchWidth = remember(abbrevBranch) { measurer.measure(abbrevBranch, style, maxLines = 1).size.width }
                 val gapPx = with(LocalDensity.current) { 8.dp.roundToPx() }
-                val branchText =
-                    if (labelWidth + gapPx + fullWidth <= constraints.maxWidth) full
-                    else "(${abbreviateBranch(branch)})"
+                // Keep the full branch while even the abbreviated terminus fits beside it.
+                val useFullBranch = abbrevLabelWidth + gapPx + fullBranchWidth <= constraints.maxWidth
+                val branchText = if (useFullBranch) fullBranch else abbrevBranch
+                val branchWidth = if (useFullBranch) fullBranchWidth else abbrevBranchWidth
+                // The terminus takes what the branch leaves: full name if it fits, else the
+                // abbreviated form (then a clean clip if even that is too wide).
+                val availForLabel = constraints.maxWidth - gapPx - branchWidth
+                val displayLabel = if (labelWidth <= availForLabel) label else abbreviatedLabel
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = label,
+                        text = displayLabel,
                         style = style,
                         maxLines = 1,
-                        // Hard-clipped (a clean cut, no ellipsis), like the branch beside it —
-                        // though the abbreviation ladder above means the branch almost never
-                        // reaches an overflow.
+                        // Hard-clipped (a clean cut, no ellipsis) once abbreviating hasn't made
+                        // it fit; fill = false so a short label doesn't gap before the branch.
                         overflow = TextOverflow.Clip,
-                        // Yields to the branch: fill = false so a short label doesn't leave a
-                        // gap before the branch, but it clips once the branch has taken its
-                        // room.
-                        modifier = Modifier.weight(1f, fill = false),
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            // Keep the full name for a screen reader when the visible text is shortened.
+                            .then(
+                                if (displayLabel != label) Modifier.semantics { contentDescription = label }
+                                else Modifier,
+                            ),
                     )
                     Text(
                         text = branchText,
