@@ -64,9 +64,9 @@ exercises the whole spine the widget later renders from.
       `/StopPoint/{id}/Arrivals`, kotlinx.serialization DTOs mapped to `Departure`,
       Ktor + OkHttp, recorded-fixture (`MockEngine`) tests. (Nearby `/StopPoint` lookup
       lands with Phase 2's "near me now".)
-- [x] Domain (pure Kotlin, JVM-tested): arrival→countdown formatting ("Due"/"3 min"),
+- [x] Domain (pure Kotlin, JVM-tested): arrival→countdown formatting ("0 min"/"3 min"),
       soonest-first ordering, expired-prediction drop (a countdown reaching zero leaves
-      the list, never sticks at "Due"), a single shared staleness threshold, nearest-stop
+      the list, never sticks at "0 min"), a single shared staleness threshold, nearest-stop
       ranking. (`Departure`, `Countdown`, `Staleness`, `NearestStops` + JVM tests.)
 - [x] Retain TfL's `direction` (inbound/outbound) on `TflArrivalDto` → `Departure` as the
       primary grouping key — it can't be reconstructed from destination/platform in general
@@ -78,7 +78,7 @@ exercises the whole spine the widget later renders from.
       "unknown" row.
 - [x] `MainScreen`: a **flat list of compact cards, one per (service, stop, direction)**
       (D8) over a seed set this phase — line pill + destination, and the service's next few
-      countdowns **merged onto one line** ("Due · 3 · 6 min"), with the "updated N ago"
+      countdowns **merged onto one line** ("0 · 3 · 6 min"), with the "updated N ago"
       stamp and client-side countdown recompute. Ordered location-free (soonest-first).
       (The stop name is not on the card for now — see the row-merge item below.)
       **Star-to-pin lands in Phase 2 with its
@@ -747,7 +747,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       to a single character plus `…` (observed `B… (Charing X)` for a Northern-line Charing
       Cross branch) and reads as a glitch. Scope this to the **destination text only** — not
       the countdown, disruption chip, stop name, or line pill: the countdown deliberately
-      keeps its ellipsis so a cut like `Due · 3 …` stays intelligible rather than being sliced
+      keeps its ellipsis so a cut like `0 · 3 …` stays intelligible rather than being sliced
       after a separator. **Done:** the whole row destination line now uses `TextOverflow.Clip`
       — the terminus (no-branch and branch cases) and its branch/via label alike, so the line
       cuts cleanly (`Batter (Charing X)`); the countdown, disruption chip, stop name, and line

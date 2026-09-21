@@ -6,7 +6,7 @@ package app.stopcast.domain
  * and is tested against recorded fixtures via a fake or a Ktor `MockEngine`
  * (SPEC *Architecture* / *Testing*).
  *
- * Returns departures **unsorted and unfiltered**: ordering, the "Due"/"N min"
+ * Returns departures **unsorted and unfiltered**: ordering, the "0 min"/"N min"
  * label, and dropping a service that has gone are the caller's job via
  * [Countdown], recomputed from the current clock (SPEC D4). Implementations
  * throw on a transport or decode failure; the caller decides what the user sees

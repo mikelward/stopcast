@@ -145,7 +145,7 @@ class MainScreenScreenshotTest {
         }
         composeRule.onNodeWithText("Brixton").assertExists()
         // The two Brixton times merge onto one line, the unit written once (SPEC D8).
-        composeRule.onNodeWithText("Due · 4 min").assertExists()
+        composeRule.onNodeWithText("0 · 4 min").assertExists()
         // A branching direction (Central eastbound) keeps its headline destination and its
         // divergent one apart, so neither countdown sits under the wrong destination.
         composeRule.onNodeWithText("Hainault").assertExists()
@@ -561,7 +561,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `Battersea, Charing X via-branch renders as a comma list`() {
         // The literal "Battersea, Charing X" width case (maintainer, PR #92): the label joined in
-        // plain list style, filling the row beside a full three-arrival countdown ("Due · 8 · 12
+        // plain list style, filling the row beside a full three-arrival countdown ("0 · 8 · 12
         // min"), with the comma against the terminus. Public line/place names only (SPEC *Privacy*).
         val euston = StopArrivals(
             "940GZZLUEUS",
@@ -928,7 +928,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `a long line name and full merged countdown at a large font stay legible`() {
         // The worst case for width: the longest real line name (Hammersmith & City), the
-        // full three-value merged label ("Due · 3 · 6 min"), a large font, and a narrow
+        // full three-value merged label ("0 · 3 · 6 min"), a large font, and a narrow
         // screen — where an uncapped pill would consume the card and crush the countdown.
         // The pill is capped to half the card, and the countdown is the row's reserved
         // (unweighted) element, so it is measured first and keeps real width while the
@@ -970,7 +970,7 @@ class MainScreenScreenshotTest {
         // The full merged countdown keeps substantial reserved width (it leads with the
         // soonest times and ellipsizes only its tail if even the whole line is too short),
         // rather than collapsing to zero behind the pill.
-        val countBounds = composeRule.onNodeWithText("Due · 3 · 6 min").getUnclippedBoundsInRoot()
+        val countBounds = composeRule.onNodeWithText("0 · 3 · 6 min").getUnclippedBoundsInRoot()
         val countWidth = countBounds.right - countBounds.left
         assertTrue("merged countdown should keep width, was $countWidth", countWidth >= 100.dp)
     }

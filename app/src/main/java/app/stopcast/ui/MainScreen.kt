@@ -1017,7 +1017,7 @@ private fun DestinationLine(
 }
 
 /**
- * A service's merged countdown — "Due · 3 · 6 min" (SPEC D8, one line per destination).
+ * A service's merged countdown — "0 · 3 · 6 min" (SPEC D8, one line per destination).
  * Withheld as "—" once the stop is stale, since the underlying predictions are likely
  * wrong and a live-looking number would misrepresent them (SPEC D4).
  */
@@ -1035,10 +1035,10 @@ private fun CountdownLabel(
         // One line, never wrapped — the countdown is the one thing that must stay legible
         // (SPEC D8). It's the unweighted element of its row, so it's measured first and its
         // width reserved; the destination beside it ellipsizes when space is tight. In the
-        // extreme (a long pill + the full "Due · 3 · 6 min" at a large font, on a narrow
+        // extreme (a long pill + the full "0 · 3 · 6 min" at a large font, on a narrow
         // screen) even the whole line can be too short: ellipsize from the end rather than
         // hard-clip, so the soonest times — which lead the label — stay legible and the
-        // truncation reads as one ("Due · 3 …").
+        // truncation reads as one ("0 · 3 …").
         maxLines = 1,
         softWrap = false,
         overflow = TextOverflow.Ellipsis,
