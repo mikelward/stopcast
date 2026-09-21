@@ -3,8 +3,9 @@
      top-bar icon. Drawn as a single solid shape so the top bar can tint it to contrast
      with a themed tile — dark on the white light-mode tile, white on the black dark-mode
      tile. The paths are white here, but the tint always overrides. The launcher icon
-     keeps the combined ic_launcher_foreground with its fixed white arrow. Same 108
-     viewport and coordinates as that foreground, so it registers over the lines layer. -->
+     keeps the combined ic_launcher_foreground with its own fixed (black-on-white)
+     arrow. Same 108 viewport and coordinates as that foreground, so it registers over
+     the lines layer. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
