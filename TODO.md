@@ -259,13 +259,45 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       (2026-09-21): the branch is always the short board form, so equal space would only clip
       the terminus sooner; revisit as proportional balancing only if a fuller branch form
       (`via Charing Cross`) is ever shown.
-- [ ] **Show the bus-stop letter (and direction) in the stop name** (maintainer, 2026-09-20).
-      A bus stop's letter and served direction are what disambiguate several "Queens Avenue"
-      stops; explore the format. Candidates: full "Queens Avenue · Stop E · towards Archway";
-      one-line "Queens Ave E (Archway)"; two-line "Queens Avenue [E]" with a "towards Archway"
-      subtitle. Must degrade for tube/DLR/rail, which have no letter and often no stop-level
-      direction. **Parked pending the maintainer's own mock exploration** (2026-09-20) — the
-      format is theirs to settle from mocks first; don't build until then.
+- [x] **Cluster departures under a per-stop header** (maintainer, 2026-09-20; PR #78).
+      Rather than a per-card subtitle, the list clusters by stop, **one header per stop**,
+      showing the **bare stop name**, with each stop's own warning leading its block (option
+      B, warnings-lead-their-stop). `StopGrouping` + `StopGroupHeader` in `MainScreen`. The
+      direction/terminus qualifier was deliberately left out of this step — see below.
+  - [ ] **Add the direction/terminus qualifier to the header** (maintainer's lean, settled
+        from mocks 2026-09-21). A mode-aware suffix beside the stop name, best form first:
+        `(S)` stop letter → `(→S)` compass bearing (bus) → `· Southbound` (rail platform) →
+        `→ Terminus`, shown only when the whole stop shares one direction/terminus (a
+        multi-direction station keeps the bare name). Its own PR so the mode-aware chain, the
+        width handling (a long `→ Terminus` at a large font must not crowd the name to zero —
+        Codex P2 on PR #78), and the letter/bearing capture below are designed together. The
+        A/B/C grain options and the warning-ordering A/B are drawn in the maintainer's mock.
+  - [ ] **Revisit the header grain for a busy interchange** (maintainer, 2026-09-21; part of
+        the qualifier PR above). One-per-stop reads well at a handful of stops. A hub
+        (King's Cross: six lines, both ways) is a wall of cards under one bare name, with
+        direction living only in each card's destination. A finer split — a header per stop
+        *and direction*, or a stop header plus light per-direction dividers — was mocked and
+        set aside as too cluttered *in general*, but may still be worth it *for a dense
+        stop*. Judge on a device; the alternatives are drawn in the mock.
+  - [ ] **Capture TfL's StopPoint indicator to light up `(S)` / `(→S)`.** The bus stop
+        letter and compass bearing TfL prints (`stopLetter` / `indicator`, e.g. "->S") aren't
+        fetched yet — the seed carries only `StopRef(id, name)` and arrivals give
+        `platformName`, not the letter. Add the indicator to the stop metadata (StopPoint
+        fetch → persist on the watched stop) and thread it into the qualifier's letter/bearing
+        forms. Lands with Phase 2's watched-stop add flow, where bus stops enter.
+  - [ ] **Make the stop header and the route card tappable** (maintainer, 2026-09-21).
+        Tapping the station-name header and tapping a departure card should both do
+        something — a stop-detail / route-detail view. The card long-press already toggles
+        the star; a tap is a deliberate no-op today (`DepartureRowCard`), and the header has
+        no interaction. Decide the destinations and wire them.
+  - [ ] **Carry the stop grouping through the widget** (Codex, PR #78). The widget ships
+        now and, on a multi-stop snapshot, renders a flat sequence of destination rows with
+        no stop headers — so it gives no boarding location, the same gap this PR just closed
+        in the app. `StopGrouping` is pure and shared-ready; adopt it in `widgetModel` /
+        `WidgetContent`. The real work is the widget's **tight line budget** — a header costs
+        a line, so how many stops/headers/countdowns fit needs deciding (and a screenshot
+        test). Deferred to a focused follow-up, not a phase: this PR scoped the change to the
+        in-app screen.
 - [ ] **Hide services terminating at the current stop by default** (maintainer, 2026-09-20).
       A train that terminates where you're standing isn't boardable onward, so listing it as
       an upcoming departure is misleading — filter it out by default (a departure whose
@@ -290,14 +322,15 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         unknown-version raw bytes rather than treating a decode failure as corruption).
         Best built *with* that v2 (its shape is needed to build and test it); v1 is the only
         schema today, so a decode failure now is genuine corruption and correctly discarded.
-- [ ] **Restore the stop name to the departure card when the list spans more than one
+- [x] **Restore the stop name to the departure card when the list spans more than one
       stop.** The compact-card redesign dropped it (too much clutter, and implicit on a
       single-stop widget), but the current seed is already multi-stop (Oxford Circus +
       King's Cross), so a card gives no boarding location and a countdown can't be told
-      apart from the other station's (SPEC D1 / principle 1). Accepted as an MVP
-      limitation on the demo seed (maintainer, ship-MVP call); once real watched stops
-      land, show the stop (a subline, or only when >1 distinct stop is on screen) so
-      cards stay unambiguous. Codex P1 on PR #17 (`discussion_r4049648510`).
+      apart from the other station's (SPEC D1 / principle 1). Codex P1 on PR #17
+      (`discussion_r4049648510`). **Landed as a per-stop group *header*** rather than a
+      per-card subline (`StopGrouping`/`StopGroupHeader`), shown whenever >1 distinct stop
+      is on screen (or a stop is closed) — cards stay unambiguous without the stop restated
+      on every one.
 - [x] **Star** rows to reorder them to the top — ranking only, not membership; persisted
       via DataStore so a star survives restart (D8). Keyed by the full
       **`(stop, service, resolved direction key)`** identity (`DepartureRow.directionKey`:
