@@ -17,8 +17,10 @@
          trust — say it may be out of date and prompt a refresh (SPEC D4). -->
     <string name="departures_stale_empty">Departures may be out of date</string>
     <string name="refresh">Refresh</string>
-    <!-- Star toggle on a departure card: pins the service to the top of the list. The label
-         names the action, so it flips with the state (a screen reader hears what a tap does). -->
+    <!-- Star (pin-to-top) on a departure card, toggled by a long-press on the card; a pinned
+         card is marked by a gold border, not an in-row element. `star` / `unstar` are the
+         long-press action labels, so they flip with the state (a screen reader hears what the
+         long-press does). -->
     <string name="star">Pin to top</string>
     <string name="unstar">Unpin from top</string>
     <!-- Transient snackbar when saving a pin/unpin fails (storage full, an IO error), so a

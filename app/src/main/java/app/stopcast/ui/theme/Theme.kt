@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 // StopCast's brand accent is red — a nod to the London transit palette — applied the
@@ -44,6 +46,17 @@ private val DarkColors = darkColorScheme(
     onTertiaryContainer = Color(0xFFFEDFA6),
 )
 
+// The border color that marks a starred (pinned-to-top) departure card — gold, so the pin
+// reads as a mark of favor and stays distinct from the red brand accent. Two tones so it holds
+// contrast on each card surface: a deeper gold on the light surface, a brighter one on the dark.
+// Provided through [LocalStarredBorderColor] from the resolved theme, so a forced-dark preview
+// (screenshot tests) gets the dark gold rather than following the system.
+private val LightStarredBorder = Color(0xFFB8860B)
+private val DarkStarredBorder = Color(0xFFE7C34C)
+
+/** The gold border for a starred card, resolved to the current theme (see [StopCastTheme]). */
+val LocalStarredBorderColor = staticCompositionLocalOf { LightStarredBorder }
+
 /**
  * The app theme. Uses the stopcast red-accent scheme (light or dark by the system setting).
  *
@@ -70,5 +83,8 @@ fun StopCastTheme(
         darkTheme -> DarkColors
         else -> LightColors
     }
-    MaterialTheme(colorScheme = colorScheme, content = content)
+    val starredBorder = if (darkTheme) DarkStarredBorder else LightStarredBorder
+    MaterialTheme(colorScheme = colorScheme) {
+        CompositionLocalProvider(LocalStarredBorderColor provides starredBorder, content = content)
+    }
 }

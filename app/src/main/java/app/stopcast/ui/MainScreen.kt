@@ -2,9 +2,11 @@
 
 package app.stopcast.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,8 +27,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -47,11 +49,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
@@ -60,6 +64,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontWeight
@@ -75,6 +80,7 @@ import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.abbreviateBranch
+import app.stopcast.ui.theme.LocalStarredBorderColor
 import java.time.Duration
 import java.time.Instant
 import kotlin.time.toKotlinDuration
@@ -422,7 +428,43 @@ private fun DepartureRowCard(
     // and the card's 16dp padding. No real line name reaches the cap at the default font.
     val cardInnerWidth = LocalConfiguration.current.screenWidthDp.dp - 64.dp
     val pillModifier = Modifier.widthIn(max = cardInnerWidth * 0.5f)
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+    // Star (pin-to-top, SPEC D8) is toggled by a long-press on the card, not a per-row button:
+    // the 48dp IconButton it replaced ate width on every row and crowded the one-line countdown
+    // at large font scales. Only a timed row is starrable — a closure or no-departures status row
+    // was never pinnable — and only when starring is available.
+    //
+    // The long-press is a `pointerInput` gesture plus a `semantics` long-click action, NOT
+    // `combinedClickable`: `combinedClickable` merges the card's descendant semantics into one
+    // node, which flattens the disrupted row's warning-first traversal order (the chip's
+    // `traversalIndex = -1f` below) and also registers a real click action that would do nothing
+    // (a misleading ripple, and a dead TalkBack activate) since a tap has no behavior yet (Codex).
+    // This keeps the descendants separately ordered and exposes only the labeled long-click.
+    val starrable = starAvailable && row.stopDisruption == null && row.upcoming.isNotEmpty()
+    val starActionLabel = stringResource(if (isStarred) R.string.unstar else R.string.star)
+    // Read the latest callback without re-keying the gesture: `DepartureList` rebuilds the per-row
+    // `onToggleStar` on every recomposition, and the 10s `tickingNow` clock recomposes the rows —
+    // so keying `pointerInput` on the callback would cancel an in-progress long-press each tick and
+    // drop its down event (Codex). Key on `Unit` (stable) and invoke the current callback via
+    // `rememberUpdatedState`.
+    val currentToggleStar by rememberUpdatedState(onToggleStar)
+    val cardModifier = Modifier.fillMaxWidth().let { base ->
+        if (starrable) {
+            base
+                .pointerInput(Unit) {
+                    detectTapGestures(onLongPress = { currentToggleStar() })
+                }
+                .semantics { onLongClick(label = starActionLabel) { currentToggleStar(); true } }
+        } else {
+            base
+        }
+    }
+    // A starred card is marked by a gold border rather than any in-row element, so the pinned
+    // state costs no width (the border draws inside the card's bounds). The gold is the theme's
+    // resolved starred tone; an unstarred card keeps the default outline (SPEC D8).
+    val cardBorder =
+        if (isStarred) BorderStroke(2.dp, LocalStarredBorderColor.current)
+        else CardDefaults.outlinedCardBorder()
+    OutlinedCard(modifier = cardModifier, border = cardBorder) {
         // A traversal group so a disrupted timed row can announce its status chip *before*
         // the destination and countdown it qualifies (the chip is placed below but carries
         // a lower traversalIndex) — a screen reader shouldn't voice a departure as
@@ -509,15 +551,11 @@ private fun DepartureRowCard(
                         )
                     }
                 }
-                // Trailing star pins this service to the top (SPEC D8). Filled + primary when
-                // starred, the vendored outline in a low-emphasis tone when not, so the two
-                // states read at a glance. The countdown inside the column is unweighted and
-                // measured first, so it keeps its width; the destination ellipsizes instead.
-                // Hidden entirely when starring is unavailable (a newer-schema star file this
-                // build can't read), so no pill falsely reads as "not starred".
-                if (starAvailable) {
-                    StarButton(isStarred = isStarred, onToggleStar = onToggleStar)
-                }
+                // No trailing star element at all — the whole point is to reclaim the width the
+                // per-row button took on every card. A starred (pinned) service is marked by the
+                // card's gold border (see cardBorder above) and its position at the top of the
+                // list (SPEC D8); long-press the card to pin/unpin. A visible, labeled star
+                // returns with the tap-to-open stop detail view (deferred, TODO.md).
             }
             // A disrupted line is flagged below the departures, left-aligned with the pill,
             // but announced first (traversalIndex) so the warning precedes the countdowns it
@@ -695,26 +733,6 @@ private fun DisruptionChip(description: String, modifier: Modifier = Modifier) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-    }
-}
-
-/**
- * The per-card star toggle (SPEC D8): pins the service to the top of the list when on. Filled
- * `Star` in the theme's primary tint for the starred state, the vendored [StarBorderIcon]
- * outline in a low-emphasis tone for the unstarred one, so the two states read at a glance. The
- * `IconButton` is a 48dp target (above the 44dp touch floor); its content description flips so a
- * screen reader announces the action, not just "star".
- */
-@Composable
-private fun StarButton(isStarred: Boolean, onToggleStar: () -> Unit) {
-    IconButton(onClick = onToggleStar) {
-        Icon(
-            imageVector = if (isStarred) Icons.Filled.Star else StarBorderIcon,
-            contentDescription = stringResource(if (isStarred) R.string.unstar else R.string.star),
-            tint =
-                if (isStarred) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

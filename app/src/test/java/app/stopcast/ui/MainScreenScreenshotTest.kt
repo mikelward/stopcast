@@ -22,10 +22,12 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import app.stopcast.domain.Departure
+import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.RoutePattern
 import app.stopcast.domain.RouteTopology
+import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopArrivals
 import app.stopcast.domain.StopDisruption
 import app.stopcast.ui.theme.StopCastTheme
@@ -288,6 +290,45 @@ class MainScreenScreenshotTest {
                 DeparturesUiState.Loaded(stops(now.minusSeconds(120)), now.minusSeconds(120), lineStatuses = statuses()),
                 now,
                 {},
+            )
+        }
+    }
+
+    // A single Brixton stop, so the fixture produces exactly one starrable row to pin.
+    private fun oneStarrableStop() = StopArrivals(
+        "940GZZLUKSX",
+        "King's Cross St. Pancras",
+        listOf(dep("victoria", "Victoria", "southbound", "Brixton", 120, "Platform 1")),
+        fetchedAt = now.minusSeconds(60),
+    )
+
+    @Test
+    fun `starred card, gold border, light`() {
+        // A pinned card carries a gold border and no in-row star element (SPEC D8). Light theme
+        // uses the deeper gold so the border reads on the light card surface.
+        val stop = oneStarrableStop()
+        val row = DepartureRows.across(listOf(stop), now).single()
+        capture("main-starred.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                now,
+                {},
+                starred = setOf(StarredRow.of(row)),
+            )
+        }
+    }
+
+    @Test
+    fun `starred card, gold border, dark`() {
+        // The dark theme uses the brighter gold so the border reads on the dark card surface.
+        val stop = oneStarrableStop()
+        val row = DepartureRows.across(listOf(stop), now).single()
+        capture("main-starred-dark.png", dark = true) {
+            MainScreen(
+                DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                now,
+                {},
+                starred = setOf(StarredRow.of(row)),
             )
         }
     }

@@ -240,7 +240,10 @@ chose ahead of time, not "nearest to me" — ordered **location-free** so the vi
 with location denied: soonest-first, with **starred** rows pinned to the top. Starring is
 ranking only, separate from which stops are watched (add/remove membership). A star keys on
 the row's `(stop, service, resolved direction key)` identity, so it restores to exactly one
-row and survives restart. **Warning rows still lead**, above even a starred service — a stop
+row and survives restart. Starring is toggled by a **long-press on the row**, and a starred row
+is marked by a **gold border** (no in-row element, so it costs no width) plus its position at the
+top; the earlier per-row star button was removed because it consumed width on every card, and a
+discoverable, labeled star returns with the tap-to-open stop detail view (*deferred*, `TODO.md`). **Warning rows still lead**, above even a starred service — a stop
 closure or a no-prediction line-status row is something the user must see, and pinning a
 starred service above it would push a warning down the list (principle 2). Distance ranking
 belongs to *finding* stops (near-me discovery, *Finding stops*), not to ordering the watched
