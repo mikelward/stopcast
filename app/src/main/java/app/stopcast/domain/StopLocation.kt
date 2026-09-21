@@ -21,4 +21,10 @@ data class StopLocation(
     // name alone, which TfL spells several ways for one station. Blank means "group this stop on
     // its own". Not a coordinate; safe to carry (SPEC *Privacy*).
     val clusterId: String = "",
+    // TfL's `hubNaptanCode` for this stop: the interchange it belongs to (`HUBKGX` ties King's
+    // Cross and St Pancras together), above `stationNaptan`. Blank for a stop in no hub. Used to
+    // fold an interchange's shared disruption into one alert and title it by the interchange, and
+    // to keep two genuinely distinct same-named places apart (SPEC *Disruptions*). A public id,
+    // not a coordinate; safe to carry (SPEC *Privacy*).
+    val hubId: String = "",
 )

@@ -34,36 +34,49 @@ object StopGrouping {
      * place's poles' rows stay contiguous within its group even where the flat list interleaved
      * them with another place's.
      *
-     * [StopGroup.showHeader] is false only for a lone single-place group with no closure to name
-     * (the classic single-place case, where the place is implied).
+     * [StopGroup.showHeader] is false only when the whole screen is a single place (the place is
+     * then implied). Stop-closure alerts are not grouped — the screen renders them as header-less
+     * cards ahead of these groups (SPEC *Disruptions*) — but each closure's stop still counts as a
+     * place, so a lone departures group beside a closure-only stop still shows its name header.
      */
     fun groupByStop(rows: List<DepartureRow>): List<StopGroup> {
-        // A stop carrying ANY warning row keeps its OWN group — never merged into a shared-name
-        // cluster. A warning row (a row with no countdown, [DepartureRow.upcoming] empty) is a
-        // stop-level closure/moved-stop notice or a line-status "No departures" row for a
-        // suspended line; both name no pole or direction (the header does). Merging one beside a
-        // same-named pole's catchable departures would leave a rider unable to tell which pole is
-        // closed, or show "141 suspended — No departures" next to live 141 times with nothing to
-        // say which pole each is (SPEC principle 2 — never quietly wrong). Clear stops (all rows
-        // timed) still cluster by name so a junction's poles read as one place. Carving the warned
-        // stop out — rather than adding a per-pole/direction qualifier to the warning row — takes
-        // the safe half now; the qualifier is a deferred design (TODO.md). (Codex P1s, PR #83.)
+        // Stop closures form NO group — the screen renders them as header-less cards that title
+        // themselves on expand (SPEC *Disruptions*) — but a closure's stop is still a **place on
+        // the screen**, so it is counted toward the header decision below (see [distinctPlaces]).
+        // Only the non-closure rows are grouped and returned.
+        val (closures, listRows) = rows.partition { it.stopDisruption != null }
+        // A stop carrying a line-status "No departures" row (a suspended line with no predictions —
+        // a row with no countdown, [DepartureRow.upcoming] empty) keeps its OWN group, never merged
+        // into a shared-name cluster: the row names no pole or direction (the header does), so
+        // merging it beside a same-named pole's catchable departures would show "141 suspended — No
+        // departures" next to live 141 times with nothing to say which pole each is (SPEC principle
+        // 2 — never quietly wrong). Clear stops (all rows timed) still cluster by name so a
+        // junction's poles read as one place. Carving the warned stop out — rather than adding a
+        // per-pole/direction qualifier to the warning row — takes the safe half now; the qualifier
+        // is a deferred design (TODO.md). (Codex P1s, PR #83.)
         val warnedStops = HashSet<String>()
-        for (row in rows) if (row.upcoming.isEmpty()) warnedStops.add(row.stopId)
+        for (row in listRows) if (row.upcoming.isEmpty()) warnedStops.add(row.stopId)
         val byCluster = LinkedHashMap<String, MutableList<DepartureRow>>()
-        for (row in rows) {
+        for (row in listRows) {
             byCluster.getOrPut(clusterKeyOf(row, warnedStops)) { mutableListOf() }.add(row)
         }
-        val distinctClusters = byCluster.size
+        // Distinct places on the whole screen = the grouped departure places PLUS each header-less
+        // closure alert's place. A closure-only stop (its arrivals failed, so it has no departure
+        // rows) forms no group here, but it is still a place the departure cards must be told apart
+        // from — so without counting it a lone departures stop beside a closure-only stop would
+        // read as a single-place list and drop its name header, leaving those departures with no
+        // boarding location on the header-less watched list (Codex P1, PR #91). A closure keys by
+        // the same cluster identity a group does, so a closure at a stop that also has departures
+        // counts as the one shared place, not two.
+        val closurePlaces = closures.mapTo(HashSet()) { clusterKeyOf(it, emptySet()) }
+        val distinctPlaces = (byCluster.keys + closurePlaces).size
         val groups = byCluster.map { (key, groupRows) ->
-            // A closed stop always names itself in the header (the closure card no longer
-            // repeats the name); otherwise a header is drawn only where it tells the reader
-            // something — more than one place to tell apart.
-            val hasClosure = groupRows.any { it.stopDisruption != null }
+            // A header is drawn only where it tells the reader something — more than one place to
+            // tell apart, counting closure alerts.
             StopGroup(
                 stopName = groupRows.first().stopName,
                 key = key,
-                showHeader = distinctClusters > 1 || hasClosure,
+                showHeader = distinctPlaces > 1,
                 rows = groupRows,
             )
         }

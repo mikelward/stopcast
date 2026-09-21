@@ -6,6 +6,7 @@ import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.StopFinder
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.TflClient
+import app.stopcast.domain.cleanStopName
 import app.stopcast.domain.TflException
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -63,6 +64,15 @@ class KtorTflClient(
                 parameter("returnLines", true)
                 if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
             }.body<TflStopPointsResponseDto>().stopPoints.mapNotNull { it.toStopLocationOrNull() }
+        }
+
+    override suspend fun hubName(hubId: String): String =
+        tflRequest {
+            cleanStopName(
+                httpClient.get("$baseUrl/StopPoint/$hubId") {
+                    if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+                }.body<TflStopPointDto>().commonName,
+            )
         }
 
     override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {

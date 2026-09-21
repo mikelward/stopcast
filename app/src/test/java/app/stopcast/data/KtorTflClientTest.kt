@@ -198,6 +198,7 @@ class KtorTflClientTest {
               "naptanId": "940GZZLUCHX",
               "commonName": "Charing Cross Underground Station",
               "distance": 12.3,
+              "hubNaptanCode": "HUBCHX",
               "lat": 51.5,
               "lon": -0.12,
               "modes": ["tube"],
@@ -393,6 +394,10 @@ class KtorTflClientTest {
         assertEquals("HUBSRA", stops[1].id)
         assertEquals(51.5, stops[0].latitude, 1e-6)
         assertEquals(-0.12, stops[0].longitude, 1e-6)
+        // The interchange code is carried when TfL gives one, blank otherwise — a folded
+        // near-me disruption alert titles by the hub (SPEC *Disruptions*).
+        assertEquals("HUBCHX", stops[0].hubId)
+        assertEquals("", stops[1].hubId)
     }
 
     @Test
@@ -405,6 +410,48 @@ class KtorTflClientTest {
         // not the stop's first mode — so a mixed hub colors each line correctly.
         val modeByLine = stratford.lines.associate { it.id to it.mode }
         assertEquals(mapOf("central" to "tube", "dlr" to "dlr", "elizabeth" to "elizabeth-line"), modeByLine)
+    }
+
+    // A /StopPoint/{hubId} fixture for an interchange: its commonName carries a type suffix to
+    // prove the name is cleaned like a stop's. Public place name only (SPEC *Privacy*).
+    private val hubJson =
+        """
+        {
+          "${'$'}type": "Tfl.Api.Presentation.Entities.StopPoint",
+          "id": "HUBKGX",
+          "commonName": "King's Cross St. Pancras Underground Station",
+          "stopType": "TransportInterchange"
+        }
+        """.trimIndent()
+
+    @Test
+    fun `resolves a hub display name, cleaned of its type suffix`() = runTest {
+        var captured: HttpRequestData? = null
+        val name = client(hubJson, capture = { captured = it }).hubName("HUBKGX")
+
+        assertEquals("/StopPoint/HUBKGX", checkNotNull(captured).url.encodedPath)
+        // The type suffix is stripped, like any stop name (SPEC *Concise copy*).
+        assertEquals("King's Cross St. Pancras", name)
+    }
+
+    @Test
+    fun `hub name request adds app_key only when set`() = runTest {
+        var keyless: HttpRequestData? = null
+        client(hubJson, capture = { keyless = it }).hubName("HUBKGX")
+        assertNull(checkNotNull(keyless).url.parameters["app_key"])
+
+        var keyed: HttpRequestData? = null
+        client(hubJson, appKey = "EXAMPLE", capture = { keyed = it }).hubName("HUBKGX")
+        assertEquals("EXAMPLE", checkNotNull(keyed).url.parameters["app_key"])
+    }
+
+    @Test
+    fun `a failed hub name lookup throws, so the caller can fall back`() {
+        // Like arrivals: a transport/decode failure throws (the ViewModel falls back to the
+        // stop's own name), never a silent blank that would be mistaken for "no hub name".
+        assertThrows(TflException.Unreachable::class.java) {
+            runTest { client("{}", status = HttpStatusCode.InternalServerError).hubName("HUBKGX") }
+        }
     }
 
     @Test

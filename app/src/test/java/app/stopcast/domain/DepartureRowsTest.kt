@@ -511,7 +511,13 @@ class DepartureRowsTest {
     private fun rowsFor(stopId: String, stopName: String, vararg departures: Departure): List<DepartureRow> =
         DepartureRows.forStop(stopId, stopName, departures.toList(), now)
 
-    private fun stopStatusRow(stopId: String, stopName: String, text: String = "Stop closed") = DepartureRow(
+    private fun stopStatusRow(
+        stopId: String,
+        stopName: String,
+        text: String = "Stop closed",
+        hubId: String = "",
+        hubName: String = "",
+    ) = DepartureRow(
         stopId = stopId,
         stopName = stopName,
         lineId = "",
@@ -523,6 +529,8 @@ class DepartureRowsTest {
         upcoming = emptyList(),
         fetchedAt = now,
         stopDisruption = text,
+        hubId = hubId,
+        hubName = hubName,
     )
 
     @Test
@@ -586,41 +594,42 @@ class DepartureRowsTest {
     }
 
     @Test
-    fun `nearbyDeduped collapses an identical notice repeated across stops to the nearest`() {
+    fun `nearbyDeduped folds a hub-wide notice across an interchange onto the nearest member`() {
         // A hub-wide notice (a lift outage) is reported by TfL against every stop point in an
-        // interchange, so the near-me set carries the identical text once per member. It is
-        // one notice: keep it once, on the nearest member, and suppress the farther copies.
+        // interchange. Those members carry distinct stop ids but one shared hubNaptanCode
+        // (King's Cross and St Pancras are both HUBKGX), so the notice folds by HUB IDENTITY:
+        // kept once, on the nearest member, and titled by the interchange.
         val notice = "No step free access to the Thameslink platforms due to faulty lifts"
+        val hub = "King's Cross & St Pancras International"
         val deduped = DepartureRows.nearbyDeduped(
             listOf(
-                stopStatusRow("STP1", "St Pancras International", notice),
-                stopStatusRow("STP2", "St Pancras International", notice),
-                stopStatusRow("KGX", "King's Cross St. Pancras", notice),
+                stopStatusRow("STP1", "St Pancras International", notice, hubId = "HUBKGX", hubName = hub),
+                stopStatusRow("STP2", "St Pancras International", notice, hubId = "HUBKGX", hubName = hub),
+                stopStatusRow("KGX", "King's Cross St. Pancras", notice, hubId = "HUBKGX", hubName = hub),
             ),
             mapOf("STP1" to 120.0, "STP2" to 150.0, "KGX" to 370.0),
         )
 
         assertEquals(1, deduped.size)
         assertEquals("STP1", deduped[0].stopId)
-        // The kept card names the other affected stops (by distinct display name, nearest-first) —
-        // STP2 shares the nearest's name so it's folded in; King's Cross is the one other place.
-        assertEquals(listOf("King's Cross St. Pancras"), deduped[0].alsoAt)
+        // The kept card carries the interchange name, so it titles by the hub rather than one member.
+        assertEquals(hub, deduped[0].hubName)
     }
 
     @Test
-    fun `nearbyDeduped names the other affected stops when a place-less notice repeats`() {
-        // The Codex P1 case: TfL's text names no stop ("Station closed until further notice."), so
-        // two unrelated closures with identical text collapse — but the kept card names both stops
-        // (header is the nearest, alsoAt the other), so no warning is hidden (principle 1).
+    fun `nearbyDeduped keeps two unrelated place-less closures apart by hub identity`() {
+        // TfL's text names no stop ("Station closed until further notice."), so two UNRELATED
+        // closures share identical text. They belong to different (here blank) hubs, so hub
+        // identity keys them apart — each keeps its own card, no warning hidden (principle 1).
+        // This is what folding by hub, not by text alone, buys over the earlier text-only dedup.
         val notice = "Station closed until further notice."
         val deduped = DepartureRows.nearbyDeduped(
             listOf(stopStatusRow("A", "Highbury & Islington", notice), stopStatusRow("B", "Canonbury", notice)),
             mapOf("A" to 100.0, "B" to 300.0),
         )
 
-        assertEquals(1, deduped.size)
-        assertEquals("A", deduped[0].stopId)
-        assertEquals(listOf("Canonbury"), deduped[0].alsoAt)
+        assertEquals(2, deduped.size)
+        assertEquals(setOf("A", "B"), deduped.map { it.stopId }.toSet())
     }
 
     @Test
@@ -637,6 +646,26 @@ class DepartureRowsTest {
 
         assertEquals(2, deduped.size)
         assertEquals(setOf("A", "B"), deduped.map { it.stopId }.toSet())
+    }
+
+    @Test
+    fun `nearbyDeduped keeps a card for each different notice within one hub`() {
+        // Two different notices reported against the same interchange are two warnings, so the
+        // fold-by-(hub, text) keeps a card for each rather than collapsing on hub alone.
+        val hub = "King's Cross & St Pancras International"
+        val deduped = DepartureRows.nearbyDeduped(
+            listOf(
+                stopStatusRow("KGX", "King's Cross St. Pancras", "Lifts out of service", hubId = "HUBKGX", hubName = hub),
+                stopStatusRow("STP", "St Pancras International", "Escalator maintenance", hubId = "HUBKGX", hubName = hub),
+            ),
+            mapOf("KGX" to 100.0, "STP" to 200.0),
+        )
+
+        assertEquals(2, deduped.size)
+        assertEquals(
+            setOf("Lifts out of service", "Escalator maintenance"),
+            deduped.mapNotNull { it.stopDisruption }.toSet(),
+        )
     }
 
     @Test

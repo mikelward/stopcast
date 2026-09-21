@@ -32,4 +32,16 @@ interface TflClient {
      * *Disruptions*). Throws on a transport/decode failure, like [arrivals].
      */
     suspend fun stopDisruptions(stopId: String): List<StopDisruption>
+
+    /**
+     * The display name of the interchange [hubId] (TfL `hubNaptanCode`), from
+     * `/StopPoint/{hubId}` — e.g. "King's Cross & St Pancras International" for `HUBKGX` —
+     * cleaned of its type suffix like a stop name. Used to title an interchange's folded
+     * disruption by the interchange rather than one member stop (SPEC *Disruptions*). The real
+     * client throws on a transport/decode failure, like [arrivals]; the caller falls back to
+     * the stop's own name so a failed lookup never blanks the alert. Defaults to blank ("no hub
+     * name resolved") so a client that doesn't enrich hub names, and a test fake, take the same
+     * safe fallback without implementing it.
+     */
+    suspend fun hubName(hubId: String): String = ""
 }

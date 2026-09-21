@@ -56,6 +56,12 @@ object Snapshot {
         freshDisruptions: List<StopDisruption>?,
         prior: StopArrivals?,
         now: Instant,
+        // The stop's interchange (TfL `hubNaptanCode`) and its resolved display name, carried onto
+        // the merged stop so a folded near-me disruption alert can title itself by the interchange
+        // (SPEC *Disruptions*). Both default blank — a stop in no hub, or a caller that doesn't
+        // enrich hub names — in which case the alert titles by the stop's own name.
+        hubId: String = "",
+        hubName: String = "",
     ): StopArrivals? {
         val departures = freshDepartures ?: prior?.departures ?: emptyList()
         // A failed disruption fetch drops the notice (no `?: prior`), rather than aging a
@@ -85,6 +91,8 @@ object Snapshot {
             lines = lines,
             disruptions = disruptions,
             fetchedAt = fetchedAt,
+            hubId = hubId,
+            hubName = hubName,
             // Only a successful arrivals fetch this refresh lets a status row claim "No
             // departures"; a kept-prior or disruption-only stop has no fetched arrivals.
             arrivalsFresh = freshDepartures != null,

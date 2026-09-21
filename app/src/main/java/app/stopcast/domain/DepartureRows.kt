@@ -151,21 +151,19 @@ object DepartureRows {
      * stop missing from the map sorts last, and equal distances break by `stopId`, so the
      * kept stop never depends on input order.
      *
-     * **Stop-level status rows are deduped by their notice text.** A hub-wide disruption — a
-     * lift outage, an accessibility closure — is reported by TfL against every stop point in
-     * the interchange, so the near-me set otherwise shows the identical card once per stop
-     * (St Pancras International and King's Cross St. Pancras both carrying the same "No Step
-     * Free Access" notice). Identical description text is the same notice whatever cluster it
-     * sits in, so it is kept once, on the **nearest** stop carrying it. The kept row records the
-     * OTHER differently-named affected stops in [DepartureRow.alsoAt] (by display name,
-     * nearest-first), so the card names them on expand rather than silently hiding a
-     * differently-named farther stop — which is what keeps a text-only collapse safe even when
-     * TfL's text does not name its own stop (a place-less "Station closed"): such a warning is not
-     * dropped (SPEC principle 1). Two closures with different text stay separate cards. (A farther
-     * stop that shares the nearest's *name* folds under it — a station's own platforms read as one
-     * place; two unrelated same-named places is a deferred residual, see the inline note.) Line
-     * rows (timed and line-status) are deduped separately by their cross-stop (line, direction)
-     * key. Survivors are re-sorted by [rowOrder].
+     * **Stop-level status rows are folded per interchange.** A hub-wide disruption — a lift
+     * outage, an accessibility closure — is reported by TfL against every stop point in the
+     * interchange, so the near-me set otherwise shows the identical card once per stop (St Pancras
+     * International and King's Cross St. Pancras both carrying the same "No Step Free Access"
+     * notice). Those members carry distinct `stationNaptan`s but one shared [DepartureRow.hubId]
+     * (`HUBKGX`), so the notice is kept once — on the **nearest** member — keyed on `(hubId,
+     * text)`, and the card titles itself by the interchange. Keying on the hub identity (the stop's
+     * own id when it is in no hub) is what folds a real interchange while keeping two genuinely
+     * distinct places apart: two unrelated stops with an identical place-less notice ("Station
+     * closed") have different or blank hubs, so they never collapse and each keeps its card (SPEC
+     * principle 1 — no warning dropped). A hub with two different notices keeps a card for each.
+     * Line rows (timed and line-status) are deduped separately by their cross-stop (line,
+     * direction) key. Survivors are re-sorted by [rowOrder].
      *
      * The dedupe identity is **cross-stop**: line + TfL's `direction`, *not* the row's
      * [DepartureRow.directionKey], which for a timed row can be the stop-local platform
@@ -195,35 +193,24 @@ object DepartureRows {
         // Keep every row from the nearest stop for its key, so two platforms of one service
         // at a single stop both survive; a farther stop's same-service row is dropped.
         val kept = lineRows.filter { nearestStopByKey[dedupeKeyOf(it)] == it.stopId }
-        // Keep each distinct disruption notice once, on the nearest stop carrying its text — an
-        // interchange's hub-wide notice is otherwise one identical card per member stop. The kept
-        // row records the OTHER distinctly-named stops the notice covers ([DepartureRow.alsoAt], by
-        // display name, nearest-first) so the card names them on expand: a differently-named stop is
-        // never hidden even when TfL's text doesn't name its own stop (a place-less "Station
-        // closed"), which is what keeps a text-only collapse from dropping such a warning
-        // (principle 1). Farther stops that share the nearest's display name fold under it — a
-        // station's own platforms (St Pancras spells one name across several `stationNaptan`s) read
-        // as one place, which is the point; the residual is two genuinely unrelated same-named
-        // places both closed with identical text, which needs the hub/geography identity to
-        // separate (deferred — see TODO.md; keying on display name is what folds the platforms).
-        val statusByNotice = LinkedHashMap<String, MutableList<DepartureRow>>()
+        // Fold each disruption notice to one card **per interchange**, on the nearest member: an
+        // interchange's hub-wide notice (a lift outage) is reported by TfL against every member
+        // stop, and those members have distinct `stationNaptan`s but share one `hubNaptanCode`
+        // (King's Cross and St Pancras are both `HUBKGX`), so the card titles by that hub. Keying
+        // on the **hub identity** — [DepartureRow.hubId], else the stop's own id when it is in no
+        // hub — plus the notice text is what folds a real interchange while keeping two genuinely
+        // distinct places apart: two unrelated stops with an identical place-less notice ("Station
+        // closed") have different (or blank) hubs, so they never collapse and each keeps its own
+        // card (SPEC *Disruptions*, principle 1 — no warning dropped). A hub with two different
+        // notices keeps a card for each.
+        val statusByPlaceNotice = LinkedHashMap<Pair<String, String>, MutableList<DepartureRow>>()
         for (row in stopStatus) {
             val text = row.stopDisruption ?: continue
-            statusByNotice.getOrPut(text) { mutableListOf() }.add(row)
+            val placeKey = row.hubId.ifBlank { row.stopId }
+            statusByPlaceNotice.getOrPut(placeKey to text) { mutableListOf() }.add(row)
         }
-        val keptStatus = statusByNotice.values.map { group ->
-            val sorted = group.sortedWith(compareBy({ distanceOf(it.stopId) }, { it.stopId }))
-            val nearest = sorted.first()
-            // Distinct display names of the farther stops carrying this notice, nearest-first, the
-            // nearest's own name excluded (the group header already names it). By display name so a
-            // station's several platforms fold to one, not by `clusterId` (that would list the
-            // station's own name a second time); the same-name residual is documented above.
-            val others = sorted.asSequence()
-                .map { it.stopName }
-                .distinct()
-                .filter { it != nearest.stopName }
-                .toList()
-            if (others.isEmpty()) nearest else nearest.copy(alsoAt = others)
+        val keptStatus = statusByPlaceNotice.values.map { group ->
+            group.minWith(compareBy({ distanceOf(it.stopId) }, { it.stopId }))
         }
         return (keptStatus + kept).sortedWith(rowOrder)
     }
@@ -355,6 +342,8 @@ object DepartureRows {
                 stopId = stop.stopId,
                 stopName = stop.stopName,
                 clusterId = stop.clusterId,
+                hubId = stop.hubId,
+                hubName = stop.hubName,
                 lineId = "",
                 lineName = "",
                 direction = "",
@@ -485,6 +474,12 @@ data class StopArrivals(
     // into per-place headers by cluster rather than by the name TfL spells inconsistently (SPEC
     // D8). Blank groups the stop on its own.
     val clusterId: String = "",
+    // The interchange this stop belongs to (TfL `hubNaptanCode`, see [StopLocation.hubId]) and its
+    // display name, resolved for a stop with a disruption. The near-me alert dedup folds a shared
+    // notice by [hubId] and titles it by [hubName] (SPEC *Disruptions*). Both blank for a stop in
+    // no hub or when the name lookup failed.
+    val hubId: String = "",
+    val hubName: String = "",
 )
 
 /**

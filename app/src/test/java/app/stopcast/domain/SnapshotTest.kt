@@ -38,6 +38,8 @@ class SnapshotTest {
         freshDisruptions: List<StopDisruption>?,
         prior: StopArrivals?,
         lines: List<LineRef> = emptyList(),
+        hubId: String = "",
+        hubName: String = "",
     ) = Snapshot.mergeStop(
         stopId = "940GZZLUKSX",
         stopName = "King's Cross St. Pancras",
@@ -47,6 +49,8 @@ class SnapshotTest {
         freshDisruptions = freshDisruptions,
         prior = prior,
         now = now,
+        hubId = hubId,
+        hubName = hubName,
     )
 
     @Test
@@ -59,6 +63,19 @@ class SnapshotTest {
         assertEquals(listOf("victoria"), result.departures.map { it.lineId })
         assertEquals(listOf("Station closed"), result.disruptions.map { it.description })
         assertEquals(now, result.fetchedAt)
+    }
+
+    @Test
+    fun `the interchange id and name thread onto the merged stop`() {
+        val result = merge(
+            freshDepartures = null,
+            freshDisruptions = listOf(StopDisruption("No step free access")),
+            prior = null,
+            hubId = "HUBKGX",
+            hubName = "King's Cross & St Pancras International",
+        )!!
+        assertEquals("HUBKGX", result.hubId)
+        assertEquals("King's Cross & St Pancras International", result.hubName)
     }
 
     @Test

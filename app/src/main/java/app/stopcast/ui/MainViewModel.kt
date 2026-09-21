@@ -40,6 +40,10 @@ data class StopRef(
     // The stop's cluster (TfL `stationNaptan` else display name) for per-place grouping (SPEC D8);
     // blank groups the stop alone. Set from the nearby lookup ([StopLocation.clusterId]).
     val clusterId: String = "",
+    // The stop's interchange (TfL `hubNaptanCode`, [StopLocation.hubId]): `HUBKGX` ties King's
+    // Cross and St Pancras. Blank for a stop in no hub. When the stop has a disruption, its hub
+    // name is resolved so the near-me alert titles by the interchange (SPEC *Disruptions*).
+    val hubId: String = "",
 )
 
 /**
@@ -138,6 +142,14 @@ class MainViewModel(
     val starWriteFailed: StateFlow<Boolean> = _starWriteFailed.asStateFlow()
 
     private var fetchJob: Job? = null
+
+    // Resolved interchange display names (hubId → name), so a hub with a disruption is looked up
+    // once and reused across refreshes and across the stops sharing it (King's Cross and St
+    // Pancras both resolve `HUBKGX` from one call). Only a real name is cached here — a failed or
+    // blank lookup is retried on a later refresh rather than pinned. Within a single refresh a
+    // failure is memoized separately (see `resolveHubName`), so a failing hub is not re-requested
+    // once per member. In-memory only; hub names are public TfL place names, never persisted.
+    private val hubNameCache = mutableMapOf<String, String>()
 
     // The init coroutine that loads the last-good snapshot and then calls refresh(). Tracked so
     // cancelFetch() can stop it too: during its load() the fetchJob isn't assigned yet, so
@@ -278,6 +290,13 @@ class MainViewModel(
             // not overwrite a complete saved snapshot with carried arrivalsFresh=false rows.
             var anyFreshArrivals = false
             var disruptionUnknown = false
+            // Memoizes this refresh's hub-name attempts — successes AND failures — so a hub shared
+            // by several disrupted stops is requested at most once per refresh, even when the
+            // lookup fails: without it a failing hub would be re-requested (and re-timed-out) once
+            // per member, and members could disagree if a later one happened to succeed. A success
+            // also promotes to the durable `hubNameCache`; a failure stays here only, so the next
+            // refresh (a fresh map) retries (Codex).
+            val hubNamesThisRefresh = HashMap<String, String>()
 
             for (stop in fetchedStops) {
                 val departures = try {
@@ -309,6 +328,16 @@ class MainViewModel(
                 }
                 if (departures != null) anyFreshArrivals = true
                 if (departures != null || disruptions != null) anyFreshData = true
+                // Resolve the interchange name only when this stop has a fresh disruption to
+                // title AND belongs to a hub — the one case a folded alert titles by the
+                // interchange (SPEC *Disruptions*). Cached and off the render path; a stop with
+                // no disruption, or no hub, costs no call and titles by its own name.
+                val hubName =
+                    if (stop.hubId.isNotBlank() && !disruptions.isNullOrEmpty()) {
+                        resolveHubName(stop.hubId, hubNamesThisRefresh)
+                    } else {
+                        ""
+                    }
                 Snapshot.mergeStop(
                     stopId = stop.id,
                     stopName = stop.name,
@@ -318,6 +347,8 @@ class MainViewModel(
                     freshDisruptions = disruptions,
                     prior = prior[stop.id],
                     now = now,
+                    hubId = stop.hubId,
+                    hubName = hubName,
                 )?.let { merged += it }
             }
 
@@ -629,6 +660,38 @@ class MainViewModel(
             partialRefresh = isIncomplete(snapshot.stops),
             disruptionUnknown = true,
         )
+
+    /**
+     * The display name of interchange [hubId], from cache or a one-time [TflClient.hubName]
+     * lookup, so a folded near-me disruption alert titles by the interchange (SPEC *Disruptions*).
+     *
+     * Two-tier memoization: the durable [hubNameCache] holds successes across refreshes, while
+     * [thisRefresh] holds this refresh's attempts — successes and failures alike — so a hub shared
+     * by several disrupted stops costs at most one call per refresh even when it fails (every later
+     * member this cycle reuses the recorded blank, and they agree). A failure is memoized only in
+     * [thisRefresh], never the durable cache, so a fresh map next refresh retries rather than the
+     * title being permanently blanked.
+     *
+     * Best-effort: a failed lookup returns blank and the alert falls back to the stop's own name.
+     * Rethrows [CancellationException] first (structured concurrency). The log carries only the hub
+     * id — a public TfL place identifier, like a stop id (SPEC *Privacy*).
+     */
+    private suspend fun resolveHubName(hubId: String, thisRefresh: MutableMap<String, String>): String {
+        hubNameCache[hubId]?.let { return it }
+        thisRefresh[hubId]?.let { return it }
+        val name = try {
+            withContext(io) { client.hubName(hubId) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            warn("hub name lookup failed for $hubId: ${reason(e)}")
+            ""
+        }
+        // A success is durable; a blank is remembered only for this refresh, so the next one retries.
+        if (name.isNotBlank()) hubNameCache[hubId] = name
+        thisRefresh[hubId] = name
+        return name
+    }
 
     private fun reason(e: Throwable): String =
         (e as? TflException)?.message ?: e::class.simpleName.orEmpty()
