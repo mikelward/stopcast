@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Launcher foreground: three route lines (red / blue / yellow); the blue middle
-     line converges into a white forward arrow (rounded tail, same height as the
-     line, no gap). Reused as the monochrome layer — the arrowhead extends past the
-     bar ends, so the single-tint silhouette stays distinct. Centered in the 72dp
-     adaptive-icon safe zone. -->
+     line converges into a black forward arrow (rounded tail, same height as the
+     line, no gap) that reads against the white icon background. Reused as the
+     monochrome layer — that layer is drawn as a single-tint silhouette, so the
+     arrow's own color doesn't affect it, and the arrowhead extending past the bar
+     ends keeps the silhouette distinct. Centered in the 72dp adaptive-icon safe
+     zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -12,7 +14,7 @@
     <path android:fillColor="#E32017" android:pathData="M25.5,39.5 h37 a3.5,3.5 0 0 1 0,7 h-37 a3.5,3.5 0 0 1 0,-7 z" />
     <path android:fillColor="#0098D4" android:pathData="M25.5,50.5 h37 a3.5,3.5 0 0 1 0,7 h-37 a3.5,3.5 0 0 1 0,-7 z" />
     <path android:fillColor="#FFD300" android:pathData="M25.5,61.5 h37 a3.5,3.5 0 0 1 0,7 h-37 a3.5,3.5 0 0 1 0,-7 z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M60.5,54 a3.5,3.5 0 1 0 7,0 a3.5,3.5 0 1 0 -7,0 z" />
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="butt" android:pathData="M64,54 L84,54" />
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M77,47 L84,54 L77,61" />
+    <path android:fillColor="#000000" android:pathData="M60.5,54 a3.5,3.5 0 1 0 7,0 a3.5,3.5 0 1 0 -7,0 z" />
+    <path android:strokeColor="#000000" android:strokeWidth="7" android:strokeLineCap="butt" android:pathData="M64,54 L84,54" />
+    <path android:strokeColor="#000000" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M77,47 L84,54 L77,61" />
 </vector>
