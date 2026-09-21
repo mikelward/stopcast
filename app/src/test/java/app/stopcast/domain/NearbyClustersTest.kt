@@ -151,6 +151,27 @@ class NearbyClustersTest {
     }
 
     @Test
+    fun `a stop with no declared mode is still selected, not dropped`() {
+        // A stop TfL lists no lines for has no mode; it must not fall out of every mode's top-N.
+        val noLines = StopLocation("s", "S", latitude = 100.0 / 111_320.0, longitude = 0.0)
+        val result = select(listOf(noLines))
+        assertEquals(listOf(listOf("s")), result.eager.ids())
+        assertTrue(result.more.isEmpty())
+    }
+
+    @Test
+    fun `modeless clusters beyond the cap go to more with no mode, for a generic More`() {
+        // Three stops with no declared mode: the sentinel bucket keeps the nearest two eager and
+        // sends the third to "more" — where it carries an empty modes set, so the UI must surface
+        // it under a generic "More" rather than dropping it (the caller buckets empty modes).
+        val noLines = { id: String, meters: Double -> StopLocation(id, id, meters / 111_320.0, 0.0) }
+        val result = select(listOf(noLines("a", 50.0), noLines("b", 120.0), noLines("c", 300.0)))
+        assertEquals(listOf(listOf("a"), listOf("b")), result.eager.ids())
+        assertEquals(listOf(listOf("c")), result.more.ids())
+        assertTrue("the overflow cluster has no declared mode", result.more.single().modes.isEmpty())
+    }
+
+    @Test
     fun `a tighter per-mode cap pushes more clusters behind More`() {
         val result = select(
             listOf(

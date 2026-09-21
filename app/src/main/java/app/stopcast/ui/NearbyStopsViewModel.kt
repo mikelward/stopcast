@@ -6,6 +6,7 @@ import app.stopcast.domain.LocationProvider
 import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.NearestStops
 import app.stopcast.domain.StopFinder
+import app.stopcast.domain.StopLocation
 import app.stopcast.domain.TflException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -43,7 +44,6 @@ class NearbyStopsViewModel(
     private val location: LocationProvider,
     private val finder: StopFinder,
     private val radiusMeters: Int = NearbySelection.OUTER_RADIUS_METERS,
-    private val innerRadiusMeters: Int = NearbySelection.INNER_RADIUS_METERS,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val warn: (String) -> Unit = {},
 ) : ViewModel() {
@@ -55,11 +55,14 @@ class NearbyStopsViewModel(
         data object Locating : State
 
         /**
-         * Located, with the nearest stops to hand to the departures view. [distanceMeters]
-         * (`stopId` → meters from the fix) lets the departures list collapse a line that
-         * several adjacent nearby stops serve down to its nearest stop (SPEC *Finding stops
-         * → Near me now*); it stays in memory for that on-demand render and never reaches a
-         * log or the persisted snapshot (SPEC *Privacy*).
+         * Located, with the near-me set (SPEC *Finding stops → Near me now*). [stops] is the
+         * **eager** tier — the nearest [NearbySelection.CLUSTERS_PER_MODE] clusters of each mode —
+         * handed to the departures view and fetched at once. (Paging the farther clusters behind a
+         * per-mode "More" control is deferred to its own change; see `TODO.md`.)
+         *
+         * [distanceMeters] (`stopId` → meters from the fix) lets the departures list collapse a
+         * line served by several adjacent stops down to its nearest. It stays in memory for that
+         * render and never reaches a log or the persisted snapshot (SPEC *Privacy*).
          */
         data class Ready(
             val stops: List<StopRef>,
@@ -183,28 +186,27 @@ class NearbyStopsViewModel(
             warn("nearby stops lookup failed: ${(e as? TflException)?.message ?: e::class.simpleName}")
             return State.Failed(kindOf(e))
         }
-        val nearest = NearbySelection.select(
-            found, fix.latitude, fix.longitude, innerRadiusMeters, radiusMeters,
+        val result = NearbySelection.selectClusters(
+            found, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters,
         )
-        return if (nearest.isEmpty()) {
-            State.Empty
-        } else {
-            // Distance per stop (in memory only) so the departures list can show a line
-            // once, from its nearest stop, rather than once per adjacent stop (SPEC
-            // *Finding stops → Near me now*). Never logged or persisted (SPEC *Privacy*).
-            val distances = nearest.associate {
-                it.id to NearestStops.distanceMeters(
-                    fix.latitude, fix.longitude, it.latitude, it.longitude,
-                )
-            }
-            State.Ready(
-                stops = nearest.map {
-                    StopRef(id = it.id, name = it.name, lines = it.lines, clusterId = it.clusterId)
-                },
-                distanceMeters = distances,
-            )
+        // Eager empty means no clusters at all (each present mode contributes its nearest) —
+        // nothing in range.
+        if (result.eager.isEmpty()) return State.Empty
+        // Distance per eager stop (in memory only) so the departures list can show a line once,
+        // from its nearest stop (SPEC *Finding stops → Near me now*). Never logged or persisted
+        // (SPEC *Privacy*).
+        val eagerStops = result.eager.flatMap { it.stops }
+        val distances = eagerStops.associate {
+            it.id to NearestStops.distanceMeters(fix.latitude, fix.longitude, it.latitude, it.longitude)
         }
+        return State.Ready(
+            stops = eagerStops.map { it.toStopRef() },
+            distanceMeters = distances,
+        )
     }
+
+    private fun StopLocation.toStopRef() =
+        StopRef(id = id, name = name, lines = lines, clusterId = clusterId)
 
     private fun kindOf(e: Throwable): DeparturesUiState.Error.Kind = when (e) {
         is TflException.Offline -> DeparturesUiState.Error.Kind.OFFLINE
