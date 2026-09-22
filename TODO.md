@@ -324,21 +324,28 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       spells one station several ways), and TfL's own cluster holds distinct adjacent stations
       (King's Cross St. Pancras vs St Pancras International) apart. Not the final grain design;
       the per-direction subhead (below) rides on top.
-  - [ ] **Add the direction/terminus qualifier to the header** (maintainer's lean, settled
-        from mocks 2026-09-21). A mode-aware suffix beside the stop name, best form first:
-        `(S)` stop letter → `(→S)` compass bearing (bus) → `· Southbound` (rail platform) →
-        `→ Terminus`, shown only when the whole stop shares one direction/terminus (a
-        multi-direction station keeps the bare name). Its own PR so the mode-aware chain, the
-        width handling (a long `→ Terminus` at a large font must not crowd the name to zero —
-        Codex P2 on PR #78), and the letter/bearing capture below are designed together. The
-        A/B/C grain options and the warning-ordering A/B are drawn in the maintainer's mock.
-  - [ ] **Revisit the header grain for a busy interchange** (maintainer, 2026-09-21; part of
-        the qualifier PR above). One-per-stop reads well at a handful of stops. A hub
-        (King's Cross: six lines, both ways) is a wall of cards under one bare name, with
-        direction living only in each card's destination. A finer split — a header per stop
-        *and direction*, or a stop header plus light per-direction dividers — was mocked and
-        set aside as too cluttered *in general*, but may still be worth it *for a dense
-        stop*. Judge on a device; the alternatives are drawn in the mock.
+  - [x] **Split the header by rail direction — the compass** (maintainer, 2026-09-22). The
+        header now groups by `(place, direction)`, one per compass direction, parsed from the
+        platform ("King's Cross – Eastbound"). The compass — **not** TfL's `inbound`/`outbound` —
+        is the key: verified against live `/StopPoint/940GZZLUKSX/Arrivals` (2026-09-22), TfL tags
+        one Eastbound platform `inbound` for the Circle and `outbound` for the Hammersmith & City
+        and omits some westbound directions, so keying on inbound/outbound would split a platform's
+        trains. `PlatformDirection.of` + `StopGrouping` (a `(place, compass)` group with a
+        `directionLabel`), `StopGroup.directionLabel` rendered as `NAME – DIRECTION`; JVM tests
+        (`StopGroupingTest`, `PlatformDirectionTest`) and the `main-connected-station` screenshot
+        (real King's Cross data, TfL's inconsistent directions preserved). **Rail-first**: a stop
+        with no compass in the feed (a bus pole, a bare "Platform 4") falls to the bare name.
+  - [ ] **Bus direction/terminus qualifier — the rest of the header** (maintainer's lean, settled
+        from mocks 2026-09-21). The rail compass split shipped (above); still to add: the **bus**
+        letter/bearing (`(S)` / `(→S)`, pending the StopPoint-indicator capture below) and a
+        **terminus** form (`→ Terminus`, when the whole stop shares one). Its own PR so the
+        mode-aware chain and the width handling (a long qualifier at a large font must not crowd the
+        name to zero — Codex P2 on PR #78) are designed together. **Do bus next** (maintainer,
+        2026-09-22).
+  - [ ] **Revisit the header grain for a busy interchange** (maintainer, 2026-09-21). The rail
+        compass split (above) already breaks a hub into direction blocks. Still open: whether a
+        dense hub wants a *finer* grain still (per-line dividers within a direction), or whether the
+        compass blocks are enough — judge on a device; the alternatives are drawn in the mock.
   - [ ] **Capture TfL's StopPoint indicator to light up `(S)` / `(→S)`.** The bus stop
         letter and compass bearing TfL prints (`stopLetter` / `indicator`, e.g. "->S") aren't
         fetched yet — the seed carries only `StopRef(id, name)` and arrivals give
