@@ -336,7 +336,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         (real King's Cross data, TfL's inconsistent directions preserved). **Rail-first**: a stop
         with no compass in the feed (a bus pole, a bare "Platform 4") falls to the bare name.
   - [x] **Abbreviate the direction to a single letter when the header is too tight** (maintainer,
-        2026-09-22). When the full compass word won't fit the header row, it falls back to the
+        2026-09-22; **retired by the two-level header, below** — the direction now has its own row and
+        never competes with the name for width, so the letter fallback and `abbreviation` are gone).
+        When the full compass word won't fit the header row, it falls back to the
         direction's initial ("– E", loop labels "– IR"/"– OR") rather than clip to an ambiguous
         stub — the four cardinals have distinct initials, so the letter still disambiguates, and it
         stays narrow enough to always fit, so the direction cue never vanishes even at the max font
@@ -363,8 +365,32 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         splits on it; `headerQualifier` renders each. **Near-me only for now**: a watched bus stop
         refreshes from arrivals (no letter) — captured/persisting the letter on the watched-stop add
         flow is the remaining piece (below). JVM + logic screenshot tests.
+  - [x] **Two-level header: place name, then platform/pole sub-header** (maintainer, 2026-09-22:
+        "the two level hierarchy… hub or whatever as the top level, then the platform or stop letter
+        plus the direction in parens"). The one-level `NAME – DIRECTION` header became **two levels**:
+        the **place name once** at the top (`StopPlaceHeader`, with the near-me distance reserved at
+        its end), then a **sub-header per group** below (`StopSubHeader`). Rail now **splits on the
+        platform**, not the compass — "Platform 2 (Eastbound)" — because the compass alone conflates
+        physically distinct platforms (King's Cross Eastbound is the Circle/H&C/Met on one sub-surface
+        platform but the Piccadilly on a different deep-tube platform); the compass rides in parens as
+        the direction cue. Bus keeps its letter/bearing/terminus chain, now with TfL's `Towards` in
+        parens — "Stop D (towards Farringdon)" (trimmed at " Or "). `PlatformDirection.platformNumber`
+        + `splitOf` (a `RowSplit` of Platform/Compass/Letter/Bearing/None); `StopQualifier` reshaped
+        (Platform/Compass/BusStop/BusBearing/Terminus); `HeaderQualifier.subHeaderText` renders the
+        two parts; `towards` threaded `StopLocation → StopRef → Snapshot.mergeStop → StopArrivals →
+        DepartureRow → PersistedStop` like `clusterId`. The single-letter direction fallback is
+        retired — the two rows never crowd each other (`PlatformDirection.abbreviation` removed).
+        JVM + screenshot tests (`main-connected-station` re-recorded, King's Cross sub-surface lines
+        share Platform 7).
+  - [ ] **Split a mixed-platform row into a card per platform** (Codex P1, PR #119). A single
+        (line, direction) row can carry departures from more than one platform (a terminus, a platform
+        change), since `DepartureRows.forStop` merges a line's one direction into one card. The
+        two-level header currently falls back to the shared **compass** for such a row rather than
+        claim a wrong platform (correct, but coarser). The fuller fix splits the row's predictions by
+        platform so each platform gets its own card + "Platform N" sub-header — a `DepartureRows`
+        change (the `RowKey`/`directionKey` is also the cross-stop fold key, so widen carefully).
   - [ ] **Revisit the header grain for a busy interchange** (maintainer, 2026-09-21). The rail
-        compass split and the bus letter split (above) already break a hub into per-direction/per-pole
+        platform split and the bus letter split (above) already break a hub into per-platform/per-pole
         blocks. Still open: whether a dense hub wants a *finer* grain still (per-line dividers within
         a block), or whether the blocks are enough — judge on a device; the alternatives are in the mock.
   - [ ] **Persist the bus letter/bearing onto a watched stop.** The near-me path now captures a
@@ -381,6 +407,16 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         maintainer leaning toward a full-screen treatment too, with the maps/nav actions living
         there)
         and wire it.
+  - [ ] **Tap-to-filter drill-down over the two-level header** (maintainer, 2026-09-22). With the
+        place/platform hierarchy in place, each level's tap could open a filtered view — a three-level
+        drill-down onto one boarding decision:
+    - [ ] Tapping the **place name** (top level) → a view filtered to that hub/cluster (all its
+          platforms/poles and routes).
+    - [ ] Tapping a **route card** → a view filtered to that line **and direction**.
+    - [ ] Tapping a **platform/pole sub-header** → a view filtered to just that platform.
+      Decide the shared surface (likely the same full-screen treatment as the header/route tap
+      above), the back-stack behavior, and whether the three entry points converge on one filtered
+      screen with a filter descriptor or on distinct views.
   - [x] **Dedupe a hub-wide alert; collapse the closure card** (maintainer, 2026-09-21).
         v122 showed the same interchange notice as three full-height cards (King's Cross St.
         Pancras + St Pancras International both carrying TfL's "no step-free access" text).

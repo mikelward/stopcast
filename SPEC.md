@@ -175,9 +175,9 @@ and its destination as the headline, and the service's **next few countdowns mer
 one line** ("0 · 3 · 6 min", the "min" unit written once). The **stop name is not
 repeated on every card**: it read as clutter restated per row, and on the lock-screen
 widget the stop is implied by the context the user set up. Instead, once the list spans
-more than one place, a **small header above each group of same-place cards** names it,
-in spaced small caps (**one header per `(place, direction)`** — the direction is added below).
-A *place* is the set of stops that share a
+more than one place, a **two-level header** groups the same-place cards, in spaced small caps: the
+**place name** once at the top, then a **sub-header per platform/pole** within it (maintainer,
+2026-09-22). A *place* is the set of stops that share a
 **cluster** — a bus junction's two poles, a station's several platforms — grouped together so
 they read as one boarding location, the way a Tube station (a single stop id aggregating its
 platforms) already did; grouping by stop id instead split a junction's northbound and southbound
@@ -186,32 +186,34 @@ where the nearby lookup gives one, else the cleaned display name. Keying on TfL'
 what keeps a station it spells several ways together (King's Cross St. Pancras has several forms,
 so the name alone is an unreliable key) while holding genuinely distinct adjacent stations apart
 where TfL gives them different clusters — the maintainer's worked example is keeping King's Cross
-St. Pancras separate from St Pancras International (2026-09-21). Within a place, the header also
-carries the **direction** the cards below it are headed, one header per `(place, direction)` —
-"King's Cross – Eastbound" — so a busy interchange reads as direction blocks rather than a wall of
-cards under one bare name (settled 2026-09-22). The direction is the platform's **compass**, parsed
-from TfL's `platformName` ("Eastbound - Platform 2" → Eastbound), **not** TfL's own
-`inbound`/`outbound`: at an interchange TfL tags one compass heading inconsistently across lines
-(King's Cross runs the Circle "Eastbound" as `inbound` but the Hammersmith & City the same platform
-as `outbound`, and omits some westbound trains' direction entirely), so keying on inbound/outbound
-would split one platform's trains into two headers. The compass is also correctly coarser than the
-platform number — Eastbound spans two platforms at King's Cross — so a direction is one block, not
-one per platform. A **bus** pole carries no compass in the arrivals feed, so it splits on its **stop
-letter** instead — the "D" a rider reads on the physical stop ("King's Cross Station **(D)**") — the
-bus analog of the compass, which breaks the same wall of cards a busy bus interchange would otherwise
-be. Its letter and bearing come from the near-me `/StopPoint` lookup (`stopLetter` and the
-`CompassPoint` property), not the arrivals feed, so a **watched** bus stop (no near-me lookup yet)
-has neither until that capture lands. With no letter, the pole falls back to its **compass bearing**
-("**(→E)**"); with neither, to the **shared terminus** ("Turnpike Lane → Bank") when the whole stop
-heads one way (every route names the same, non-blank terminus, principle 1); with none of the three,
-the **bare name**. Precedence: letter → bearing → terminus → bare. When a header is too tight for the full compass word, the direction shows as
-its **single letter** ("– E"; a loop label as its two initials, "– IR") rather than clip to an
-ambiguous stub — the four cardinals have distinct initials, so the letter still tells two direction
-blocks of one place apart, and it always fits, so the direction cue never vanishes even at the
-largest font scale. The direction abbreviates to the letter first (keeping the full place name); the
-name clips (from its end, recognized from its start) only when even the letter form leaves it no
-room. The qualifier's grain at a busy interchange remains a follow-up. A two-way service
-at a stop is two cards, one per direction; a one-directional case (a terminus platform, a
+St. Pancras separate from St Pancras International (2026-09-21). Within a place, each group's
+sub-header names the **platform or pole** its cards board from — the cue that tells two groups of one
+place apart — so a busy interchange reads as platform blocks under one name rather than a wall of
+cards under one bare name (settled 2026-09-22). A **rail** place splits on its **platform**, with the
+platform's compass in parens: "**Platform 2 (Eastbound)**". The platform number and its compass are
+both parsed from TfL's `platformName` ("Eastbound - Platform 2"); the platform is the grouping key,
+**not** TfL's `inbound`/`outbound` and **not** the compass alone. Not inbound/outbound because at an
+interchange TfL tags one platform inconsistently across lines (King's Cross runs the Circle
+"Eastbound" as `inbound` but the Hammersmith & City the same platform as `outbound`, and omits some
+westbound trains' direction entirely). Not the compass alone because the compass conflates
+physically distinct platforms — King's Cross Eastbound is the Circle/H&C/Metropolitan on one
+sub-surface platform but the Piccadilly on a different deep-tube platform — so keying on the platform
+number keeps a header naming one physical platform. A rail direction with no platform number (a rare
+bare "Northbound") falls back to that bare compass. A **bus** pole carries no platform in the
+arrivals feed, so it splits on its **stop letter** — the "D" a rider reads on the physical stop —
+with where it heads in parens: "**Stop D (towards Farringdon)**". The letter, bearing, and "towards"
+come from the near-me `/StopPoint` lookup (`stopLetter`, `CompassPoint`, and `Towards`), not the
+arrivals feed, so a **watched** bus stop (no near-me lookup yet) has none until that capture lands;
+TfL's `Towards` is trimmed at its " Or " to the first destination ("Farringdon Or Holborn Circus" →
+"Farringdon"). With no letter, the pole falls back to its **compass bearing** ("**(→E)**"); with
+neither, to the **shared terminus** ("**→ Bank**") when the whole stop heads one way (every route
+names the same, non-blank terminus, principle 1); with none of the three, the **bare place name**
+(no sub-header). Precedence: letter → bearing → terminus → bare. The two levels keep a long place
+name and a long direction off the same line — the name has its own row (with the near-me distance
+reserved at its end), the direction its own row below — so neither crowds the other even at the
+largest font scale, retiring the single-letter direction fallback the one-level header needed. A
+two-way service at a stop is two cards, one per direction; a one-directional case (a terminus
+platform, a
 one-way-street stop, a single branch) is one. Nothing is hidden behind a gesture, which
 is what a glance surface needs (**D8**). TfL's `direction` is the primary key and the
 domain retains it — it can't be *reconstructed* from destination or platform in general
@@ -878,13 +880,14 @@ Mirrors the sibling fleet:
   destination is the direction signal a rider reads; platform stays in the model for a
   later detail surface. **The stop name is not on the card but returns as a group header**:
   the list is **clustered by place (stops sharing a cluster — a junction's poles, a
-  station's platforms), one header per `(place, direction)`**.
-  Within a place the header carries the group's **qualifier** — the cue that tells its groups
-  apart: a rail platform's **compass** ("King's Cross – Eastbound", parsed from the platform, **not**
-  TfL's inconsistent `inbound`/`outbound`), a **bus** pole's **letter** ("King's Cross Station (D)")
-  or, when it has none, its **bearing** ("(→E)"), else a bus place's shared **terminus** ("Turnpike
-  Lane → Bank") — settled 2026-09-22, superseding the bare-name-only step. The cluster key is TfL's
-  `stationNaptan` where the nearby lookup gives one,
+  station's platforms), a two-level header** — the **place name once**, then a **sub-header per
+  platform/pole** within it. The sub-header carries the group's **qualifier** — the cue that tells
+  its groups apart: a rail **platform** with its compass in parens ("Platform 2 (Eastbound)", the
+  platform parsed from `platformName`, keyed on the platform not the compass, since one compass spans
+  physically distinct platforms), a **bus** pole's **letter** with its "towards" in parens ("Stop D
+  (towards Farringdon)") or, when it has none, its **bearing** ("(→E)"), else a bus place's shared
+  **terminus** ("→ Bank") — settled 2026-09-22, superseding the one-level `(place, direction)` step.
+  The cluster key is TfL's `stationNaptan` where the nearby lookup gives one,
   else the cleaned display name — keying on TfL's own cluster keeps a station it spells
   several ways together while holding distinct adjacent stations (King's Cross St. Pancras
   vs St Pancras International) apart. The qualifier's

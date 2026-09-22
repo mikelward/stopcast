@@ -625,36 +625,38 @@ private fun DepartureList(
         items(closureRows, key = { "closure|${it.stopId}|${it.hubId}" }) { row ->
             DepartureRowCard(row, now, onDismiss = { onDismissAlert(row) })
         }
+        // Two levels (SPEC D8): the **place** name once (top), then a **sub-header** per platform/pole
+        // within it. A place's groups are contiguous (the grouping orders them so), so a change of
+        // placeKey marks a new place and emits its name header once.
+        var lastPlaceKey: String? = null
         groups.forEachIndexed { index, group ->
-            // The near-me list carries a per-stop distance; the watched list doesn't, so the
-            // label is present only when this place's stops are in the map (D1). A place groups
-            // several stops (a junction's poles, a station's platforms across directions), so the
-            // header shows the distance to the *closest* of them — the one a rider walks to — and
-            // the same place-wide value on every direction header of that place (placeDistanceMeters).
-            val distanceLabel = placeDistanceMeters[group.placeKey]?.let(StopDistance::label)
-            // Draw the header when the grouping asks for it (more than one place, or a closure)
-            // OR whenever there's a distance to show. A lone near-me place suppresses the
-            // watched-list header (StopGroup.showHeader is false for a single non-closed place),
-            // but on the near-me path it must still show its name and distance — otherwise a
-            // one-place result (nothing inside the inner radius, or dedup collapsing to one group)
-            // would drop both the promised distance and the place name (Codex, PR #82).
-            if (group.showHeader || distanceLabel != null) {
-                item(key = "header|${group.key}") {
-                    // The header names the place, plus its qualifier: the compass direction a rail
-                    // place split on ("King's Cross – Eastbound"), or the shared terminus a bus
-                    // place heads to ("Turnpike Lane → Bank"); a place with neither shows the bare
-                    // name (SPEC D8). The qualifier is passed separately so the header can reserve
-                    // its width and clip the *name* first — the qualifier is the cue that tells two
-                    // groups of one place apart. The first group takes no extra top break — unless a
-                    // closure alert precedes it, where the break separates the alert band from the
-                    // departures.
-                    StopGroupHeader(
-                        group.stopName,
-                        group.qualifier,
-                        distanceLabel,
-                        firstGroup = index == 0 && closureRows.isEmpty(),
-                    )
+            if (group.placeKey != lastPlaceKey) {
+                lastPlaceKey = group.placeKey
+                // The near-me list carries a per-stop distance; the watched list doesn't, so the
+                // label is present only when this place's stops are in the map (D1). A place groups
+                // several stops (a junction's poles, a station's platforms), so it shows the distance
+                // to the *closest* of them — the one a rider walks to (placeDistanceMeters), once.
+                val distanceLabel = placeDistanceMeters[group.placeKey]?.let(StopDistance::label)
+                // Draw the place header when the grouping distinguishes this place (>1 place, a split
+                // into platforms/poles, a closure) OR there's a distance to promise. A lone bare
+                // near-me place still shows its name and distance, else a one-place result would drop
+                // both (Codex, PR #82). The first place on screen takes no extra top break — unless a
+                // closure alert precedes it.
+                if (group.showHeader || distanceLabel != null) {
+                    item(key = "place|${group.placeKey}") {
+                        StopPlaceHeader(
+                            group.stopName,
+                            distanceLabel,
+                            firstOnScreen = index == 0 && closureRows.isEmpty(),
+                        )
+                    }
                 }
+            }
+            // The sub-header names the platform/pole the group split on ("Platform 2 (Eastbound)",
+            // "Stop D (towards Farringdon)") — the cue that tells two groups of one place apart. A
+            // group that split on nothing (a lone bare place) carries no qualifier and no sub-header.
+            group.qualifier?.let { qualifier ->
+                item(key = "sub|${group.key}") { StopSubHeader(qualifier) }
             }
             items(group.rows, key = { "${it.stopId}|${it.lineId}|${it.directionKey}" }) { row ->
                 DepartureRowCard(
@@ -715,146 +717,100 @@ internal fun moreLabelRes(mode: String): Int = when (mode) {
 }
 
 /**
- * The small group header above a group of same-place cards (SPEC D8): the place name — plus its
- * **qualifier** ([stopQualifier]) where the group split on one — in spaced small caps, text only, no
- * border/background, the muted `onSurfaceVariant` role. The qualifier renders per kind: a rail
- * **compass** ("King's Cross – Eastbound"), a bus **letter** ("King's Cross Station (D)"), a bus
- * **bearing** ("(→E)"), or a bus **terminus** ("Turnpike Lane → Bank"); a group with none shows the
- * bare name. The name hard-truncates (no ellipsis) at the edge. Extra top space (past the list's 8dp
- * item gap) marks the group break; the first group takes none.
- *
- * The **qualifier** and [distanceLabel] are **reserved** trailing elements: a long place name clips
- * before either is pushed off the edge (the same discipline as the departure row's countdown). The
- * qualifier especially must survive — it is the cue that tells two groups of one place apart, so
- * appending it to the name and letting it clip would defeat the split (Codex P2, PR #109). When the
- * full qualifier won't fit it falls back to a shorter form ([headerQualifier]: the compass letter),
- * and a long bus terminus is bounded so it can't crowd the name to zero ([headerQualifierFit]).
- * [distanceLabel], when set, is the near-me list's distance to this stop ("… (120 m)"), null on the
- * location-free watched list (D1); it is not uppercased, so its unit stays lowercase, and it sits
- * after the qualifier.
+ * The **top-level** header above a place's departures (SPEC D8): the cluster name, once — a station,
+ * a bus junction, a stop — in spaced small caps, text only, no border/background. Below it sit the
+ * per-platform/pole sub-headers ([StopSubHeader]). The name hard-truncates (no ellipsis) at the edge;
+ * [distanceLabel], the near-me distance to the place's nearest member ("(120 m)", null on the
+ * location-free watched list, D1), is a reserved trailing element the name clips before. Extra top
+ * space marks the break between places; the first place on screen takes none.
  */
 @Composable
-private fun StopGroupHeader(
-    name: String,
-    stopQualifier: StopQualifier?,
-    distanceLabel: String?,
-    firstGroup: Boolean,
-) {
-    // labelMedium is the same role the freshness stamp uses; the tracking gives the small-caps read,
-    // and the semi-bold weight is baked in ([headerTextStyle]) so the width the header measures below
-    // matches the width it renders (Codex P2, PR #115). One style drives both the measure and every
-    // Text. uppercase() is Kotlin's locale-invariant overload (safe from the Turkish-ı trap).
-    val style = headerTextStyle(MaterialTheme.typography.labelMedium)
-    val color = MaterialTheme.colorScheme.onSurfaceVariant
-    val headerModifier = Modifier
+private fun StopPlaceHeader(name: String, distanceLabel: String?, firstOnScreen: Boolean) {
+    // labelLarge (a step up from the sub-header's labelMedium) marks the top of the hierarchy;
+    // onSurface (not the muted variant) gives the name a touch more weight. The semi-bold weight and
+    // tracking are baked into [headerTextStyle]. uppercase() is locale-invariant (Turkish-ı safe).
+    val style = headerTextStyle(MaterialTheme.typography.labelLarge)
+    val nameColor = MaterialTheme.colorScheme.onSurface
+    val modifier = Modifier
         .fillMaxWidth()
-        .padding(start = 4.dp, end = 4.dp, top = if (firstGroup) 0.dp else 12.dp, bottom = 0.dp)
-    val qualifier = headerQualifier(stopQualifier)
-    if (qualifier == null && distanceLabel == null) {
-        // No qualifier, no distance (the watched list's bare-name header): rendering unchanged.
+        .padding(start = 4.dp, end = 4.dp, top = if (firstOnScreen) 0.dp else 16.dp)
+    if (distanceLabel == null) {
         Text(
             text = name.uppercase(),
             style = style,
-            color = color,
+            color = nameColor,
             maxLines = 1,
             softWrap = false,
-            // Truncate at the edge rather than elide — a stop name is recognized from its start.
             overflow = TextOverflow.Clip,
-            modifier = headerModifier,
+            modifier = modifier,
         )
         return
     }
-    if (qualifier == null) {
-        // A distance but no qualifier (a near-me place with no compass or shared terminus): name
-        // (clips) + reserved distance, no measure. fill = false so a short name packs left with the
-        // distance right after it, not stretched to push it to the far edge; a long name clips.
-        Row(modifier = headerModifier, verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = name.uppercase(),
-                style = style,
-                color = color,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            Text(
-                text = " ($distanceLabel)",
-                style = style,
-                color = color,
-                maxLines = 1,
-                softWrap = false,
-            )
-        }
-        return
-    }
-    // Qualifier present (compass or bus terminus). The qualifier and the distance are reserved; the
-    // name clips first (recognized from its start). When the full qualifier won't fit it falls back
-    // to its shorter form, and the reserved distance and the name's floor bound the qualifier so
-    // neither is starved — all decided by the pure [headerQualifierFit] from the measured widths.
-    BoxWithConstraints(modifier = headerModifier) {
-        val measurer = rememberTextMeasurer()
-        // Key each measurement on the font scale as well as the text: a display-size / accessibility
-        // resize grows the glyphs while the row's px width is unchanged, so a width cached on the
-        // string alone would stay stale and the fallback never fire (mirrors DestinationLine).
-        val fontScale = LocalDensity.current.fontScale
-        val nameText = name.uppercase()
-        val distanceText = distanceLabel?.let { " ($it)" }.orEmpty()
-        fun widthOf(text: String) =
-            if (text.isEmpty()) 0 else measurer.measure(text, style, maxLines = 1).size.width
-        val nameWidth = remember(nameText, style, fontScale) { widthOf(nameText) }
-        val fullQualifierWidth = remember(qualifier.fullText, style, fontScale) { widthOf(qualifier.fullText) }
-        val distanceWidth = remember(distanceText, style, fontScale) { widthOf(distanceText) }
-        // The name keeps at least its floor share of the row past the reserved distance, so a long
-        // bus terminus can't crowd it to zero (the compass floor is 0 — its letter is narrow).
-        val nameFloorPx = ((constraints.maxWidth - distanceWidth) * qualifier.nameFloorFraction)
-            .toInt().coerceAtLeast(0)
-        val fit = headerQualifierFit(
-            fullText = qualifier.fullText,
-            shortText = qualifier.shortText,
-            nameWidth = nameWidth,
-            fullWidth = fullQualifierWidth,
-            distanceWidth = distanceWidth,
-            nameFloorPx = nameFloorPx,
-            maxWidth = constraints.maxWidth,
+    // fill = false so a short name packs left with the distance right after it, not stretched to push
+    // it to the far edge; the reserved distance keeps its width and a long name clips first.
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = name.uppercase(),
+            style = style,
+            color = nameColor,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+            modifier = Modifier.weight(1f, fill = false),
         )
-        val qualifierMaxWidth = with(LocalDensity.current) { fit.maxWidthPx.toDp() }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = " ($distanceLabel)",
+            style = style,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+/**
+ * The **sub-level** header under a place name (SPEC D8): the platform or pole the group split on,
+ * with its direction in parentheses — "Platform 2 (Eastbound)", "Stop D (towards Farringdon)", or a
+ * fallback ("(→E)", "→ Bank"). The primary part ([SubHeaderText.primary]) leads in `onSurface`; the
+ * parenthetical direction follows in the muted `onSurfaceVariant`, so the pole reads first and the
+ * direction qualifies it. Indented under the place name. The whole thing announces its spoken form
+ * ("Platform 2, Eastbound") to a screen reader in place of the raw glyphs.
+ */
+@Composable
+private fun StopSubHeader(qualifier: StopQualifier) {
+    val style = headerTextStyle(MaterialTheme.typography.labelMedium)
+    val text = remember(qualifier) { subHeaderText(qualifier) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 4.dp)
+            .semantics(mergeDescendants = true) { contentDescription = text.spoken },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text.primary,
+            style = style,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+            // The primary is short (a platform number, a stop letter), so it takes its natural width
+            // (unweighted) and the parenthetical below gets ALL the rest — not a fixed half, so a long
+            // "towards …" isn't clipped while the primary's half sits empty (Codex P2, PR #119). If the
+            // primary alone somehow overran the row it clips (the more important part wins the space).
+        )
+        text.paren?.let { paren ->
             Text(
-                text = nameText,
+                text = " ($paren)",
                 style = style,
-                color = color,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Clip,
-                // fill = false so a short name sits directly before the qualifier (adjacent, packed
-                // left), not stretched to push it right; the reserved qualifier/distance keep their
-                // width and the name clips to its share only when the row is too tight.
+                // Weighted so the paren consumes the width the primary left, clipping only if the
+                // remainder is too small.
                 modifier = Modifier.weight(1f, fill = false),
             )
-            Text(
-                text = fit.text,
-                style = style,
-                color = color,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
-                // Bounded so the reserved distance and the name's floor keep their width; announce
-                // the full form when the fallback is shown, so a screen reader hears "Eastbound" /
-                // "to Bank", not "E" or a bare arrow.
-                modifier = Modifier
-                    .widthIn(max = qualifierMaxWidth)
-                    .semantics { contentDescription = qualifier.spoken },
-            )
-            if (distanceLabel != null) {
-                Text(
-                    text = distanceText,
-                    style = style,
-                    color = color,
-                    maxLines = 1,
-                    softWrap = false,
-                )
-            }
         }
     }
 }

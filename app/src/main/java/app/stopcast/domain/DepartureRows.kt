@@ -34,10 +34,11 @@ object DepartureRows {
         // The stop's cluster (TfL `stationNaptan` else display name), stamped on each row so the
         // screen groups by place rather than name (SPEC D8). Blank groups the stop alone.
         clusterId: String = "",
-        // The bus pole's letter and bearing, stamped on each timed row so a bus place splits into
-        // one header per pole (SPEC D8). Blank for a station or a letter-less stop.
+        // The bus pole's letter, bearing, and "towards", stamped on each timed row so a bus place
+        // splits into one header per pole (SPEC D8). Blank for a station or a letter-less stop.
         stopLetter: String = "",
         bearing: String = "",
+        towards: String = "",
     ): List<DepartureRow> {
         // upcoming() has already dropped departed services and sorted soonest-first;
         // groupBy preserves that encounter order within each group.
@@ -51,6 +52,7 @@ object DepartureRows {
                     clusterId = clusterId,
                     stopLetter = stopLetter,
                     bearing = bearing,
+                    towards = towards,
                     lineId = key.lineId,
                     lineName = soonest.lineName,
                     direction = soonest.direction,
@@ -85,7 +87,7 @@ object DepartureRows {
             val timed =
                 forStop(
                     stop.stopId, stop.stopName, stop.departures, now, lineStatuses, stop.fetchedAt,
-                    stop.clusterId, stop.stopLetter, stop.bearing,
+                    stop.clusterId, stop.stopLetter, stop.bearing, stop.towards,
                 )
             // A synthesized line-status row asserts "No departures", which is only true when
             // this stop's arrivals were actually fetched AND are still current: fetched (not
@@ -452,11 +454,12 @@ object DepartureRows {
                     stopId = stop.stopId,
                     stopName = stop.stopName,
                     clusterId = stop.clusterId,
-                    // Carry the pole letter/bearing so a suspended bus line groups under its own
-                    // pole's "(D)"/"(→E)" header, not a separate bare group — at a multi-pole place
-                    // the warning must say which pole it belongs to (Codex P2, PR #118).
+                    // Carry the pole letter/bearing/towards so a suspended bus line groups under its
+                    // own pole's header, not a separate bare group — at a multi-pole place the
+                    // warning must say which pole it belongs to (Codex P2, PR #118).
                     stopLetter = stop.stopLetter,
                     bearing = stop.bearing,
+                    towards = stop.towards,
                     lineId = line.id,
                     lineName = line.name,
                     direction = "",
@@ -560,13 +563,14 @@ data class StopArrivals(
     // redundant leading name even when the notice uses a different member's spelling than [stopName]
     // (SPEC *Disruptions*). Empty for a stop in no hub or when the lookup failed; not persisted.
     val placeAliases: List<String> = emptyList(),
-    // The bus pole's letter ("D") and compass bearing ("E"), from the nearby lookup
-    // ([StopLocation.stopLetter]/[StopLocation.bearing]). Carried onto each timed [DepartureRow] so a
-    // bus place splits into one header per pole — "King's Cross Station (D)" / "(→E)" — the bus
-    // analog of a rail platform's compass (SPEC D8). Blank for a station, a letter-less bus stop, or
-    // a watched stop (whose seed carries no letter yet); not persisted, re-fetched on refresh.
+    // The bus pole's letter ("D"), compass bearing ("E"), and "towards" description ("Farringdon Or
+    // Holborn Circus"), from the nearby lookup ([StopLocation]). Carried onto each timed
+    // [DepartureRow] so a bus place splits into one header per pole — "King's Cross Station (D)
+    // (towards Farringdon)" — the bus analog of a rail platform (SPEC D8). All blank for a station, a
+    // letter-less bus stop, or a watched stop (whose seed carries none yet).
     val stopLetter: String = "",
     val bearing: String = "",
+    val towards: String = "",
 )
 
 /**

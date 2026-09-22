@@ -118,10 +118,10 @@ class PersistedSnapshotTest {
     }
 
     @Test
-    fun `the bus pole letter and bearing survive the round trip`() {
+    fun `the bus pole letter, bearing, and towards survive the round trip`() {
         // They are grouping inputs like clusterId, so a restored snapshot must keep its per-pole
-        // "(D)"/"(→E)" headers instead of collapsing to bare/terminus until the refresh lands (Codex
-        // P2, PR #118).
+        // "Stop D (towards Farringdon)" / "(→E)" sub-headers instead of collapsing to bare/terminus
+        // until the refresh lands (Codex P2, PR #118).
         val snapshot = DeparturesSnapshot(
             stops = listOf(
                 StopArrivals(
@@ -132,6 +132,7 @@ class PersistedSnapshotTest {
                     lines = listOf(LineRef("17", "17", "bus")),
                     stopLetter = "D",
                     bearing = "E",
+                    towards = "Farringdon Or Holborn Circus",
                 ),
             ),
             fetchedAt = now,
@@ -139,6 +140,7 @@ class PersistedSnapshotTest {
         val restored = snapshot.toPersisted().toDomain()!!.stops.single()
         assertEquals("D", restored.stopLetter)
         assertEquals("E", restored.bearing)
+        assertEquals("Farringdon Or Holborn Circus", restored.towards)
         assertEquals(snapshot, snapshot.toPersisted().toDomain())
     }
 

@@ -44,9 +44,10 @@ class TflStopPointDtoTest {
     }
 
     @Test
-    fun `the stop letter and compass bearing are captured for the per-pole bus header`() {
-        // TfL prints a bus pole's letter (`stopLetter` "D", "Stop D") and its bearing (a CompassPoint
-        // in `additionalProperties`); both feed the per-pole bus split (SPEC D8).
+    fun `the stop letter, compass bearing, and towards are captured for the per-pole bus header`() {
+        // TfL prints a bus pole's letter (`stopLetter` "D", "Stop D"), its bearing (a CompassPoint in
+        // `additionalProperties`), and where it heads (a `Towards`); all feed the per-pole bus
+        // sub-header ("Stop D (towards Farringdon)", SPEC D8).
         val stop = TflStopPointDto(
             id = "490000129D",
             commonName = "King's Cross Station",
@@ -61,6 +62,7 @@ class TflStopPointDtoTest {
         ).toStopLocationOrNull()
         assertEquals("D", stop?.stopLetter)
         assertEquals("E", stop?.bearing)
+        assertEquals("Farringdon Or Holborn Circus", stop?.towards)
     }
 
     @Test
@@ -74,6 +76,7 @@ class TflStopPointDtoTest {
         ).toStopLocationOrNull()
         assertEquals("", stop?.stopLetter)
         assertEquals("", stop?.bearing)
+        assertEquals("", stop?.towards)
     }
 
     @Test

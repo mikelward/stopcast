@@ -263,5 +263,5 @@ class NearbyStopsViewModel(
 internal fun StopLocation.toStopRef() =
     StopRef(
         id = id, name = name, lines = lines, clusterId = clusterId, hubId = hubId,
-        stopLetter = stopLetter, bearing = bearing,
+        stopLetter = stopLetter, bearing = bearing, towards = towards,
     )

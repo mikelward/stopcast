@@ -46,12 +46,13 @@ internal data class PersistedStop(
     // older build reads back blank — that stop groups on its own until the next refresh restamps
     // it — no version bump needed.
     val clusterId: String = "",
-    // The bus pole's letter/bearing for the per-pole split (SPEC D8) — persisted like [clusterId]
-    // (both are grouping inputs the screen needs before the refresh), so a restored snapshot keeps
-    // its "(D)"/"(→E)" headers rather than collapsing to bare/terminus until the fetch lands.
-    // Defaulted, so an older build's snapshot reads back blank — no version bump needed.
+    // The bus pole's letter/bearing/towards for the per-pole split (SPEC D8) — persisted like
+    // [clusterId] (grouping inputs the screen needs before the refresh), so a restored snapshot keeps
+    // its per-pole headers rather than collapsing to bare/terminus until the fetch lands. Defaulted,
+    // so an older build's snapshot reads back blank — no version bump needed.
     val stopLetter: String = "",
     val bearing: String = "",
+    val towards: String = "",
 )
 // Stop disruptions (closures) are deliberately NOT persisted: a closure is a point-in-time
 // claim the screen renders unconditionally, with no stale-safe rendering (unlike a countdown,
@@ -112,6 +113,7 @@ private fun StopArrivals.toPersisted(): PersistedStop =
         clusterId = clusterId,
         stopLetter = stopLetter,
         bearing = bearing,
+        towards = towards,
     )
 
 private fun PersistedStop.toDomain(): StopArrivals =
@@ -126,6 +128,7 @@ private fun PersistedStop.toDomain(): StopArrivals =
         clusterId = clusterId,
         stopLetter = stopLetter,
         bearing = bearing,
+        towards = towards,
     )
 
 private fun Departure.toPersisted(): PersistedDeparture =
