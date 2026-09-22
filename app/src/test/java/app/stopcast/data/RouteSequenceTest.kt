@@ -89,6 +89,22 @@ class RouteSequenceTest {
     }
 
     @Test
+    fun `each stop carries its rail connections, from the station and its interchange, not buses`() {
+        val stops = RouteStops.ahead(northern, KENNINGTON, "Edgware", "Charing X", lineId = "northern")!!
+            .associate { it.name to it.connections.map { line -> line.id } }
+        assertEquals(emptyList<String>(), stops["Kennington"])
+        assertEquals(listOf("bakerloo", "jubilee", "waterloo-city"), stops["Waterloo"])
+        // The Victoria line from Euston's own station, the Lioness line from its interchange; the
+        // hub's buses and national-rail operators are left out.
+        assertEquals(listOf("victoria", "lioness"), stops["Euston"])
+        assertEquals(listOf("central", "elizabeth"), stops["Tottenham Court Road"])
+        val bank = RouteStops.ahead(northern, KENNINGTON, "High Barnet", "Bank", lineId = "northern")!!
+            .first { it.name == "Bank" }
+        assertEquals(listOf("central", "waterloo-city", "dlr"), bank.connections.map { it.id })
+        assertEquals(listOf("tube", "tube", "dlr"), bank.connections.map { it.mode })
+    }
+
+    @Test
     fun `the client reads the direction's route sequence`() = runTest {
         var path = ""
         val engine = MockEngine { request ->

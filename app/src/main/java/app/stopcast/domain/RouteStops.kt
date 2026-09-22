@@ -12,15 +12,24 @@ data class LineRoute(val name: String, val stopIds: List<String>)
 
 /**
  * A line's routes in one or both directions, plus a display name for each stop id ([stopNames],
- * already [cleanStopName]d). Static network data — no user data, no clock.
+ * already [cleanStopName]d) and the lines that serve each stop or its interchange ([stopLines],
+ * a line's [LineRef.mode] blank where TfL's data doesn't say). Static network data — no user
+ * data, no clock.
  */
-data class LineSequence(val routes: List<LineRoute>, val stopNames: Map<String, String>) {
+data class LineSequence(
+    val routes: List<LineRoute>,
+    val stopNames: Map<String, String>,
+    val stopLines: Map<String, List<LineRef>> = emptyMap(),
+) {
     operator fun plus(other: LineSequence) =
-        LineSequence(routes + other.routes, stopNames + other.stopNames)
+        LineSequence(routes + other.routes, stopNames + other.stopNames, stopLines + other.stopLines)
 }
 
-/** One station on the route detail's stop list. */
-data class RouteStop(val id: String, val name: String)
+/**
+ * One station on the route detail's stop list, with the [connections] a rider can change to
+ * there — other rail-type lines at the station or its interchange (see [Connections]).
+ */
+data class RouteStop(val id: String, val name: String, val connections: List<LineRef> = emptyList())
 
 /**
  * Reads a line's route sequence from TfL — the stop list behind the route detail page (SPEC
@@ -47,10 +56,17 @@ object RouteStops {
      * A route matches when it calls at [stopId] and, later, at a stop named [destination] — so a
      * short-working (a Northern train terminating at Kennington) ends where the train does, not at
      * the line's end. A route with no such stop still matches if its *name* ends at [destination]
-     * (a bus destination TfL spells differently from its last stop), running to its end. Where TfL names the branch
-     * ("via Bank"), only matching routes count; the answer must then be one unambiguous path.
+     * (a bus destination TfL spells differently from its last stop), running to its end. Where TfL
+     * names the branch ("via Bank"), only matching routes count; the answer must then be one
+     * unambiguous path. Each stop carries its connections other than [lineId], the line ridden.
      */
-    fun ahead(sequence: LineSequence, stopId: String, destination: String, branch: String?): List<RouteStop>? {
+    fun ahead(
+        sequence: LineSequence,
+        stopId: String,
+        destination: String,
+        branch: String?,
+        lineId: String = "",
+    ): List<RouteStop>? {
         if (destination.isBlank()) return null
         // Every visit to [stopId] is a candidate origin and every later stop named [destination] a
         // candidate end: a loop can call here twice, and two stops can share a cleaned name (a
@@ -79,7 +95,9 @@ object RouteStops {
             candidates.filter { (route, _) -> branchOf(route.name) == branch }.ifEmpty { candidates }
         }
         val path = onBranch.map { it.second }.distinct().singleOrNull() ?: return null
-        return path.map { id -> RouteStop(id, sequence.stopNames[id].orEmpty()) }
+        return path.map { id ->
+            RouteStop(id, sequence.stopNames[id].orEmpty(), Connections.of(sequence.stopLines[id].orEmpty(), lineId))
+        }
     }
 
     private fun visits(route: LineRoute, stopId: String): List<Int> =
