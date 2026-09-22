@@ -73,8 +73,53 @@ class LinePillTest {
 
     @Test
     fun `an unmapped line or mode has no color, so the caller falls back to neutral`() {
+        // lineFillColor covers tube/mode only; national-rail resolves by operator via
+        // railOperatorColor (below), so lineFillColor stays null for it.
         assertNull(lineFillColor("thameslink", "national-rail"))
         assertNull(lineFillColor("", ""))
+    }
+
+    @Test
+    fun `national rail operators resolve to their confirmed brand color`() {
+        assertEquals(Color(0xFFB7007C), railOperatorColor("national-rail", "c2c"))
+        assertEquals(Color(0xFF8CC63E), railOperatorColor("national-rail", "Southern"))
+        assertEquals(Color(0xFF389CFF), railOperatorColor("national-rail", "Southeastern"))
+        assertEquals(Color(0xFFFF5AA4), railOperatorColor("national-rail", "Thameslink"))
+        assertEquals(Color(0xFF43165C), railOperatorColor("national-rail", "Great Northern"))
+        assertEquals(Color(0xFFD70428), railOperatorColor("national-rail", "Greater Anglia"))
+        assertEquals(Color(0xFF0A493E), railOperatorColor("national-rail", "Great Western Railway"))
+        assertEquals(Color(0xFF24398C), railOperatorColor("national-rail", "South Western Railway"))
+        assertEquals(Color(0xFFCE0E2D), railOperatorColor("national-rail", "London North Eastern Railway"))
+        assertEquals(Color(0xFF004354), railOperatorColor("national-rail", "Avanti West Coast"))
+        assertEquals(Color(0xFF713563), railOperatorColor("national-rail", "East Midlands Railway"))
+        assertEquals(Color(0xFF660F21), railOperatorColor("national-rail", "CrossCountry"))
+        assertEquals(Color(0xFF00BFFF), railOperatorColor("national-rail", "Chiltern Railways"))
+        assertEquals(Color(0xFFEB1E2D), railOperatorColor("national-rail", "Gatwick Express"))
+        assertEquals(Color(0xFF532E63), railOperatorColor("national-rail", "Heathrow Express"))
+    }
+
+    @Test
+    fun `operator color is case- and punctuation-insensitive`() {
+        val emr = Color(0xFF713563)
+        assertEquals(emr, railOperatorColor("national-rail", "east midlands railway"))
+        assertEquals(emr, railOperatorColor("national-rail", "East  Midlands  Railway"))
+        assertEquals(emr, railOperatorColor("national-rail", "East-Midlands Railway"))
+    }
+
+    @Test
+    fun `operator color is gated on the national-rail mode`() {
+        // A non-rail line that happens to share an operator's name must not pick up a rail
+        // brand color — the color is meaningful only for a national-rail service.
+        assertNull(railOperatorColor("tube", "Southern"))
+        assertNull(railOperatorColor("bus", "Southern"))
+    }
+
+    @Test
+    fun `a rail operator without a confirmed brand hex falls back to neutral`() {
+        // Not in the confirmed set → null, so LinePill shows a neutral pill rather than an
+        // invented shade (SPEC: never an invented color).
+        assertNull(railOperatorColor("national-rail", "Merseyrail"))
+        assertNull(railOperatorColor("national-rail", "Lumo"))
     }
 
     @Test

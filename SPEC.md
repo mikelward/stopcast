@@ -363,8 +363,17 @@ that tube line; and TfL itself draws the Overground as hollow/parallel lines —
 shape says "Overground, not tube" even where the color collides. The accent is nudged to
 stay legible on the surface (darker on the light card, brighter on the dark one). An
 Overground service whose id isn't one of the six (legacy `london-overground`) falls back to
-the single mode orange; a mode still without a defined color (national rail) falls back to a
-neutral pill rather than an invented shade — a cosmetic gap, not a correctness failure.
+the single mode orange. National Rail resolves by **operator** rather than mode — every rail
+service shares the one `national-rail` mode, so its operator is its identity — and each operator
+wears its own **brand** color (c2c magenta, Southern green, EMR aubergine), a solid pill like the
+tube, the way Google Maps shows them. These are operator brand hexes, not TfL's palette — the one
+authorized departure from "a confirmed TfL hex only" — so each is a confirmed brand value (the
+color Wikipedia's UK-railways templates carry, or the operator's own site where that value is a
+route-diagram color rather than the brand, as for Great Northern's purple). The operator code
+(EMR, AWC, c2c) already reads distinct from any tube code, so the rare color collision with a tube
+line (a rail red near Central) can't be mistaken for it — the identity is text, not color. An
+operator without a confirmed brand hex still falls back to a neutral pill rather than an invented
+shade — a cosmetic gap, not a correctness failure.
 
 ### Disruptions
 

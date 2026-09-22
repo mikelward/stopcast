@@ -858,13 +858,20 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       fall back to first-three-letters. Elizabeth line and Overground are their own modes and
       keep "ELI"/the hollow pills. The pinned list and the initials want a final eyeball on a
       real device — TfL egress isn't reachable from CI to enumerate the live operator set.
-- [ ] (Later, open call) **Colors for National Rail services.** When rail departures land
-      (National Rail / Thameslink item below — TfL's feed doesn't carry them today), give each
-      operator its own pill instead of the neutral fallback (Google Maps, for one, shows
-      Southern as a green fill with yellow text; East Midlands Railway is a burgundy/maroon).
-      These are operator **brand** colors, not TfL's palette, so this is a deliberate departure
-      from "add a line color only as a confirmed TfL hex" (maintainer-authorized above) — source
-      a confirmed brand hex per operator.
+- [x] **Colors for National Rail services.** Each operator now shows a solid pill in its own
+      **brand** color (`railOperatorColors`) instead of the neutral fallback, keyed by operator
+      name (TfL's `lineName`) like the operator code — a deliberate, maintainer-authorized
+      departure from "a confirmed TfL hex only". Fifteen confirmed operators: c2c, Southern,
+      Southeastern, Thameslink, Great Northern, Greater Anglia, GWR, SWR, LNER, Avanti West Coast,
+      East Midlands Railway, CrossCountry, Chiltern, Gatwick Express, Heathrow Express. Hexes are
+      from Wikipedia's UK-railways colour templates, except Great Northern's purple (`#43165C`),
+      taken from the operator's own site because the Wikipedia value is a route-diagram blue.
+      Rendered solid (not the Overground hollow) since the operator code disambiguates any
+      tube-color collision. Like the operator codes, this ships **ahead of** rail departures
+      landing (item below — TfL's feed doesn't carry them yet), so it's unexercised until then; a
+      rail operator not in the confirmed set still falls back to a neutral pill. The confirmed set
+      wants a final eyeball on a real device once rail departures land — the brand hexes weren't
+      verifiable against a live TfL operator set from CI.
 - [ ] (Later) **Revisit auto-locate-on-open and the location states.** StopCast
       resolves location once on open (a `LaunchedEffect` gated on `PermissionRequired`) and
       the nearby set never re-resolves afterward except via the temporary crosshair button.

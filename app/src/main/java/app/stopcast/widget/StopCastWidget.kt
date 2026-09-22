@@ -49,6 +49,7 @@ import app.stopcast.domain.StarredRowSet
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.domain.lineCode
 import app.stopcast.ui.lineFillColor
+import app.stopcast.ui.railOperatorColor
 import app.stopcast.ui.textColorOn
 import java.time.Duration
 import java.time.Instant
@@ -361,7 +362,9 @@ private fun WidgetRow(rowModel: WidgetRowModel, now: Instant) {
  *  pills and the labels beside them line up (SPEC fixed-width pill invariant). */
 @androidx.compose.runtime.Composable
 private fun WidgetPill(row: DepartureRow) {
-    val fill = lineFillColor(row.lineId, row.mode)
+    // A national-rail service takes its operator's brand color; every other line/mode resolves
+    // by id/mode. Both render solid here — the widget has no hollow (Overground) treatment.
+    val fill = railOperatorColor(row.mode, row.lineName) ?: lineFillColor(row.lineId, row.mode)
     Box(
         modifier = GlanceModifier
             .background(if (fill != null) ColorProvider(fill) else GlanceTheme.colors.surfaceVariant)
