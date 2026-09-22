@@ -193,7 +193,14 @@ platform number — Eastbound spans two platforms at King's Cross — so a direc
 one per platform. This ships **rail-first**: a stop with no compass in the feed — a **bus** pole,
 whose bearing (`->N`) lives in stop metadata not the arrivals feed, or a bare "Platform 4" — falls
 to the **bare name** header, so buses aren't regressed while the bus bearing is captured (a
-follow-up, `TODO.md`). The finer terminus qualifier (`→ Terminus`), the bus letter/bearing, and the
+follow-up, `TODO.md`). When a header is too tight for the full compass word, the direction shows as
+its **single letter** ("– E"; a loop label as its two initials, "– IR") rather than clip to an
+ambiguous stub — the four cardinals have distinct initials, so the letter still tells two direction
+blocks of one place apart, and it always fits, so the direction cue never vanishes even at the
+largest font scale. The direction abbreviates to the letter first (keeping the full place name); the
+name clips (from its end, recognized from its start) only when even the letter form leaves it no
+room. The finer
+terminus qualifier (`→ Terminus`), the bus letter/bearing, and the
 qualifier's grain at a busy interchange remain part of that follow-up. A two-way service
 at a stop is two cards, one per direction; a one-directional case (a terminus platform, a
 one-way-street stop, a single branch) is one. Nothing is hidden behind a gesture, which

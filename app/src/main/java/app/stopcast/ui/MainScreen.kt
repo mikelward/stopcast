@@ -83,7 +83,6 @@ import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.stopcast.R
 import app.stopcast.domain.cleanDisruptionBody
 import app.stopcast.domain.Countdown
@@ -92,6 +91,7 @@ import app.stopcast.domain.DepartureLabels
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DestinationAbbreviations
+import app.stopcast.domain.PlatformDirection
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
@@ -695,9 +695,11 @@ private fun StopGroupHeader(
     distanceLabel: String?,
     firstGroup: Boolean,
 ) {
-    // labelMedium is the same role the freshness stamp uses; the tracking gives the small-caps
-    // read. uppercase() is Kotlin's locale-invariant overload (safe from the Turkish-ı trap).
-    val style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.8.sp)
+    // labelMedium is the same role the freshness stamp uses; the tracking gives the small-caps read,
+    // and the semi-bold weight is baked in ([headerTextStyle]) so the width the header measures below
+    // matches the width it renders (Codex P2, PR #115). One style drives both the measure and every
+    // Text. uppercase() is Kotlin's locale-invariant overload (safe from the Turkish-ı trap).
+    val style = headerTextStyle(MaterialTheme.typography.labelMedium)
     val color = MaterialTheme.colorScheme.onSurfaceVariant
     val headerModifier = Modifier
         .fillMaxWidth()
@@ -707,7 +709,6 @@ private fun StopGroupHeader(
         Text(
             text = name.uppercase(),
             style = style,
-            fontWeight = FontWeight.SemiBold,
             color = color,
             maxLines = 1,
             softWrap = false,
@@ -717,46 +718,108 @@ private fun StopGroupHeader(
         )
         return
     }
-    // The **distance** is the only unweighted reserved element (short and bounded — "(1.2 km)"),
-    // measured first so it always keeps its width. The **name** and the **direction** both take a
-    // weight (fill = false), so each is bounded to its share of the remaining width: a realistic
-    // (short) direction still shows in full while a long name clips first, but neither the direction
-    // nor the distance can consume the whole row and starve the name to nothing — the failure at the
-    // combined max scale (1.6× app × a large system font) if the direction were also unweighted
-    // (Codex P2, PR #109). The direction is uppercased to match the small-caps name; the distance
-    // keeps its lowercase unit.
-    Row(modifier = headerModifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = name.uppercase(),
-            style = style,
-            fontWeight = FontWeight.SemiBold,
-            color = color,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Clip,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        if (directionLabel != null) {
+    // The **direction** and the **distance** are reserved trailing elements (unweighted — measured
+    // first, so they keep their width and the **name** clips first, recognized from its start). The
+    // distance is short and bounded ("(1.2 km)"). The direction, rather than clip to an ambiguous
+    // stub when the full word won't fit, falls back to its **single-letter** form ("– E") — which is
+    // narrow enough to always fit, so the direction cue that tells two blocks of one place apart
+    // never vanishes (maintainer, PR follow-up). Whether the full word fits, and the width the
+    // direction is bounded to so the distance stays reserved even in a narrow pane, are decided by
+    // the pure [headerDirection] from the measured widths below. The name still clips when even the
+    // letter form leaves it no room. The direction is uppercased to match the small-caps name; the
+    // distance keeps its lowercase unit.
+    if (directionLabel == null) {
+        // Near-me bus pole: a distance but no direction. Name (clips) + reserved distance, no measure.
+        Row(modifier = headerModifier, verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = " – ${directionLabel.uppercase()}",
+                text = name.uppercase(),
                 style = style,
-                fontWeight = FontWeight.SemiBold,
                 color = color,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Clip,
+                // fill = false so a short name packs left with the distance right after it, not
+                // stretched to push the distance to the far edge; a long name still clips to the share.
                 modifier = Modifier.weight(1f, fill = false),
             )
-        }
-        if (distanceLabel != null) {
             Text(
                 text = " ($distanceLabel)",
                 style = style,
-                fontWeight = FontWeight.SemiBold,
                 color = color,
                 maxLines = 1,
                 softWrap = false,
             )
+        }
+        return
+    }
+    BoxWithConstraints(modifier = headerModifier) {
+        val measurer = rememberTextMeasurer()
+        // Key each measurement on the font scale as well as the text: a display-size / accessibility
+        // resize grows the glyphs while the row's px width is unchanged, so a width cached on the
+        // string alone would stay stale and the fallback never fire (mirrors DestinationLine).
+        val fontScale = LocalDensity.current.fontScale
+        val nameText = name.uppercase()
+        val fullDirectionText = " – ${directionLabel.uppercase()}"
+        val letterDirectionText = " – ${PlatformDirection.abbreviation(directionLabel)}"
+        val distanceText = distanceLabel?.let { " ($it)" }.orEmpty()
+        fun widthOf(text: String) =
+            if (text.isEmpty()) 0 else measurer.measure(text, style, maxLines = 1).size.width
+        val nameWidth = remember(nameText, style, fontScale) { widthOf(nameText) }
+        val fullDirectionWidth = remember(fullDirectionText, style, fontScale) { widthOf(fullDirectionText) }
+        val distanceWidth = remember(distanceText, style, fontScale) { widthOf(distanceText) }
+        // Choose the direction form (full word when it fits at the name's natural width, else the
+        // letter) and its width budget, reserving the distance first — pure and unit-tested.
+        val direction = headerDirection(
+            fullText = fullDirectionText,
+            letterText = letterDirectionText,
+            nameWidth = nameWidth,
+            fullWidth = fullDirectionWidth,
+            distanceWidth = distanceWidth,
+            maxWidth = constraints.maxWidth,
+        )
+        val directionMaxWidth = with(LocalDensity.current) { direction.maxWidthPx.toDp() }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = nameText,
+                style = style,
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                // fill = false so a short name sits directly before the direction (adjacent, packed
+                // left), not stretched to push it right; the reserved direction/distance keep their
+                // width and the name clips to its share only when the row is too tight.
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Text(
+                text = direction.text,
+                style = style,
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                // Bounded so the reserved distance keeps its width in a pane too narrow for both;
+                // announce the full direction when the letter is shown, so a screen reader hears
+                // "Eastbound", not "E".
+                modifier = Modifier
+                    .widthIn(max = directionMaxWidth)
+                    .then(
+                        if (direction.abbreviated) {
+                            Modifier.semantics { contentDescription = directionLabel }
+                        } else {
+                            Modifier
+                        },
+                    ),
+            )
+            if (distanceLabel != null) {
+                Text(
+                    text = distanceText,
+                    style = style,
+                    color = color,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
         }
     }
 }

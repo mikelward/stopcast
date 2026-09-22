@@ -77,4 +77,22 @@ class PlatformDirectionTest {
         assertNull(PlatformDirection.of(""))
         assertNull(PlatformDirection.of("   "))
     }
+
+    @Test
+    fun `a compass direction abbreviates to its initial`() {
+        // The header falls back to this single letter when the full word won't fit; the four
+        // cardinals have distinct initials, so the letter still tells them apart (PR follow-up).
+        assertEquals("N", PlatformDirection.abbreviation("Northbound"))
+        assertEquals("S", PlatformDirection.abbreviation("Southbound"))
+        assertEquals("E", PlatformDirection.abbreviation("Eastbound"))
+        assertEquals("W", PlatformDirection.abbreviation("Westbound"))
+    }
+
+    @Test
+    fun `a loop direction abbreviates to its word initials`() {
+        // No single-word compass to shorten, so the two-word loop label takes each word's initial —
+        // "IR"/"OR" stay distinct (the "one or two letter" form the maintainer asked for).
+        assertEquals("IR", PlatformDirection.abbreviation("Inner Rail"))
+        assertEquals("OR", PlatformDirection.abbreviation("Outer Rail"))
+    }
 }
