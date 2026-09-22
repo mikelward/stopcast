@@ -1,6 +1,9 @@
 package app.stopcast.domain
 
 import java.time.Instant
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /**
  * Rebuilds the widget's persisted snapshot by re-fetching arrivals for exactly the stops it is
@@ -24,9 +27,15 @@ object WidgetRefresh {
         fetchArrivals: suspend (stopId: String) -> List<Departure>?,
     ): DeparturesSnapshot? {
         if (prior.stops.isEmpty()) return null
+        // Every stop's arrivals in parallel; the client's shared request pool bounds how many are in
+        // flight. [fetchArrivals] returns null on failure rather than throwing, so one stop failing
+        // never cancels the others.
+        val fetchedByStop = coroutineScope {
+            prior.stops.map { stop -> async { fetchArrivals(stop.stopId) } }.awaitAll()
+        }
         var anyFresh = false
-        val stops = prior.stops.map { stop ->
-            when (val fetched = fetchArrivals(stop.stopId)) {
+        val stops = prior.stops.mapIndexed { i, stop ->
+            when (val fetched = fetchedByStop[i]) {
                 // Keep the aged last-good, but mark it not-fresh so its stale withhold fires and
                 // it can't render as fresh within the freshness window (Codex P1 on #56). Its own
                 // fetchedAt is preserved and still drives age-based staleness.

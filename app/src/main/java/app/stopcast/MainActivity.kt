@@ -47,6 +47,7 @@ import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.RouteTopologyStore
 import app.stopcast.data.SharedTflRateLimiter
+import app.stopcast.data.SharedTflRequestPool
 import app.stopcast.data.UserApiKeySetting
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.BugReport
@@ -126,6 +127,7 @@ class MainActivity : ComponentActivity() {
                         httpClient,
                         appKey = { UserApiKeySetting.current },
                         rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                        requestPool = SharedTflRequestPool.pool,
                     ),
                     warn = ::logLocationWarning,
                 )
@@ -585,6 +587,7 @@ class MainActivity : ComponentActivity() {
                                 httpClient,
                                 appKey = { UserApiKeySetting.current },
                                 rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                                requestPool = SharedTflRequestPool.pool,
                             ),
                             seedStops = ready.eagerStops,
                             initialMore = ready.more,

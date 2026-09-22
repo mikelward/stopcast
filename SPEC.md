@@ -660,6 +660,13 @@ surface.)
   stamped last-good data and an offline/rate-limited notice (never a blank or an
   unlabeled stale number). Added latency lives off every render path (snapshot-render,
   above).
+- **A refresh fans out in parallel, capped.** Each stop's requests go out together rather
+  than one after another, through one small pool shared by the app and the widget, so a
+  refresh costs a couple of round trips instead of one per request. Arrivals are started
+  before closure checks, so departures tend to come back first — a best effort, not a
+  promise; nothing depends on the order. The pool caps requests *at once*;
+  the rate budget above still caps requests *per minute*, so a keyless fan-out larger than
+  the burst is paced rather than fired at once.
 
 ## One widget, many surfaces
 

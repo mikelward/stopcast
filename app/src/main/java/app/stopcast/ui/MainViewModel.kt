@@ -27,6 +27,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -340,37 +343,51 @@ class MainViewModel(
         // never checked) — an axis independent of line status, carried out so a per-stop surface
         // says "couldn't check" for it even when its line was determined (SPEC principle 1).
         val stopsDisruptionUnknown = mutableSetOf<String>()
-        // Memoizes this batch's hub-name attempts — successes AND failures — so a hub shared
-        // by several disrupted stops is requested at most once, even when the lookup fails:
-        // without it a failing hub would be re-requested (and re-timed-out) once per member,
-        // and members could disagree if a later one happened to succeed. A success also
-        // promotes to the durable `hubInfoCache`; a failure stays here only, so the next
-        // batch (a fresh map) retries (Codex).
-        val hubInfoThisBatch = HashMap<String, HubInfo>()
 
-        for (stop in stops) {
-            val departures = try {
-                withContext(io) { client.arrivals(stop.id) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+        // Fan the per-stop requests out in parallel; the client's shared request pool caps how many
+        // are in flight, so this is a bounded fan-out, not one connection per stop. Arrivals are
+        // launched before disruptions so the departures the user is waiting on tend to go out first
+        // when requests queue — a best effort, not a guarantee: IO scheduling and the rate limiter
+        // are free to reorder them, and nothing depends on the order (maintainer, PR #121). Each
+        // request catches its own failure, so one stop failing never cancels its siblings.
+        val (arrivalResults, disruptionResults) = coroutineScope {
+            val arrivals = stops.map { stop ->
+                async { runCatchingTfl { withContext(io) { client.arrivals(stop.id) } } }
+            }
+            // Fetch each stop's disruption independently of its arrivals (a closure, a moved stop),
+            // so a closed stop is flagged rather than shown with catchable-looking departures — and a
+            // stop whose *arrivals* failed still surfaces its available closure rather than dropping
+            // out entirely (SPEC *Disruptions*). Per stop (the endpoint scopes to it), off the render
+            // path. A lookup that fails falls back to the aged disruption and flags the state unknown
+            // rather than passing the stop off as verified-clear.
+            val disruptions = stops.map { stop ->
+                async { runCatchingTfl { withContext(io) { client.stopDisruptions(stop.id) } } }
+            }
+            arrivals.awaitAll() to disruptions.awaitAll()
+        }
+
+        // Resolve each interchange once, in parallel, only for a hub with a stop that has a fresh
+        // disruption to title — the one case a folded alert titles by the interchange and the strip
+        // needs its member aliases (SPEC *Disruptions*). Deduplicated up front so a hub shared by
+        // several disrupted stops costs one call even when it fails, and every member agrees. A stop
+        // with no disruption, or no hub, costs no call and titles by its own name.
+        val hubIds = stops.indices
+            .filter { i -> stops[i].hubId.isNotBlank() && !disruptionResults[i].getOrNull().isNullOrEmpty() }
+            .mapTo(LinkedHashSet()) { i -> stops[i].hubId }
+        val hubs: Map<String, HubInfo> = coroutineScope {
+            hubIds.map { hubId -> async { hubId to resolveHubInfo(hubId) } }.awaitAll().toMap()
+        }
+
+        // Merge in stop order, so the first error, the logs and the merged list read the same as a
+        // one-at-a-time fetch would, whatever order the responses came back in.
+        stops.forEachIndexed { i, stop ->
+            val departures = arrivalResults[i].getOrElse { e ->
                 if (firstError == null) firstError = e
                 anyArrivalsFailed = true
                 warn("arrivals fetch failed for stop ${stop.id}: ${reason(e)}")
                 null
             }
-            // Fetch the stop's disruption independently of its arrivals (a closure, a
-            // moved stop), so a closed stop is flagged rather than shown with
-            // catchable-looking departures — and a stop whose *arrivals* failed still
-            // surfaces its available closure rather than dropping out entirely (SPEC
-            // *Disruptions*). Per stop (the endpoint scopes to it), off the render path.
-            // A lookup that fails falls back to the aged disruption and flags the state
-            // unknown rather than passing the stop off as verified-clear.
-            val disruptions = try {
-                withContext(io) { client.stopDisruptions(stop.id) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            val disruptions = disruptionResults[i].getOrElse { e ->
                 if (firstError == null) firstError = e
                 stopsDisruptionUnknown += stop.id
                 warn("stop disruption fetch failed for stop ${stop.id}: ${reason(e)}")
@@ -378,13 +395,9 @@ class MainViewModel(
             }
             if (departures != null) anyFreshArrivals = true
             if (departures != null || disruptions != null) anyFreshData = true
-            // Resolve the interchange only when this stop has a fresh disruption to title AND
-            // belongs to a hub — the one case a folded alert titles by the interchange and the
-            // strip needs its member aliases (SPEC *Disruptions*). Cached and off the render path; a
-            // stop with no disruption, or no hub, costs no call and titles by its own name.
             val hub =
                 if (stop.hubId.isNotBlank() && !disruptions.isNullOrEmpty()) {
-                    resolveHubInfo(stop.hubId, hubInfoThisBatch)
+                    hubs[stop.hubId] ?: HubInfo()
                 } else {
                     HubInfo()
                 }
@@ -1059,20 +1072,17 @@ class MainViewModel(
      * lookup, so a folded near-me disruption alert titles by the interchange and the strip can drop
      * a redundant leading name in any member spelling (SPEC *Disruptions*).
      *
-     * Two-tier memoization: the durable [hubInfoCache] holds successes across refreshes, while
-     * [thisRefresh] holds this refresh's attempts — successes and failures alike — so a hub shared
-     * by several disrupted stops costs at most one call per refresh even when it fails (every later
-     * member this cycle reuses the recorded empty, and they agree). A failure is memoized only in
-     * [thisRefresh], never the durable cache, so a fresh map next refresh retries rather than the
-     * title being permanently blanked.
+     * The durable [hubInfoCache] holds successes across refreshes; a failure is never cached, so the
+     * next refresh retries rather than the title being permanently blanked. Within one refresh the
+     * caller deduplicates hub ids before calling, so a hub shared by several disrupted stops costs
+     * at most one call even when it fails, and every member agrees on the result.
      *
      * Best-effort: a failed lookup returns empty and the alert falls back to the stop's own name.
      * Rethrows [CancellationException] first (structured concurrency). The log carries only the hub
      * id — a public TfL place identifier, like a stop id (SPEC *Privacy*).
      */
-    private suspend fun resolveHubInfo(hubId: String, thisRefresh: MutableMap<String, HubInfo>): HubInfo {
+    private suspend fun resolveHubInfo(hubId: String): HubInfo {
         hubInfoCache[hubId]?.let { return it }
-        thisRefresh[hubId]?.let { return it }
         val info = try {
             withContext(io) { client.hubInfo(hubId) }
         } catch (e: CancellationException) {
@@ -1081,11 +1091,24 @@ class MainViewModel(
             warn("hub lookup failed for $hubId: ${reason(e)}")
             HubInfo()
         }
-        // A success is durable; an empty is remembered only for this refresh, so the next one retries.
+        // A success is durable; an empty isn't cached, so the next refresh retries. Written on the
+        // main thread (viewModelScope), so parallel lookups don't race on the map.
         if (info.name.isNotBlank()) hubInfoCache[hubId] = info
-        thisRefresh[hubId] = info
         return info
     }
+
+    /**
+     * Runs one TfL [block], capturing an ordinary failure as a [Result] so a parallel sibling isn't
+     * canceled by it. [CancellationException] is rethrown, never captured (structured concurrency).
+     */
+    private suspend inline fun <T> runCatchingTfl(block: () -> T): Result<T> =
+        try {
+            Result.success(block())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
 
     private fun reason(e: Throwable): String =
         (e as? TflException)?.message ?: e::class.simpleName.orEmpty()

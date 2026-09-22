@@ -16,6 +16,7 @@ import app.stopcast.data.DataStoreAppSettings
 import app.stopcast.data.DataStoreSnapshotStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.SharedTflRateLimiter
+import app.stopcast.data.SharedTflRequestPool
 import app.stopcast.data.logAppSettingsWarning
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.WidgetRefresh
@@ -207,6 +208,7 @@ class WidgetRefreshWorker(appContext: Context, params: WorkerParameters) :
                     http,
                     appKey = { userKey },
                     rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                    requestPool = SharedTflRequestPool.pool,
                 )
                 val refreshed = WidgetRefresh.refreshedArrivals(prior, Instant.now()) { stopId ->
                     try {

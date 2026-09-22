@@ -18,6 +18,7 @@ import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.TflClient
 import app.stopcast.domain.TflException
 import java.time.Instant
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -1151,9 +1153,48 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `fetches every stop in parallel, merged in stop order`() = runTest(dispatcher) {
+        // Each request parks on a gate, so what has started once the scheduler settles is exactly
+        // what was issued before any answer came back. A one-at-a-time loop would show one request.
+        val gate = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                started += "arrivals:$stopId"
+                gate.await()
+                return listOf(departure("victoria", "Victoria", if (stopId == seeds[0].id) 300 else 120))
+            }
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                started += "disruptions:$stopId"
+                gate.await()
+                return emptyList()
+            }
+        }
+        val vm = viewModel(client)
+        runCurrent()
+
+        // Every request is in flight at once. Order isn't asserted: it's a best effort, not a contract.
+        assertEquals(
+            setOf(
+                "arrivals:${seeds[0].id}",
+                "arrivals:${seeds[1].id}",
+                "disruptions:${seeds[0].id}",
+                "disruptions:${seeds[1].id}",
+            ),
+            started.toSet(),
+        )
+        assertEquals(4, started.size)
+        gate.complete(Unit)
+        advanceUntilIdle()
+        val state = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(seeds.map { it.id }.toSet(), state.stops.map { it.stopId }.toSet())
+    }
+
+    @Test
     fun `a failing hub lookup is requested once per refresh, not once per member`() = runTest(dispatcher) {
         // Several disrupted stops share one hub whose name lookup fails. Without per-refresh
-        // memoization the loop would re-request (and re-time-out) once per member; with it there
+        // deduplication the fan-out would re-request (and re-time-out) once per member; with it there
         // is one failing call this refresh and every member falls back to its own name, agreeing.
         var hubNameCalls = 0
         val client = object : TflClient {
