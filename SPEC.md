@@ -211,9 +211,11 @@ bearing, and "towards" come from the near-me `/StopPoint` lookup (`stopLetter`, 
 that capture lands. TfL is inconsistent about where it carries the compass — some poles use
 `CompassPoint`, others put an arrow in `stopLetter` (`->N`) in place of a real letter — so an
 arrow-in-`stopLetter` is normalized to the bearing, and a compass-only pole renders the one way
-whichever field TfL used. With no letter, the pole falls back to its **compass bearing** ("Stop ->E"); with
-neither, to the **shared terminus** ("**Stop -> Bank**") when the whole stop heads one way (every route
-names the same, non-blank terminus, principle 1); with none of the three, the **bare place name**.
+whichever field TfL used. With no letter, the pole falls back to its **compass bearing** — a bare
+direction word ("**Southbound**"), like the rail compass; with neither, to the **shared terminus** — an
+arrow plus the destination ("**-> Bank**") — when the whole stop heads one way (every route names the
+same, non-blank terminus, principle 1); with none of the three, the **bare place name**. "Stop" is
+reserved for a literal pole letter; the direction word and the "-> destination" carry no "Stop".
 Precedence: letter → bearing → terminus → bare. The header is **one line** — "Place – Qualifier
 (distance)", title case, no small caps — where the place name and the qualifier **share the row**
 (each weighted, each keeps at least its half and clips within it) so neither a long name nor a long
@@ -892,8 +894,9 @@ Mirrors the sibling fleet:
   the cue that tells its groups apart: a rail **platform** ("Platform 2", parsed from
   `platformName`, keyed on the platform not the compass, since one compass spans physically
   distinct platforms; a platform-less rail direction falls to the bare compass), a **bus** pole's
-  **letter** ("Stop D"), else its **bearing** ("Stop ->E"), else a bus place's shared **terminus**
-  ("Stop -> Bank") — settled 2026-09-22, superseding the two-level header (place name once + indented
+  **letter** ("Stop D" — "Stop" only ever precedes a literal letter), else its **bearing** as a bare
+  direction word ("Southbound"), else a bus place's shared **terminus** as an arrow plus the
+  destination ("-> Bank") — settled 2026-09-22, superseding the two-level header (place name once + indented
   sub-header) and the one-level `(place, direction)` step before it. The compass direction is not
   shown on the header (the destinations carry it). The cluster key is TfL's `stationNaptan` where
   the nearby lookup gives one,

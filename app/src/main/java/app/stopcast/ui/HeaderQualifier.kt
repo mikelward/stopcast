@@ -5,7 +5,9 @@ import app.stopcast.domain.StopQualifier
 
 /**
  * A group header's **qualifier segment** — the title-case cue that follows the place name on the one
- * line header ("Platform 1", "Stop G", "Eastbound", "Stop -> Bank"). It joins the place name with " – "
+ * line header ("Platform 1", "Stop E", "Southbound", "-> Archway"). "Stop" is reserved for a literal
+ * pole letter; a compass reads as a bare direction word, a shared terminus as "-> destination". It
+ * joins the place name with " – "
  * ([app.stopcast.ui] owns that join and the styling); null when the group carries no qualifier, so
  * the header is the bare place name. Title case with no small-caps treatment, and it **drops the
  * direction/towards parenthetical** the old two-level sub-header showed — the compass/towards moves
@@ -18,12 +20,16 @@ internal fun groupHeaderLabel(qualifier: StopQualifier?): String? = when (qualif
     is StopQualifier.Compass -> qualifier.label
     // uppercase() is locale-invariant (Turkish-ı safe); the letter reads the same case however TfL
     // supplied it.
+    // "Stop" is reserved for a literal pole letter ("Stop E"). A compass bearing reads as a bare
+    // direction word ("Southbound"), like the rail compass; the shared terminus reads as an arrow
+    // plus the destination ("-> Archway"), the arrow meaning "heading to".
     is StopQualifier.BusStop -> "Stop ${qualifier.letter.uppercase()}"
-    is StopQualifier.BusBearing -> "Stop ->${qualifier.bearing.uppercase()}"
+    is StopQualifier.BusBearing -> bearingSpoken(qualifier.bearing.uppercase())
     is StopQualifier.Terminus ->
         // The same display rename the destination line uses ("Battersea Power" → "Battersea",
-        // DepartureLabels), so the header and the card read consistently.
-        "Stop -> ${DepartureLabels.destinationLabel(qualifier.terminus, "") ?: qualifier.terminus}"
+        // DepartureLabels), so the header and the card read consistently. ASCII "->" for now — a
+        // nicer single-glyph arrow needs a font/metrics that aligns to the text baseline (TODO).
+        "-> ${DepartureLabels.destinationLabel(qualifier.terminus, "") ?: qualifier.terminus}"
 }
 
 /**
@@ -51,8 +57,8 @@ internal fun groupHeaderSpoken(qualifier: StopQualifier?): String? = when (quali
     }
 }
 
-/** The spoken form of a compass bearing ("E" → "Eastbound"), so a screen reader hears the direction
- *  rather than the letter behind the "Stop ->E" glyph. Intercardinals get the hyphenated "-bound" form. */
+/** A compass bearing as a direction word ("E" → "Eastbound"): the visible header segment and what a
+ *  screen reader hears, one and the same. Intercardinals get the hyphenated "-bound" form. */
 private fun bearingSpoken(bearing: String): String = when (bearing.uppercase()) {
     "N" -> "Northbound"
     "E" -> "Eastbound"

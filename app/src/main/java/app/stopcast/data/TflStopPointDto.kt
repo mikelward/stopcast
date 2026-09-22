@@ -121,9 +121,10 @@ fun TflStopPointDto.toStopLocationOrNull(): StopLocation? {
     // TfL is inconsistent about a bus pole's compass: some poles carry it in CompassPoint ("S"),
     // others jam it into stopLetter as an arrow ("->N") in place of a real pole letter ("K"). An
     // arrow-in-stopLetter is not a letter — drop it and take the compass as the bearing, so a
-    // compass-only pole renders the one way (the ASCII bearing path, "Stop ->N") whichever field TfL
-    // used, rather than a raw "Stop ->N" down the letter path beside a "Stop ->S" down the bearing
-    // path. A genuine pole letter ("K") is alphanumeric and stays on the letter path (SPEC D8).
+    // compass-only pole renders the one way (the bearing path, a direction word like "Northbound")
+    // whichever field TfL used, rather than a raw "-> N" down the letter path beside a "Southbound"
+    // down the bearing path. A genuine pole letter ("K") is alphanumeric and stays on the letter path
+    // ("Stop K", SPEC D8).
     val rawStopLetter = stopLetter.trim()
     val isPoleLetter = rawStopLetter.isNotEmpty() && rawStopLetter.all { it.isLetterOrDigit() }
     val poleBearing = compassBearing().trim().uppercase(Locale.ROOT)

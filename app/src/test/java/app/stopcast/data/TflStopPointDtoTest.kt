@@ -69,8 +69,8 @@ class TflStopPointDtoTest {
     fun `an arrow in stopLetter is treated as the compass, not a pole letter`() {
         // TfL is inconsistent: some poles put the compass in CompassPoint, others jam it into
         // stopLetter as an arrow ("->N") in place of a real letter. An arrow-in-stopLetter is not a
-        // pole letter — it drops to the bearing, so the pole renders the one ASCII way ("Stop ->N",
-        // the bearing path) rather than a raw letter beside a CompassPoint pole (SPEC D8).
+        // pole letter — it drops to the bearing, so the pole renders the one way (a direction word
+        // like "Northbound", the bearing path) rather than a raw letter beside a CompassPoint pole (SPEC D8).
         val stop = TflStopPointDto(
             id = "490000000N",
             commonName = "Example Road",
