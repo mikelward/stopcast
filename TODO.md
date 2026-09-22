@@ -388,6 +388,15 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         a line, so how many stops/headers/countdowns fit needs deciding (and a screenshot
         test). Deferred to a focused follow-up, not a phase: this PR scoped the change to the
         in-app screen.
+  - [ ] **Make the widget re-abbreviate on resize** (maintainer, 2026-09-22). The in-app card
+        re-measures and re-shortens a destination as the display resizes (font scale, width — see
+        the branch-truncation item and its font-scale fix), but the widget **can't measure width**,
+        so it always shows the short branch and never re-abbreviates the destination when the
+        widget is resized on the home/lock screen. Making it size-aware — Glance `LocalSize` /
+        `SizeMode`, picking the label form from the widget's current size bucket — would close the
+        gap. Bigger than the card fix (no `TextMeasurer` in Glance, so it's size-bucket heuristics,
+        not measured widths) and needs a widget screenshot test per size; recorded to weigh, not
+        scheduled.
 - [ ] **Hide services terminating at the current stop by default** (maintainer, 2026-09-20).
       A train that terminates where you're standing isn't boardable onward, so listing it as
       an upcoming departure is misleading — filter it out by default (a departure whose
