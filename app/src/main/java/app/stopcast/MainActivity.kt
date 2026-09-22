@@ -42,6 +42,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import app.stopcast.data.AndroidLocationProvider
 import app.stopcast.data.DataStoreAppSettings
 import app.stopcast.data.logAppSettingsWarning
+import app.stopcast.data.DataStoreDismissedAlertsStore
 import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.RouteTopologyStore
@@ -596,6 +597,9 @@ class MainActivity : ComponentActivity() {
                             // by row identity, not tied to this stop set), so the store is the
                             // shared process-wide one, not scoped to this ViewModel's key.
                             starredStore = DataStoreStarredRowsStore.from(appContext, warn = ::logStarWarning),
+                            // Dismissed alerts are persisted per place across every nearby set, so
+                            // the store is the shared process-wide one too.
+                            dismissedStore = DataStoreDismissedAlertsStore.from(appContext, warn = ::logDepartureWarning),
                             warn = ::logDepartureWarning,
                             // Re-render the widget when a star changes (its pinned order — SPEC
                             // D8) or after a refresh that didn't save, so its age/staleness stays
@@ -614,6 +618,8 @@ class MainActivity : ComponentActivity() {
             val starred by viewModel.starred.collectAsStateWithLifecycle()
             val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
             val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
+            val dismissed by viewModel.dismissed.collectAsStateWithLifecycle()
+            val dismissWriteFailed by viewModel.dismissWriteFailed.collectAsStateWithLifecycle()
             // The "More" buttons to offer — modes with a farther cluster still to page in.
             val revealableModes by viewModel.moreState.collectAsStateWithLifecycle()
             // These background refreshes are composed only while the departures view is shown:
@@ -648,6 +654,10 @@ class MainActivity : ComponentActivity() {
                     onToggleStar = viewModel::toggleStar,
                     starringAvailable = starringAvailable,
                     starWriteFailed = starWriteFailed,
+                    dismissed = dismissed,
+                    onDismissAlert = viewModel::dismissAlert,
+                    dismissWriteFailed = dismissWriteFailed,
+                    onDismissWriteFailureShown = viewModel::dismissWriteFailureShown,
                     onStarWriteFailureShown = viewModel::starWriteFailureShown,
                     onOpenLicenses = onOpenLicenses,
                     onOpenSettings = onOpenSettings,
