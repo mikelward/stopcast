@@ -382,6 +382,21 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         retired — the two rows never crowd each other (`PlatformDirection.abbreviation` removed).
         JVM + screenshot tests (`main-connected-station` re-recorded, King's Cross sub-surface lines
         share Platform 7).
+  - [ ] **Per-platform card, one chip-tagged row per route** (maintainer, 2026-09-22; mocked v9).
+        A density redesign built on the platform/pole grouping: **one card per group** (platform or
+        stop letter), headed by a **single one-line header** `Place – Platform N` / `Place – Stop X`
+        in **title case**, place+qualifier one weight/color, distance dimmed in parens (the two-level
+        `StopPlaceHeader` + `StopSubHeader` collapse into it, dropping the compass parenthetical). Inside
+        the card, **one row per (line, destination/route)** — line pill left, destination, then the
+        merged countdown right; a line's several routes each get their own chip (Battersea, Mill Hill
+        East no longer chip-less). Disruption becomes an **inline ⚠ just left of the countdown**,
+        retiring the separate "Diversion"/status chip row so each route stays one line. Reuses the
+        domain as-is (`StopGrouping`, `DepartureRows.destinationLines`, `Countdown.mergedLabel`,
+        `DepartureLabels`, `LinePill`); the change is a UI re-composition of `DepartureList` /
+        `DepartureRowCard` / the header composables. Open: per-route star + tap treatment inside a
+        multi-row card (keep long-press-to-star and tap-to-detail per row).
+  - [ ] **Tap a route row → all stops for that route** (maintainer, 2026-09-22). Extends the
+        route-detail tap to show the route's full stop sequence, not just star + disruption text.
   - [ ] **Split a mixed-platform row into a card per platform** (Codex P1, PR #119). A single
         (line, direction) row can carry departures from more than one platform (a terminus, a platform
         change), since `DepartureRows.forStop` merges a line's one direction into one card. The
