@@ -892,7 +892,7 @@ private fun StopClosureContent(disruption: String, title: String) {
  * keeps its ellipsis (below).
  */
 @Composable
-private fun DestinationLine(
+internal fun DestinationLine(
     label: String,
     times: List<Departure>,
     stale: Boolean,
@@ -928,7 +928,13 @@ private fun DestinationLine(
                 // that is too wide (SPEC destination-label — abbreviate before truncating).
                 BoxWithConstraints(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                     val measurer = rememberTextMeasurer()
-                    val fullWidth = remember(label) { measurer.measure(label, style, maxLines = 1).size.width }
+                    // Key the measurement on the font scale, not the label alone: a display-size /
+                    // accessibility resize grows the text while the row's px width is unchanged, so
+                    // a width cached on the label would stay stale and the abbreviation never fire.
+                    val fontScale = LocalDensity.current.fontScale
+                    val fullWidth = remember(label, style, fontScale) {
+                        measurer.measure(label, style, maxLines = 1).size.width
+                    }
                     val display = if (fullWidth <= constraints.maxWidth) label else abbreviated
                     Text(
                         text = display,
@@ -957,9 +963,13 @@ private fun DestinationLine(
                 val measurer = rememberTextMeasurer()
                 val abbreviatedLabel = remember(label) { DestinationAbbreviations.abbreviate(label) }
                 val shortBranch = remember(branch) { abbreviateBranch(branch) }
-                // Measure each candidate string once; branchedLabel turns the widths into the
-                // terminus/branch strings so the rule (branch outranks terminus; branch-alone and
-                // bare when the terminus has no room at all) is unit-tested apart from the render.
+                // Measure each candidate string, keyed on the font scale as well as the text, so a
+                // display-size / accessibility resize re-measures rather than reusing a width cached
+                // on the string alone (which would leave the abbreviation stuck). branchedLabel turns
+                // the widths into the terminus/branch strings so the rule (branch outranks terminus;
+                // branch-alone and bare when the terminus has no room at all) is unit-tested apart
+                // from the render.
+                val fontScale = LocalDensity.current.fontScale
                 fun widthOf(text: String) = measurer.measure(text, style, maxLines = 1).size.width
                 val resolved = branchedLabel(
                     label = label,
@@ -967,12 +977,12 @@ private fun DestinationLine(
                     branch = branch,
                     abbreviatedBranch = shortBranch,
                     maxWidth = constraints.maxWidth,
-                    labelWidth = remember(label) { widthOf(label) },
-                    abbrevLabelWidth = remember(abbreviatedLabel) { widthOf(abbreviatedLabel) },
-                    fullBranchWidth = remember(branch) { widthOf("/$branch") },
-                    abbrevBranchWidth = remember(shortBranch) { widthOf("/$shortBranch") },
-                    firstGlyphWidth = remember(abbreviatedLabel) { widthOf(abbreviatedLabel.take(1)) },
-                    branchFirstGlyphWidth = remember(shortBranch) { widthOf("/${shortBranch.take(1)}") },
+                    labelWidth = remember(label, style, fontScale) { widthOf(label) },
+                    abbrevLabelWidth = remember(abbreviatedLabel, style, fontScale) { widthOf(abbreviatedLabel) },
+                    fullBranchWidth = remember(branch, style, fontScale) { widthOf("/$branch") },
+                    abbrevBranchWidth = remember(shortBranch, style, fontScale) { widthOf("/$shortBranch") },
+                    firstGlyphWidth = remember(abbreviatedLabel, style, fontScale) { widthOf(abbreviatedLabel.take(1)) },
+                    branchFirstGlyphWidth = remember(shortBranch, style, fontScale) { widthOf("/${shortBranch.take(1)}") },
                 )
                 val density = LocalDensity.current
                 val terminusMaxWidth = with(density) { resolved.terminusMaxWidthPx.toDp() }
