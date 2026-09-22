@@ -211,7 +211,9 @@ single line, so a long one ("Harrow & Wealdstone") truncates rather than wrappin
 taller or pushing the countdown off the edge. The destination's **station-type suffix is
 trimmed** the way stop names are — TfL's "Brixton Underground Station" shows as "Brixton"
 (*Concise copy*); the bare " Station" is dropped too, so a terminus like "Battersea Power
-Station" reads "Battersea Power". A short list of **hardcoded display renames** shortens a
+Station" reads "Battersea Power". A trailing **line-name parenthetical** is dropped the same
+way — "Hammersmith (H&C Line)" shows as "Hammersmith", since the pill already names the line —
+while a *geographic* parenthetical with no line ("Stratford (London)") is kept. A short list of **hardcoded display renames** shortens a
 terminus further where the trimmed name is still longer than a rider needs — "Battersea Power"
 shows as "Battersea" — applied at label time only, so grouping and branch resolution still key
 on the full terminus and a rename never changes which trains share a row. **The
