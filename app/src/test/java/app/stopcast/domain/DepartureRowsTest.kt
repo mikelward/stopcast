@@ -517,9 +517,11 @@ class DepartureRowsTest {
         text: String = "Stop closed",
         hubId: String = "",
         hubName: String = "",
+        clusterId: String = "",
     ) = DepartureRow(
         stopId = stopId,
         stopName = stopName,
+        clusterId = clusterId,
         lineId = "",
         lineName = "",
         direction = "",
@@ -614,6 +616,89 @@ class DepartureRowsTest {
         assertEquals("STP1", deduped[0].stopId)
         // The kept card carries the interchange name, so it titles by the hub rather than one member.
         assertEquals(hub, deduped[0].hubName)
+    }
+
+    @Test
+    fun `nearbyDeduped folds a bus-stop closure reported once per pole of one junction`() {
+        // A closed bus stop is reported by TfL against each pole, which share no hub but do share a
+        // cluster (`stationNaptan`, else the name). Folding at the cluster collapses the identical
+        // notice to one card on the nearest pole, rather than a card per pole. Stand-in stop name +
+        // example bus-stop ids only (SPEC *Privacy*).
+        val notice = "Bus Stop Closed"
+        val deduped = DepartureRows.nearbyDeduped(
+            listOf(
+                stopStatusRow("490000001E", "Example Road", notice, clusterId = "490G000EXAMPLE"),
+                stopStatusRow("490000001W", "Example Road", notice, clusterId = "490G000EXAMPLE"),
+                stopStatusRow("490000001N", "Example Road", notice, clusterId = "490G000EXAMPLE"),
+            ),
+            mapOf("490000001E" to 40.0, "490000001W" to 55.0, "490000001N" to 60.0),
+        )
+
+        assertEquals(1, deduped.size)
+        assertEquals("490000001E", deduped[0].stopId)
+    }
+
+    @Test
+    fun `nearbyDeduped folds a hub notice led by one member's name across differently-named members`() {
+        // TfL attaches one hub-wide notice, worded with a single member's name ("Bank: No Step
+        // Free Access - …"), to every member of the hub — here Bank and Monument, which share one
+        // hub but have different names. The place-name strip is per-member and would clean only
+        // Bank's copy, so keying the fold on the stripped text would split the shared notice into
+        // two cards. Because `across` stores the NORMALIZED (not stripped) text, both members carry
+        // identical text and the fold collapses them to one card (Codex, PR #106).
+        val notice = "Bank: No Step Free Access - Step free access is not available to/from the " +
+            "King William Street entrance due to faulty lifts."
+        val bank = StopArrivals(
+            "940GZZLUBNK", "Bank", departures = emptyList(), fetchedAt = now,
+            disruptions = listOf(StopDisruption(notice)), hubId = "HUBBAN", hubName = "Bank & Monument",
+        )
+        val monument = StopArrivals(
+            "940GZZLUMND", "Monument", departures = emptyList(), fetchedAt = now,
+            disruptions = listOf(StopDisruption(notice)), hubId = "HUBBAN", hubName = "Bank & Monument",
+        )
+
+        val rows = DepartureRows.across(listOf(bank, monument), now)
+        val deduped = DepartureRows.nearbyDeduped(rows, mapOf("940GZZLUBNK" to 80.0, "940GZZLUMND" to 220.0))
+
+        val closures = deduped.filter { it.stopDisruption != null }
+        assertEquals(1, closures.size)
+        assertEquals("940GZZLUBNK", closures[0].stopId)
+    }
+
+    @Test
+    fun `nearbyDeduped keeps two unrelated same-named stops apart when the cluster is only a name fallback`() {
+        // Two genuinely unrelated bus stops share a display name but have no TfL `stationNaptan`, so
+        // each cluster falls back to the name (clusterId == stopName). Folding on that would collapse
+        // them and hide one location's closure, so the fold ignores a name-fallback cluster and keys
+        // each on its own stop id — both cards survive (Codex, principle 1 — no warning dropped).
+        val notice = "Bus Stop Closed"
+        val deduped = DepartureRows.nearbyDeduped(
+            listOf(
+                stopStatusRow("490000010A", "Church Road", notice, clusterId = "Church Road"),
+                stopStatusRow("490000020B", "Church Road", notice, clusterId = "Church Road"),
+            ),
+            mapOf("490000010A" to 120.0, "490000020B" to 300.0),
+        )
+
+        assertEquals(2, deduped.size)
+        assertEquals(setOf("490000010A", "490000020B"), deduped.map { it.stopId }.toSet())
+    }
+
+    @Test
+    fun `nearbyDeduped keeps two same-named closures apart when their clusters differ`() {
+        // Two genuinely distinct stops that happen to share a name but sit in different clusters are
+        // different places — each keeps its card, no warning dropped (principle 1).
+        val notice = "Bus Stop Closed"
+        val deduped = DepartureRows.nearbyDeduped(
+            listOf(
+                stopStatusRow("A", "High Street", notice, clusterId = "490G000HighStreetN"),
+                stopStatusRow("B", "High Street", notice, clusterId = "490G000HighStreetS"),
+            ),
+            mapOf("A" to 100.0, "B" to 300.0),
+        )
+
+        assertEquals(2, deduped.size)
+        assertEquals(setOf("A", "B"), deduped.map { it.stopId }.toSet())
     }
 
     @Test

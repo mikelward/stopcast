@@ -85,6 +85,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.stopcast.R
+import app.stopcast.domain.cleanDisruptionBody
 import app.stopcast.domain.Countdown
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureLabels
@@ -539,10 +540,10 @@ private fun DepartureList(
     onOpenDetail: (DepartureRow) -> Unit,
     modifier: Modifier,
 ) {
-    // Stop-closure alerts render as standalone, header-less cards at the top of the list —
-    // warnings lead (the caller ordered them first). Each self-titles by its interchange (or its
-    // stop) only on expand, so it needs no group header and no distance label above it (SPEC
-    // *Disruptions*). The remaining rows (timed and line-status) cluster into per-place groups so
+    // Stop-closure alerts render as standalone cards at the top of the list — warnings lead (the
+    // caller ordered them first). Each carries its own place heading (its interchange, else its
+    // stop), so it needs no group header and no distance label above it (SPEC *Disruptions*). The
+    // remaining rows (timed and line-status) cluster into per-place groups so
     // each gets a name header — the flat list gives a card no boarding location once >1 place is
     // on screen (SPEC D8). Pure and cheap; the caller ordered the rows.
     val closureRows = remember(rows) { rows.filter { it.stopDisruption != null } }
@@ -798,10 +799,16 @@ private fun DepartureRowCard(
         // actionable before its warning (SPEC principle 2).
         Column(modifier = Modifier.padding(16.dp).semantics { isTraversalGroup = true }) {
             if (row.stopDisruption != null) {
-                // A stop-level status row: the whole stop is disrupted (a closure). It carries no
-                // header of its own (SPEC D3) — collapsed it is the notice's first line; on expand
-                // it titles itself by the interchange, else the stop when there's no hub name.
-                StopClosureContent(row.stopDisruption, title = row.hubName.ifBlank { row.stopName })
+                // A stop-level status row: the whole stop is disrupted (a closure). It titles
+                // itself by the interchange, else the stop when there's no hub name — always shown,
+                // so a bus "Bus Stop Closed" notice that never names its own stop still says which
+                // stop (SPEC *Disruptions*). The body collapses to its first line, expands on tap.
+                // The place name is stripped from the body here, at display — not upstream — so the
+                // near-me fold's identity stays member-independent (see cleanDisruptionBody).
+                StopClosureContent(
+                    cleanDisruptionBody(row.stopDisruption, stopName = row.stopName, hubName = row.hubName),
+                    title = row.hubName.ifBlank { row.stopName },
+                )
                 return@Column
             }
 
@@ -901,19 +908,20 @@ private fun DepartureRowCard(
 
 /**
  * A stop closure (a stop-level disruption) as the card's content: the disruption in an
- * error-toned surface, with no header of its own — the notice text carries its own context
- * (TfL writes the station into it), so the card floats free of the per-place headers the
- * departures group under (SPEC D3 / *Disruptions*). The stop's own departures, if any, show in
- * their own cards below.
+ * error-toned surface under the place's own [title] (the interchange name, else the stop). The
+ * stop's own departures, if any, show in their own cards below.
  *
- * **Collapsed to a single line; the title appears on tap.** TfL's notices are prose (a paragraph
- * on a lift outage), and a glance surface shouldn't be dominated by one — so collapsed the card is
- * the notice's first line alone, and tapping expands it to the [title] (the interchange name, else
- * the stop) over the full text (SPEC *Concise copy* / jank-free UI). The notice `Text` exposes its
- * full string to the accessibility tree regardless of the visual clip, so a screen reader reads the
- * whole notice — which names the place — whether or not it is expanded; the tap only changes what is
- * drawn. Expanded state is `rememberSaveable`, keyed on the notice text, so it survives a
- * configuration change and never bleeds onto a different notice when a `LazyColumn` row is recycled.
+ * **The title heads the card always; the body collapses to one line and expands on tap.** Not
+ * every notice names its own stop — a bus "Bus Stop Closed" never does — so the heading is what
+ * says *which* stop even when collapsed (SPEC *Disruptions*); a tube notice's own leading repeat of
+ * the name is stripped upstream ([cleanDisruptionBody]) so the heading isn't said twice. TfL's
+ * notices are prose (a paragraph on a lift outage), and a glance surface shouldn't be dominated by
+ * one, so collapsed the [disruption] body is its first line alone and tapping expands it to the full
+ * text (SPEC *Concise copy* / jank-free UI). The body `Text` exposes its full string to the
+ * accessibility tree regardless of the visual clip, so a screen reader reads the whole notice
+ * whether or not it is expanded; the tap only changes what is drawn. Expanded state is
+ * `rememberSaveable`, keyed on the notice text, so it survives a configuration change and never
+ * bleeds onto a different notice when a `LazyColumn` row is recycled.
  */
 @Composable
 private fun StopClosureContent(disruption: String, title: String) {
@@ -923,10 +931,11 @@ private fun StopClosureContent(disruption: String, title: String) {
 /**
  * The shared "first line, tap to expand" disruption surface (SPEC *Disruptions* / *Concise
  * copy*): an error-toned rounded box that collapsed shows [text]'s first line alone and
- * expanded shows it in full, with a chevron marking it expandable. Used for the stop-closure
- * card ([StopClosureContent], where [title] is the interchange/stop name shown on expand) and
- * for the route detail's line disruption ([RouteDetailDialog], where [title] is null — the
- * dialog header already carries the line and place).
+ * expanded shows it in full, with a chevron marking it expandable. When a [title] is given it
+ * heads the surface, collapsed and expanded. Used for the stop-closure card
+ * ([StopClosureContent], where [title] is the interchange/stop name) and for the route detail's
+ * line disruption ([RouteDetailDialog], where [title] is null — the dialog header already carries
+ * the line and place).
  *
  * The `text` `Text` exposes its full string to the accessibility tree regardless of the visual
  * clip, so a screen reader reads the whole notice whether or not it is expanded; the tap only
@@ -957,9 +966,11 @@ private fun CollapsibleStatus(
             verticalAlignment = Alignment.Top,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                // A title (the interchange/stop name) is shown only on expand, and only when
-                // given — the collapsed surface is the notice's first line alone.
-                if (expanded && title != null) {
+                // The title (the interchange/stop name) heads the surface whenever one is given —
+                // collapsed and expanded — so a notice that doesn't name its own stop still says
+                // which stop. The route detail passes null (its dialog header already carries the
+                // line and place), so nothing is shown there.
+                if (title != null) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleSmall,
@@ -971,7 +982,7 @@ private fun CollapsibleStatus(
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = if (expanded) Int.MAX_VALUE else 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = if (expanded && title != null) Modifier.padding(top = 4.dp) else Modifier,
+                    modifier = if (title != null) Modifier.padding(top = 4.dp) else Modifier,
                 )
             }
             // A quiet chevron marks the row as expandable; the click label carries the action

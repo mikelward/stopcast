@@ -376,10 +376,27 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           interchange **display name** is resolved once per hub (cached) via a new
           `TflClient.hubName` (`/StopPoint/{hubId}`), off the render path, degrading to the
           stop's own name on failure (SPEC *Disruptions*).
-    - [ ] **A dedicated, persistent hub alert band?** Alerts now float to a top block of
-          header-less cards, titled by the interchange on expand (option 3a+). A **standing
-          band** with the interchange name always visible (3b), rather than only on expand, was
-          also mocked; a render swap on the same dedup, judged on a device.
+    - [x] **Stop name always heads the alert (option 3b)** (maintainer, 2026-09-22). The
+          title-on-expand shape hid *which* stop a collapsed alert was for — fatal for a bus
+          "Bus Stop Closed", which never names its own stop. The place name (interchange, else
+          stop) now heads the card collapsed and expanded (`StopClosureContent`); the body still
+          collapses to its first line and expands on tap.
+    - [x] **Clean the notice body: real newlines + strip a repeated station name** (maintainer,
+          2026-09-22). TfL's bus notices arrived with visible literal `\n` escapes and indent
+          runs; a tube notice instead led with "&lt;Station&gt; Underground Station: …", repeating
+          the new heading. `cleanDisruptionBody` (domain, tested) turns the escapes into real line
+          breaks and strips a leading run that matches the place name — by **detection, not by
+          mode** (it removes a prefix only when the text actually starts with a form of the name),
+          so the bus body (which names no stop) is left alone and relies on the heading.
+    - [x] **Fold a bus-stop closure reported per pole** (maintainer, 2026-09-22). A closed bus
+          stop is reported against each pole, which share no hub, so the hub-only fold showed a
+          card per pole (a stop reported both ways). `nearbyDeduped`'s place key is now the
+          coarsest identity that holds — hub, else a **real StopArea** (`stationNaptan`, never the
+          display-name fallback: two unrelated same-named stops must not collapse), else stop — so
+          real poles fold while genuinely distinct places keep their cards. It folds on the
+          **newline-normalized, not name-stripped** body (the strip is deferred to display), so a
+          hub's differently-named members keep one identity for a shared notice; folding on the
+          stripped text would split them.
     - [ ] **Per-description dedup** (Codex P2, PR #91). A stop's disruptions are joined into its one
           stop-status row's text (`stopStatusRow`), so the hub fold keys on the joined string: where
           two members of a hub carry *different sets* of notices — one reports X, the other X · Y —
@@ -390,6 +407,14 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           each rather than one joined card), so it's a **product/design decision** for the
           maintainer, not autopilot's to take. SPEC *Disruptions* now states the joined-text limit
           plainly rather than over-promising a per-notice fold.
+    - [ ] **Unify how we identify and group a place across disruptions, departures, and direction**
+          (maintainer, 2026-09-22). The stop-disruption fold now groups by hub → real StopArea →
+          stop, and the strip matches a wildly-spelled name (King's Cross St. Pancras appears in TfL
+          data as "Kings Cross St Pancras", "St Pancras Intern'l & King's X Stns", "… International
+          LL Rail Station", and ~8 more). The same place-identity question underlies the near-me
+          "group by station and direction" grouping (`StopGrouping`, `dedupeKeyOf`) — worth a single
+          shared notion of "which place, which direction" rather than parallel heuristics per
+          surface. Design-level; not scoped here.
     - [ ] **Merge the interchange's departures to the hub?** SPEC keeps King's Cross and St
           Pancras as separate departure headers (they are different buildings). Clustering on
           `hubNaptanCode` would merge them into one place; the next grain down is

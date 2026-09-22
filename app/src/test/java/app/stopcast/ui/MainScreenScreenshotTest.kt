@@ -345,13 +345,12 @@ class MainScreenScreenshotTest {
     }
 
     @Test
-    fun `a hub-wide alert repeated across an interchange shows once, titled on expand`() {
+    fun `a hub-wide alert repeated across an interchange shows once, titled by the interchange`() {
         // TfL reports a hub-wide notice (a lift outage) against every stop point in an
         // interchange, so the near-me set carries the identical text once per member. Those
-        // members share one hubNaptanCode, so the notice folds by hub identity to a single
-        // header-less card — collapsed it is the notice's first line, and tapping expands it to
-        // the interchange name over the full text. Synthetic accessibility copy + public station
-        // ids/names only (SPEC *Privacy*).
+        // members share one hubNaptanCode, so the notice folds by hub identity to a single card,
+        // headed by the interchange name; tapping expands the body to the full text. Synthetic
+        // accessibility copy + public station ids/names only (SPEC *Privacy*).
         val notice =
             "No step-free access — the lifts to the Thameslink platforms are out of service. " +
                 "Step-free interchange is not available; please use an alternative accessible route."
@@ -378,18 +377,55 @@ class MainScreenScreenshotTest {
                 stopDistanceMeters = distances,
             )
         }
-        // Deduped to one card, header-less — no per-member name header, collapsed or otherwise.
+        // Deduped to one card — no per-member group header (caps), and the notice shows once.
         composeRule.onAllNodesWithText(notice).assertCountEquals(1)
         composeRule.onNodeWithText("LONDON ST PANCRAS INTERNATIONAL", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertDoesNotExist()
-        // The interchange title appears only on expand, not on the collapsed card.
-        composeRule.onNodeWithText(hubName).assertDoesNotExist()
-        // Tapping the collapsed alert expands it in place: the interchange name titles it, over
-        // the full notice text.
+        // The interchange name heads the card even collapsed, so the alert always says which place.
+        composeRule.onNodeWithText(hubName).assertExists()
+        // Tapping the collapsed alert expands its body in place to the full notice text.
         composeRule.onNodeWithText(notice).performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithText(hubName).assertExists()
         captureSnapshot("main-near-me-hub-alert-expanded.png")
+    }
+
+    @Test
+    fun `a closed bus stop reported per pole folds to one card with the stop name and real newlines`() {
+        // TfL reports a bus-stop closure against each pole of the junction, with a body that names
+        // no stop and carries literal backslash-n escapes and indent runs. The poles share no hub
+        // but do share a cluster, so the notice folds to one card; the stop name heads it (the body
+        // never names it), and the escapes render as real line breaks, not visible "\n". Generic
+        // notice + stand-in stop name and example bus-stop ids only (SPEC *Privacy*).
+        val notice = "Bus Stop Closed\\n    Please use the next stop\\n    or the previous stop \\n    to catch your bus"
+        fun pole(id: String) = StopArrivals(
+            id, "Example Road", emptyList(),
+            fetchedAt = now.minusSeconds(60),
+            disruptions = listOf(StopDisruption(notice)),
+            arrivalsFresh = false,
+            clusterId = "490G000EXAMPLE",
+        )
+        val poles = listOf(pole("490000001E"), pole("490000001W"), pole("490000001N"))
+        val distances = mapOf("490000001E" to 40.0, "490000001W" to 55.0, "490000001N" to 60.0)
+        capture("main-near-me-bus-closure.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(poles, now.minusSeconds(60)),
+                now,
+                {},
+                stopDistanceMeters = distances,
+            )
+        }
+        // Folded to one card: the closure's first line shows exactly once, not once per pole.
+        composeRule.onAllNodesWithText("Bus Stop Closed", substring = true).assertCountEquals(1)
+        // The stop name heads the card even collapsed, since the body never names the stop.
+        composeRule.onNodeWithText("Example Road").assertExists()
+        // The literal backslash-n escapes are gone — the body carries real line breaks instead.
+        composeRule.onNodeWithText("\\n", substring = true).assertDoesNotExist()
+        // Expanding shows the full multi-line notice.
+        composeRule.onNodeWithText("Bus Stop Closed", substring = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("to catch your bus", substring = true).assertExists()
+        captureSnapshot("main-near-me-bus-closure-expanded.png")
     }
 
     @Test
