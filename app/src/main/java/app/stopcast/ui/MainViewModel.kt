@@ -3,6 +3,7 @@ package app.stopcast.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.stopcast.domain.DepartureRow
+import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
@@ -497,11 +498,38 @@ class MainViewModel(
      * so no prune is needed — an already-present stop keeps its aged rows until its fetch returns.
      */
     fun reveal(bucket: String) {
-        val next = NearbySelection.nextReveal(more, bucket, revealedKeys)
+        // The lines already on screen (eager plus revealed), so nextReveal can page THROUGH a run of
+        // clusters that only repeat them — the near-me list collapses a route to its nearest stop, so
+        // revealing such a cluster shows nothing — to the first farther cluster with a new route.
+        val next = NearbySelection.nextReveal(more, bucket, revealedKeys, shownLineIds())
         if (next.isEmpty()) return
         revealedKeys = revealedKeys + next
         _moreState.value = NearbySelection.revealableBuckets(more, revealedKeys)
         refresh()
+    }
+
+    /**
+     * The ids of the routes actually **on screen right now**. A "More" tap uses this so it can tell a
+     * farther cluster that adds a new route from one that only repeats a route already shown (which
+     * the near-me dedupe would collapse to nothing).
+     *
+     * Derived from the rendered rows, not the eager stops' *declared* lines: a stop can declare a
+     * line it has no current departure (or disruption) for, so that line isn't on screen — counting
+     * it would mark a farther stop that does show it as redundant and never reveal it, the dead tap
+     * this fixes (Codex, PR #98). Using the renderer's own output ([DepartureRows.across]) rather
+     * than re-deriving "what's shown" keeps this from drifting from the UI as its filters evolve.
+     */
+    private fun shownLineIds(): Set<String> {
+        val loaded = _state.value as? DeparturesUiState.Loaded ?: return emptySet()
+        // Derive the shown routes from the SAME rows the screen renders — `DepartureRows.across`
+        // against the live clock — rather than reconstructing "what's on screen" from the raw
+        // snapshot. That way every filter the renderer applies (departed predictions dropped, a
+        // disrupted line's status row suppressed on a stale or carried-forward stop, etc.) is
+        // inherited for free, instead of this method drifting from the UI one edge case at a time.
+        // Stop-status rows carry a blank lineId and drop out; a timed or line-status row's lineId is
+        // a genuinely-shown route.
+        return DepartureRows.across(loaded.stops, clock(), loaded.lineStatuses)
+            .mapNotNullTo(mutableSetOf()) { it.lineId.takeIf(String::isNotBlank) }
     }
 
     /**

@@ -41,6 +41,16 @@ object NearbySelection {
      */
     const val CLUSTERS_PER_MODE = 2
 
+    /**
+     * Hard cap on how many clusters a single "More" tap reveals (see [nextReveal]). Reaching through
+     * a redundant run to the next new route must stay bounded: each fetched pole is its own arrivals
+     * + disruption request, so an unbounded per-tap reveal could exceed TfL's keyless ~50 req/min
+     * budget and rate-limit later refreshes (Codex, PR #98). Three eager pages' worth — enough to
+     * span a realistic redundant corridor in one tap, small enough to keep the burst in hand; a dense
+     * outlier just takes another tap. A precise per-request budget is a `TODO.md` follow-up.
+     */
+    const val MAX_REVEAL_PER_TAP = CLUSTERS_PER_MODE * 3
+
     // Selection bucket for a cluster with no declared mode (a stop TfL listed no lines for), so
     // it isn't dropped from every mode's top-N and made to vanish. Internal to selection — never
     // a real mode, so it never surfaces as a "More" button.
@@ -154,24 +164,66 @@ object NearbySelection {
             .flatMapTo(sortedSetOf()) { revealBuckets(it) }
 
     /**
-     * The next *more* cluster keys to reveal when the user taps "More" for [bucket] — the nearest
-     * [pageSize] of that bucket's clusters not yet revealed, in the global distance order [more] already
-     * carries. Keys (not clusters) so a caller tracking revealed identities adds them directly; empty when
-     * the bucket has nothing left to reveal. Paging [pageSize] at a time keeps each tap's fetch burst
-     * bounded, matching the eager cap.
+     * The next *more* cluster keys to reveal when the user taps "More" for [bucket], in the global
+     * distance order [more] already carries. Keys (not clusters) so a caller tracking revealed
+     * identities adds them directly; empty when the bucket has nothing left to reveal.
+     *
+     * **A tap pages through to the first cluster that adds a genuinely new line**, not just the
+     * next [pageSize] clusters. The near-me list collapses a (line, direction) to its nearest stop
+     * ([DepartureRows.nearbyDeduped]), so revealing a farther cluster whose lines are all already
+     * shown from a nearer stop surfaces *nothing* — the tap looks like it did nothing, then the next
+     * tap (reaching a cluster with a new route) works. So this reveals at least [pageSize] clusters
+     * and keeps going past that until the batch includes a cluster carrying a [bucket]-mode line not
+     * in [shownLineIds] (the routes already on screen — eager plus revealed).
+     *
+     * The dedupe is by (line, direction) and this test is by line id, because direction is only
+     * known after the arrivals fetch — so it is the *safe* approximation: the batch is always a
+     * distance-ordered prefix, so it never permanently skips a cluster (an opposite-direction pole
+     * of an already-shown route is still revealed, just possibly on a later tap); it only decides how
+     * far one tap reaches. When no remaining cluster adds a new line, it falls back to the bounded
+     * [pageSize] page, so the rare all-redundant tail still pages a bounded few per tap rather than
+     * the whole tier at once.
+     *
+     * **Bounded to [maxPerTap] clusters** so one tap can't fan out an unbounded fetch burst. Each
+     * fetched pole is its own arrivals + disruption request, so reaching through a long redundant run
+     * in one tap could exceed TfL's keyless ~50 req/min budget and rate-limit later refreshes. When
+     * the first new route is farther than the cap, a tap stops at the cap and the next tap continues —
+     * so a dense redundant corridor takes a few taps rather than one oversized fetch. (This caps the
+     * cluster *count*; a precise per-pole/request budget across the whole shown set is a `TODO.md`
+     * follow-up, as is fetching only the newly revealed page rather than the whole set.)
      */
     fun nextReveal(
         more: List<NearbyCluster>,
         bucket: String,
         revealed: Set<String>,
+        shownLineIds: Set<String> = emptySet(),
         pageSize: Int = CLUSTERS_PER_MODE,
-    ): List<String> =
-        more.asSequence()
-            .filterNot { it.key in revealed }
-            .filter { bucket in revealBuckets(it) }
-            .map { it.key }
-            .take(pageSize)
-            .toList()
+        maxPerTap: Int = MAX_REVEAL_PER_TAP,
+    ): List<String> {
+        val candidates = more.filter { it.key !in revealed && bucket in revealBuckets(it) }
+        if (candidates.isEmpty()) return emptyList()
+        val cap = maxOf(pageSize, maxPerTap)
+        val firstNew = candidates.indexOfFirst { addsNewLine(it, bucket, shownLineIds) }
+        // No unrevealed cluster adds a new route: page a bounded few (the old behavior) rather than
+        // revealing the whole redundant tail at once.
+        if (firstNew < 0) return candidates.take(pageSize).map { it.key }
+        // Reveal through the first cluster that adds a new route — never fewer than a page (so the
+        // common all-new case still reveals a page at a time), never more than [cap] (so a long
+        // redundant run doesn't fan out an unbounded burst; the next tap continues from here).
+        return candidates.take((firstNew + 1).coerceIn(pageSize, cap)).map { it.key }
+    }
+
+    /**
+     * Whether [cluster] carries a [bucket]-mode line whose id is not already in [shownLineIds] — i.e.
+     * revealing it would surface a route the near-me list isn't already showing from a nearer stop.
+     * A blank line id is no cross-stop identity (TfL omits it on some services), so it never counts as
+     * new. For [GENERIC_MORE] the bucket is the empty mode, which a modeless cluster's (absent) lines
+     * never match — so a modeless cluster never "adds a line" and pages by the bounded fallback.
+     */
+    private fun addsNewLine(cluster: NearbyCluster, bucket: String, shownLineIds: Set<String>): Boolean =
+        cluster.stops.any { stop ->
+            stop.lines.any { it.mode == bucket && it.id.isNotBlank() && it.id !in shownLineIds }
+        }
 
     /** The distinct transport modes a stop serves, from its lines (blank modes ignored). */
     private fun StopLocation.modes(): Set<String> =
