@@ -556,6 +556,24 @@ private fun DepartureList(
     // alert's stop as a place, so a lone departures group beside a closure-only stop still shows
     // its header (SPEC *Disruptions*).
     val groups = remember(rows) { StopGrouping.groupByStop(rows) }
+    // One place-wide header distance per cluster: the nearest of ALL the place's members, shared by
+    // every direction group of that place — so a station split into direction headers shows one
+    // consistent distance (its nearest member), not each direction's own members' nearest, which
+    // could differ or read farther than the place's nearest (Codex P2, PR #109). Empty on the
+    // watched list (no distances, D1).
+    val placeDistanceMeters = remember(groups, stopDistanceMeters) {
+        if (stopDistanceMeters.isEmpty()) {
+            emptyMap()
+        } else {
+            groups.groupBy { it.placeKey }.mapNotNull { (place, placeGroups) ->
+                placeGroups.asSequence()
+                    .flatMap { it.rows.asSequence() }
+                    .mapNotNull { stopDistanceMeters[it.stopId] }
+                    .minOrNull()
+                    ?.let { place to it }
+            }.toMap()
+        }
+    }
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(16.dp),
@@ -569,12 +587,10 @@ private fun DepartureList(
         groups.forEachIndexed { index, group ->
             // The near-me list carries a per-stop distance; the watched list doesn't, so the
             // label is present only when this place's stops are in the map (D1). A place groups
-            // several stops (a junction's poles), so the header shows the distance to the
-            // *closest* of them — the one a rider walks to.
-            val distanceLabel = group.rows
-                .mapNotNull { stopDistanceMeters[it.stopId] }
-                .minOrNull()
-                ?.let(StopDistance::label)
+            // several stops (a junction's poles, a station's platforms across directions), so the
+            // header shows the distance to the *closest* of them — the one a rider walks to — and
+            // the same place-wide value on every direction header of that place (placeDistanceMeters).
+            val distanceLabel = placeDistanceMeters[group.placeKey]?.let(StopDistance::label)
             // Draw the header when the grouping asks for it (more than one place, or a closure)
             // OR whenever there's a distance to show. A lone near-me place suppresses the
             // watched-list header (StopGroup.showHeader is false for a single non-closed place),
@@ -583,10 +599,16 @@ private fun DepartureList(
             // would drop both the promised distance and the place name (Codex, PR #82).
             if (group.showHeader || distanceLabel != null) {
                 item(key = "header|${group.key}") {
+                    // The header names the place, plus the compass direction it split on when there
+                    // is one ("King's Cross – Eastbound"); a place with no direction (a bus pole, a
+                    // bare platform) shows the bare name (SPEC D8). The direction is passed
+                    // separately so the header can reserve its width and clip the *name* first —
+                    // the direction is the cue that tells two groups of one place apart.
                     // The first group takes no extra top break — unless a closure alert precedes
                     // it, where the break separates the alert band from the departures.
                     StopGroupHeader(
                         group.stopName,
+                        group.directionLabel,
                         distanceLabel,
                         firstGroup = index == 0 && closureRows.isEmpty(),
                     )
@@ -651,20 +673,28 @@ internal fun moreLabelRes(mode: String): Int = when (mode) {
 }
 
 /**
- * The small stop-name header above a group of same-stop cards (SPEC D8): the stop name in
- * spaced small caps, text only — no border, no background, the muted `onSurfaceVariant`
- * role. The name hard-truncates (no ellipsis) at the edge. Extra top space (past the list's
- * 8dp item gap) marks the group break; the first group takes none. The mode-aware
- * direction/terminus qualifier is deferred to a follow-up (see `StopGrouping`).
+ * The small group header above a group of same-place cards (SPEC D8): the place name — plus the
+ * compass direction it split on ("King's Cross – Eastbound") where the caller passed one — in
+ * spaced small caps, text only, no border/background, the muted `onSurfaceVariant` role. Buses (no
+ * compass in the feed yet) pass a null [directionLabel] and show the bare name. The name
+ * hard-truncates (no ellipsis) at the edge. Extra top space (past the list's 8dp item gap) marks
+ * the group break; the first group takes none.
  *
- * [distanceLabel], when set, follows the name in parens ("… (120 m)") — the near-me list's own
- * distance to this stop, so a rider can judge which nearby stop to walk to. It is null on the
- * location-free watched list, which carries no distance (D1). The distance is not uppercased, so
- * its unit stays lowercase, and it is a **reserved** trailing element: a long name clips rather
- * than pushing the distance off the edge (the same discipline as the departure row's countdown).
+ * [directionLabel] and [distanceLabel] are **reserved** trailing elements (measured first, no
+ * weight): a long place name clips before either is pushed off the edge (the same discipline as the
+ * departure row's countdown). The direction especially must survive the clip — it is the cue that
+ * tells two direction groups of one place apart, so appending it to the name and letting it clip
+ * would defeat the split (Codex P2, PR #109). [distanceLabel], when set, is the near-me list's
+ * distance to this stop ("… (120 m)"), null on the location-free watched list (D1); it is not
+ * uppercased, so its unit stays lowercase, and it sits after the direction.
  */
 @Composable
-private fun StopGroupHeader(name: String, distanceLabel: String?, firstGroup: Boolean) {
+private fun StopGroupHeader(
+    name: String,
+    directionLabel: String?,
+    distanceLabel: String?,
+    firstGroup: Boolean,
+) {
     // labelMedium is the same role the freshness stamp uses; the tracking gives the small-caps
     // read. uppercase() is Kotlin's locale-invariant overload (safe from the Turkish-ı trap).
     val style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.8.sp)
@@ -672,8 +702,8 @@ private fun StopGroupHeader(name: String, distanceLabel: String?, firstGroup: Bo
     val headerModifier = Modifier
         .fillMaxWidth()
         .padding(start = 4.dp, end = 4.dp, top = if (firstGroup) 0.dp else 12.dp, bottom = 0.dp)
-    if (distanceLabel == null) {
-        // Watched list: no distance, so the header is the bare name (rendering unchanged).
+    if (directionLabel == null && distanceLabel == null) {
+        // Watched list, no direction: the header is the bare name (rendering unchanged).
         Text(
             text = name.uppercase(),
             style = style,
@@ -687,9 +717,14 @@ private fun StopGroupHeader(name: String, distanceLabel: String?, firstGroup: Bo
         )
         return
     }
-    // Near-me list: the distance is an unweighted trailing element (measured first), so a long
-    // name clips instead of pushing the distance off the end (Codex, PR #82). fill = false lets
-    // the distance sit right after a short name rather than pinned to the far edge.
+    // The **distance** is the only unweighted reserved element (short and bounded — "(1.2 km)"),
+    // measured first so it always keeps its width. The **name** and the **direction** both take a
+    // weight (fill = false), so each is bounded to its share of the remaining width: a realistic
+    // (short) direction still shows in full while a long name clips first, but neither the direction
+    // nor the distance can consume the whole row and starve the name to nothing — the failure at the
+    // combined max scale (1.6× app × a large system font) if the direction were also unweighted
+    // (Codex P2, PR #109). The direction is uppercased to match the small-caps name; the distance
+    // keeps its lowercase unit.
     Row(modifier = headerModifier, verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = name.uppercase(),
@@ -701,14 +736,28 @@ private fun StopGroupHeader(name: String, distanceLabel: String?, firstGroup: Bo
             overflow = TextOverflow.Clip,
             modifier = Modifier.weight(1f, fill = false),
         )
-        Text(
-            text = " ($distanceLabel)",
-            style = style,
-            fontWeight = FontWeight.SemiBold,
-            color = color,
-            maxLines = 1,
-            softWrap = false,
-        )
+        if (directionLabel != null) {
+            Text(
+                text = " – ${directionLabel.uppercase()}",
+                style = style,
+                fontWeight = FontWeight.SemiBold,
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
+        if (distanceLabel != null) {
+            Text(
+                text = " ($distanceLabel)",
+                style = style,
+                fontWeight = FontWeight.SemiBold,
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
     }
 }
 

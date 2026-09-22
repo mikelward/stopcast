@@ -3,6 +3,7 @@ package app.stopcast.domain
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -130,6 +131,162 @@ class StopGroupingTest {
         assertEquals(setOf("P1"), groups.first().rows.mapTo(mutableSetOf()) { it.stopId })
         assertTrue(groups.first().rows.single().upcoming.isEmpty())
         assertEquals(setOf("P2"), groups.last().rows.mapTo(mutableSetOf()) { it.stopId })
+    }
+
+    @Test
+    fun `a station splits into one header per compass direction`() {
+        // King's Cross: a rail platform's compass ("Northbound - Platform 1") splits a station's
+        // cards into one header per direction, so a busy interchange isn't a wall of cards under
+        // one bare name (SPEC D8). Public line names/termini only (SPEC *Privacy*).
+        val rows = listOf(
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "victoria", direction = "outbound", destination = "Walthamstow Central", platform = "Northbound - Platform 1"),
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "piccadilly", direction = "outbound", destination = "Cockfosters", platform = "Eastbound - Platform 3"),
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "victoria", direction = "inbound", destination = "Brixton", platform = "Southbound - Platform 2"),
+        )
+        val groups = StopGrouping.groupByStop(rows)
+        // One group per compass direction, in first-appearance (soonest-first) order.
+        assertEquals(listOf("Northbound", "Eastbound", "Southbound"), groups.map { it.directionLabel })
+        assertTrue(groups.all { it.stopName == "King's Cross" && it.showHeader })
+    }
+
+    @Test
+    fun `a station's direction blocks stay adjacent when another place interleaves by time`() {
+        // SPEC D8: a place's cards stay adjacent. A station split into direction blocks must not
+        // have a nearer bus stop's block wedged between its directions just because that bus leaves
+        // sooner than the station's second direction. Rows arrive soonest-first (KX north, bus, KX
+        // east); the station's two blocks must still come out adjacent, the bus after both.
+        val rows = listOf(
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "victoria", direction = "outbound", destination = "Walthamstow Central", platform = "Northbound - Platform 1"),
+            row("BUS", "York Way", clusterId = "490G0YRK", lineId = "390", direction = "outbound", destination = "Archway", platform = "", mode = "bus"),
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "piccadilly", direction = "outbound", destination = "Cockfosters", platform = "Eastbound - Platform 3"),
+        )
+        val groups = StopGrouping.groupByStop(rows)
+        assertEquals(
+            listOf("King's Cross" to "Northbound", "King's Cross" to "Eastbound", "York Way" to null),
+            groups.map { it.stopName to it.directionLabel },
+        )
+    }
+
+    @Test
+    fun `a cluster's direction groups share one canonical place name`() {
+        // Members of one cluster can carry different cleaned names (the reason to group by
+        // stationNaptan, not by name). Every direction group of the place must show the same name,
+        // never "King's Cross – Eastbound" beside "King's Cross St. Pancras – Westbound" (Codex P2,
+        // PR #109). The first row's name for the place wins.
+        val rows = listOf(
+            row("A", "King's Cross", clusterId = "940GZZLUKSX", lineId = "victoria", direction = "outbound", destination = "Walthamstow Central", platform = "Northbound - Platform 1"),
+            row("B", "King's Cross St. Pancras", clusterId = "940GZZLUKSX", lineId = "victoria", direction = "inbound", destination = "Brixton", platform = "Southbound - Platform 2"),
+        )
+        val groups = StopGrouping.groupByStop(rows)
+        assertEquals(listOf("Northbound", "Southbound"), groups.map { it.directionLabel })
+        assertEquals(listOf("King's Cross", "King's Cross"), groups.map { it.stopName })
+    }
+
+    @Test
+    fun `compass groups by platform, not TfL inbound-outbound`() {
+        // The reason the key is the compass, not TfL's `direction`: at King's Cross TfL tags the
+        // same Eastbound platform `inbound` for the Circle and `outbound` for the Hammersmith &
+        // City (confirmed against live data, 2026-09-22), so grouping on inbound/outbound would
+        // split one platform's trains into two headers. The compass keeps them together.
+        val rows = listOf(
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "circle", direction = "inbound", destination = "Edgware Road", platform = "Eastbound - Platform 2"),
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "hammersmith-city", direction = "outbound", destination = "Barking", platform = "Eastbound - Platform 2"),
+        )
+        val groups = StopGrouping.groupByStop(rows)
+        assertEquals(1, groups.size)
+        assertEquals("Eastbound", groups.single().directionLabel)
+        assertEquals(setOf("circle", "hammersmith-city"), groups.single().rows.mapTo(mutableSetOf()) { it.lineId })
+        assertTrue(groups.single().showHeader)
+    }
+
+    @Test
+    fun `a row resolves its direction from a later prediction when the soonest has no platform`() {
+        // A row is one (line, direction); TfL can leave the platform blank on the soonest
+        // prediction while a later one in the same row carries the compass. The row must still
+        // resolve to its direction header, not drop to the bare header until the blank prediction
+        // departs (Codex P2, PR #109).
+        val rows = listOf(
+            row(
+                "KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "victoria",
+                direction = "outbound", destination = "Walthamstow Central",
+                upcoming = listOf(
+                    dep("Walthamstow Central", platform = ""),
+                    dep("Walthamstow Central", platform = "Northbound - Platform 1"),
+                ),
+            ),
+        )
+        val group = StopGrouping.groupByStop(rows).single()
+        assertEquals("Northbound", group.directionLabel)
+    }
+
+    @Test
+    fun `mixed-case compass labels group into one direction block`() {
+        // TfL supplying "Northbound" and "NORTHBOUND" must not split into two identical-looking
+        // sections — the canonical casing keeps them one block (Codex P2, PR #109).
+        val rows = listOf(
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "victoria", direction = "outbound", destination = "Walthamstow Central", platform = "Northbound - Platform 1"),
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "northern", direction = "outbound", destination = "High Barnet", platform = "NORTHBOUND - Platform 5"),
+        )
+        val group = StopGrouping.groupByStop(rows).single()
+        assertEquals("Northbound", group.directionLabel)
+        assertEquals(2, group.rows.size)
+    }
+
+    @Test
+    fun `one compass direction spanning two platforms is one group`() {
+        // Eastbound spans Platform 2 (sub-surface lines) and Platform 6 (Piccadilly) at King's
+        // Cross, so the compass is correctly coarser than the platform number — one Eastbound group.
+        val rows = listOf(
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "circle", direction = "inbound", destination = "Edgware Road", platform = "Eastbound - Platform 2"),
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "piccadilly", direction = "outbound", destination = "Cockfosters", platform = "Eastbound - Platform 6"),
+        )
+        val groups = StopGrouping.groupByStop(rows)
+        assertEquals(1, groups.size)
+        assertEquals("Eastbound", groups.single().directionLabel)
+    }
+
+    @Test
+    fun `a bus pole with no platform keeps the bare place header`() {
+        // Rail-first: a bus arrival carries no platform (its bearing is in stop metadata, not the
+        // feed), so it resolves no compass and falls to the bare per-place header — buses are not
+        // regressed by the rail split. Public route/place names only (SPEC *Privacy*).
+        val rows = listOf(
+            row("P1", "Cranley Gardens", clusterId = "490G00005712", lineId = "43", direction = "inbound", destination = "London Bridge", platform = "", mode = "bus"),
+            row("A", "Archway", clusterId = "490G0ARW", destination = "Morden"),
+        )
+        val cranley = StopGrouping.groupByStop(rows).first { it.stopName == "Cranley Gardens" }
+        assertNull(cranley.directionLabel)
+    }
+
+    @Test
+    fun `bus poles with stop-letter platforms stay merged under one bare header`() {
+        // A bus prediction can carry a stop-local `platform` (the stop letter). It must not be read
+        // as a direction, or one cluster's poles would split into "Stop A"/"Stop B" groups instead
+        // of merging under one bare header (Codex P2, PR #109).
+        val rows = listOf(
+            row("PA", "Turnpike Lane", clusterId = "490G0TPL", lineId = "141", direction = "inbound", destination = "London Bridge", platform = "Stop A", mode = "bus"),
+            row("PB", "Turnpike Lane", clusterId = "490G0TPL", lineId = "141", direction = "outbound", destination = "Palmers Green", platform = "Stop B", mode = "bus"),
+        )
+        val group = StopGrouping.groupByStop(rows).single()
+        assertNull(group.directionLabel)
+        assertEquals(setOf("PA", "PB"), group.rows.mapTo(mutableSetOf()) { it.stopId })
+    }
+
+    @Test
+    fun `a suspended line at a station does not collapse the live direction groups`() {
+        // One stop id with a suspended declared line (a directionless "No departures" status row)
+        // plus live rows carrying compass platforms: the live rows must still split by direction,
+        // not all collapse to one bare group because the stop is "warned" (Codex P2, PR #109).
+        val rows = listOf(
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "circle", destination = "", upcoming = emptyList()),
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "victoria", direction = "outbound", destination = "Walthamstow Central", platform = "Northbound - Platform 1"),
+            row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "victoria", direction = "inbound", destination = "Brixton", platform = "Southbound - Platform 2"),
+        )
+        val groups = StopGrouping.groupByStop(rows)
+        // The live rows keep their compass groups.
+        assertEquals(setOf("Northbound", "Southbound"), groups.mapNotNull { it.directionLabel }.toSet())
+        // The suspended line is its own directionless group (a warning), not merged into a block.
+        assertTrue(groups.any { it.directionLabel == null && it.rows.all { r -> r.upcoming.isEmpty() } })
     }
 
     @Test

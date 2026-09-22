@@ -169,28 +169,35 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("OXFORD CIRCUS").assertExists()
     }
 
-    // The busiest interchange on the network: King's Cross St. Pancras, six Underground lines
-    // both ways. Real line ids and termini so the pills and destinations render as they would
-    // on the day. Public infrastructure / line names only (SPEC *Privacy*).
+    // The busiest interchange on the network: King's Cross St. Pancras, six Underground lines both
+    // ways. Real line ids, termini, platforms, and TfL's own `direction` values — recorded from the
+    // live `/StopPoint/940GZZLUKSX/Arrivals` feed (2026-09-22). The `direction` column is
+    // deliberately faithful, so this fixture proves the headers group on the platform's **compass**,
+    // not on inbound/outbound: TfL tags the same Eastbound platform `inbound` for the Circle and
+    // `outbound` for the Hammersmith & City / Metropolitan, and leaves some Westbound trains'
+    // direction blank — yet all Eastbound cards land under one "Eastbound" header. Public
+    // infrastructure/line names only (SPEC *Privacy*).
     private fun kingsCrossStPancras() = StopArrivals(
         "940GZZLUKSX",
         "King's Cross St. Pancras",
         listOf(
-            dep("victoria", "Victoria", "northbound", "Walthamstow Central", 60, "Northbound - Platform 1"),
-            dep("victoria", "Victoria", "southbound", "Brixton", 210, "Southbound - Platform 2"),
-            dep("piccadilly", "Piccadilly", "eastbound", "Cockfosters", 120, "Eastbound - Platform 3"),
-            dep("piccadilly", "Piccadilly", "westbound", "Heathrow Terminal 5", 330, "Westbound - Platform 4"),
-            dep("northern", "Northern", "northbound", "High Barnet", 90, "Northbound - Platform 5", branch = "Bank"),
-            dep("northern", "Northern", "southbound", "Morden", 240, "Southbound - Platform 6", branch = "Bank"),
-            // Circle, Hammersmith & City and Metropolitan share the sub-surface platforms here,
-            // so all three run eastbound (Platform 2) / westbound (Platform 1) at King's Cross —
-            // not the Metropolitan's whole-network northbound/southbound convention.
-            dep("circle", "Circle", "eastbound", "Edgware Road", 300, "Eastbound - Platform 2"),
-            dep("circle", "Circle", "westbound", "Hammersmith", 390, "Westbound - Platform 1"),
-            dep("metropolitan", "Metropolitan", "eastbound", "Aldgate", 180, "Eastbound - Platform 2"),
-            dep("metropolitan", "Metropolitan", "westbound", "Uxbridge", 270, "Westbound - Platform 1"),
-            dep("hammersmith-city", "Hammersmith & City", "eastbound", "Barking", 150, "Eastbound - Platform 2"),
-            dep("hammersmith-city", "Hammersmith & City", "westbound", "Hammersmith", 420, "Westbound - Platform 1"),
+            dep("victoria", "Victoria", "outbound", "Walthamstow Central", 60, "Northbound - Platform 1"),
+            dep("victoria", "Victoria", "inbound", "Brixton", 210, "Southbound - Platform 2"),
+            dep("piccadilly", "Piccadilly", "outbound", "Cockfosters", 120, "Eastbound - Platform 3"),
+            dep("piccadilly", "Piccadilly", "inbound", "Heathrow Terminal 5", 330, "Westbound - Platform 4"),
+            dep("northern", "Northern", "outbound", "High Barnet", 90, "Northbound - Platform 5", branch = "Bank"),
+            dep("northern", "Northern", "inbound", "Morden", 240, "Southbound - Platform 6", branch = "Bank"),
+            // Circle, Hammersmith & City and Metropolitan share the sub-surface platforms here, so
+            // all three run eastbound (Platform 2) / westbound (Platform 1) at King's Cross. TfL's
+            // inbound/outbound for one compass heading disagrees across these lines (Circle
+            // Eastbound is `inbound`, the others `outbound`) and a Westbound train can carry no
+            // direction at all — the compass is what keeps a platform's trains together.
+            dep("circle", "Circle", "inbound", "Edgware Road", 300, "Eastbound - Platform 2"),
+            dep("circle", "Circle", "outbound", "Hammersmith", 390, "Westbound - Platform 1"),
+            dep("metropolitan", "Metropolitan", "outbound", "Aldgate", 180, "Eastbound - Platform 2"),
+            dep("metropolitan", "Metropolitan", "inbound", "Uxbridge", 270, "Westbound - Platform 1"),
+            dep("hammersmith-city", "Hammersmith & City", "outbound", "Barking", 150, "Eastbound - Platform 2"),
+            dep("hammersmith-city", "Hammersmith & City", "", "Hammersmith", 420, "Westbound - Platform 1"),
         ),
         fetchedAt = now.minusSeconds(60),
     )
@@ -209,13 +216,13 @@ class MainScreenScreenshotTest {
     )
 
     @Test
-    fun `the most connected station renders under one bare-name header`() {
-        // The wall the large-station grain decision turns on (TODO): King's Cross' six lines both
-        // ways sit under a single bare "KING'S CROSS ST. PANCRAS" header today, with direction
-        // living only in each card's destination. A nearby bus stop makes the multi-stop header
-        // render (a single stop would imply itself) and sits below the wall — a busy interchange
-        // overflows one screen. This captures the shipped one-per-stop behavior: the "before"
-        // for any grain change.
+    fun `the most connected station splits into per-direction headers`() {
+        // King's Cross' six lines both ways now group by the platform's compass, one header per
+        // direction ("KING'S CROSS ST. PANCRAS – NORTHBOUND"), so a busy interchange reads as
+        // direction blocks rather than a wall of cards under one bare name (SPEC D8). A nearby bus
+        // stop (no platform in the feed) sits below under its bare name — the rail-first split
+        // doesn't regress it. This is the "after" for the grain change; the fixture carries TfL's
+        // real, inconsistent inbound/outbound so the capture proves the compass is the key.
         // Wire the bundled branch topology the way MainActivity does, so the capture is the real
         // production "before" and not the unwired RouteTopology.EMPTY fallback. King's Cross is on
         // the Northern line's Bank (City) branch alone — the Charing Cross branch runs Camden Town →
@@ -255,15 +262,19 @@ class MainScreenScreenshotTest {
                 )
             }
         }
-        // The header and the two soonest cards are within the composed window; the bus stop's own
-        // block is below the wall (off-screen, so not in the semantics tree here). Real lines
-        // render their own pills, with direction only on the cards — the grain question.
-        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertExists()
+        // The direction blocks lead soonest-first (Northbound at 60s, then Eastbound at 120s); the
+        // lower directions and the bus stop are below the fold (off-screen, not in the semantics
+        // tree). The header splits into a place-name node and a reserved direction node, so the
+        // direction survives a clip — assert the direction nodes and that the place name is present.
+        composeRule.onNodeWithText("– NORTHBOUND", substring = true).assertExists()
+        composeRule.onNodeWithText("– EASTBOUND", substring = true).assertExists()
+        composeRule.onAllNodesWithText("KING'S CROSS ST. PANCRAS").onFirst().assertExists()
+        // Northbound groups the Victoria and Northern trains; Eastbound leads with the Piccadilly.
         composeRule.onNodeWithText("Walthamstow Central").assertExists()
+        composeRule.onNodeWithText("High Barnet").assertExists()
         composeRule.onNodeWithText("Cockfosters").assertExists()
         // The Northern rows here are Bank-branch-only at King's Cross, so the topology drops the
         // "/Bank" cue — the production render, not the RouteTopology.EMPTY fallback.
-        composeRule.onNodeWithText("High Barnet").assertExists()
         composeRule.onNodeWithText("/Bank").assertDoesNotExist()
     }
 
@@ -310,9 +321,13 @@ class MainScreenScreenshotTest {
                 {},
             )
         }
-        // One "TURNPIKE LANE" header, not two — the two poles merged into one place.
+        // One "TURNPIKE LANE" header, not two — the two poles (buses, no compass in the feed)
+        // merged into one place under a bare name.
         composeRule.onAllNodesWithText("TURNPIKE LANE").assertCountEquals(1)
+        // Manor House is a rail stop, so its header carries the platform's compass direction, as a
+        // reserved node beside the (separate) name node.
         composeRule.onNodeWithText("MANOR HOUSE").assertExists()
+        composeRule.onNodeWithText("– WESTBOUND", substring = true).assertExists()
         // Both poles' cards render under that one header.
         composeRule.onNodeWithText("Palmers Green").assertExists()
         composeRule.onNodeWithText("London Bridge").assertExists()
@@ -557,6 +572,80 @@ class MainScreenScreenshotTest {
         val bounds = composeRule.onNodeWithText("(120 m)", substring = true).getUnclippedBoundsInRoot()
         assertTrue("distance should keep width, was ${bounds.right - bounds.left}", bounds.right - bounds.left > 0.dp)
         assertTrue("distance should stay within the row, right was ${bounds.right}", bounds.right <= 412.dp)
+    }
+
+    @Test
+    fun `a near-me rail header keeps the direction and distance in the row at the max scale`() {
+        // The combined worst case (1.6x in-app scale on top of a ~2x system font ≈ 3.2x): a rail
+        // stop's near-me header carries a name, a compass direction, AND a distance. The direction
+        // must not consume the row and push the reserved distance off the end — both the direction
+        // and the distance stay within the row while the name clips (Codex P2, PR #109). Logic-only —
+        // no baseline. Public station name + synthetic distance only (SPEC *Privacy*).
+        val stop = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras International",
+            listOf(dep("victoria", "Victoria", "inbound", "Brixton", 120, "Southbound - Platform 2")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                val base = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density = base.density, fontScale = 3.2f),
+                ) {
+                    Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUKSX" to 1200.0),
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // The direction survives (it is the cue that tells two groups apart) and starts within the row.
+        val dir = composeRule.onNodeWithText("– SOUTHBOUND", substring = true).getUnclippedBoundsInRoot()
+        assertTrue("direction should keep width, was ${dir.right - dir.left}", dir.right - dir.left > 0.dp)
+        assertTrue("direction should start within the row, left was ${dir.left}", dir.left < 411.dp)
+        // The reserved distance is not pushed off the end by the direction — the strong guard.
+        val dist = composeRule.onNodeWithText("(1.2 km)", substring = true).getUnclippedBoundsInRoot()
+        assertTrue("distance should keep width, was ${dist.right - dist.left}", dist.right - dist.left > 0.dp)
+        assertTrue("distance should stay within the row, right was ${dist.right}", dist.right <= 412.dp)
+    }
+
+    @Test
+    fun `a station's direction headers all show the place's nearest distance`() {
+        // A clustered station whose member stop ids sit at different distances, split by direction:
+        // every direction header shows the place's NEAREST member distance — one consistent value —
+        // not each direction's own members' nearest, which could differ or read farther (Codex P2,
+        // PR #109). Logic-only — no baseline. Public station data + synthetic distances only.
+        val north = StopArrivals(
+            "940GZZLUKSX-N", "King's Cross St. Pancras",
+            listOf(dep("victoria", "Victoria", "outbound", "Walthamstow Central", 60, "Northbound - Platform 1")),
+            fetchedAt = now.minusSeconds(60), clusterId = "940GZZLUKSX",
+        )
+        val south = StopArrivals(
+            "940GZZLUKSX-S", "King's Cross St. Pancras",
+            listOf(dep("victoria", "Victoria", "inbound", "Brixton", 120, "Southbound - Platform 2")),
+            fetchedAt = now.minusSeconds(60), clusterId = "940GZZLUKSX",
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                MainScreen(
+                    DeparturesUiState.Loaded(listOf(north, south), now.minusSeconds(60)),
+                    now,
+                    {},
+                    stopDistanceMeters = mapOf("940GZZLUKSX-N" to 120.0, "940GZZLUKSX-S" to 300.0),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        // Both direction headers (Northbound, Southbound) carry the nearest member's distance,
+        // and the farther member's distance never appears in a header.
+        composeRule.onAllNodesWithText("(120 m)", substring = true).assertCountEquals(2)
+        composeRule.onNodeWithText("(300 m)", substring = true).assertDoesNotExist()
     }
 
     @Test
