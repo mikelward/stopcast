@@ -142,9 +142,15 @@ The app finds stops two ways:
   not yet validated on a device** — whether either wants tuning at a real interchange lives in
   `TODO.md`; what is durable is the two-tier shape and the constraints above. **The near-me list is ordered
   closest stop first**, with soonest-first breaking a same-stop tie (a stop's several services
-  are equidistant); warnings still lead and starred rows are still pinned above it. Distance
-  orders only this location-derived list — never the location-free watched list, which stays
-  soonest-first (D1). Each near-me stop's header also **shows its distance** in parens after
+  are equidistant). **A line-status alert (a suspended line's "No departures" row) rides with its
+  stop and gets no special order** — it is not hoisted above a closer stop, nor lifted within its
+  own stop's section; it simply trails that stop's departures, so a nearer stop is never pushed
+  below a farther one for carrying an alert. Starred rows are still pinned to the top. (Stop
+  *closures* stay standalone cards ahead of the list today, so they still lead; making a closure a
+  normal stop/cluster section with a card explaining the closure in place of departures is a
+  `TODO.md` follow-up.) Earlier the alert lifted its whole stop above closer ones, which read as
+  the app ignoring distance. Distance orders only this location-derived list — never the
+  location-free watched list, which stays soonest-first (D1). Each near-me stop's header also **shows its distance** in parens after
   the name ("Oxford Circus (120 m)"), so a rider can judge which of two nearby stops to walk
   to rather than only reading the order; the watched list carries no distance and shows none
   (D1). The unit is metric (m/km) for now; making it follow the user's locale (m/yd, km/mi) and
@@ -330,11 +336,13 @@ top; the earlier per-row star button was removed because it consumed width on ev
 discoverable path), the boarding stop in the body, and the line's **full disruption text**, which
 the compact chip stands in for: shown collapsed to its first line, tapped to expand (the same
 widget the stop-closure card uses). It is a full screen rather than a dialog because it will grow
-per-route actions (a maps/nav hand-off), which a dialog would cap. **Warning rows still lead**, above even a starred service — a stop
+per-route actions (a maps/nav hand-off), which a dialog would cap. **On the watched list, warning rows still lead**, above even a starred service — a stop
 closure or a no-prediction line-status row is something the user must see, and pinning a
-starred service above it would push a warning down the list (principle 2). Distance ranking
-belongs to *finding* stops (near-me discovery, *Finding stops*), not to ordering the watched
-list.
+starred service above it would push a warning down the list (principle 2). **On the near-me
+list an alert gets no special order** — it rides with its stop at its stop's distance (trailing
+that stop's departures) rather than being lifted, above starred or otherwise (*Finding stops*); a
+stop closure still leads there as a standalone card. Distance ranking belongs to *finding* stops
+(near-me discovery, *Finding stops*), not to ordering the watched list.
 
 **The card *model* is still open** — the flat list vs. the compact swipe card. (How the
 group **header** names a direction is *settled*: the platform's compass, per *Departures*

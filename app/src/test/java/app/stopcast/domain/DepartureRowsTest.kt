@@ -555,6 +555,22 @@ class DepartureRowsTest {
         hubName = hubName,
     )
 
+    // A line-status "No departures" row (a suspended line with no countdown) — the alert that rides
+    // within a stop's section rather than as a standalone card.
+    private fun lineStatusRow(stopId: String, stopName: String, lineId: String) = DepartureRow(
+        stopId = stopId,
+        stopName = stopName,
+        lineId = lineId,
+        lineName = lineId,
+        direction = "",
+        directionKey = STATUS_DIRECTION_KEY,
+        destination = "",
+        mode = "tube",
+        upcoming = emptyList(),
+        fetchedAt = now,
+        status = LineStatus(lineId, severity = 6, description = "Suspended"),
+    )
+
     @Test
     fun `nearbyDeduped collapses a line across adjacent stops to the nearest`() {
         // The same bus route, same direction, at three stops within the radius. The nearest
@@ -891,9 +907,9 @@ class DepartureRowsTest {
     }
 
     @Test
-    fun `byStopDistance keeps a warning leading above a nearer timed row`() {
-        // A closure at a FAR stop must still lead above a NEAR stop's departures — a warning the
-        // user must see isn't buried under closer catchable rows (SPEC principle 2).
+    fun `byStopDistance keeps a closure leading above a nearer timed row`() {
+        // A closure at a FAR stop must still lead above a NEAR stop's departures — it renders as a
+        // standalone card ahead of the groups, so it leads the flat list too (SPEC principle 2).
         val nearTimed = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 120, mode = "bus"))
         val farClosure = listOf(stopStatusRow("Z", "Stop Z"))
 
@@ -901,6 +917,35 @@ class DepartureRowsTest {
 
         assertEquals("Z", ordered.first().stopId)
         assertTrue("the closure leads", ordered.first().stopDisruption != null)
+    }
+
+    @Test
+    fun `byStopDistance does not hoist a far stop's line-status alert above a nearer stop`() {
+        // A suspended line (a "No departures" line-status row) at a FAR stop must NOT jump ahead of a
+        // NEARER stop's departures — a stop is not hoisted just for carrying an alert (maintainer,
+        // 2026-09-22). The alert's card still leads within its own stop's section (the near stop is
+        // just first overall). Unlike a closure, it is not a standalone card, so distance decides.
+        val nearTimed = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 120, mode = "bus"))
+        val farAlert = listOf(lineStatusRow("Z", "Stop Z", "victoria"))
+
+        val ordered = DepartureRows.byStopDistance(nearTimed + farAlert, mapOf("A" to 100.0, "Z" to 900.0))
+
+        // The nearer stop leads; the far alert follows at its distance rather than being hoisted.
+        assertEquals(listOf("A", "Z"), ordered.map { it.stopId })
+    }
+
+    @Test
+    fun `byStopDistance rides a stop's alert with the stop, trailing its timed rows`() {
+        // At one stop, a suspended line (no countdown) and a timed line: the alert gets no special
+        // order for being an alert — it rides with the stop, trailing the timed departure rather than
+        // leading it (maintainer, 2026-09-22: "no special order based on alert").
+        val timed = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 120, mode = "bus"))
+        val alert = listOf(lineStatusRow("A", "Stop A", "victoria"))
+
+        val ordered = DepartureRows.byStopDistance(timed + alert, mapOf("A" to 100.0))
+
+        assertEquals("55", ordered.first().lineId)
+        assertTrue("the alert trails the stop's timed rows", ordered.last().upcoming.isEmpty())
     }
 
     // A minimal Northern-line topology: the two central trunks share the northern leg

@@ -349,6 +349,20 @@ class StopGroupingTest {
     }
 
     @Test
+    fun `with warningsLead false a warned place does not lead - it keeps first-appearance order`() {
+        // The near-me path orders rows by distance and passes warningsLead=false, so a place is NOT
+        // lifted for carrying a line-status alert — it stays in first-appearance (distance) order, so
+        // a nearer stop is never pushed below a farther one just for having an alert (maintainer,
+        // 2026-09-22). Here Archway (nearer, ordered first) leads the warned Brixton behind it.
+        val rows = listOf(
+            row("A", "Archway", destination = "Morden"),
+            row("B", "Brixton", lineId = "vic", upcoming = emptyList()),
+        )
+        val groups = StopGrouping.groupByStop(rows, warningsLead = false)
+        assertEquals(listOf("Archway", "Brixton"), groups.map { it.stopName })
+    }
+
+    @Test
     fun `each stop's rows stay contiguous even when two stops carry warnings`() {
         // Two warned stops: each stays one block led by its warning (option B). The cost the
         // maintainer accepted is that stop A's ordinary rows can sit above stop B's warning,

@@ -487,6 +487,16 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           each rather than one joined card), so it's a **product/design decision** for the
           maintainer, not autopilot's to take. SPEC *Disruptions* now states the joined-text limit
           plainly rather than over-promising a per-notice fold.
+    - [ ] **Render a stop closure as a normal stop/cluster section, closure card in place of
+          departures** (maintainer, 2026-09-22). Today a closure is a header-less standalone card
+          pulled ahead of the whole list (the screen filters closures out before grouping). The
+          maintainer's preferred shape: a closed stop looks like any other stop/cluster section —
+          its name header and distance, ordered by distance among the other places — but with a card
+          explaining the closure where its departures would be (its still-fetched departures stay
+          shown too, per the coarse-closure-data rule). This drops the "closures lead" special-casing
+          in `MainScreen` (the `closureRows` extraction) and in `byStopDistance`/`StopGrouping`, so a
+          closure rides with its stop by distance like an alert now does — the same "no special order"
+          the alert got. Touches SPEC *Disruptions* and the near-me ordering; its own PR.
     - [ ] **Unify how we identify and group a place across disruptions, departures, and direction**
           (maintainer, 2026-09-22). The stop-disruption fold now groups by hub → real StopArea →
           stop, and the strip matches a wildly-spelled name (King's Cross St. Pancras appears in TfL

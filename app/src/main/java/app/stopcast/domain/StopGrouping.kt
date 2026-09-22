@@ -47,7 +47,7 @@ object StopGrouping {
      * cards ahead of these groups (SPEC *Disruptions*) — but each closure's stop still counts as a
      * place, so a lone departures group beside a closure-only stop still shows its name header.
      */
-    fun groupByStop(rows: List<DepartureRow>): List<StopGroup> {
+    fun groupByStop(rows: List<DepartureRow>, warningsLead: Boolean = true): List<StopGroup> {
         // Stop closures form NO group — the screen renders them as header-less cards that title
         // themselves on expand (SPEC *Disruptions*) — but a closure's stop is still a **place on
         // the screen**, so it is counted toward the header decision below (see [placeKeys]).
@@ -120,14 +120,25 @@ object StopGrouping {
         // Order the groups so a **place's direction blocks stay adjacent** (SPEC D8 — a place's
         // cards stay together, led by its soonest): a station that split into Eastbound/Westbound/…
         // must not have another place's block wedged between its directions. So places sort first
-        // (a warned place ahead of an ordinary one, then by first appearance — which reflects
-        // soonest, since the caller passes rows already soonest-first), and only within a place do
-        // its blocks sort by their own first appearance. A starred place still leads (its starred
-        // row already sorts ahead in the caller's list).
+        // (by [placeRankOf], then by first appearance — which reflects soonest or, near me, closest,
+        // since the caller passes rows already so-ordered), and only within a place do its blocks
+        // sort by their own first appearance. A starred place still leads (its starred row already
+        // sorts ahead in the caller's list).
+        //
+        // **[warningsLead] decides whether a warned place is lifted.** On the watched list (the
+        // default) a place carrying a "No departures" line-status row leads an ordinary one — a
+        // warning the user must see isn't buried, and grouping doesn't rely on the caller pre-sorting
+        // warnings first. On the near-me list the caller orders by distance and passes
+        // `warningsLead = false`, so a stop is never hoisted above a closer one merely for carrying an
+        // alert (maintainer, 2026-09-22); the alert just rides with its stop in the flat (distance)
+        // order — no special place lift, and none within the place either. Stop closures are
+        // unaffected either way — they render as standalone cards outside grouping.
         val placeRank = HashMap<String, Int>()
         for ((key, groupRows) in byGroup) {
             placeRank.merge(infoOf.getValue(key).place, groupRows.minOf(::rowPriority), ::minOf)
         }
+        fun placeRankOf(key: String): Int =
+            if (warningsLead) placeRank.getValue(infoOf.getValue(key).place) else 0
         val placeFirstIndex = LinkedHashMap<String, Int>()
         byGroup.keys.forEach { key ->
             placeFirstIndex.getOrPut(infoOf.getValue(key).place) { placeFirstIndex.size }
@@ -136,7 +147,7 @@ object StopGrouping {
         return byGroup.entries
             .sortedWith(
                 compareBy<Map.Entry<String, MutableList<DepartureRow>>>(
-                    { placeRank.getValue(infoOf.getValue(it.key).place) },
+                    { placeRankOf(it.key) },
                     { placeFirstIndex.getValue(infoOf.getValue(it.key).place) },
                     { groupIndex.getValue(it.key) },
                 ),
