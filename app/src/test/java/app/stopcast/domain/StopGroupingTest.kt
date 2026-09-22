@@ -355,4 +355,92 @@ class StopGroupingTest {
         // Each group's own warning row (no countdown) leads its own rows.
         assertTrue(groups.all { it.rows.first().upcoming.isEmpty() })
     }
+
+    @Test
+    fun `a bus stop whose routes all head one way takes the shared terminus`() {
+        // The bus analog of the rail compass: a compass-less bus place where every route heads to
+        // one terminus is qualified "→ Bank", and the terminus forces its header even as a lone place.
+        val rows = listOf(
+            row("BP", "Turnpike Lane", lineId = "141", destination = "Bank", mode = "bus"),
+            row("BP", "Turnpike Lane", lineId = "341", destination = "Bank", mode = "bus"),
+        )
+        val group = StopGrouping.groupByStop(rows).single()
+        assertEquals("Bank", group.terminusLabel)
+        assertNull(group.directionLabel)
+        assertTrue(group.showHeader)
+    }
+
+    @Test
+    fun `a bus stop serving diverging termini stays bare`() {
+        // Routes at the pole head different ways, so there is no one terminus to stand behind — the
+        // header stays the bare name rather than claim a direction (SPEC principle 1).
+        val rows = listOf(
+            row("BP", "Wood Green", lineId = "141", destination = "Bank", mode = "bus"),
+            row("BP", "Wood Green", lineId = "341", destination = "Waterloo", mode = "bus"),
+        )
+        assertNull(StopGrouping.groupByStop(rows).single().terminusLabel)
+    }
+
+    @Test
+    fun `a short-working within one route blocks the shared terminus`() {
+        // One (line, direction) row can carry departures to more than one terminus (a short-working
+        // among the through buses); the row headline names only the soonest. The terminus must be a
+        // consensus of every upcoming departure, not the headline — else "→ Bank" would show while a
+        // card below still lists a Waterloo departure (Codex P1, PR #116).
+        val rows = listOf(
+            row(
+                "BP", "Wood Green", lineId = "141", mode = "bus", destination = "Bank",
+                upcoming = listOf(dep("Bank", "", "bus"), dep("Waterloo", "", "bus")),
+            ),
+        )
+        assertNull(StopGrouping.groupByStop(rows).single().terminusLabel)
+    }
+
+    @Test
+    fun `a blank destination among the bus routes blocks the shared terminus`() {
+        // TfL omitted a terminus, so a shared one can't be confirmed — bail rather than guess.
+        val rows = listOf(
+            row("BP", "Wood Green", lineId = "141", destination = "Bank", mode = "bus"),
+            row("BP", "Wood Green", lineId = "341", destination = "", mode = "bus"),
+        )
+        assertNull(StopGrouping.groupByStop(rows).single().terminusLabel)
+    }
+
+    @Test
+    fun `a suspended bus route blocks the shared terminus`() {
+        // A live route to Bank plus a suspended bus route (no predictions) at the same stop: the
+        // suspended route's card rides in the group but its destination is unknown, so the header
+        // can't claim "→ Bank" over it (Codex P2, PR #116) — every route must name the terminus.
+        val rows = listOf(
+            row("BP", "Turnpike Lane", lineId = "141", mode = "bus", destination = "Bank"),
+            row("BP", "Turnpike Lane", lineId = "341", mode = "bus", upcoming = emptyList()),
+        )
+        assertNull(StopGrouping.groupByStop(rows).single().terminusLabel)
+    }
+
+    @Test
+    fun `a rail place with a compass takes no terminus`() {
+        // Rail's direction is the compass; the terminus is the bus fallback, so a compass group never
+        // carries one even when its trains share a destination.
+        val rows = listOf(
+            row("KSX", "King's Cross", platform = "Northbound - Platform 1", destination = "Walthamstow"),
+            row("A", "Archway", destination = "Morden"),
+        )
+        val kings = StopGrouping.groupByStop(rows).first { it.stopName == "King's Cross" }
+        assertEquals("Northbound", kings.directionLabel)
+        assertNull(kings.terminusLabel)
+    }
+
+    @Test
+    fun `a compass-less non-bus place takes no terminus`() {
+        // The terminus is bus-only for now (the qualifier chain is mode-aware): a bare-platform tube
+        // group sharing one destination still shows the bare name, not "→ Terminus".
+        val rows = listOf(
+            row("X", "Some Depot", mode = "tube", destination = "Aldgate"),
+            row("A", "Archway", mode = "tube", destination = "Morden"),
+        )
+        val depot = StopGrouping.groupByStop(rows).first { it.stopName == "Some Depot" }
+        assertNull(depot.terminusLabel)
+        assertNull(depot.directionLabel)
+    }
 }

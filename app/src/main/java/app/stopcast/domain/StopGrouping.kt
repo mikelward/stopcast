@@ -15,9 +15,10 @@ package app.stopcast.domain
  * per direction — "King's Cross – Eastbound" — since a busy interchange under one bare name is a
  * wall of cards with direction living only in each destination. The compass, not TfL's
  * `inbound`/`outbound`, is the key: TfL's own direction is inconsistent across lines at one
- * platform (see [PlatformDirection]). A row with **no** compass (a bus pole today, a bare
- * "Platform 4") falls to the bare per-place header, so the split ships **rail-first** without
- * regressing buses; the bus bearing (`->N`, in stop metadata) is a follow-up (TODO).
+ * platform (see [PlatformDirection]). A row with **no** compass (a bus pole, a bare "Platform 4")
+ * takes a **bus terminus** qualifier instead — "→ Terminus" when the whole bus stop heads one way
+ * ([sharedBusTerminus]) — else the bare per-place header. The bus letter/bearing (`->N`, in stop
+ * metadata) is the remaining follow-up (TODO).
  *
  * The cluster key is TfL's `stationNaptan` where it gives one, else the cleaned display name
  * ([clusterKeyOf]; resolved in the nearby lookup). Keying on TfL's own cluster is what keeps a
@@ -140,20 +141,63 @@ object StopGrouping {
             )
             .map { (key, groupRows) ->
                 val info = infoOf.getValue(key)
+                // A **bus** place with no rail compass takes the shared terminus as its qualifier
+                // ("→ Terminus") when the whole stop heads one way — the bus analog of the compass,
+                // the cue a rider uses to pick the stop side. Rail keeps the compass; only a
+                // compass-less bus group resolves a terminus, and only when its routes agree (see
+                // [sharedBusTerminus]). The bus letter/bearing (`->N`, stop metadata) is a follow-up.
+                val terminusLabel = if (info.directionLabel == null) sharedBusTerminus(groupRows) else null
                 // A header is drawn where it tells the reader something: more than one place
-                // (counting closures), a place split into several directions, or a direction worth
-                // naming.
+                // (counting closures), a place split into several directions, a direction worth
+                // naming, or a bus place's shared terminus.
                 val showHeader =
-                    multiPlace || info.directionLabel != null || (groupsPerPlace[info.place] ?: 1) > 1
+                    multiPlace || info.directionLabel != null || terminusLabel != null ||
+                        (groupsPerPlace[info.place] ?: 1) > 1
                 StopGroup(
                     stopName = placeName.getValue(info.place),
                     key = key,
                     showHeader = showHeader,
                     rows = groupRows,
                     directionLabel = info.directionLabel,
+                    terminusLabel = terminusLabel,
                     placeKey = info.place,
                 )
             }
+    }
+
+    /**
+     * The single terminus a **bus** place heads to, for the "→ Terminus" header qualifier, or null
+     * when it has none to stand behind. Bus-only: rail's direction is the compass (this is called
+     * only for a compass-less group), and other compass-less modes stay bare for now — the qualifier
+     * chain is mode-aware (TODO: the bus letter/bearing is the other half).
+     *
+     * "Heads one way" is judged from **every timed prediction** in the group, not the row headline:
+     * a single (line, direction) row can carry departures to more than one terminus (a short-working
+     * among the through buses), and [DepartureRow.destination] names only the *soonest* — so keying
+     * on it could assert "→ Bank" while a card below still shows a later Waterloo departure (Codex
+     * P1, PR #116). So this checks each upcoming departure's destination: they must all name the
+     * **same, non-blank** terminus. Any divergence, or a blank TfL didn't fill (which can't confirm
+     * the shared terminus — SPEC principle 1), yields null so the header stays the bare name rather
+     * than claim a direction the snapshot contradicts.
+     *
+     * A **status row** (a suspended line, [DepartureRow.upcoming] empty) names no destination to
+     * confirm, and it rides in the group at the same stop id — so it too withholds the terminus,
+     * rather than let its card sit under a "→ Terminus" header for a direction it may not share
+     * (Codex P2, PR #116): every route in the group must name the confirmed terminus, so any route
+     * that can't disqualifies it.
+     */
+    private fun sharedBusTerminus(rows: List<DepartureRow>): String? {
+        if (rows.isEmpty() || rows.any { it.mode != "bus" || it.upcoming.isEmpty() }) return null
+        val destinations = HashSet<String>()
+        for (row in rows) {
+            for (dep in row.upcoming) {
+                val dest = dep.destination.trim()
+                if (dest.isEmpty()) return null
+                destinations.add(dest)
+                if (destinations.size > 1) return null
+            }
+        }
+        return destinations.singleOrNull()
     }
 
     /**
@@ -189,9 +233,12 @@ object StopGrouping {
  * One (place, direction) group of departure [rows] the screen renders under a single header. A
  * place is a cluster of stops sharing [stopName] (a junction's poles, a station's platforms), so
  * [rows] may span several stop ids; [directionLabel] is the compass direction the place split on
- * ("Eastbound"), or null when the rows carry no parseable compass (a bus pole, a bare platform) —
- * then the group is the whole place under its bare name. The screen shows the header as
- * "[stopName] – [directionLabel]" when a label is present, else the bare name.
+ * ("Eastbound"), or null when the rows carry no parseable compass (a bus pole, a bare platform).
+ * [terminusLabel] is the bus fallback: the single terminus a compass-less **bus** place heads to
+ * ("Bank"), when the whole stop heads one way, else null (the two labels are mutually exclusive — a
+ * group with a compass carries no terminus). With neither, the group is the whole place under its
+ * bare name. The screen shows the header as "[stopName] – [directionLabel]" (compass), "[stopName] →
+ * [terminusLabel]" (bus terminus), or the bare name.
  * [showHeader] is whether to draw the header at all (see [StopGrouping.groupByStop]). [key] is
  * stable and unique per group for a LazyColumn — the place key plus the direction.
  */
@@ -201,6 +248,10 @@ data class StopGroup(
     val showHeader: Boolean,
     val rows: List<DepartureRow>,
     val directionLabel: String? = null,
+    // The single terminus a compass-less bus place heads to ("Bank"), rendered as "→ Terminus", or
+    // null when its routes diverge or it is not a bus place ([StopGrouping.sharedBusTerminus]).
+    // Mutually exclusive with [directionLabel].
+    val terminusLabel: String? = null,
     // The place (cluster) identity this group belongs to, shared by every direction group of one
     // physical place. The near-me screen resolves one **place-wide** header distance from it — the
     // nearest of all the place's members — so a station's direction headers show one consistent

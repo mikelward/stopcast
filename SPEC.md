@@ -190,17 +190,20 @@ from TfL's `platformName` ("Eastbound - Platform 2" → Eastbound), **not** TfL'
 as `outbound`, and omits some westbound trains' direction entirely), so keying on inbound/outbound
 would split one platform's trains into two headers. The compass is also correctly coarser than the
 platform number — Eastbound spans two platforms at King's Cross — so a direction is one block, not
-one per platform. This ships **rail-first**: a stop with no compass in the feed — a **bus** pole,
-whose bearing (`->N`) lives in stop metadata not the arrivals feed, or a bare "Platform 4" — falls
-to the **bare name** header, so buses aren't regressed while the bus bearing is captured (a
-follow-up, `TODO.md`). When a header is too tight for the full compass word, the direction shows as
+one per platform. A stop with no compass in the feed — a **bus** pole, whose bearing (`->N`) lives
+in stop metadata not the arrivals feed, or a bare "Platform 4" — takes a **bus terminus** qualifier
+instead: "Turnpike Lane → Bank" when the whole bus stop heads one way (every route names the same,
+non-blank terminus), else the **bare name** header. The terminus is the bus analog of the compass —
+the cue a rider uses to pick the stop side — and, like the compass, it is not claimed when the
+routes diverge or a destination is unknown (**principle 1**). The bus **letter/bearing** (`(S)` /
+`(→S)`, from the StopPoint `stopLetter`/`indicator`) is the remaining follow-up (`TODO.md`), since
+it needs stop metadata the arrivals feed doesn't carry. When a header is too tight for the full compass word, the direction shows as
 its **single letter** ("– E"; a loop label as its two initials, "– IR") rather than clip to an
 ambiguous stub — the four cardinals have distinct initials, so the letter still tells two direction
 blocks of one place apart, and it always fits, so the direction cue never vanishes even at the
 largest font scale. The direction abbreviates to the letter first (keeping the full place name); the
 name clips (from its end, recognized from its start) only when even the letter form leaves it no
-room. The finer
-terminus qualifier (`→ Terminus`), the bus letter/bearing, and the
+room. The bus letter/bearing and the
 qualifier's grain at a busy interchange remain part of that follow-up. A two-way service
 at a stop is two cards, one per direction; a one-directional case (a terminus platform, a
 one-way-street stop, a single branch) is one. Nothing is hidden behind a gesture, which
@@ -863,13 +866,14 @@ Mirrors the sibling fleet:
   station's platforms), one header per `(place, direction)`**.
   Within a place the header carries the **compass direction** the cards are headed
   ("King's Cross – Eastbound"), parsed from the platform, **not** TfL's inconsistent
-  `inbound`/`outbound` (settled 2026-09-22, superseding the bare-name-only step); a stop with no
-  compass in the feed (a bus pole, a bare "Platform 4") falls to the bare name (rail-first). The cluster key is TfL's `stationNaptan` where the nearby lookup gives one,
+  `inbound`/`outbound` (settled 2026-09-22, superseding the bare-name-only step); a compass-less
+  **bus** place carries the shared **terminus** instead ("Turnpike Lane → Bank") when it heads one
+  way, else the bare name. The cluster key is TfL's `stationNaptan` where the nearby lookup gives one,
   else the cleaned display name — keying on TfL's own cluster keeps a station it spells
   several ways together while holding distinct adjacent stations (King's Cross St. Pancras
-  vs St Pancras International) apart. The **bus** letter/bearing (`(S)` / `(→S)`), a **terminus**
-  qualifier (`→ Terminus`), and the qualifier's grain at a busy interchange remain a follow-up
-  (mocked 2026-09-21; the bus form pending capture of TfL's StopPoint indicator — `TODO.md`). Its
+  vs St Pancras International) apart. The **bus** letter/bearing (`(S)` / `(→S)`) and the qualifier's
+  grain at a busy interchange remain a follow-up
+  (mocked 2026-09-21; the letter/bearing pending capture of TfL's StopPoint indicator — `TODO.md`). Its
   cost is length — a busy stop is many cards — which starring (ranking,
   distinct from watched-stop membership) and, later, smarter selection are meant to manage.
   The list orders the watched stops' cards location-free (soonest-first, starred pinned),

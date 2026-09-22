@@ -343,13 +343,21 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         scale. `PlatformDirection.abbreviation` + a width-measured fallback in `StopGroupHeader`
         (the same `TextMeasurer` pattern the destination line uses); the letter still announces the
         full word for a screen reader. JVM + logic screenshot tests.
-  - [ ] **Bus direction/terminus qualifier — the rest of the header** (maintainer's lean, settled
-        from mocks 2026-09-21). The rail compass split shipped (above); still to add: the **bus**
-        letter/bearing (`(S)` / `(→S)`, pending the StopPoint-indicator capture below) and a
-        **terminus** form (`→ Terminus`, when the whole stop shares one). Its own PR so the
-        mode-aware chain and the width handling (a long qualifier at a large font must not crowd the
-        name to zero — Codex P2 on PR #78) are designed together. **Do bus next** (maintainer,
-        2026-09-22).
+  - [x] **Bus terminus qualifier** (maintainer, 2026-09-22; "try the terminus form first"). A
+        compass-less **bus** place now takes "→ Terminus" when the whole stop heads one way (every
+        timed bus row names the same, non-blank destination), else the bare name — the bus analog of
+        the rail compass, judged honestly (diverging routes or a blank destination stay bare, SPEC
+        principle 1). `StopGrouping.sharedBusTerminus` + `StopGroup.terminusLabel`; the header's
+        qualifier build/measure generalized to compass-or-terminus (`headerQualifier` /
+        `headerQualifierFit`), with a **name floor** so a long terminus at a large font can't crowd
+        the stop name to zero (Codex P2, PR #78). JVM + logic screenshot tests.
+  - [ ] **Bus letter/bearing qualifier `(S)` / `(→S)` — needs the StopPoint-indicator capture**
+        (mocks 2026-09-21). The terminus form shipped (above); the letter/bearing is the other half
+        and is **pending the StopPoint-indicator capture below** — TfL's `stopLetter`/`indicator`
+        (`->S`) aren't fetched (the near-me search response carries them but `TflStopPointDto` drops
+        them; watched stops refresh from arrivals only, which lack them). Thread the captured
+        letter/bearing onto `DepartureRow` and into the qualifier chain (the header rendering already
+        generalizes to any qualifier). Its own PR.
   - [ ] **Revisit the header grain for a busy interchange** (maintainer, 2026-09-21). The rail
         compass split (above) already breaks a hub into direction blocks. Still open: whether a
         dense hub wants a *finer* grain still (per-line dividers within a direction), or whether the
