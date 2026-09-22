@@ -33,7 +33,10 @@ import java.time.Instant
  * [stopDisruption] marks a **stop-level status row** — a whole-stop disruption (a closure)
  * rather than a line one (SPEC *Disruptions*). When set, the row is *about the stop*: it
  * carries no line (blank [lineId]/[lineName]/[mode]), no [upcoming] and no [status], and
- * the text is TfL's stop-disruption description. Null on every line and timed row.
+ * the text is TfL's stop-disruption description **normalized** ([normalizeDisruptionText]: `\n`
+ * escapes turned into line breaks) but **not** name-stripped — the leading place name is dropped
+ * only at display ([cleanDisruptionBody]), so the member-independent normalized text is what the
+ * near-me fold dedupes on. Null on every line and timed row.
  * [fetchedAt] is the age of the stop this row came from (the snapshot stamps each stop
  * independently), so the screen withholds *this row's* countdowns when *its* stop is stale
  * — a stop that failed to refresh goes to "—" while a fresh stop beside it still shows live

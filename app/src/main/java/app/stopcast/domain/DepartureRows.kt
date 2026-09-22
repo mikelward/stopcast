@@ -151,17 +151,21 @@ object DepartureRows {
      * stop missing from the map sorts last, and equal distances break by `stopId`, so the
      * kept stop never depends on input order.
      *
-     * **Stop-level status rows are folded per interchange.** A hub-wide disruption — a lift
-     * outage, an accessibility closure — is reported by TfL against every stop point in the
-     * interchange, so the near-me set otherwise shows the identical card once per stop (St Pancras
-     * International and King's Cross St. Pancras both carrying the same "No Step Free Access"
-     * notice). Those members carry distinct `stationNaptan`s but one shared [DepartureRow.hubId]
-     * (`HUBKGX`), so the notice is kept once — on the **nearest** member — keyed on `(hubId,
-     * text)`, and the card titles itself by the interchange. Keying on the hub identity (the stop's
-     * own id when it is in no hub) is what folds a real interchange while keeping two genuinely
-     * distinct places apart: two unrelated stops with an identical place-less notice ("Station
-     * closed") have different or blank hubs, so they never collapse and each keeps its card (SPEC
-     * principle 1 — no warning dropped). A hub with two different notices keeps a card for each.
+     * **Stop-level status rows are folded per place.** One disruption is reported by TfL against
+     * several stop points, so the near-me set otherwise shows the identical card once per point: a
+     * hub-wide lift outage against both St Pancras International and King's Cross St. Pancras, or a
+     * closed bus stop reported against each pole of one junction (a bus stop reported both ways). The
+     * notice is kept once — on the **nearest** point — keyed on `(place, normalized text)`, where
+     * `place` is the coarsest identity that still holds: the interchange ([DepartureRow.hubId],
+     * `HUBKGX`) when there is one, else a **real StopArea** cluster ([DepartureRow.clusterId] when it
+     * is TfL's `stationNaptan`, not the display-name fallback — the poles of a junction and the
+     * platforms of a station share it), else the stop alone. Folding at that identity is what
+     * collapses both the interchange and the bus-junction cases while keeping two genuinely distinct
+     * places apart: an identical place-less notice ("Station closed") at two unrelated stops, or a
+     * generic "Bus Stop Closed" at two same-named stops that only share a name-fallback cluster,
+     * never collapses — each keeps its card (SPEC principle 1 — no warning dropped). A place with two
+     * different notices keeps a card for each. The kept card titles itself by the interchange, else
+     * the stop.
      * Line rows (timed and line-status) are deduped separately by their cross-stop (line,
      * direction) key. Survivors are re-sorted by [rowOrder].
      *
@@ -193,20 +197,35 @@ object DepartureRows {
         // Keep every row from the nearest stop for its key, so two platforms of one service
         // at a single stop both survive; a farther stop's same-service row is dropped.
         val kept = lineRows.filter { nearestStopByKey[dedupeKeyOf(it)] == it.stopId }
-        // Fold each disruption notice to one card **per interchange**, on the nearest member: an
-        // interchange's hub-wide notice (a lift outage) is reported by TfL against every member
-        // stop, and those members have distinct `stationNaptan`s but share one `hubNaptanCode`
-        // (King's Cross and St Pancras are both `HUBKGX`), so the card titles by that hub. Keying
-        // on the **hub identity** — [DepartureRow.hubId], else the stop's own id when it is in no
-        // hub — plus the notice text is what folds a real interchange while keeping two genuinely
-        // distinct places apart: two unrelated stops with an identical place-less notice ("Station
-        // closed") have different (or blank) hubs, so they never collapse and each keeps its own
-        // card (SPEC *Disruptions*, principle 1 — no warning dropped). A hub with two different
-        // notices keeps a card for each.
+        // Fold each disruption notice to one card **per place**, on the nearest member: TfL reports
+        // one notice against several stop points — a hub-wide lift outage against every member of an
+        // interchange, or a closed bus stop against each pole of one junction. Keying on the coarsest
+        // place identity that still holds — the hub ([DepartureRow.hubId]) when there is one, else the
+        // cluster ([DepartureRow.clusterId]), else the stop's own id — plus the normalized notice text is
+        // what folds both cases while keeping two genuinely distinct places apart: two unrelated stops
+        // with an identical place-less notice ("Station closed") have different names/clusters, so they
+        // never collapse and each keeps its own card (SPEC *Disruptions*, principle 1 — no warning
+        // dropped). A place with two different notices keeps a card for each.
         val statusByPlaceNotice = LinkedHashMap<Pair<String, String>, MutableList<DepartureRow>>()
         for (row in stopStatus) {
             val text = row.stopDisruption ?: continue
-            val placeKey = row.hubId.ifBlank { row.stopId }
+            // The place identity, coarsest that still holds: the interchange (`hubNaptanCode`) when
+            // there is one, else a real StopArea cluster (`stationNaptan`), else the stop alone.
+            // Folding at the StopArea is what collapses a closed bus stop reported once per pole
+            // (both ways) that shares no hub, while two genuinely distinct places keep their own
+            // cards even with identical place-less text (SPEC *Disruptions*, principle 1). The
+            // notice keyed on is the **normalized** body, not the name-stripped
+            // one — the strip is per-member (see stopStatusRow), so keying on it would split a
+            // shared name-led notice across a hub's differently-named members (Codex).
+            //
+            // The cluster folds only when it is a **real** TfL StopArea (`stationNaptan`), not the
+            // display-name fallback: `clusterId` is `stationNaptan.ifBlank { stopName }`, and a
+            // naptan code never equals a display name, so `clusterId != stopName` reliably marks a
+            // real StopArea. Folding on a name-fallback cluster would collapse two *unrelated* stops
+            // that merely share a name and a generic notice ("Bus Stop Closed"), hiding one closure
+            // (Codex, principle 1 — no warning dropped); those fall through to their own stop id.
+            val realCluster = row.clusterId.takeUnless { it.isBlank() || it == row.stopName }
+            val placeKey = row.hubId.ifBlank { realCluster ?: row.stopId }
             statusByPlaceNotice.getOrPut(placeKey to text) { mutableListOf() }.add(row)
         }
         val keptStatus = statusByPlaceNotice.values.map { group ->
@@ -334,6 +353,13 @@ object DepartureRows {
      * One row per stop, its descriptions joined; the stop's timed rows are kept (marked,
      * not suppressed), since TfL's closure data is coarse and often absent, so hiding
      * departments on it would risk dropping valid ones. Empty when the stop is clear.
+     *
+     * Each description is [normalizeDisruptionText]-ed — its `\n` escapes turned into real line
+     * breaks — but the leading place name is **not** stripped here: that depends on the stop's own
+     * name, and stripping before the near-me fold ([nearbyDeduped], which keys on this text) would
+     * give two members of one hub that share a name-led notice different text — one member's name
+     * matches and strips, the other's does not — and split the shared notice into two cards (Codex).
+     * The name is stripped later, per the shown row, by [cleanDisruptionBody] at display time.
      */
     private fun stopStatusRow(stop: StopArrivals): List<DepartureRow> {
         if (stop.disruptions.isEmpty()) return emptyList()
@@ -353,7 +379,9 @@ object DepartureRows {
                 upcoming = emptyList(),
                 fetchedAt = stop.fetchedAt,
                 status = null,
-                stopDisruption = stop.disruptions.joinToString(" · ") { it.description },
+                stopDisruption = stop.disruptions.joinToString("\n\n") {
+                    normalizeDisruptionText(it.description)
+                },
             ),
         )
     }
