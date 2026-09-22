@@ -2,6 +2,7 @@
 
 package app.stopcast.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -28,12 +28,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -170,14 +170,76 @@ fun MainScreen(
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     val starWriteFailedMessage = stringResource(R.string.star_write_failed)
-    LaunchedEffect(starWriteFailed) {
-        if (starWriteFailed) {
-            // Clear first, then show: clearing before the (suspending) showSnackbar means a
-            // rotation while the snackbar is visible doesn't re-trigger it, while the flag
-            // having survived until now covers a rotation that happened before this ran.
+
+    // The rows the screen renders, grouped against the live clock (SPEC D4) — computed once here so
+    // both the list and the route-detail page below read the SAME rows. Empty for any non-Loaded
+    // state. Cheap and pure; line statuses stamp each row so a disrupted line is marked (SPEC D3).
+    val loaded = state as? DeparturesUiState.Loaded
+    val rows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, starred) {
+        val ld = loaded ?: return@remember emptyList()
+        val across = DepartureRows.across(ld.stops, now, ld.lineStatuses)
+        // A "near me now" list (distances present) shows a line once, from its nearest stop, then
+        // orders closest-stop-first (soonest breaks a same-stop tie). A location-free list keeps
+        // across's soonest-first order (D1).
+        val ordered =
+            if (stopDistanceMeters.isEmpty()) {
+                across
+            } else {
+                val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters)
+                DepartureRows.byStopDistance(deduped, stopDistanceMeters)
+            }
+        // Lift the user's starred services to the top (SPEC D8), warnings still leading.
+        DepartureRows.pinStarred(ordered, starred)
+    }
+
+    // The route whose detail is open, held by its stable row identity rather than the row object: a
+    // saveable String survives a configuration change (the page stays open on rotation) and resets on
+    // process death, and it re-resolves against the current `rows` each recomposition so the page
+    // reflects a refreshed row and closes itself if the row leaves the list — the coordinate it shows
+    // is never persisted (mirrors the bug-report flow).
+    var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val detailRow = detailKey?.let { key -> rows.firstOrNull { it.detailKey() == key } }
+    // When the open route's row leaves the list — its last departure passed on the 10s clock, or it
+    // was pruned — clear the saved key so the vanished page stays closed rather than silently
+    // reopening if a later refresh reproduced that same stop/line/direction identity (Codex). A live
+    // refresh keeps the same identity, so this fires only on a genuine disappearance.
+    LaunchedEffect(detailKey, detailRow == null) {
+        if (detailKey != null && detailRow == null) detailKey = null
+    }
+    // Surface a failed star write as a snackbar (SPEC principle 2: a tap that didn't take isn't
+    // swallowed). Gated on the list being shown — the snackbar host lives in the departures Scaffold,
+    // not the full-screen route page below, so a failure while the page is open holds the flag until
+    // the user returns, then shows, rather than firing at a host that isn't composed. Clear first,
+    // then show, so a rotation while it's visible doesn't re-trigger it.
+    LaunchedEffect(starWriteFailed, detailRow == null) {
+        if (starWriteFailed && detailRow == null) {
             onStarWriteFailureShown()
             snackbarHostState.showSnackbar(starWriteFailedMessage)
         }
+    }
+    // A full-screen page (its own app bar) that REPLACES the departures Scaffold, so it covers the
+    // top bar and reads as a real destination rather than an overlay — the home for the star and the
+    // line's full disruption text, and where the maps/nav hand-off will land (`TODO.md`).
+    if (loaded != null && detailRow != null) {
+        RouteDetailScreen(
+            row = detailRow,
+            isStarred = StarredRow.of(detailRow) in starred,
+            // Same rule as the list card: only a timed row with starring available is pinnable.
+            starrable = starringAvailable && detailRow.stopDisruption == null && detailRow.upcoming.isNotEmpty(),
+            // Per this row, across BOTH uncertainty axes: its line wasn't determined (a blank id, or
+            // one TfL omitted), OR its stop's own disruption lookup (a closure/move) failed. Either
+            // leaves the row unchecked — clean only when TfL checked its line AND its stop's
+            // disruption returned (SPEC principle 1).
+            disruptionUnknown = detailRow.lineId.isBlank() ||
+                detailRow.lineId !in loaded.determinedLineIds ||
+                detailRow.stopId in loaded.stopsDisruptionUnknown,
+            // This row's own age (the same per-row rule the card uses to withhold countdowns): a
+            // stale snapshot's disruption status isn't presented as current (SPEC D4).
+            stale = Staleness.isStale(Duration.between(detailRow.fetchedAt, now).toKotlinDuration()),
+            onToggleStar = { onToggleStar(detailRow) },
+            onBack = { detailKey = null },
+        )
+        return
     }
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -311,8 +373,9 @@ fun MainScreen(
 
             is DeparturesUiState.Loaded ->
                 LoadedContent(
-                    state, now, onRefresh, refreshing, content, stopDistanceMeters,
+                    state, now, onRefresh, refreshing, content, rows, stopDistanceMeters,
                     starred, onToggleStar, starringAvailable, revealableModes, onReveal,
+                    onOpenDetail = { detailKey = it.detailKey() },
                 )
 
             is DeparturesUiState.Error ->
@@ -347,12 +410,17 @@ private fun LoadedContent(
     onRefresh: () -> Unit,
     refreshing: Boolean,
     modifier: Modifier,
+    // The rows to render, computed once by the caller so the list and the route-detail page share
+    // the same grouping/ordering (SPEC D4 / D8).
+    rows: List<DepartureRow>,
     stopDistanceMeters: Map<String, Double> = emptyMap(),
     starred: Set<StarredRow> = emptySet(),
     onToggleStar: (DepartureRow) -> Unit = {},
     starringAvailable: Boolean = true,
     revealableModes: Set<String> = emptySet(),
     onReveal: (String) -> Unit = {},
+    // Open the full-screen route detail for a tapped card; the caller holds the open-route state.
+    onOpenDetail: (DepartureRow) -> Unit = {},
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -371,48 +439,6 @@ private fun LoadedContent(
             // aged empty snapshot (e.g. one restored from storage) still prompts a refresh.
             (state.stops.isEmpty() && Staleness.isStale(Duration.between(state.fetchedAt, now).toKotlinDuration()))
     }
-    // Group against the live clock, not fetch time, so departed services leave the list
-    // and the order advances between fetches (SPEC D4). Line statuses stamp each row so a
-    // disrupted line is marked (SPEC D3). Cheap and pure.
-    val rows = remember(state.stops, state.lineStatuses, now, stopDistanceMeters, starred) {
-        val across = DepartureRows.across(state.stops, now, state.lineStatuses)
-        // A "near me now" list (distances present) shows a line once, from its nearest stop,
-        // instead of once per adjacent stop it passes (SPEC *Finding stops → Near me now*).
-        // A location-free list has no distances and is shown as grouped.
-        // A "near me now" list (distances present) shows a line once, from its nearest stop,
-        // then orders the rows closest-stop-first (soonest breaks a same-stop tie). A
-        // location-free list has no distances and keeps across's soonest-first order (D1).
-        val ordered =
-            if (stopDistanceMeters.isEmpty()) {
-                across
-            } else {
-                val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters)
-                DepartureRows.byStopDistance(deduped, stopDistanceMeters)
-            }
-        // Lift the user's starred services to the top (SPEC D8), warnings still leading.
-        DepartureRows.pinStarred(ordered, starred)
-    }
-
-    // The route whose detail dialog is open, held by its stable row identity rather than the row
-    // object: a saveable String survives a configuration change (the dialog stays open on rotation)
-    // and resets on process death, and it re-resolves against the current `rows` each recomposition
-    // so the dialog reflects a refreshed row and closes on its own if the row leaves the list — the
-    // coordinate/prediction it shows is never persisted (mirrors the bug-report dialog's approach).
-    var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
-    val detailRow = detailKey?.let { key ->
-        rows.firstOrNull { "${it.stopId}|${it.lineId}|${it.directionKey}" == key }
-    }
-    // When the open route's row leaves the list — its last departure passed on the 10s clock, or it
-    // was pruned — the dialog stops rendering, but the saved key would linger and silently reopen
-    // the dialog if a later refresh reproduced that same stop/line/direction identity. Clear the key
-    // once the lookup finds no row so a vanished dialog stays closed until the user opens it again
-    // (Codex). A live refresh keeps the same identity, so this fires only on a genuine disappearance.
-    LaunchedEffect(detailKey, detailRow == null) {
-        if (detailKey != null && detailRow == null) {
-            detailKey = null
-        }
-    }
-
     // Pull-to-refresh over the whole loaded surface (SPEC D6).
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = modifier) {
         Column(Modifier.fillMaxSize()) {
@@ -457,32 +483,11 @@ private fun LoadedContent(
                 DepartureList(
                     rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
                     revealableModes, onReveal,
-                    onOpenDetail = { detailKey = "${it.stopId}|${it.lineId}|${it.directionKey}" },
+                    onOpenDetail = onOpenDetail,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
         }
-    }
-    if (detailRow != null) {
-        RouteDetailDialog(
-            row = detailRow,
-            isStarred = StarredRow.of(detailRow) in starred,
-            // Same rule as the list card: only a timed row with starring available is pinnable.
-            starrable = starringAvailable && detailRow.stopDisruption == null && detailRow.upcoming.isNotEmpty(),
-            // Per this row, not the whole-screen flag, across BOTH uncertainty axes: its line
-            // wasn't determined (a blank id, or one TfL omitted), OR its stop's own disruption
-            // lookup (a closure/move) failed. Either leaves the row unchecked — a row is "clean"
-            // only when TfL checked its line (good service) AND its stop's disruption returned,
-            // even when another line or stop is unknown (SPEC principle 1, Codex on #100).
-            disruptionUnknown = detailRow.lineId.isBlank() ||
-                detailRow.lineId !in state.determinedLineIds ||
-                detailRow.stopId in state.stopsDisruptionUnknown,
-            // This row's own age (same per-row rule the card uses to withhold countdowns): a stale
-            // snapshot's disruption status isn't presented as current (SPEC D4).
-            stale = Staleness.isStale(Duration.between(detailRow.fetchedAt, now).toKotlinDuration()),
-            onToggleStar = { onToggleStar(detailRow) },
-            onDismiss = { detailKey = null },
-        )
     }
 }
 
@@ -895,7 +900,7 @@ private fun DepartureRowCard(
                 // per-row button took on every card. A starred (pinned) service is marked by the
                 // card's gold border (see cardBorder above) and its position at the top of the
                 // list (SPEC D8); long-press the card to pin/unpin, or tap it for the detail view,
-                // where a visible, labeled star is the discoverable path ([RouteDetailDialog]).
+                // where a visible, labeled star is the discoverable path ([RouteDetailScreen]).
             }
             // A disrupted line is flagged below the departures, left-aligned with the pill,
             // but announced first (traversalIndex) so the warning precedes the countdowns it
@@ -939,8 +944,8 @@ private fun StopClosureContent(disruption: String, title: String) {
  * expanded shows it in full, with a chevron marking it expandable. When a [title] is given it
  * heads the surface, collapsed and expanded. Used for the stop-closure card
  * ([StopClosureContent], where [title] is the interchange/stop name) and for the route detail's
- * line disruption ([RouteDetailDialog], where [title] is null — the dialog header already carries
- * the line and place).
+ * line disruption ([RouteDetailScreen], where [title] is null — the app bar already carries the
+ * line and destination).
  *
  * The `text` `Text` exposes its full string to the accessibility tree regardless of the visual
  * clip, so a screen reader reads the whole notice whether or not it is expanded; the tap only
@@ -1001,40 +1006,47 @@ private fun CollapsibleStatus(
     }
 }
 
+/** The stable identity of the route a [DepartureRow] represents — its stop, line, and direction —
+ *  used as the saveable key for the open route-detail page so it re-resolves against live rows. */
+private fun DepartureRow.detailKey(): String = "$stopId|$lineId|$directionKey"
+
 /**
- * The tap-to-open route detail (SPEC D8 / *Disruptions*, `TODO.md`): the discoverable, labeled
- * home for the star (the list card only long-presses to pin), plus the full disruption text the
- * compact chip stands in for. Opened by a tap on a timed or line-status card; a stop-closure card
- * expands in place instead, so it never reaches here.
+ * The tap-to-open route detail (SPEC D8 / *Disruptions*, `TODO.md`): a full-screen page — reached by
+ * a tap on a timed or line-status card (a stop-closure card expands in place, so it never reaches
+ * here) — that replaces the departures screen with its own app bar. The bar names the route (line
+ * pill + destination) and carries the star (the list card only long-presses to pin); the body names
+ * the boarding stop and the line's full disruption text the compact chip stands in for.
  *
- * A dialog rather than a bottom sheet (maintainer, 2026-09-22). Mirrors [AboutDialog]: a dialog
- * opens its own window that doesn't inherit the theme's scaled density or pinch handler (SPEC
- * *Display size*), so [pinchFontSizeHost] hosts the pinch and each slot is wrapped in
- * [FontSizeWindow].
+ * A full screen rather than a dialog (maintainer, 2026-09-22): it will grow the maps/nav hand-off
+ * and other per-route actions (`TODO.md`), which a dialog would cap. Mirrors the app's other full
+ * screens ([LicensesScreen], [SettingsScreen]) — a composable with an [onBack], switched in by the
+ * host's screen state; [BackHandler] routes the system back to [onBack] too, and it inherits the
+ * theme's scaled density from the host, so no per-window font host is needed here.
  *
- * Pure: renders only [row] and reports the two actions. The star row shows only when [starrable]
- * (a timed row with starring available) — a no-departures status row has nothing to rank, matching
- * the list's own rule — while the disruption text shows whenever the line carries prose, so a
- * status row still opens to its full alert.
+ * Pure: renders only [row] and reports the two actions. The star shows only when [starrable] (a
+ * timed row with starring available) — a no-departures status row has nothing to rank, matching the
+ * list's own rule — while the disruption text shows whenever the line carries prose, so a status
+ * row still opens to its full alert.
  */
 @Composable
-internal fun RouteDetailDialog(
+internal fun RouteDetailScreen(
     row: DepartureRow,
     isStarred: Boolean,
     starrable: Boolean,
-    // True when THIS row's line status is unchecked (its line was blank-id or omitted by TfL, or
-    // the lookup failed) rather than checked-clean: a null status is then "unknown", not "no
-    // disruptions", so the detail says so (SPEC principle 1 — never present unverified as
-    // verified-clean). The caller decides this per line, so one unknown line doesn't taint a
-    // checked-clean row's detail.
+    // True when THIS row's disruption state is unchecked (its line was blank-id or omitted by TfL,
+    // the line-status lookup failed, or its stop's own disruption lookup failed) rather than
+    // checked-clean: the detail then says "couldn't check" rather than a verified-clean "no
+    // disruptions" (SPEC principle 1). The caller decides this per row, so one unknown line or stop
+    // doesn't taint a checked-clean row.
     disruptionUnknown: Boolean,
-    // True when this row's snapshot has crossed the staleness threshold: the disruption status is
-    // from an old fetch, so the detail — which carries no freshness stamp of its own, unlike the
-    // list — caveats it and never claims "no disruptions" from stale data (SPEC D4).
+    // True when this row's snapshot has crossed the staleness threshold: the status is from an old
+    // fetch, so the page — which carries no freshness stamp of its own, unlike the list — caveats it
+    // and never claims "no disruptions" from stale data (SPEC D4).
     stale: Boolean,
     onToggleStar: () -> Unit,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
 ) {
+    BackHandler(onBack = onBack)
     val place = row.hubName.ifBlank { row.stopName }
     // The terminus(es) this service runs to, from its own departures — empty for a status row
     // (no predictions), which then shows only the line and its disruption.
@@ -1045,33 +1057,42 @@ internal fun RouteDetailDialog(
             .mapNotNull { DepartureLabels.destinationLabel(it.destination, row.directionKey) }
             .distinct()
     }
-    AlertDialog(
-        modifier = Modifier.pinchFontSizeHost(),
-        onDismissRequest = onDismiss,
-        title = {
-            FontSizeWindow {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode)
-                    if (place.isNotBlank()) {
-                        Text(
-                            text = place,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f).padding(start = 8.dp),
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
                         )
-                    } else {
-                        Spacer(Modifier.weight(1f))
                     }
-                    // The star (pin-to-top) is a top-right icon button — the discoverable control,
-                    // shown only where the row is pinnable (same rule the list card uses). Filled and
-                    // gold when starred, matching the list card's gold pin border; the vendored
-                    // outline star when not (material-icons-core ships the filled Star but not its
-                    // outline). There is no visible label — the contentDescription flips with state
-                    // so a screen reader still hears what the tap does (SPEC principle 2).
+                },
+                // Name the route being viewed — the line pill, then where it's going — so the bar
+                // reflects the page's subject (maintainer, 2026-09-22). A status row with no
+                // predictions shows just the pill.
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode)
+                        if (destinations.isNotEmpty()) {
+                            Text(
+                                text = destinations.joinToString(", "),
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    // The star (pin-to-top) as the bar's action — the discoverable control, shown
+                    // only where the row is pinnable (same rule the list card uses). Filled and gold
+                    // when starred, matching the list card's gold pin border; the vendored outline
+                    // star when not (material-icons-core ships the filled Star but not its outline).
+                    // No visible label — the contentDescription flips with state so a screen reader
+                    // still hears what the tap does (SPEC principle 2).
                     if (starrable) {
                         IconButton(onClick = onToggleStar) {
                             Icon(
@@ -1087,84 +1108,78 @@ internal fun RouteDetailDialog(
                             )
                         }
                     }
+                },
+            )
+        },
+    ) { innerPadding ->
+        // Scrollable so a long expanded alert or a large text size isn't clipped (SPEC *Display
+        // size*); the 16dp gutter matches the app's other reading surfaces.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            if (place.isNotBlank()) {
+                Text(
+                    // "From Victoria" — where the service departs; the app bar already shows where
+                    // it's going, so the body names the boarding stop, not the line.
+                    text = stringResource(R.string.route_detail_from, place),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            val status = row.status
+            if (status != null) {
+                // The short chip label always; the full prose below it, collapsed to its first line
+                // with tap-to-expand, when TfL gave a reason (SPEC *Disruptions*).
+                DisruptionChip(status.description, Modifier.padding(top = 12.dp))
+                status.fullText?.let { fullText ->
+                    CollapsibleStatus(
+                        text = fullText,
+                        title = null,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
                 }
             }
-        },
-        text = {
-            FontSizeWindow {
-                // Scrollable: an expanded alert (a long TfL reason, or a large text size) can exceed
-                // the dialog's bounded height, which would otherwise clip the full text this feature
-                // exists to expose (Codex; same discipline as the consent dialog).
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    if (destinations.isNotEmpty()) {
-                        Text(
-                            // "Towards Brixton, Walthamstow Central" — the terminus(es) this
-                            // service runs to, so the detail names the route, not only the line.
-                            text = stringResource(R.string.route_detail_towards, destinations.joinToString(", ")),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    val status = row.status
-                    if (status != null) {
-                        // The short chip label always; the full prose below it, collapsed to its
-                        // first line with tap-to-expand, when TfL gave a reason (SPEC *Disruptions*).
-                        DisruptionChip(status.description, Modifier.padding(top = 12.dp))
-                        status.fullText?.let { fullText ->
-                            CollapsibleStatus(
-                                text = fullText,
-                                title = null,
-                                modifier = Modifier.padding(top = 8.dp),
-                            )
-                        }
-                    }
-                    // The disruption-check state, independent of staleness (the two caveats are
-                    // separate facts, both shown when both apply — Codex): "couldn't check" whenever
-                    // this row's line was undetermined OR its stop's disruption lookup failed — a
-                    // known line alert doesn't mean the stop-level closure/move check ran, so the
-                    // note sits alongside the alert too, and the stale caveat below never stands in
-                    // for it. "No disruptions reported" only when determined-clean AND fresh — never
-                    // claimed from stale or unchecked data (SPEC principle 1 / D4). A stale but
-                    // determined-clean row shows neither here; the stale caveat below covers it.
-                    if (disruptionUnknown) {
-                        Text(
-                            text = stringResource(R.string.disruptions_unknown),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 12.dp),
-                        )
-                    } else if (status == null && !stale) {
-                        Text(
-                            text = stringResource(R.string.route_detail_no_disruption),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 12.dp),
-                        )
-                    }
-                    // The detail has no freshness stamp of its own, so a stale snapshot is caveated
-                    // here — an independent fact from the disruption-check state above: it sits
-                    // under a shown disruption (which may be resolved or superseded), replaces a
-                    // "no disruptions" claim (a new one may exist), and sits alongside a "couldn't
-                    // check" note (age and a failed check are different gaps) alike (SPEC D4).
-                    if (stale) {
-                        Text(
-                            text = stringResource(R.string.route_detail_status_stale),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 12.dp),
-                        )
-                    }
-                }
+            // The disruption-check state, independent of staleness (the two caveats are separate
+            // facts, both shown when both apply — Codex): "couldn't check" whenever this row's line
+            // was undetermined OR its stop's disruption lookup failed — a known line alert doesn't
+            // mean the stop-level closure/move check ran, so the note sits alongside the alert too,
+            // and the stale caveat below never stands in for it. "No disruptions reported" only when
+            // determined-clean AND fresh — never claimed from stale or unchecked data (SPEC principle
+            // 1 / D4). A stale but determined-clean row shows neither here; the stale caveat covers it.
+            if (disruptionUnknown) {
+                Text(
+                    text = stringResource(R.string.disruptions_unknown),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            } else if (status == null && !stale) {
+                Text(
+                    text = stringResource(R.string.route_detail_no_disruption),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
             }
-        },
-        confirmButton = {
-            FontSizeWindow {
-                // The star moved to the title's top-right icon button, so the only action button
-                // here is Close — no bottom text action for pinning (maintainer, 2026-09-22).
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+            // The page has no freshness stamp of its own, so a stale snapshot is caveated here — an
+            // independent fact from the disruption-check state above: it sits under a shown
+            // disruption (which may be resolved or superseded), replaces a "no disruptions" claim
+            // (a new one may exist), and sits alongside a "couldn't check" note (age and a failed
+            // check are different gaps) alike (SPEC D4).
+            if (stale) {
+                Text(
+                    text = stringResource(R.string.route_detail_status_stale),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
             }
-        },
-    )
+        }
+    }
 }
 
 /**
