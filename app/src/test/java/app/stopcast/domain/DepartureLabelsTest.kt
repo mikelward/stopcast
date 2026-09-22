@@ -23,11 +23,19 @@ class DepartureLabelsTest {
 
     @Test
     fun `applies the hardcoded display rename to a long terminus`() {
-        // "Battersea Power Station" reaches here already stripped to "Battersea Power" by
-        // cleanStopName; the display rename shortens it further to "Battersea".
+        // "Battersea Power" (however it reaches here) is renamed to "Battersea".
         assertEquals("Battersea", DepartureLabels.destinationLabel("Battersea Power", "southbound"))
         // A terminus with no rename is returned unchanged.
         assertEquals("Morden", DepartureLabels.destinationLabel("Morden", "southbound"))
+    }
+
+    @Test
+    fun `strips a Station suffix unconditionally at label time`() {
+        // Even a destination that reached here uncleaned — e.g. restored from an older snapshot —
+        // has its " … Station" type suffix dropped, so it resolves the same as a fresh fetch and a
+        // long name never clips: "Battersea Power Station" → "Battersea Power" → renamed "Battersea".
+        assertEquals("Battersea", DepartureLabels.destinationLabel("Battersea Power Station", "southbound"))
+        assertEquals("Morden", DepartureLabels.destinationLabel("Morden Underground Station", "southbound"))
     }
 
     @Test

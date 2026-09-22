@@ -11,8 +11,8 @@ object DepartureLabels {
      * Hardcoded display renames for a terminus whose TfL name is longer than a rider needs.
      * Applied at label time only — grouping (SPEC D8) and topology resolution still key on the
      * raw terminus — so a rename never changes which trains share a row. Keyed on the terminus
-     * as it reaches here, after [cleanStopName] has already dropped a " Station" suffix (so
-     * "Battersea Power Station" arrives as "Battersea Power"). Maintainer-chosen (2026-09-22).
+     * after its " … Station" type suffix is dropped ([cleanStopName]), so "Battersea Power Station"
+     * resolves to "Battersea". Maintainer-chosen (2026-09-22).
      */
     private val displayRenames = mapOf(
         "Battersea Power" to "Battersea",
@@ -32,7 +32,11 @@ object DepartureLabels {
      * it.
      */
     fun destinationLabel(destination: String, directionKey: String): String? {
-        if (destination.isNotBlank()) return displayRenames[destination] ?: destination
+        // Drop TfL's " … Station" type suffix unconditionally at label time (grouping still keys on
+        // the raw terminus), so a destination that reached here uncleaned — e.g. restored from an
+        // older snapshot — still shows "Battersea Power Station" as "Battersea", not a long clip.
+        val cleaned = cleanStopName(destination)
+        if (cleaned.isNotBlank()) return displayRenames[cleaned] ?: cleaned
         val cue = directionKey.trim()
         // Locale.ROOT: the direction word is English TfL data, and the default locale would
         // mangle the first letter on a Turkish device ("İnbound"). A platform cue
