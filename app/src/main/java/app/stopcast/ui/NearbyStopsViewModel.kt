@@ -261,4 +261,7 @@ class NearbyStopsViewModel(
 /** The departures-view [StopRef] a nearby [StopLocation] maps to — the coordinate is dropped
  *  (it stays in the selection/distance math, never reaching the departures VM or a log). */
 internal fun StopLocation.toStopRef() =
-    StopRef(id = id, name = name, lines = lines, clusterId = clusterId, hubId = hubId)
+    StopRef(
+        id = id, name = name, lines = lines, clusterId = clusterId, hubId = hubId,
+        stopLetter = stopLetter, bearing = bearing,
+    )

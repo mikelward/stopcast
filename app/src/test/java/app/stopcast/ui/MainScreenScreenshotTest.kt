@@ -770,6 +770,42 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `a bus place with lettered poles splits into one header per pole`() {
+        // The bus analog of the rail compass split: two poles of one bus place (same display name)
+        // carry stop letters, so the place reads as "(D)" and "(E)" headers rather than a wall of
+        // cards under one bare "King's Cross Station" (SPEC D8). Logic-only — no baseline. Public
+        // route/place names only (SPEC *Privacy*).
+        val poleD = StopArrivals(
+            "490000129D", "King's Cross Station",
+            listOf(dep("17", "17", "outbound", "Farringdon", 120, "", mode = "bus")),
+            fetchedAt = now.minusSeconds(60), stopLetter = "D",
+        )
+        val poleE = StopArrivals(
+            "490000129E", "King's Cross Station",
+            listOf(dep("30", "30", "outbound", "Angel", 180, "", mode = "bus")),
+            fetchedAt = now.minusSeconds(60), stopLetter = "E",
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(poleD, poleE), now.minusSeconds(60)),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // One header per pole, both under the shared place name; the letter tells them apart.
+        composeRule.onAllNodesWithText("KING'S CROSS STATION", substring = true).assertCountEquals(2)
+        composeRule.onNodeWithText("(D)", substring = true).assertExists()
+        composeRule.onNodeWithText("(E)", substring = true).assertExists()
+        // The letter still announces its pole to a screen reader.
+        composeRule.onNodeWithContentDescription("Stop D").assertExists()
+    }
+
+    @Test
     fun `a long bus terminus keeps the stop name visible at a large font scale`() {
         // The terminus is a full place name, so at a large font it must not consume the row and crowd
         // the stop name to zero (Codex P2, PR #78): the name keeps its floor and the terminus clips.

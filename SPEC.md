@@ -190,21 +190,21 @@ from TfL's `platformName` ("Eastbound - Platform 2" → Eastbound), **not** TfL'
 as `outbound`, and omits some westbound trains' direction entirely), so keying on inbound/outbound
 would split one platform's trains into two headers. The compass is also correctly coarser than the
 platform number — Eastbound spans two platforms at King's Cross — so a direction is one block, not
-one per platform. A stop with no compass in the feed — a **bus** pole, whose bearing (`->N`) lives
-in stop metadata not the arrivals feed, or a bare "Platform 4" — takes a **bus terminus** qualifier
-instead: "Turnpike Lane → Bank" when the whole bus stop heads one way (every route names the same,
-non-blank terminus), else the **bare name** header. The terminus is the bus analog of the compass —
-the cue a rider uses to pick the stop side — and, like the compass, it is not claimed when the
-routes diverge or a destination is unknown (**principle 1**). The bus **letter/bearing** (`(S)` /
-`(→S)`, from the StopPoint `stopLetter`/`indicator`) is the remaining follow-up (`TODO.md`), since
-it needs stop metadata the arrivals feed doesn't carry. When a header is too tight for the full compass word, the direction shows as
+one per platform. A **bus** pole carries no compass in the arrivals feed, so it splits on its **stop
+letter** instead — the "D" a rider reads on the physical stop ("King's Cross Station **(D)**") — the
+bus analog of the compass, which breaks the same wall of cards a busy bus interchange would otherwise
+be. Its letter and bearing come from the near-me `/StopPoint` lookup (`stopLetter` and the
+`CompassPoint` property), not the arrivals feed, so a **watched** bus stop (no near-me lookup yet)
+has neither until that capture lands. With no letter, the pole falls back to its **compass bearing**
+("**(→E)**"); with neither, to the **shared terminus** ("Turnpike Lane → Bank") when the whole stop
+heads one way (every route names the same, non-blank terminus, principle 1); with none of the three,
+the **bare name**. Precedence: letter → bearing → terminus → bare. When a header is too tight for the full compass word, the direction shows as
 its **single letter** ("– E"; a loop label as its two initials, "– IR") rather than clip to an
 ambiguous stub — the four cardinals have distinct initials, so the letter still tells two direction
 blocks of one place apart, and it always fits, so the direction cue never vanishes even at the
 largest font scale. The direction abbreviates to the letter first (keeping the full place name); the
 name clips (from its end, recognized from its start) only when even the letter form leaves it no
-room. The bus letter/bearing and the
-qualifier's grain at a busy interchange remain part of that follow-up. A two-way service
+room. The qualifier's grain at a busy interchange remains a follow-up. A two-way service
 at a stop is two cards, one per direction; a one-directional case (a terminus platform, a
 one-way-street stop, a single branch) is one. Nothing is hidden behind a gesture, which
 is what a glance surface needs (**D8**). TfL's `direction` is the primary key and the
@@ -864,16 +864,16 @@ Mirrors the sibling fleet:
   later detail surface. **The stop name is not on the card but returns as a group header**:
   the list is **clustered by place (stops sharing a cluster — a junction's poles, a
   station's platforms), one header per `(place, direction)`**.
-  Within a place the header carries the **compass direction** the cards are headed
-  ("King's Cross – Eastbound"), parsed from the platform, **not** TfL's inconsistent
-  `inbound`/`outbound` (settled 2026-09-22, superseding the bare-name-only step); a compass-less
-  **bus** place carries the shared **terminus** instead ("Turnpike Lane → Bank") when it heads one
-  way, else the bare name. The cluster key is TfL's `stationNaptan` where the nearby lookup gives one,
+  Within a place the header carries the group's **qualifier** — the cue that tells its groups
+  apart: a rail platform's **compass** ("King's Cross – Eastbound", parsed from the platform, **not**
+  TfL's inconsistent `inbound`/`outbound`), a **bus** pole's **letter** ("King's Cross Station (D)")
+  or, when it has none, its **bearing** ("(→E)"), else a bus place's shared **terminus** ("Turnpike
+  Lane → Bank") — settled 2026-09-22, superseding the bare-name-only step. The cluster key is TfL's
+  `stationNaptan` where the nearby lookup gives one,
   else the cleaned display name — keying on TfL's own cluster keeps a station it spells
   several ways together while holding distinct adjacent stations (King's Cross St. Pancras
-  vs St Pancras International) apart. The **bus** letter/bearing (`(S)` / `(→S)`) and the qualifier's
-  grain at a busy interchange remain a follow-up
-  (mocked 2026-09-21; the letter/bearing pending capture of TfL's StopPoint indicator — `TODO.md`). Its
+  vs St Pancras International) apart. The qualifier's
+  grain at a busy interchange remains a follow-up (mocked 2026-09-21; `TODO.md`). Its
   cost is length — a busy stop is many cards — which starring (ranking,
   distinct from watched-stop membership) and, later, smarter selection are meant to manage.
   The list orders the watched stops' cards location-free (soonest-first, starred pinned),

@@ -99,6 +99,7 @@ import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopDistance
 import app.stopcast.domain.StopGrouping
+import app.stopcast.domain.StopQualifier
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.ui.theme.LocalStarredBorderColor
 import java.time.Duration
@@ -639,8 +640,7 @@ private fun DepartureList(
                     // departures.
                     StopGroupHeader(
                         group.stopName,
-                        group.directionLabel,
-                        group.terminusLabel,
+                        group.qualifier,
                         distanceLabel,
                         firstGroup = index == 0 && closureRows.isEmpty(),
                     )
@@ -706,28 +706,27 @@ internal fun moreLabelRes(mode: String): Int = when (mode) {
 
 /**
  * The small group header above a group of same-place cards (SPEC D8): the place name — plus its
- * **qualifier** where the caller passed one — in spaced small caps, text only, no border/background,
- * the muted `onSurfaceVariant` role. The qualifier is the rail **compass** ("King's Cross –
- * Eastbound", from [directionLabel]) or, for a compass-less bus place heading one way, the shared
- * **terminus** ("Turnpike Lane → Bank", from [terminusLabel]); a place with neither shows the bare
- * name. The name hard-truncates (no ellipsis) at the edge. Extra top space (past the list's 8dp item
- * gap) marks the group break; the first group takes none.
+ * **qualifier** ([stopQualifier]) where the group split on one — in spaced small caps, text only, no
+ * border/background, the muted `onSurfaceVariant` role. The qualifier renders per kind: a rail
+ * **compass** ("King's Cross – Eastbound"), a bus **letter** ("King's Cross Station (D)"), a bus
+ * **bearing** ("(→E)"), or a bus **terminus** ("Turnpike Lane → Bank"); a group with none shows the
+ * bare name. The name hard-truncates (no ellipsis) at the edge. Extra top space (past the list's 8dp
+ * item gap) marks the group break; the first group takes none.
  *
  * The **qualifier** and [distanceLabel] are **reserved** trailing elements: a long place name clips
  * before either is pushed off the edge (the same discipline as the departure row's countdown). The
  * qualifier especially must survive — it is the cue that tells two groups of one place apart, so
  * appending it to the name and letting it clip would defeat the split (Codex P2, PR #109). When the
- * full qualifier won't fit it falls back to a shorter form ([headerQualifier]: the compass letter,
- * the word-abbreviated terminus), and a long bus terminus is bounded so it can't crowd the name to
- * zero ([headerQualifierFit]). [distanceLabel], when set, is the near-me list's distance to this stop
- * ("… (120 m)"), null on the location-free watched list (D1); it is not uppercased, so its unit stays
- * lowercase, and it sits after the qualifier.
+ * full qualifier won't fit it falls back to a shorter form ([headerQualifier]: the compass letter),
+ * and a long bus terminus is bounded so it can't crowd the name to zero ([headerQualifierFit]).
+ * [distanceLabel], when set, is the near-me list's distance to this stop ("… (120 m)"), null on the
+ * location-free watched list (D1); it is not uppercased, so its unit stays lowercase, and it sits
+ * after the qualifier.
  */
 @Composable
 private fun StopGroupHeader(
     name: String,
-    directionLabel: String?,
-    terminusLabel: String?,
+    stopQualifier: StopQualifier?,
     distanceLabel: String?,
     firstGroup: Boolean,
 ) {
@@ -740,7 +739,7 @@ private fun StopGroupHeader(
     val headerModifier = Modifier
         .fillMaxWidth()
         .padding(start = 4.dp, end = 4.dp, top = if (firstGroup) 0.dp else 12.dp, bottom = 0.dp)
-    val qualifier = headerQualifier(directionLabel, terminusLabel)
+    val qualifier = headerQualifier(stopQualifier)
     if (qualifier == null && distanceLabel == null) {
         // No qualifier, no distance (the watched list's bare-name header): rendering unchanged.
         Text(

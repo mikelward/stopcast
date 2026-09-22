@@ -334,6 +334,26 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `a status row carries the stop's pole letter and bearing`() {
+        // A suspended bus line's status row must carry the pole's letter/bearing, so it groups under
+        // that pole's "(D)" header rather than a separate bare group — the warning has to say which
+        // pole it belongs to at a multi-pole place (Codex P2, PR #118).
+        val live = departure("17", "17", "outbound", "Farringdon", 120, mode = "bus")
+        val stop = StopArrivals(
+            "490000129D", "King's Cross Station",
+            departures = listOf(live),
+            fetchedAt = now,
+            lines = listOf(LineRef("17", "17", "bus"), LineRef("45", "45", "bus")),
+            stopLetter = "D",
+            bearing = "E",
+        )
+        val statuses = mapOf("45" to LineStatus("45", 2, "Suspended"))
+        val statusRow = DepartureRows.across(listOf(stop), now, statuses).first { it.lineId == "45" }
+        assertEquals("D", statusRow.stopLetter)
+        assertEquals("E", statusRow.bearing)
+    }
+
+    @Test
     fun `a stale stop's disrupted line does not synthesize a No-departures status row`() {
         // Arrivals are stale (aged past the threshold) and the line's predictions have all
         // expired. "No departures" would be a categorical claim the stale data can't back —

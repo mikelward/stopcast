@@ -44,6 +44,39 @@ class TflStopPointDtoTest {
     }
 
     @Test
+    fun `the stop letter and compass bearing are captured for the per-pole bus header`() {
+        // TfL prints a bus pole's letter (`stopLetter` "D", "Stop D") and its bearing (a CompassPoint
+        // in `additionalProperties`); both feed the per-pole bus split (SPEC D8).
+        val stop = TflStopPointDto(
+            id = "490000129D",
+            commonName = "King's Cross Station",
+            lat = 51.5,
+            lon = -0.12,
+            modes = listOf("bus"),
+            stopLetter = "D",
+            additionalProperties = listOf(
+                TflAdditionalPropertyDto(key = "Towards", value = "Farringdon Or Holborn Circus"),
+                TflAdditionalPropertyDto(key = "CompassPoint", value = "E"),
+            ),
+        ).toStopLocationOrNull()
+        assertEquals("D", stop?.stopLetter)
+        assertEquals("E", stop?.bearing)
+    }
+
+    @Test
+    fun `a stop with no letter or compass point carries neither`() {
+        val stop = TflStopPointDto(
+            id = "940GZZLUKSX",
+            commonName = "King's Cross St. Pancras Underground Station",
+            lat = 51.5,
+            lon = -0.12,
+            modes = listOf("tube"),
+        ).toStopLocationOrNull()
+        assertEquals("", stop?.stopLetter)
+        assertEquals("", stop?.bearing)
+    }
+
+    @Test
     fun `a stop with no usable identity maps to null`() {
         assertNull(TflStopPointDto(id = "", naptanId = "", commonName = "Somewhere").toStopLocationOrNull())
     }

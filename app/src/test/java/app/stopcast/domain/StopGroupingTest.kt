@@ -7,6 +7,12 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+// The group's qualifier by kind, so the assertions read as before the qualifier was unified.
+private val StopGroup.compass: String? get() = (qualifier as? StopQualifier.Compass)?.label
+private val StopGroup.terminus: String? get() = (qualifier as? StopQualifier.Terminus)?.terminus
+private val StopGroup.busLetter: String? get() = (qualifier as? StopQualifier.BusLetter)?.letter
+private val StopGroup.busBearing: String? get() = (qualifier as? StopQualifier.BusBearing)?.bearing
+
 /**
  * The pure per-place grouping rule (SPEC D8): one group per place (stops sharing a display
  * name — a junction's poles, a station's platforms), bare-name header, warnings leading their
@@ -37,12 +43,16 @@ class StopGroupingTest {
         destination: String = "Terminus",
         platform: String = "",
         mode: String = "tube",
+        stopLetter: String = "",
+        bearing: String = "",
         upcoming: List<Departure> = listOf(dep(destination, platform, mode)),
         stopDisruption: String? = null,
     ) = DepartureRow(
         stopId = stopId,
         stopName = stopName,
         clusterId = clusterId,
+        stopLetter = stopLetter,
+        bearing = bearing,
         lineId = lineId,
         lineName = lineId.uppercase(),
         direction = direction,
@@ -145,7 +155,7 @@ class StopGroupingTest {
         )
         val groups = StopGrouping.groupByStop(rows)
         // One group per compass direction, in first-appearance (soonest-first) order.
-        assertEquals(listOf("Northbound", "Eastbound", "Southbound"), groups.map { it.directionLabel })
+        assertEquals(listOf("Northbound", "Eastbound", "Southbound"), groups.map { it.compass })
         assertTrue(groups.all { it.stopName == "King's Cross" && it.showHeader })
     }
 
@@ -163,7 +173,7 @@ class StopGroupingTest {
         val groups = StopGrouping.groupByStop(rows)
         assertEquals(
             listOf("King's Cross" to "Northbound", "King's Cross" to "Eastbound", "York Way" to null),
-            groups.map { it.stopName to it.directionLabel },
+            groups.map { it.stopName to it.compass },
         )
     }
 
@@ -178,7 +188,7 @@ class StopGroupingTest {
             row("B", "King's Cross St. Pancras", clusterId = "940GZZLUKSX", lineId = "victoria", direction = "inbound", destination = "Brixton", platform = "Southbound - Platform 2"),
         )
         val groups = StopGrouping.groupByStop(rows)
-        assertEquals(listOf("Northbound", "Southbound"), groups.map { it.directionLabel })
+        assertEquals(listOf("Northbound", "Southbound"), groups.map { it.compass })
         assertEquals(listOf("King's Cross", "King's Cross"), groups.map { it.stopName })
     }
 
@@ -194,7 +204,7 @@ class StopGroupingTest {
         )
         val groups = StopGrouping.groupByStop(rows)
         assertEquals(1, groups.size)
-        assertEquals("Eastbound", groups.single().directionLabel)
+        assertEquals("Eastbound", groups.single().compass)
         assertEquals(setOf("circle", "hammersmith-city"), groups.single().rows.mapTo(mutableSetOf()) { it.lineId })
         assertTrue(groups.single().showHeader)
     }
@@ -216,7 +226,7 @@ class StopGroupingTest {
             ),
         )
         val group = StopGrouping.groupByStop(rows).single()
-        assertEquals("Northbound", group.directionLabel)
+        assertEquals("Northbound", group.compass)
     }
 
     @Test
@@ -228,7 +238,7 @@ class StopGroupingTest {
             row("KSX", "King's Cross", clusterId = "940GZZLUKSX", lineId = "northern", direction = "outbound", destination = "High Barnet", platform = "NORTHBOUND - Platform 5"),
         )
         val group = StopGrouping.groupByStop(rows).single()
-        assertEquals("Northbound", group.directionLabel)
+        assertEquals("Northbound", group.compass)
         assertEquals(2, group.rows.size)
     }
 
@@ -242,7 +252,7 @@ class StopGroupingTest {
         )
         val groups = StopGrouping.groupByStop(rows)
         assertEquals(1, groups.size)
-        assertEquals("Eastbound", groups.single().directionLabel)
+        assertEquals("Eastbound", groups.single().compass)
     }
 
     @Test
@@ -255,7 +265,7 @@ class StopGroupingTest {
             row("A", "Archway", clusterId = "490G0ARW", destination = "Morden"),
         )
         val cranley = StopGrouping.groupByStop(rows).first { it.stopName == "Cranley Gardens" }
-        assertNull(cranley.directionLabel)
+        assertNull(cranley.compass)
     }
 
     @Test
@@ -268,7 +278,7 @@ class StopGroupingTest {
             row("PB", "Turnpike Lane", clusterId = "490G0TPL", lineId = "141", direction = "outbound", destination = "Palmers Green", platform = "Stop B", mode = "bus"),
         )
         val group = StopGrouping.groupByStop(rows).single()
-        assertNull(group.directionLabel)
+        assertNull(group.compass)
         assertEquals(setOf("PA", "PB"), group.rows.mapTo(mutableSetOf()) { it.stopId })
     }
 
@@ -284,9 +294,9 @@ class StopGroupingTest {
         )
         val groups = StopGrouping.groupByStop(rows)
         // The live rows keep their compass groups.
-        assertEquals(setOf("Northbound", "Southbound"), groups.mapNotNull { it.directionLabel }.toSet())
+        assertEquals(setOf("Northbound", "Southbound"), groups.mapNotNull { it.compass }.toSet())
         // The suspended line is its own directionless group (a warning), not merged into a block.
-        assertTrue(groups.any { it.directionLabel == null && it.rows.all { r -> r.upcoming.isEmpty() } })
+        assertTrue(groups.any { it.compass == null && it.rows.all { r -> r.upcoming.isEmpty() } })
     }
 
     @Test
@@ -357,6 +367,53 @@ class StopGroupingTest {
     }
 
     @Test
+    fun `a bus place splits into one group per stop letter`() {
+        // The bus analog of the rail compass: poles of one bus place (same display-name cluster) each
+        // carry a stop letter, so the place splits into one header per pole — "(D)", "(E)" — instead
+        // of a wall of cards under one bare name (SPEC D8).
+        val rows = listOf(
+            row("BD", "King's Cross Station", lineId = "17", destination = "Farringdon", mode = "bus", stopLetter = "D"),
+            row("BE", "King's Cross Station", lineId = "30", destination = "Angel", mode = "bus", stopLetter = "E"),
+        )
+        val groups = StopGrouping.groupByStop(rows)
+        assertEquals(2, groups.size)
+        assertEquals(listOf("D", "E"), groups.map { it.busLetter })
+        // Same place, so both headers carry the one place name; each its own pole's rows.
+        assertTrue(groups.all { it.stopName == "King's Cross Station" && it.showHeader })
+        assertEquals(setOf("BD"), groups[0].rows.mapTo(mutableSetOf()) { it.stopId })
+    }
+
+    @Test
+    fun `a bus pole with no letter falls back to its compass bearing`() {
+        val rows = listOf(
+            row("B1", "Some Road", lineId = "24", destination = "Pimlico", mode = "bus", bearing = "SW"),
+            row("B2", "Some Road", lineId = "88", destination = "Camden", mode = "bus", bearing = "NE"),
+        )
+        val groups = StopGrouping.groupByStop(rows)
+        assertEquals(listOf("SW", "NE"), groups.map { it.busBearing })
+    }
+
+    @Test
+    fun `the stop letter wins over the bearing when a pole has both`() {
+        val group = StopGrouping.groupByStop(
+            listOf(row("B", "Some Road", mode = "bus", stopLetter = "A", bearing = "N")),
+        ).single()
+        assertEquals("A", group.busLetter)
+        assertNull(group.busBearing)
+    }
+
+    @Test
+    fun `the stop letter wins over the shared terminus`() {
+        // A lettered pole whose buses all head one way still splits/labels on the letter (the primary
+        // pole cue), not the terminus (the fallback for letter-less poles).
+        val group = StopGrouping.groupByStop(
+            listOf(row("B", "King's Cross Station", mode = "bus", stopLetter = "D", destination = "Bank")),
+        ).single()
+        assertEquals("D", group.busLetter)
+        assertNull(group.terminus)
+    }
+
+    @Test
     fun `a bus stop whose routes all head one way takes the shared terminus`() {
         // The bus analog of the rail compass: a compass-less bus place where every route heads to
         // one terminus is qualified "→ Bank", and the terminus forces its header even as a lone place.
@@ -365,8 +422,8 @@ class StopGroupingTest {
             row("BP", "Turnpike Lane", lineId = "341", destination = "Bank", mode = "bus"),
         )
         val group = StopGrouping.groupByStop(rows).single()
-        assertEquals("Bank", group.terminusLabel)
-        assertNull(group.directionLabel)
+        assertEquals("Bank", group.terminus)
+        assertNull(group.compass)
         assertTrue(group.showHeader)
     }
 
@@ -378,7 +435,7 @@ class StopGroupingTest {
             row("BP", "Wood Green", lineId = "141", destination = "Bank", mode = "bus"),
             row("BP", "Wood Green", lineId = "341", destination = "Waterloo", mode = "bus"),
         )
-        assertNull(StopGrouping.groupByStop(rows).single().terminusLabel)
+        assertNull(StopGrouping.groupByStop(rows).single().terminus)
     }
 
     @Test
@@ -393,7 +450,7 @@ class StopGroupingTest {
                 upcoming = listOf(dep("Bank", "", "bus"), dep("Waterloo", "", "bus")),
             ),
         )
-        assertNull(StopGrouping.groupByStop(rows).single().terminusLabel)
+        assertNull(StopGrouping.groupByStop(rows).single().terminus)
     }
 
     @Test
@@ -403,7 +460,7 @@ class StopGroupingTest {
             row("BP", "Wood Green", lineId = "141", destination = "Bank", mode = "bus"),
             row("BP", "Wood Green", lineId = "341", destination = "", mode = "bus"),
         )
-        assertNull(StopGrouping.groupByStop(rows).single().terminusLabel)
+        assertNull(StopGrouping.groupByStop(rows).single().terminus)
     }
 
     @Test
@@ -415,7 +472,7 @@ class StopGroupingTest {
             row("BP", "Turnpike Lane", lineId = "141", mode = "bus", destination = "Bank"),
             row("BP", "Turnpike Lane", lineId = "341", mode = "bus", upcoming = emptyList()),
         )
-        assertNull(StopGrouping.groupByStop(rows).single().terminusLabel)
+        assertNull(StopGrouping.groupByStop(rows).single().terminus)
     }
 
     @Test
@@ -427,8 +484,8 @@ class StopGroupingTest {
             row("A", "Archway", destination = "Morden"),
         )
         val kings = StopGrouping.groupByStop(rows).first { it.stopName == "King's Cross" }
-        assertEquals("Northbound", kings.directionLabel)
-        assertNull(kings.terminusLabel)
+        assertEquals("Northbound", kings.compass)
+        assertNull(kings.terminus)
     }
 
     @Test
@@ -440,7 +497,7 @@ class StopGroupingTest {
             row("A", "Archway", mode = "tube", destination = "Morden"),
         )
         val depot = StopGrouping.groupByStop(rows).first { it.stopName == "Some Depot" }
-        assertNull(depot.terminusLabel)
-        assertNull(depot.directionLabel)
+        assertNull(depot.terminus)
+        assertNull(depot.compass)
     }
 }

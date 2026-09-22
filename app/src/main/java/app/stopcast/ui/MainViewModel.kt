@@ -51,6 +51,11 @@ data class StopRef(
     // Cross and St Pancras. Blank for a stop in no hub. When the stop has a disruption, its hub
     // name is resolved so the near-me alert titles by the interchange (SPEC *Disruptions*).
     val hubId: String = "",
+    // The bus pole's letter and bearing ([StopLocation.stopLetter]/[StopLocation.bearing]), for the
+    // per-pole bus header (SPEC D8). Blank for a station or a letter-less bus stop, and for a watched
+    // stop (whose seed carries no letter yet — a follow-up).
+    val stopLetter: String = "",
+    val bearing: String = "",
 )
 
 /** The base backoff before restarting a failed dismissed-set read; doubled each attempt, and reset
@@ -395,6 +400,8 @@ class MainViewModel(
                 hubId = stop.hubId,
                 hubName = hub.name,
                 placeAliases = hub.aliases,
+                stopLetter = stop.stopLetter,
+                bearing = stop.bearing,
             )?.let { merged += it }
         }
 
