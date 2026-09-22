@@ -21,6 +21,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -157,8 +158,9 @@ class MainScreenScreenshotTest {
         // divergent one apart, so neither countdown sits under the wrong destination.
         composeRule.onNodeWithText("Hainault").assertExists()
         composeRule.onNodeWithText("Woodford").assertExists()
-        // The disrupted Victoria line is flagged (SPEC D3).
-        composeRule.onNodeWithText("Severe Delays").assertExists()
+        // The disrupted Victoria line's timed rows carry the inline ⚠ (SPEC D3) — the full status
+        // wording is the glyph's content description, no longer a visible chip on a timed row.
+        composeRule.onNodeWithContentDescription("Severe Delays").assertExists()
         // Circle is suspended with no arrivals, so it surfaces as a status row — a dash
         // ("none") where a countdown would sit (the "Suspended" chip carries the reason).
         composeRule.onNodeWithText("Suspended").assertExists()
@@ -167,10 +169,11 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithContentDescription("No departures").assertExists()
         // Oxford Circus has a stop-level disruption, shown as a stop-status row.
         composeRule.onNodeWithText("Station closed until further notice").assertExists()
-        // Cards are grouped under one place-name header per stop, the top level of the two-level
-        // hierarchy (SPEC D8), with platform/pole sub-headers below it.
-        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertExists()
-        composeRule.onNodeWithText("OXFORD CIRCUS").assertExists()
+        // Each group gets one combined title-case header, the place name repeated per platform (SPEC
+        // D8). King's Cross splits into a Platform 1 group and a bare bus/status group; Oxford Circus
+        // into its two platforms.
+        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().assertExists()
+        composeRule.onAllNodesWithText("Oxford Circus").onFirst().assertExists()
     }
 
     // The busiest interchange on the network: King's Cross St. Pancras, six Underground lines both
@@ -273,13 +276,14 @@ class MainScreenScreenshotTest {
         // at 120s); the lower platforms and the bus stop are below the fold (off-screen, not in the
         // semantics tree). The place name shows once as the top level; each platform is a sub-header
         // with its compass in parens.
-        composeRule.onAllNodesWithText("KING'S CROSS ST. PANCRAS").onFirst().assertExists()
-        composeRule.onNodeWithText("PLATFORM 1").assertExists()
-        composeRule.onNodeWithText("PLATFORM 3").assertExists()
-        // Several platforms share a compass (Platform 1 and Platform 5 both Northbound), so the paren
-        // appears on more than one sub-header — assert it shows, not that it's unique.
-        composeRule.onAllNodesWithText("(Northbound)", substring = true).onFirst().assertExists()
-        composeRule.onAllNodesWithText("(Eastbound)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().assertExists()
+        composeRule.onNodeWithText("– Platform 1", substring = true).assertExists()
+        composeRule.onNodeWithText("– Platform 3", substring = true).assertExists()
+        // The compass moved off the visible one-line header (title case, no parenthetical) into the
+        // spoken label a screen reader hears — several platforms share a compass (Platform 1 and 5 both
+        // Northbound), so assert it shows, not that it's unique.
+        composeRule.onAllNodesWithContentDescription("Platform 1, Northbound", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithContentDescription("Eastbound", substring = true).onFirst().assertExists()
         // Platform 1 leads with the Victoria; Platform 5 the Northern; Platform 3 the Piccadilly.
         composeRule.onNodeWithText("Walthamstow Central").assertExists()
         composeRule.onNodeWithText("High Barnet").assertExists()
@@ -332,14 +336,14 @@ class MainScreenScreenshotTest {
                 {},
             )
         }
-        // One "TURNPIKE LANE" header, not two — the two poles (buses, no compass in the feed)
-        // merged into one place under a bare name.
-        composeRule.onAllNodesWithText("TURNPIKE LANE").assertCountEquals(1)
-        // Manor House is a rail stop, so under its place name sits a platform sub-header with the
-        // compass in parens.
-        composeRule.onNodeWithText("MANOR HOUSE").assertExists()
-        composeRule.onNodeWithText("PLATFORM 2").assertExists()
-        composeRule.onNodeWithText("(Westbound)", substring = true).assertExists()
+        // One "Turnpike Lane" header, not two — the two poles (buses, no compass in the feed) merged
+        // into one place under a bare name (no qualifier segment).
+        composeRule.onAllNodesWithText("Turnpike Lane").assertCountEquals(1)
+        // Manor House is a rail stop, so its one-line header carries the platform, its compass moved to
+        // the spoken label.
+        composeRule.onNodeWithText("Manor House", substring = true).assertExists()
+        composeRule.onNodeWithText("– Platform 2", substring = true).assertExists()
+        composeRule.onNodeWithContentDescription("Platform 2, Westbound", substring = true).assertExists()
         // Both poles' cards render under that one header.
         composeRule.onNodeWithText("Palmers Green").assertExists()
         composeRule.onNodeWithText("London Bridge").assertExists()
@@ -363,12 +367,13 @@ class MainScreenScreenshotTest {
                 ),
             )
         }
-        // Meters below a kilometer, km above — each stop's own distance, not one shared value.
-        // The distance is a reserved node beside the name, so name and distance read separately.
-        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertExists()
-        composeRule.onNodeWithText("(120 m)", substring = true).assertExists()
-        composeRule.onNodeWithText("OXFORD CIRCUS").assertExists()
-        composeRule.onNodeWithText("(1.2 km)", substring = true).assertExists()
+        // Meters below a kilometer, km above — each stop's own distance, not one shared value. The
+        // distance is a reserved dimmed node at the end of the one-line header; each stop splits into
+        // several groups, so its distance repeats on each of that place's group headers.
+        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().assertExists()
+        composeRule.onAllNodesWithText("(120 m)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("Oxford Circus").onFirst().assertExists()
+        composeRule.onAllNodesWithText("(1.2 km)", substring = true).onFirst().assertExists()
     }
 
     @Test
@@ -406,8 +411,8 @@ class MainScreenScreenshotTest {
         }
         // Deduped to one card — no per-member group header (caps), and the notice shows once.
         composeRule.onAllNodesWithText(notice).assertCountEquals(1)
-        composeRule.onNodeWithText("LONDON ST PANCRAS INTERNATIONAL", substring = true).assertDoesNotExist()
-        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertDoesNotExist()
+        composeRule.onNodeWithText("London St Pancras International", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("King's Cross St. Pancras", substring = true).assertDoesNotExist()
         // The interchange name heads the card even collapsed, so the alert always says which place.
         composeRule.onNodeWithText(hubName).assertExists()
         // Tapping the collapsed alert expands its body in place to the full notice text.
@@ -629,7 +634,7 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("KING'S CROSS ST. PANCRAS").assertExists()
+        composeRule.onNodeWithText("King's Cross St. Pancras", substring = true).assertExists()
         composeRule.onNodeWithText("(300 m)", substring = true).assertExists()
     }
 
@@ -671,13 +676,12 @@ class MainScreenScreenshotTest {
     }
 
     @Test
-    fun `a near-me rail place keeps its distance in the row and its platform below at the max scale`() {
-        // The combined worst case (1.6x in-app scale on top of a ~2x system font ≈ 3.2x). The two
-        // levels keep the name and the direction off the same line: the place-name row carries the
-        // name and the reserved distance (the name clips first, the distance never pushed off the
-        // end — Codex P2, PR #109 / PR #82), and the platform sub-header sits on its own row below
-        // with the compass in parens, so neither crowds the other. Logic-only — no baseline. Public
-        // station name + synthetic distance only (SPEC *Privacy*).
+    fun `a near-me rail place renders its one-line header with the platform and distance at a large scale`() {
+        // The one-line header (SPEC D8 redesign): place name, then " – Platform 2", then the dimmed
+        // distance, on a single title-case line. The place name clips (ellipsis) first while the
+        // qualifier and distance are reserved; the compass moves into the spoken label ("Platform 2,
+        // Southbound"), off the visible line. Logic-only — no baseline. Public station name +
+        // synthetic distance only (SPEC *Privacy*).
         val stop = StopArrivals(
             "940GZZLUKSX",
             "King's Cross St. Pancras International",
@@ -688,7 +692,7 @@ class MainScreenScreenshotTest {
             StopCastTheme(dynamicColor = false) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
-                    LocalDensity provides Density(density = base.density, fontScale = 3.2f),
+                    LocalDensity provides Density(density = base.density, fontScale = 2f),
                 ) {
                     Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
                         MainScreen(
@@ -702,22 +706,21 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        // The reserved distance keeps width and stays within the place-name row while the long name
-        // clips — the reserved-trailing-element guard, unchanged by the two-level split.
+        // The reserved distance keeps width and stays within the header row while the long name clips
+        // — the reserved-trailing-element guard.
         val dist = composeRule.onNodeWithText("(1.2 km)", substring = true).getUnclippedBoundsInRoot()
         assertTrue("distance should keep width, was ${dist.right - dist.left}", dist.right - dist.left > 0.dp)
         assertTrue("distance should stay within the row, right was ${dist.right}", dist.right <= 412.dp)
-        // The platform sub-header renders on its own row below; the direction announces to a screen
-        // reader as part of the merged "Platform 2, Southbound" label, never colliding with the name.
-        composeRule.onNodeWithText("PLATFORM 2").assertExists()
-        composeRule.onNodeWithContentDescription("Platform 2, Southbound").assertExists()
+        // The platform sits on the one line, its compass in the spoken label the header announces.
+        composeRule.onNodeWithText("– Platform 2", substring = true).assertExists()
+        composeRule.onNodeWithContentDescription("Platform 2, Southbound", substring = true).assertExists()
     }
 
     @Test
-    fun `two platforms of one cluster sit under one place name with their compass in parens`() {
-        // Two members of one cluster (TfL's stationNaptan), each a different platform: the place name
-        // shows once at the top level, and each platform is a sub-header below with its compass in
-        // parens ("PLATFORM 2 (Eastbound)", "PLATFORM 1 (Westbound)"). Logic-only — no baseline.
+    fun `two platforms of one cluster each get a one-line header with the place name and platform`() {
+        // Two members of one cluster (TfL's stationNaptan), each a different platform: each platform is
+        // its own combined one-line header, the place name repeated on each ("King's Cross – Platform
+        // 2", "King's Cross – Platform 1"), the compass in the spoken label. Logic-only — no baseline.
         // Public station name only (SPEC *Privacy*).
         val stop = StopArrivals(
             "940GZZLUKSX", "King's Cross",
@@ -741,12 +744,12 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        // The place name shows once, not once per platform.
-        composeRule.onAllNodesWithText("KING'S CROSS").assertCountEquals(1)
-        composeRule.onNodeWithText("PLATFORM 2").assertExists()
-        composeRule.onNodeWithText("(Eastbound)", substring = true).assertExists()
-        composeRule.onNodeWithText("PLATFORM 1").assertExists()
-        composeRule.onNodeWithText("(Westbound)", substring = true).assertExists()
+        // The place name repeats — one combined header per platform.
+        composeRule.onAllNodesWithText("King's Cross").assertCountEquals(2)
+        composeRule.onNodeWithText("– Platform 2", substring = true).assertExists()
+        composeRule.onNodeWithContentDescription("Platform 2, Eastbound", substring = true).assertExists()
+        composeRule.onNodeWithText("– Platform 1", substring = true).assertExists()
+        composeRule.onNodeWithContentDescription("Platform 1, Westbound", substring = true).assertExists()
     }
 
     @Test
@@ -774,8 +777,8 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("TURNPIKE LANE", substring = true).assertExists()
-        composeRule.onNodeWithText("→ BANK", substring = true).assertExists()
+        composeRule.onNodeWithText("Turnpike Lane", substring = true).assertExists()
+        composeRule.onNodeWithText("→ Bank", substring = true).assertExists()
     }
 
     @Test
@@ -806,20 +809,21 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        // The place name shows once at the top; one sub-header per pole below, the letter tells apart.
-        composeRule.onAllNodesWithText("KING'S CROSS STATION", substring = true).assertCountEquals(1)
-        composeRule.onNodeWithText("STOP D").assertExists()
-        composeRule.onNodeWithText("STOP E").assertExists()
-        // The letter still announces its pole to a screen reader.
-        composeRule.onNodeWithContentDescription("Stop D").assertExists()
+        // One combined header per pole, the place name repeated, the letter as the qualifier segment.
+        composeRule.onAllNodesWithText("King's Cross Station", substring = true).assertCountEquals(2)
+        composeRule.onNodeWithText("– Stop D", substring = true).assertExists()
+        composeRule.onNodeWithText("– Stop E", substring = true).assertExists()
+        // The letter still announces its pole to a screen reader, in the header's spoken label.
+        composeRule.onNodeWithContentDescription("Stop D", substring = true).assertExists()
     }
 
     @Test
-    fun `a long bus terminus sits on its own sub-header row below the stop name`() {
-        // The two levels keep a long terminus off the name's line entirely: the place name has its
-        // own row (never crowded), and the "→ Terminus" sub-header sits below it, so even at a large
-        // font both render and the terminus can clip within its own row without touching the name.
-        // Logic-only — no baseline. Public route/place names only.
+    fun `a long bus terminus shares the header with the place name, neither crowded out`() {
+        // On the one-line header the place name and the "→ Terminus" qualifier SHARE the row (each
+        // weighted), so a long terminus at a large font can't consume the whole line and crowd the
+        // place name to zero — both keep at least their half and clip within it (Codex P1, PR #122).
+        // The header announces "to Finsbury Park Interchange" to a screen reader. Logic-only — no
+        // baseline. Public route/place names only.
         val stop = StopArrivals(
             "490G00TPL", "Turnpike Lane",
             listOf(dep("W3", "W3", "outbound", "Finsbury Park Interchange", 120, "", mode = "bus")),
@@ -842,20 +846,23 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        // The stop name keeps a positive width (its floor) — not crowded to zero by the long terminus.
-        val name = composeRule.onNodeWithText("TURNPIKE LANE", substring = true).getUnclippedBoundsInRoot()
-        assertTrue("stop name should keep width, was ${name.right - name.left}", name.right - name.left > 0.dp)
-        // The terminus is present and starts within the row (the cue survives, clipped if need be).
-        val terminus = composeRule.onNodeWithText("→ FINSBURY", substring = true).getUnclippedBoundsInRoot()
+        // The place name keeps a positive width — not crowded to zero by the long terminus (the #2
+        // guarantee): name and qualifier share the row.
+        val nameBounds = composeRule.onNodeWithText("Turnpike Lane", substring = true).getUnclippedBoundsInRoot()
+        assertTrue("place name should keep width, was ${nameBounds.right - nameBounds.left}", nameBounds.right - nameBounds.left > 0.dp)
+        // The terminus segment is present and starts within the row (the cue survives, clipped if need be).
+        val terminus = composeRule.onNodeWithText("→ Finsbury", substring = true).getUnclippedBoundsInRoot()
         assertTrue("terminus should start within the row, left was ${terminus.left}", terminus.left < 360.dp)
+        // The full terminus is the header's spoken label.
+        composeRule.onNodeWithContentDescription("to Finsbury Park Interchange", substring = true).assertExists()
     }
 
     @Test
-    fun `a station's place header shows the nearest member distance once above its platforms`() {
+    fun `a station's platform headers each show the nearest member distance, never the farther one`() {
         // A clustered station whose member stop ids sit at different distances, split into platforms:
-        // the distance lives on the place-name header (the top level), shown ONCE as the place's
-        // NEAREST member — not repeated per platform, and never the farther member's (Codex P2, PR
-        // #109). Logic-only — no baseline. Public station data + synthetic distances only.
+        // the one-line header repeats the place's NEAREST member distance on each platform header —
+        // never the farther member's (Codex P2, PR #109). Logic-only — no baseline. Public station data
+        // + synthetic distances only.
         val north = StopArrivals(
             "940GZZLUKSX-N", "King's Cross St. Pancras",
             listOf(dep("victoria", "Victoria", "outbound", "Walthamstow Central", 60, "Northbound - Platform 1")),
@@ -877,13 +884,13 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        // The place header carries the nearest member's distance exactly once (not per platform), and
-        // the farther member's distance never appears.
-        composeRule.onAllNodesWithText("(120 m)", substring = true).assertCountEquals(1)
+        // Each platform header carries the nearest member's distance (repeated per platform), and the
+        // farther member's distance never appears.
+        composeRule.onAllNodesWithText("(120 m)", substring = true).assertCountEquals(2)
         composeRule.onNodeWithText("(300 m)", substring = true).assertDoesNotExist()
-        // Both platforms still render as sub-headers below the one place header.
-        composeRule.onNodeWithText("PLATFORM 1").assertExists()
-        composeRule.onNodeWithText("PLATFORM 2").assertExists()
+        // Both platforms render as their own combined headers.
+        composeRule.onNodeWithText("– Platform 1", substring = true).assertExists()
+        composeRule.onNodeWithText("– Platform 2", substring = true).assertExists()
     }
 
     @Test
@@ -1128,9 +1135,10 @@ class MainScreenScreenshotTest {
     )
 
     @Test
-    fun `starred card, gold border, light`() {
-        // A pinned card carries a gold border and no in-row star element (SPEC D8). Light theme
-        // uses the deeper gold so the border reads on the light card surface.
+    fun `starred route, gold leading bar, light`() {
+        // A pinned route wears a gold leading-edge bar on its interior row (SPEC D8), the per-row
+        // accent that replaces the old whole-card border now a card holds several routes. Light theme
+        // uses the deeper gold so the bar reads on the light card surface.
         val stop = oneStarrableStop()
         val row = DepartureRows.across(listOf(stop), now).single()
         capture("main-starred.png") {
@@ -1144,8 +1152,8 @@ class MainScreenScreenshotTest {
     }
 
     @Test
-    fun `starred card, gold border, dark`() {
-        // The dark theme uses the brighter gold so the border reads on the dark card surface.
+    fun `starred route, gold leading bar, dark`() {
+        // The dark theme uses the brighter gold so the bar reads on the dark card surface.
         val stop = oneStarrableStop()
         val row = DepartureRows.across(listOf(stop), now).single()
         capture("main-starred-dark.png", dark = true) {
@@ -1457,7 +1465,9 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("East Finchley").assertExists()
+        // "East Finchley" shows in full both as the group header's place name and, unabbreviated, as
+        // the route row's destination — two nodes (an abbreviated "E. Finchley" would leave only one).
+        composeRule.onAllNodesWithText("East Finchley").assertCountEquals(2)
     }
 
     @Test

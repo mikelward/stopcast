@@ -1,100 +1,82 @@
 package app.stopcast.ui
 
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import app.stopcast.domain.StopQualifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * [subHeaderText]'s mapping from a group's [StopQualifier] to its rendered parts, tested apart from
- * the composable. The primary label is uppercased for the small-caps read; the parenthetical keeps
- * its case; the spoken form is what a screen reader hears in place of the glyphs.
+ * [groupHeaderLabel]/[groupHeaderSpoken]'s mapping from a group's [StopQualifier] to the one line
+ * header's title-case qualifier segment and its spoken form, tested apart from the composable. The
+ * visible segment is title case with no small-caps and drops the direction/towards parenthetical; the
+ * spoken form keeps the direction/towards a screen reader needs.
  */
 class HeaderQualifierTest {
 
     @Test
-    fun `a rail platform leads with the platform number and its compass in parens`() {
-        val t = subHeaderText(StopQualifier.Platform("2", "Eastbound"))
-        assertEquals("PLATFORM 2", t.primary)
-        assertEquals("Eastbound", t.paren)
-        assertEquals("Platform 2, Eastbound", t.spoken)
+    fun `a null qualifier has no label and no spoken form`() {
+        assertNull(groupHeaderLabel(null))
+        assertNull(groupHeaderSpoken(null))
     }
 
     @Test
-    fun `a rail platform with no direction has no parenthetical`() {
-        val t = subHeaderText(StopQualifier.Platform("4", null))
-        assertEquals("PLATFORM 4", t.primary)
-        assertNull(t.paren)
-        assertEquals("Platform 4", t.spoken)
+    fun `a rail platform is title case and speaks its compass`() {
+        assertEquals("Platform 2", groupHeaderLabel(StopQualifier.Platform("2", "Eastbound")))
+        assertEquals("Platform 2, Eastbound", groupHeaderSpoken(StopQualifier.Platform("2", "Eastbound")))
     }
 
     @Test
-    fun `a bare rail compass is a single label with no parenthetical`() {
-        val t = subHeaderText(StopQualifier.Compass("Eastbound"))
-        assertEquals("EASTBOUND", t.primary)
-        assertNull(t.paren)
-        assertEquals("Eastbound", t.spoken)
+    fun `a rail platform with no direction has no spoken compass`() {
+        assertEquals("Platform 4", groupHeaderLabel(StopQualifier.Platform("4", null)))
+        assertEquals("Platform 4", groupHeaderSpoken(StopQualifier.Platform("4", null)))
     }
 
     @Test
-    fun `a bus stop leads with the stop letter and its towards in parens`() {
-        val t = subHeaderText(StopQualifier.BusStop("d", "Archway"))
-        assertEquals("STOP D", t.primary)
-        assertEquals("towards Archway", t.paren)
-        assertEquals("Stop D, towards Archway", t.spoken)
+    fun `a bare rail compass is its label both seen and spoken`() {
+        assertEquals("Eastbound", groupHeaderLabel(StopQualifier.Compass("Eastbound")))
+        assertEquals("Eastbound", groupHeaderSpoken(StopQualifier.Compass("Eastbound")))
+    }
+
+    @Test
+    fun `a bus stop is title case and speaks its towards`() {
+        assertEquals("Stop D", groupHeaderLabel(StopQualifier.BusStop("d", "Archway")))
+        assertEquals("Stop D, towards Archway", groupHeaderSpoken(StopQualifier.BusStop("d", "Archway")))
     }
 
     @Test
     fun `a bus stop with a two-way towards trims at Or to the first destination`() {
-        // TfL's Towards is often "Farringdon Or Holborn Circus"; the header shows just the first so it
-        // stays a short cue, not a paragraph.
-        val t = subHeaderText(StopQualifier.BusStop("g", "Farringdon Or Holborn Circus"))
-        assertEquals("STOP G", t.primary)
-        assertEquals("towards Farringdon", t.paren)
+        // TfL's Towards is often "Farringdon Or Holborn Circus"; the spoken cue shows just the first
+        // so it stays short, not a paragraph.
+        assertEquals("Stop G", groupHeaderLabel(StopQualifier.BusStop("g", "Farringdon Or Holborn Circus")))
+        assertEquals(
+            "Stop G, towards Farringdon",
+            groupHeaderSpoken(StopQualifier.BusStop("g", "Farringdon Or Holborn Circus")),
+        )
     }
 
     @Test
-    fun `a bus stop with no towards has no parenthetical`() {
-        val t = subHeaderText(StopQualifier.BusStop("a", null))
-        assertEquals("STOP A", t.primary)
-        assertNull(t.paren)
-        assertEquals("Stop A", t.spoken)
+    fun `a bus stop with no towards has no spoken direction`() {
+        assertEquals("Stop A", groupHeaderLabel(StopQualifier.BusStop("a", null)))
+        assertEquals("Stop A", groupHeaderSpoken(StopQualifier.BusStop("a", null)))
     }
 
     @Test
     fun `a bus bearing renders an arrow glyph and speaks the direction`() {
-        val t = subHeaderText(StopQualifier.BusBearing("sw"))
-        assertEquals("(→SW)", t.primary)
-        assertNull(t.paren)
-        assertEquals("Southwest-bound", t.spoken) // the "(→SW)" glyph reads as a direction
+        assertEquals("→SW", groupHeaderLabel(StopQualifier.BusBearing("sw")))
+        assertEquals("Southwest-bound", groupHeaderSpoken(StopQualifier.BusBearing("sw")))
     }
 
     @Test
     fun `a bus terminus renders an arrow and the destination`() {
-        val t = subHeaderText(StopQualifier.Terminus("Bank"))
-        assertEquals("→ BANK", t.primary)
-        assertNull(t.paren)
-        assertEquals("to Bank", t.spoken)
+        assertEquals("→ Bank", groupHeaderLabel(StopQualifier.Terminus("Bank")))
+        assertEquals("to Bank", groupHeaderSpoken(StopQualifier.Terminus("Bank")))
     }
 
     @Test
     fun `a bus terminus with a display rename shows the renamed form, matching the card`() {
-        // The destination card renames "Battersea Power" → "Battersea" (DepartureLabels); the header
-        // must use the same so it doesn't read "→ BATTERSEA POWER" above a "Battersea" card (Codex
-        // P2, PR #116).
-        val t = subHeaderText(StopQualifier.Terminus("Battersea Power"))
-        assertEquals("→ BATTERSEA", t.primary)
-        assertEquals("to Battersea", t.spoken)
-    }
-
-    @Test
-    fun `the header style bakes in the semi-bold weight it renders`() {
-        // The header must measure the same weight it renders, or the width used to size the label
-        // under-counts and the text clips (Codex P2, PR #115). This is the one place both the measure
-        // and every header Text read.
-        val resolved = headerTextStyle(TextStyle(fontWeight = FontWeight.Normal))
-        assertEquals(FontWeight.SemiBold, resolved.fontWeight)
+        // The destination line renames "Battersea Power" → "Battersea" (DepartureLabels); the header
+        // must use the same so it doesn't read "→ Battersea Power" above a "Battersea" card.
+        assertEquals("→ Battersea", groupHeaderLabel(StopQualifier.Terminus("Battersea Power")))
+        assertEquals("to Battersea", groupHeaderSpoken(StopQualifier.Terminus("Battersea Power")))
     }
 }
