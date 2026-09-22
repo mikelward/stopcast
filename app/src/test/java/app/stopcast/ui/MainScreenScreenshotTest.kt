@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -26,6 +27,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
@@ -468,6 +470,35 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithContentDescription("Dismiss alert").assertExists()
         // Tapping it reports the closure's row to the host, which persists the dismissal.
         composeRule.onNodeWithContentDescription("Dismiss alert").performClick()
+        composeRule.waitForIdle()
+        assertEquals("490000001A", dismissedRow?.stopId)
+    }
+
+    @Test
+    fun `a tap on the dismiss control's leading edge dismisses rather than expanding`() {
+        // The × sits flush against the chevron with the visual gap inside its own 48dp target, so a
+        // near miss just left of the glyph must still dismiss — not fall through to the card's
+        // expand/collapse. Tapping the node's left edge (not its center) exercises that hit area.
+        val stop = StopArrivals(
+            "490000001A", "Example Road", emptyList(),
+            fetchedAt = now.minusSeconds(60),
+            disruptions = listOf(StopDisruption("Bus Stop Closed")),
+            arrivalsFresh = false,
+            clusterId = "490G000EXAMPLE",
+        )
+        var dismissedRow: DepartureRow? = null
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                MainScreen(
+                    DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                    now,
+                    {},
+                    stopDistanceMeters = mapOf("490000001A" to 40.0),
+                    onDismissAlert = { dismissedRow = it },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Dismiss alert").performTouchInput { click(centerLeft) }
         composeRule.waitForIdle()
         assertEquals("490000001A", dismissedRow?.stopId)
     }

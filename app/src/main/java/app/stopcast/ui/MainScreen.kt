@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
@@ -1149,17 +1150,23 @@ private fun CollapsibleStatus(
             }
             // A quiet chevron marks the row as expandable; the click label carries the action
             // for a screen reader, so the icon itself needs no separate description.
-            Icon(
-                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                contentDescription = null,
-                modifier = Modifier.padding(start = 8.dp).size(20.dp),
-            )
-            // The dismiss (×) sits after the chevron with its own click target, so tapping it hides
-            // the alert without also toggling expand/collapse (SPEC *Disruptions*). The IconButton
-            // keeps its default 48dp interactive target — a 20dp glyph in a full-size touch area — so
-            // a near miss doesn't fall through to the card's expand/collapse. (An explicit small
-            // `size` would clamp that target below 48dp.)
+            val chevron = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown
             if (onDismiss != null) {
+                // On a dismissible closure card the chevron and the × are BOTH centered in a 48dp
+                // band, so their glyphs line up on one axis, with a clear gap between them — they read
+                // as two separate controls instead of a cramped, misaligned cluster.
+                Box(
+                    modifier = Modifier.padding(start = 8.dp).height(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(chevron, contentDescription = null, modifier = Modifier.size(20.dp))
+                }
+                // The dismiss (×) keeps its default 48dp interactive target, flush against the chevron
+                // band so there is no dead gap between them: the visual separation from the chevron is
+                // the button's own internal padding, which is part of the dismiss hit target — a near
+                // miss just left of the glyph still dismisses rather than toggling expand/collapse
+                // (SPEC *Disruptions*). No outer padding, which would sit outside the clickable and
+                // fall through to the card.
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.Filled.Close,
@@ -1167,6 +1174,10 @@ private fun CollapsibleStatus(
                         modifier = Modifier.size(20.dp),
                     )
                 }
+            } else {
+                // A non-dismissible status card (line status, route detail) keeps the top-aligned
+                // chevron beside its text — no × to align with.
+                Icon(chevron, contentDescription = null, modifier = Modifier.padding(start = 8.dp).size(20.dp))
             }
         }
     }
