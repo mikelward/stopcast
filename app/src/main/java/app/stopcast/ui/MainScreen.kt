@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -971,7 +972,11 @@ private fun DestinationLine(
                     fullBranchWidth = remember(branch) { widthOf("/$branch") },
                     abbrevBranchWidth = remember(shortBranch) { widthOf("/$shortBranch") },
                     firstGlyphWidth = remember(abbreviatedLabel) { widthOf(abbreviatedLabel.take(1)) },
+                    branchFirstGlyphWidth = remember(shortBranch) { widthOf("/${shortBranch.take(1)}") },
                 )
+                val density = LocalDensity.current
+                val terminusMaxWidth = with(density) { resolved.terminusMaxWidthPx.toDp() }
+                val branchMaxWidth = with(density) { resolved.branchMaxWidthPx.toDp() }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -982,15 +987,17 @@ private fun DestinationLine(
                         maxLines = 1,
                         // One line, no wrap: without this a two-word terminus ("Battersea Power")
                         // wraps its second word onto a dropped line while the Text still fills its
-                        // weighted slot, floating the branch off to the far edge — the slash ends up
-                        // detached, as in "Battersea        /Charing X". softWrap = false clips on
-                        // one line so the slash stays against the last visible glyph. Hard clip (a
-                        // clean cut, no ellipsis); fill = false so a short label doesn't gap before
-                        // the branch.
+                        // slot, floating the branch off to the far edge — the slash ends up detached,
+                        // as in "Battersea        /Charing X". softWrap = false clips on one line so
+                        // the slash stays against the last visible glyph. Hard clip (a clean cut, no
+                        // ellipsis). The width budget from branchedLabel caps each side; under
+                        // pressure the two share the row in proportion so both clip by the same
+                        // fraction (equal truncation), and a budget wider than the natural text just
+                        // lets it sit at its own width with no gap before the branch.
                         softWrap = false,
                         overflow = TextOverflow.Clip,
                         modifier = Modifier
-                            .weight(1f, fill = false)
+                            .widthIn(max = terminusMaxWidth)
                             // Keep the full name for a screen reader when the visible text is shortened or hidden.
                             .then(
                                 resolved.contentDescription?.let { full ->
@@ -1002,10 +1009,11 @@ private fun DestinationLine(
                         text = resolved.branch,
                         style = style,
                         maxLines = 1,
-                        // Hard-clipped too, so the whole destination line cuts cleanly; the
-                        // abbreviation ladder above means the branch almost never overflows.
+                        // Hard-clipped to its own budget too, so under pressure the branch cuts
+                        // cleanly at the same fraction as the terminus instead of pushing it off.
                         softWrap = false,
                         overflow = TextOverflow.Clip,
+                        modifier = Modifier.widthIn(max = branchMaxWidth),
                     )
                 }
             }

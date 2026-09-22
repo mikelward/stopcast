@@ -277,24 +277,22 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       **Partly shipped (PR #76):** the *destination* now word-abbreviates before it clips —
       a whole-word map (`DestinationAbbreviations`: `East`→`E.`, `Street`→`St`, …, single
       letters dotted, multi-letter bare) applied only when the full name wouldn't fit, then a
-      clean clip (no ellipsis). Still to do here: the *branch* side of the same treatment and
-      the one-full-word-per-half allocation across both halves. Note there are now two maps —
-      `abbreviateBranch` (branch) and `DestinationAbbreviations` (terminus) — that a fuller
-      version might converge. Equal branch/terminus width was considered and **declined**
-      (2026-09-21): the branch is always the short board form, so equal space would only clip
-      the terminus sooner; revisit as proportional balancing only if a fuller branch form
-      (`via Charing Cross`) is ever shown.
-- [ ] **When the row has literally no room for the terminus, reconsider preferring the terminus
-      over the branch** (maintainer, 2026-09-21, PR #92). The branch outranks the terminus for
-      space today (SPEC destination-label), so at an extreme accessibility font scale on a narrow
-      row — where even the terminus's first glyph won't fit — the row shows the branch **alone and
-      bare**: `branchedLabel` drops the leading slash so it never renders a malformed "/Charing X"
-      with nothing before it (the Codex P2 fixed on #92). Open question the maintainer flagged: in
-      that zero-room case, is the *terminus* the more useful survivor than the branch? Cheap to
-      flip — it's one predicate in the pure `branchedLabel`, covered by its unit test — so it's
-      recorded here rather than guessed. Current behavior (branch alone) matches the existing
-      branch-outranks-terminus rule; the degenerate case is rare enough that either choice is only
-      seen at the largest font scales.
+      clean clip (no ellipsis). Note there are now two maps — `abbreviateBranch` (branch) and
+      `DestinationAbbreviations` (terminus) — that a fuller version might converge.
+      **Equal truncation shipped (2026-09-22):** once the abbreviated terminus won't sit beside
+      the full branch, `branchedLabel` splits the row width between them in proportion to their
+      natural sizes so both clip by the same fraction, replacing the earlier branch-always-wins
+      rule (the earlier "equal width declined" note predated the `Charing X` canonicalization and
+      the terminus abbreviation, which is why it no longer holds). A fuller rider-readable branch
+      form under pressure (`via Charing Cross`) is the remaining follow-up here.
+- [x] **When the row has literally no room for the terminus, reconsider preferring the terminus
+      over the branch** (maintainer, 2026-09-21, PR #92; settled 2026-09-22). Equal truncation
+      answers this: instead of the branch taking the whole row and the terminus vanishing, the two
+      now share the width in proportion, so **both** survive and clip together. The branch-alone,
+      bare fallback (no leading slash) is kept only for the genuinely degenerate case — the
+      terminus's proportional share falling below its own first glyph, which needs a terminus
+      naturally far narrower than the branch at a large font scale, rarer than the old zero-room
+      case.
 - [x] **Cluster departures under a per-stop header** (maintainer, 2026-09-20; PR #78).
       Rather than a per-card subtitle, the list clusters by stop, **one header per stop**,
       showing the **bare stop name**, with each stop's own warning leading its block (option
@@ -676,16 +674,16 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       rider can pick a branching-line train (Northern most visibly). The branch
       **participates in grouping**: within a direction a line splits per terminus *and*
       branch, so two trains to one terminus via different trunks each get their own line
-      and countdown (a countdown never sits under the wrong branch). The **branch outranks
-      the terminus for space**: where the pair won't
-      fit, the destination gives way and the branch is kept — "Batter/Charing X" in the
-      tight case. The branch is normalized to one short board form per trunk ("Charing X")
-      on every surface, up front, not measured against the row; a width-adaptive form that
-      shortens it further under pressure and truncates rather than elides the destination is
-      the tracked follow-up. The separator settled on a slash: parentheses (#92 shipped a
-      comma list first) cost extra spaces and dropped higher-information characters on a
-      narrow row; the slash is the compact form (#94). Follow-up: **eyeball on a device**
-      the truncation balance and the abbreviations.
+      and countdown (a countdown never sits under the wrong branch). Under width pressure the
+      **terminus yields first** (abbreviate, then clip); once even the abbreviated terminus won't
+      sit beside the full branch the two **truncate equally**, sharing the row in proportion so
+      both clip together — a hard cut like "H. Barn/Charin" at the extreme. The branch is normalized to one
+      short board form per trunk ("Charing X") on every surface, up front, not measured against
+      the row; a fuller rider-readable branch form under pressure ("via Charing Cross") is the
+      tracked follow-up. The separator settled on a slash: parentheses (#92 shipped a comma list
+      first) cost extra spaces and dropped higher-information characters on a narrow row; the slash
+      is the compact form (#94). Follow-up: **eyeball on a device** the truncation balance and the
+      abbreviations.
 - [ ] (Later, open call) **One row per destination** as an alternative grouping to
       (service, stop, direction) (D8) — every row then names a single unambiguous
       destination (and handles a blank `direction` via `towards`), at the cost of more

@@ -173,7 +173,8 @@ class WidgetContentTest {
                 now,
             )
         }
-        onNode(hasText("Battersea Power/Charing X")).assertExists()
+        // "Battersea Power" renders as the renamed "Battersea" (DepartureLabels display rename).
+        onNode(hasText("Battersea/Charing X")).assertExists()
     }
 
     @Test

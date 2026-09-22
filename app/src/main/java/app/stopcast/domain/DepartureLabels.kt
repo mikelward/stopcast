@@ -8,6 +8,17 @@ import java.util.Locale
  */
 object DepartureLabels {
     /**
+     * Hardcoded display renames for a terminus whose TfL name is longer than a rider needs.
+     * Applied at label time only — grouping (SPEC D8) and topology resolution still key on the
+     * raw terminus — so a rename never changes which trains share a row. Keyed on the terminus
+     * as it reaches here, after [cleanStopName] has already dropped a " Station" suffix (so
+     * "Battersea Power Station" arrives as "Battersea Power"). Maintainer-chosen (2026-09-22).
+     */
+    private val displayRenames = mapOf(
+        "Battersea Power" to "Battersea",
+    )
+
+    /**
      * The destination line's label: TfL's resolved [destination] (`destinationName`, else
      * `towards`) when present; otherwise the [directionKey] as a **direction cue**. The
      * card no longer shows the direction in words, so without this a line with no
@@ -21,7 +32,7 @@ object DepartureLabels {
      * it.
      */
     fun destinationLabel(destination: String, directionKey: String): String? {
-        if (destination.isNotBlank()) return destination
+        if (destination.isNotBlank()) return displayRenames[destination] ?: destination
         val cue = directionKey.trim()
         // Locale.ROOT: the direction word is English TfL data, and the default locale would
         // mangle the first letter on a Turkish device ("İnbound"). A platform cue

@@ -22,6 +22,15 @@ class DepartureLabelsTest {
     }
 
     @Test
+    fun `applies the hardcoded display rename to a long terminus`() {
+        // "Battersea Power Station" reaches here already stripped to "Battersea Power" by
+        // cleanStopName; the display rename shortens it further to "Battersea".
+        assertEquals("Battersea", DepartureLabels.destinationLabel("Battersea Power", "southbound"))
+        // A terminus with no rename is returned unchanged.
+        assertEquals("Morden", DepartureLabels.destinationLabel("Morden", "southbound"))
+    }
+
+    @Test
     fun `is null when the destination and the direction key are both blank`() {
         assertNull(DepartureLabels.destinationLabel("", ""))
         assertNull(DepartureLabels.destinationLabel("", "   "))
