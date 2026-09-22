@@ -2,7 +2,9 @@ package app.stopcast.data
 
 import app.stopcast.domain.Departure
 import app.stopcast.domain.HubInfo
+import app.stopcast.domain.LineSequence
 import app.stopcast.domain.LineStatus
+import app.stopcast.domain.RouteSequenceSource
 import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.StopFinder
 import app.stopcast.domain.StopLocation
@@ -57,7 +59,7 @@ class KtorTflClient(
     // opening one connection per stop. Unbounded by default (tests, an unwired client); production
     // passes [SharedTflRequestPool.pool] so the app and widget share one cap.
     private val requestPool: TflRequestPool = TflRequestPool.UNBOUNDED,
-) : TflClient, StopFinder {
+) : TflClient, StopFinder, RouteSequenceSource {
     override suspend fun arrivals(stopId: String): List<Departure> =
         tflRequest { key ->
             httpClient.get("$baseUrl/StopPoint/$stopId/Arrivals") {
@@ -93,6 +95,13 @@ class KtorTflClient(
             // The hub's own cleaned name titles the alert; the member-station spellings across the
             // tree are the alias set the disruption strip matches against (SPEC *Disruptions*).
             HubInfo(name = cleanStopName(dto.commonName), aliases = dto.hubStationNames())
+        }
+
+    override suspend fun routeSequence(lineId: String, direction: String): LineSequence =
+        tflRequest { key ->
+            httpClient.get("$baseUrl/Line/$lineId/Route/Sequence/$direction") {
+                applyAppKey(key)
+            }.body<TflRouteSequenceDto>().toLineSequence()
         }
 
     override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {

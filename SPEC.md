@@ -348,8 +348,16 @@ full-screen route detail page** — its own app bar naming the route (line pill 
 carrying the star (so the long-press is the shortcut, the page the discoverable path), the boarding
 stop in the body, and the line's **full disruption text**, which the row's inline **⚠** glyph stands
 in for: shown collapsed to its first line, tapped to expand (the same widget the stop-closure card
-uses). It is a full screen rather than a dialog because it will grow
-per-route actions (a maps/nav hand-off), which a dialog would cap. **On the watched list, warning rows still lead**, above even a starred service — a stop
+uses). Below that it lists **every station from the boarding stop to where the soonest train
+terminates** (a short-working ends where it does, not at the line's end), on a rail in the line's
+color. The list comes from TfL's Route/Sequence for the line, fetched **when the page opens** — never
+on the refresh path — and held in memory for the process, so a reopened route shows at once; until
+it arrives the page says so, a failed fetch says why with a retry, and where TfL's data admits more
+than one path from here (a Northern train with no branch named) the page says the list is
+unavailable rather than guessing a trunk (principle 1). The list follows one predicted train, so
+it is **withheld while the row is stale** — that prediction may no longer be the next train — and
+returns with the next refresh (D4). It is a full screen rather than a dialog
+because it will grow per-route actions (a maps/nav hand-off), which a dialog would cap. **On the watched list, warning rows still lead**, above even a starred service — a stop
 closure or a no-prediction line-status row is something the user must see, and pinning a
 starred service above it would push a warning down the list (principle 2). **On the near-me
 list an alert gets no special order** — it rides with its stop at its stop's distance (trailing

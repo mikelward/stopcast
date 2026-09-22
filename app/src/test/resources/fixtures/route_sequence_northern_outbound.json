@@ -1,0 +1,779 @@
+{
+ "lineId": "northern",
+ "direction": "outbound",
+ "stations": [
+  {
+   "id": "940GZZBPSUST",
+   "name": "Battersea Power Station Underground Station"
+  },
+  {
+   "id": "940GZZLUACY",
+   "name": "Archway Underground Station"
+  },
+  {
+   "id": "940GZZLUAGL",
+   "name": "Angel Underground Station"
+  },
+  {
+   "id": "940GZZLUBOR",
+   "name": "Borough Underground Station"
+  },
+  {
+   "id": "940GZZLUBTK",
+   "name": "Burnt Oak Underground Station"
+  },
+  {
+   "id": "940GZZLUBTX",
+   "name": "Brent Cross Underground Station"
+  },
+  {
+   "id": "940GZZLUBZP",
+   "name": "Belsize Park Underground Station"
+  },
+  {
+   "id": "940GZZLUCFM",
+   "name": "Chalk Farm Underground Station"
+  },
+  {
+   "id": "940GZZLUCND",
+   "name": "Colindale Underground Station"
+  },
+  {
+   "id": "940GZZLUCPC",
+   "name": "Clapham Common Underground Station"
+  },
+  {
+   "id": "940GZZLUCPN",
+   "name": "Clapham North Underground Station"
+  },
+  {
+   "id": "940GZZLUCPS",
+   "name": "Clapham South Underground Station"
+  },
+  {
+   "id": "940GZZLUCSD",
+   "name": "Colliers Wood Underground Station"
+  },
+  {
+   "id": "940GZZLUCTN",
+   "name": "Camden Town Underground Station"
+  },
+  {
+   "id": "940GZZLUEFY",
+   "name": "East Finchley Underground Station"
+  },
+  {
+   "id": "940GZZLUEGW",
+   "name": "Edgware Underground Station"
+  },
+  {
+   "id": "940GZZLUEMB",
+   "name": "Embankment Underground Station"
+  },
+  {
+   "id": "940GZZLUFYC",
+   "name": "Finchley Central Underground Station"
+  },
+  {
+   "id": "940GZZLUGDG",
+   "name": "Goodge Street Underground Station"
+  },
+  {
+   "id": "940GZZLUGGN",
+   "name": "Golders Green Underground Station"
+  },
+  {
+   "id": "940GZZLUHBT",
+   "name": "High Barnet Underground Station"
+  },
+  {
+   "id": "940GZZLUHCL",
+   "name": "Hendon Central Underground Station"
+  },
+  {
+   "id": "940GZZLUHGT",
+   "name": "Highgate Underground Station"
+  },
+  {
+   "id": "940GZZLUHTD",
+   "name": "Hampstead Underground Station"
+  },
+  {
+   "id": "940GZZLUKNG",
+   "name": "Kennington Underground Station"
+  },
+  {
+   "id": "940GZZLULSQ",
+   "name": "Leicester Square Underground Station"
+  },
+  {
+   "id": "940GZZLUMDN",
+   "name": "Morden Underground Station"
+  },
+  {
+   "id": "940GZZLUMHL",
+   "name": "Mill Hill East Underground Station"
+  },
+  {
+   "id": "940GZZLUMTC",
+   "name": "Mornington Crescent Underground Station"
+  },
+  {
+   "id": "940GZZLUOVL",
+   "name": "Oval Underground Station"
+  },
+  {
+   "id": "940GZZLUSKW",
+   "name": "Stockwell Underground Station"
+  },
+  {
+   "id": "940GZZLUSWN",
+   "name": "South Wimbledon Underground Station"
+  },
+  {
+   "id": "940GZZLUTAW",
+   "name": "Totteridge & Whetstone Underground Station"
+  },
+  {
+   "id": "940GZZLUTBC",
+   "name": "Tooting Bec Underground Station"
+  },
+  {
+   "id": "940GZZLUTBY",
+   "name": "Tooting Broadway Underground Station"
+  },
+  {
+   "id": "940GZZLUTFP",
+   "name": "Tufnell Park Underground Station"
+  },
+  {
+   "id": "940GZZLUWFN",
+   "name": "West Finchley Underground Station"
+  },
+  {
+   "id": "940GZZLUWOP",
+   "name": "Woodside Park Underground Station"
+  },
+  {
+   "id": "940GZZLUWRR",
+   "name": "Warren Street Underground Station"
+  },
+  {
+   "id": "940GZZNEUGST",
+   "name": "Nine Elms Underground Station"
+  },
+  {
+   "id": "HUBBAL",
+   "name": "Balham"
+  },
+  {
+   "id": "HUBBAN",
+   "name": "Bank"
+  },
+  {
+   "id": "HUBCHX",
+   "name": "Charing Cross"
+  },
+  {
+   "id": "HUBEPH",
+   "name": "Elephant & Castle"
+  },
+  {
+   "id": "HUBEUS",
+   "name": "Euston"
+  },
+  {
+   "id": "HUBKGX",
+   "name": "King's Cross & St Pancras International"
+  },
+  {
+   "id": "HUBKTN",
+   "name": "Kentish Town"
+  },
+  {
+   "id": "HUBLBG",
+   "name": "London Bridge"
+  },
+  {
+   "id": "HUBOLD",
+   "name": "Old Street"
+  },
+  {
+   "id": "HUBTCR",
+   "name": "Tottenham Court Road"
+  },
+  {
+   "id": "HUBWAT",
+   "name": "Waterloo"
+  },
+  {
+   "id": "HUBZMG",
+   "name": "Moorgate"
+  }
+ ],
+ "stopPointSequences": [
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZLUMDN",
+     "name": "Morden Underground Station"
+    },
+    {
+     "id": "940GZZLUSWN",
+     "name": "South Wimbledon Underground Station"
+    },
+    {
+     "id": "940GZZLUCSD",
+     "name": "Colliers Wood Underground Station"
+    },
+    {
+     "id": "940GZZLUTBY",
+     "name": "Tooting Broadway Underground Station"
+    },
+    {
+     "id": "940GZZLUTBC",
+     "name": "Tooting Bec Underground Station"
+    },
+    {
+     "id": "940GZZLUBLM",
+     "name": "Balham Underground Station"
+    },
+    {
+     "id": "940GZZLUCPS",
+     "name": "Clapham South Underground Station"
+    },
+    {
+     "id": "940GZZLUCPC",
+     "name": "Clapham Common Underground Station"
+    },
+    {
+     "id": "940GZZLUCPN",
+     "name": "Clapham North Underground Station"
+    },
+    {
+     "id": "940GZZLUSKW",
+     "name": "Stockwell Underground Station"
+    },
+    {
+     "id": "940GZZLUOVL",
+     "name": "Oval Underground Station"
+    },
+    {
+     "id": "940GZZLUKNG",
+     "name": "Kennington Underground Station"
+    }
+   ]
+  },
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZLUKNG",
+     "name": "Kennington Underground Station"
+    },
+    {
+     "id": "940GZZLUWLO",
+     "name": "Waterloo Underground Station"
+    },
+    {
+     "id": "940GZZLUEMB",
+     "name": "Embankment Underground Station"
+    },
+    {
+     "id": "940GZZLUCHX",
+     "name": "Charing Cross Underground Station"
+    },
+    {
+     "id": "940GZZLULSQ",
+     "name": "Leicester Square Underground Station"
+    },
+    {
+     "id": "940GZZLUTCR",
+     "name": "Tottenham Court Road Underground Station"
+    },
+    {
+     "id": "940GZZLUGDG",
+     "name": "Goodge Street Underground Station"
+    },
+    {
+     "id": "940GZZLUWRR",
+     "name": "Warren Street Underground Station"
+    },
+    {
+     "id": "940GZZLUEUS",
+     "name": "Euston Underground Station"
+    }
+   ]
+  },
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZLUEUS",
+     "name": "Euston Underground Station"
+    },
+    {
+     "id": "940GZZLUMTC",
+     "name": "Mornington Crescent Underground Station"
+    },
+    {
+     "id": "940GZZLUCTN",
+     "name": "Camden Town Underground Station"
+    }
+   ]
+  },
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZLUCTN",
+     "name": "Camden Town Underground Station"
+    },
+    {
+     "id": "940GZZLUKSH",
+     "name": "Kentish Town Underground Station"
+    },
+    {
+     "id": "940GZZLUTFP",
+     "name": "Tufnell Park Underground Station"
+    },
+    {
+     "id": "940GZZLUACY",
+     "name": "Archway Underground Station"
+    },
+    {
+     "id": "940GZZLUHGT",
+     "name": "Highgate Underground Station"
+    },
+    {
+     "id": "940GZZLUEFY",
+     "name": "East Finchley Underground Station"
+    },
+    {
+     "id": "940GZZLUFYC",
+     "name": "Finchley Central Underground Station"
+    }
+   ]
+  },
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZLUFYC",
+     "name": "Finchley Central Underground Station"
+    },
+    {
+     "id": "940GZZLUWFN",
+     "name": "West Finchley Underground Station"
+    },
+    {
+     "id": "940GZZLUWOP",
+     "name": "Woodside Park Underground Station"
+    },
+    {
+     "id": "940GZZLUTAW",
+     "name": "Totteridge & Whetstone Underground Station"
+    },
+    {
+     "id": "940GZZLUHBT",
+     "name": "High Barnet Underground Station"
+    }
+   ]
+  },
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZLUKNG",
+     "name": "Kennington Underground Station"
+    },
+    {
+     "id": "940GZZLUEAC",
+     "name": "Elephant & Castle Underground Station"
+    },
+    {
+     "id": "940GZZLUBOR",
+     "name": "Borough Underground Station"
+    },
+    {
+     "id": "940GZZLULNB",
+     "name": "London Bridge Underground Station"
+    },
+    {
+     "id": "940GZZLUBNK",
+     "name": "Bank Underground Station"
+    },
+    {
+     "id": "940GZZLUMGT",
+     "name": "Moorgate Underground Station"
+    },
+    {
+     "id": "940GZZLUODS",
+     "name": "Old Street Underground Station"
+    },
+    {
+     "id": "940GZZLUAGL",
+     "name": "Angel Underground Station"
+    },
+    {
+     "id": "940GZZLUKSX",
+     "name": "King's Cross St. Pancras Underground Station"
+    },
+    {
+     "id": "940GZZLUEUS",
+     "name": "Euston Underground Station"
+    }
+   ]
+  },
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZLUEUS",
+     "name": "Euston Underground Station"
+    },
+    {
+     "id": "940GZZLUCTN",
+     "name": "Camden Town Underground Station"
+    }
+   ]
+  },
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZLUCTN",
+     "name": "Camden Town Underground Station"
+    },
+    {
+     "id": "940GZZLUCFM",
+     "name": "Chalk Farm Underground Station"
+    },
+    {
+     "id": "940GZZLUBZP",
+     "name": "Belsize Park Underground Station"
+    },
+    {
+     "id": "940GZZLUHTD",
+     "name": "Hampstead Underground Station"
+    },
+    {
+     "id": "940GZZLUGGN",
+     "name": "Golders Green Underground Station"
+    },
+    {
+     "id": "940GZZLUBTX",
+     "name": "Brent Cross Underground Station"
+    },
+    {
+     "id": "940GZZLUHCL",
+     "name": "Hendon Central Underground Station"
+    },
+    {
+     "id": "940GZZLUCND",
+     "name": "Colindale Underground Station"
+    },
+    {
+     "id": "940GZZLUBTK",
+     "name": "Burnt Oak Underground Station"
+    },
+    {
+     "id": "940GZZLUEGW",
+     "name": "Edgware Underground Station"
+    }
+   ]
+  },
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZLUFYC",
+     "name": "Finchley Central Underground Station"
+    },
+    {
+     "id": "940GZZLUMHL",
+     "name": "Mill Hill East Underground Station"
+    }
+   ]
+  },
+  {
+   "stopPoint": [
+    {
+     "id": "940GZZBPSUST",
+     "name": "Battersea Power Station Underground Station"
+    },
+    {
+     "id": "940GZZNEUGST",
+     "name": "Nine Elms Underground Station"
+    },
+    {
+     "id": "940GZZLUKNG",
+     "name": "Kennington Underground Station"
+    }
+   ]
+  }
+ ],
+ "orderedLineRoutes": [
+  {
+   "name": "Battersea Power Station  &harr;  Edgware ",
+   "naptanIds": [
+    "940GZZBPSUST",
+    "940GZZNEUGST",
+    "940GZZLUKNG",
+    "940GZZLUWLO",
+    "940GZZLUEMB",
+    "940GZZLUCHX",
+    "940GZZLULSQ",
+    "940GZZLUTCR",
+    "940GZZLUGDG",
+    "940GZZLUWRR",
+    "940GZZLUEUS",
+    "940GZZLUMTC",
+    "940GZZLUCTN",
+    "940GZZLUCFM",
+    "940GZZLUBZP",
+    "940GZZLUHTD",
+    "940GZZLUGGN",
+    "940GZZLUBTX",
+    "940GZZLUHCL",
+    "940GZZLUCND",
+    "940GZZLUBTK",
+    "940GZZLUEGW"
+   ]
+  },
+  {
+   "name": "Battersea Power Station  &harr;  High Barnet ",
+   "naptanIds": [
+    "940GZZBPSUST",
+    "940GZZNEUGST",
+    "940GZZLUKNG",
+    "940GZZLUWLO",
+    "940GZZLUEMB",
+    "940GZZLUCHX",
+    "940GZZLULSQ",
+    "940GZZLUTCR",
+    "940GZZLUGDG",
+    "940GZZLUWRR",
+    "940GZZLUEUS",
+    "940GZZLUMTC",
+    "940GZZLUCTN",
+    "940GZZLUKSH",
+    "940GZZLUTFP",
+    "940GZZLUACY",
+    "940GZZLUHGT",
+    "940GZZLUEFY",
+    "940GZZLUFYC",
+    "940GZZLUWFN",
+    "940GZZLUWOP",
+    "940GZZLUTAW",
+    "940GZZLUHBT"
+   ]
+  },
+  {
+   "name": "Morden  &harr;  Edgware  via Bank",
+   "naptanIds": [
+    "940GZZLUMDN",
+    "940GZZLUSWN",
+    "940GZZLUCSD",
+    "940GZZLUTBY",
+    "940GZZLUTBC",
+    "940GZZLUBLM",
+    "940GZZLUCPS",
+    "940GZZLUCPC",
+    "940GZZLUCPN",
+    "940GZZLUSKW",
+    "940GZZLUOVL",
+    "940GZZLUKNG",
+    "940GZZLUEAC",
+    "940GZZLUBOR",
+    "940GZZLULNB",
+    "940GZZLUBNK",
+    "940GZZLUMGT",
+    "940GZZLUODS",
+    "940GZZLUAGL",
+    "940GZZLUKSX",
+    "940GZZLUEUS",
+    "940GZZLUCTN",
+    "940GZZLUCFM",
+    "940GZZLUBZP",
+    "940GZZLUHTD",
+    "940GZZLUGGN",
+    "940GZZLUBTX",
+    "940GZZLUHCL",
+    "940GZZLUCND",
+    "940GZZLUBTK",
+    "940GZZLUEGW"
+   ]
+  },
+  {
+   "name": "Morden  &harr;  Mill Hill East  via Bank",
+   "naptanIds": [
+    "940GZZLUMDN",
+    "940GZZLUSWN",
+    "940GZZLUCSD",
+    "940GZZLUTBY",
+    "940GZZLUTBC",
+    "940GZZLUBLM",
+    "940GZZLUCPS",
+    "940GZZLUCPC",
+    "940GZZLUCPN",
+    "940GZZLUSKW",
+    "940GZZLUOVL",
+    "940GZZLUKNG",
+    "940GZZLUEAC",
+    "940GZZLUBOR",
+    "940GZZLULNB",
+    "940GZZLUBNK",
+    "940GZZLUMGT",
+    "940GZZLUODS",
+    "940GZZLUAGL",
+    "940GZZLUKSX",
+    "940GZZLUEUS",
+    "940GZZLUCTN",
+    "940GZZLUKSH",
+    "940GZZLUTFP",
+    "940GZZLUACY",
+    "940GZZLUHGT",
+    "940GZZLUEFY",
+    "940GZZLUFYC",
+    "940GZZLUMHL"
+   ]
+  },
+  {
+   "name": "Morden  &harr;  High Barnet  via Bank",
+   "naptanIds": [
+    "940GZZLUMDN",
+    "940GZZLUSWN",
+    "940GZZLUCSD",
+    "940GZZLUTBY",
+    "940GZZLUTBC",
+    "940GZZLUBLM",
+    "940GZZLUCPS",
+    "940GZZLUCPC",
+    "940GZZLUCPN",
+    "940GZZLUSKW",
+    "940GZZLUOVL",
+    "940GZZLUKNG",
+    "940GZZLUEAC",
+    "940GZZLUBOR",
+    "940GZZLULNB",
+    "940GZZLUBNK",
+    "940GZZLUMGT",
+    "940GZZLUODS",
+    "940GZZLUAGL",
+    "940GZZLUKSX",
+    "940GZZLUEUS",
+    "940GZZLUCTN",
+    "940GZZLUKSH",
+    "940GZZLUTFP",
+    "940GZZLUACY",
+    "940GZZLUHGT",
+    "940GZZLUEFY",
+    "940GZZLUFYC",
+    "940GZZLUWFN",
+    "940GZZLUWOP",
+    "940GZZLUTAW",
+    "940GZZLUHBT"
+   ]
+  },
+  {
+   "name": "Morden  &harr;  Edgware  via Charing Cross",
+   "naptanIds": [
+    "940GZZLUMDN",
+    "940GZZLUSWN",
+    "940GZZLUCSD",
+    "940GZZLUTBY",
+    "940GZZLUTBC",
+    "940GZZLUBLM",
+    "940GZZLUCPS",
+    "940GZZLUCPC",
+    "940GZZLUCPN",
+    "940GZZLUSKW",
+    "940GZZLUOVL",
+    "940GZZLUKNG",
+    "940GZZLUWLO",
+    "940GZZLUEMB",
+    "940GZZLUCHX",
+    "940GZZLULSQ",
+    "940GZZLUTCR",
+    "940GZZLUGDG",
+    "940GZZLUWRR",
+    "940GZZLUEUS",
+    "940GZZLUMTC",
+    "940GZZLUCTN",
+    "940GZZLUCFM",
+    "940GZZLUBZP",
+    "940GZZLUHTD",
+    "940GZZLUGGN",
+    "940GZZLUBTX",
+    "940GZZLUHCL",
+    "940GZZLUCND",
+    "940GZZLUBTK",
+    "940GZZLUEGW"
+   ]
+  },
+  {
+   "name": "Morden  &harr;  Mill Hill East  via Charing Cross",
+   "naptanIds": [
+    "940GZZLUMDN",
+    "940GZZLUSWN",
+    "940GZZLUCSD",
+    "940GZZLUTBY",
+    "940GZZLUTBC",
+    "940GZZLUBLM",
+    "940GZZLUCPS",
+    "940GZZLUCPC",
+    "940GZZLUCPN",
+    "940GZZLUSKW",
+    "940GZZLUOVL",
+    "940GZZLUKNG",
+    "940GZZLUWLO",
+    "940GZZLUEMB",
+    "940GZZLUCHX",
+    "940GZZLULSQ",
+    "940GZZLUTCR",
+    "940GZZLUGDG",
+    "940GZZLUWRR",
+    "940GZZLUEUS",
+    "940GZZLUMTC",
+    "940GZZLUCTN",
+    "940GZZLUKSH",
+    "940GZZLUTFP",
+    "940GZZLUACY",
+    "940GZZLUHGT",
+    "940GZZLUEFY",
+    "940GZZLUFYC",
+    "940GZZLUMHL"
+   ]
+  },
+  {
+   "name": "Morden  &harr;  High Barnet  via Charing Cross",
+   "naptanIds": [
+    "940GZZLUMDN",
+    "940GZZLUSWN",
+    "940GZZLUCSD",
+    "940GZZLUTBY",
+    "940GZZLUTBC",
+    "940GZZLUBLM",
+    "940GZZLUCPS",
+    "940GZZLUCPC",
+    "940GZZLUCPN",
+    "940GZZLUSKW",
+    "940GZZLUOVL",
+    "940GZZLUKNG",
+    "940GZZLUWLO",
+    "940GZZLUEMB",
+    "940GZZLUCHX",
+    "940GZZLULSQ",
+    "940GZZLUTCR",
+    "940GZZLUGDG",
+    "940GZZLUWRR",
+    "940GZZLUEUS",
+    "940GZZLUMTC",
+    "940GZZLUCTN",
+    "940GZZLUKSH",
+    "940GZZLUTFP",
+    "940GZZLUACY",
+    "940GZZLUHGT",
+    "940GZZLUEFY",
+    "940GZZLUFYC",
+    "940GZZLUWFN",
+    "940GZZLUWOP",
+    "940GZZLUTAW",
+    "940GZZLUHBT"
+   ]
+  }
+ ]
+}
