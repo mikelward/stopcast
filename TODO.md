@@ -1132,11 +1132,20 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       path (no branch to pick a trunk) says so rather than guessing. **Still outstanding here:**
       platform and full direction in the detail, and **accessibility** info (step-free, lifts) once a
       data source exists — the open design questions below are unchanged for those.
-  - [ ] **Show connections/interchanges on the route's stop list** (maintainer, 2026-09-22). Mark
-        each station on the route detail's stop list with the other lines that call there (tube,
-        Overground, Elizabeth line, DLR, rail), e.g. small line pills beside the name. The Route/Sequence
-        response already carries each stop's `lines` and `modes`, so this likely needs no new request;
-        decide which modes count (buses would swamp it) and how much width the pills take.
+  - [x] **Show connections/interchanges on the route's stop list** (maintainer, 2026-09-22). Each
+        station on the route detail's stop list carries a right-aligned line pill per rail-type line a
+        rider can change to there — tube, Overground, DLR, Elizabeth line, tram — from the station's own lines
+        and its interchange's (TfL `topMostParentId` hub), read from the same Route/Sequence response
+        (no new request). Buses are left out (they would swamp it), and so is national rail named only
+        at a mixed-mode interchange, since TfL doesn't say which of a hub's lines are trains.
+    - [ ] **National-rail connections at interchanges** — a hub lists operators and buses together
+          with no per-line mode; identifying the operators (from the member rail station, one more
+          lookup, or a known-operator list) would add them without guessing.
+  - [ ] **Open the route the user tapped, not the row's soonest train** (maintainer, 2026-09-22). A
+        card shows one route row per destination of a line+direction, but every one of them opens the
+        same detail, whose app bar and stop list follow the row's *soonest* departure — so tapping
+        "Edgware" can show the High Barnet stop list. The detail should follow the tapped
+        destination (and branch), or offer every route at that platform to pick from.
   - [ ] **Reconsider the detail star: pin vs star, and its relation to favorite routes/destinations**
         (maintainer, 2026-09-22). The detail control is a star for now; decide whether it should be a
         **pin** (pushpin) instead — the user-facing copy and the list marker already use "pin"/"pin to
