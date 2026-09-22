@@ -741,6 +741,70 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `a bus stop whose routes all head one way shows the terminus`() {
+        // The bus analog of the rail compass: a compass-less bus place where every route heads one
+        // way is qualified "→ BANK", so a rider reads the stop's direction off the header. Logic-only —
+        // no baseline. Public route/place names only (SPEC *Privacy*).
+        val stop = StopArrivals(
+            "490G00TPL", "Turnpike Lane",
+            listOf(
+                dep("141", "141", "outbound", "Bank", 120, "", mode = "bus"),
+                dep("341", "341", "outbound", "Bank", 300, "", mode = "bus"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("TURNPIKE LANE", substring = true).assertExists()
+        composeRule.onNodeWithText("→ BANK", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a long bus terminus keeps the stop name visible at a large font scale`() {
+        // The terminus is a full place name, so at a large font it must not consume the row and crowd
+        // the stop name to zero (Codex P2, PR #78): the name keeps its floor and the terminus clips.
+        // Logic-only — no baseline. Public route/place names only.
+        val stop = StopArrivals(
+            "490G00TPL", "Turnpike Lane",
+            listOf(dep("W3", "W3", "outbound", "Finsbury Park Interchange", 120, "", mode = "bus")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                val base = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density = base.density, fontScale = 2.5f),
+                ) {
+                    Surface(modifier = Modifier.requiredWidth(360.dp).fillMaxHeight()) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                            now,
+                            {},
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // The stop name keeps a positive width (its floor) — not crowded to zero by the long terminus.
+        val name = composeRule.onNodeWithText("TURNPIKE LANE", substring = true).getUnclippedBoundsInRoot()
+        assertTrue("stop name should keep width, was ${name.right - name.left}", name.right - name.left > 0.dp)
+        // The terminus is present and starts within the row (the cue survives, clipped if need be).
+        val terminus = composeRule.onNodeWithText("→ FINSBURY", substring = true).getUnclippedBoundsInRoot()
+        assertTrue("terminus should start within the row, left was ${terminus.left}", terminus.left < 360.dp)
+    }
+
+    @Test
     fun `a station's direction headers all show the place's nearest distance`() {
         // A clustered station whose member stop ids sit at different distances, split by direction:
         // every direction header shows the place's NEAREST member distance — one consistent value —

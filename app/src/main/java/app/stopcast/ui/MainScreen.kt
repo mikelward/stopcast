@@ -94,7 +94,6 @@ import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DestinationAbbreviations
 import app.stopcast.domain.DismissedAlert
-import app.stopcast.domain.PlatformDirection
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
@@ -630,16 +629,18 @@ private fun DepartureList(
             // would drop both the promised distance and the place name (Codex, PR #82).
             if (group.showHeader || distanceLabel != null) {
                 item(key = "header|${group.key}") {
-                    // The header names the place, plus the compass direction it split on when there
-                    // is one ("King's Cross – Eastbound"); a place with no direction (a bus pole, a
-                    // bare platform) shows the bare name (SPEC D8). The direction is passed
-                    // separately so the header can reserve its width and clip the *name* first —
-                    // the direction is the cue that tells two groups of one place apart.
-                    // The first group takes no extra top break — unless a closure alert precedes
-                    // it, where the break separates the alert band from the departures.
+                    // The header names the place, plus its qualifier: the compass direction a rail
+                    // place split on ("King's Cross – Eastbound"), or the shared terminus a bus
+                    // place heads to ("Turnpike Lane → Bank"); a place with neither shows the bare
+                    // name (SPEC D8). The qualifier is passed separately so the header can reserve
+                    // its width and clip the *name* first — the qualifier is the cue that tells two
+                    // groups of one place apart. The first group takes no extra top break — unless a
+                    // closure alert precedes it, where the break separates the alert band from the
+                    // departures.
                     StopGroupHeader(
                         group.stopName,
                         group.directionLabel,
+                        group.terminusLabel,
                         distanceLabel,
                         firstGroup = index == 0 && closureRows.isEmpty(),
                     )
@@ -704,25 +705,29 @@ internal fun moreLabelRes(mode: String): Int = when (mode) {
 }
 
 /**
- * The small group header above a group of same-place cards (SPEC D8): the place name — plus the
- * compass direction it split on ("King's Cross – Eastbound") where the caller passed one — in
- * spaced small caps, text only, no border/background, the muted `onSurfaceVariant` role. Buses (no
- * compass in the feed yet) pass a null [directionLabel] and show the bare name. The name
- * hard-truncates (no ellipsis) at the edge. Extra top space (past the list's 8dp item gap) marks
- * the group break; the first group takes none.
+ * The small group header above a group of same-place cards (SPEC D8): the place name — plus its
+ * **qualifier** where the caller passed one — in spaced small caps, text only, no border/background,
+ * the muted `onSurfaceVariant` role. The qualifier is the rail **compass** ("King's Cross –
+ * Eastbound", from [directionLabel]) or, for a compass-less bus place heading one way, the shared
+ * **terminus** ("Turnpike Lane → Bank", from [terminusLabel]); a place with neither shows the bare
+ * name. The name hard-truncates (no ellipsis) at the edge. Extra top space (past the list's 8dp item
+ * gap) marks the group break; the first group takes none.
  *
- * [directionLabel] and [distanceLabel] are **reserved** trailing elements (measured first, no
- * weight): a long place name clips before either is pushed off the edge (the same discipline as the
- * departure row's countdown). The direction especially must survive the clip — it is the cue that
- * tells two direction groups of one place apart, so appending it to the name and letting it clip
- * would defeat the split (Codex P2, PR #109). [distanceLabel], when set, is the near-me list's
- * distance to this stop ("… (120 m)"), null on the location-free watched list (D1); it is not
- * uppercased, so its unit stays lowercase, and it sits after the direction.
+ * The **qualifier** and [distanceLabel] are **reserved** trailing elements: a long place name clips
+ * before either is pushed off the edge (the same discipline as the departure row's countdown). The
+ * qualifier especially must survive — it is the cue that tells two groups of one place apart, so
+ * appending it to the name and letting it clip would defeat the split (Codex P2, PR #109). When the
+ * full qualifier won't fit it falls back to a shorter form ([headerQualifier]: the compass letter,
+ * the word-abbreviated terminus), and a long bus terminus is bounded so it can't crowd the name to
+ * zero ([headerQualifierFit]). [distanceLabel], when set, is the near-me list's distance to this stop
+ * ("… (120 m)"), null on the location-free watched list (D1); it is not uppercased, so its unit stays
+ * lowercase, and it sits after the qualifier.
  */
 @Composable
 private fun StopGroupHeader(
     name: String,
     directionLabel: String?,
+    terminusLabel: String?,
     distanceLabel: String?,
     firstGroup: Boolean,
 ) {
@@ -735,8 +740,9 @@ private fun StopGroupHeader(
     val headerModifier = Modifier
         .fillMaxWidth()
         .padding(start = 4.dp, end = 4.dp, top = if (firstGroup) 0.dp else 12.dp, bottom = 0.dp)
-    if (directionLabel == null && distanceLabel == null) {
-        // Watched list, no direction: the header is the bare name (rendering unchanged).
+    val qualifier = headerQualifier(directionLabel, terminusLabel)
+    if (qualifier == null && distanceLabel == null) {
+        // No qualifier, no distance (the watched list's bare-name header): rendering unchanged.
         Text(
             text = name.uppercase(),
             style = style,
@@ -749,18 +755,10 @@ private fun StopGroupHeader(
         )
         return
     }
-    // The **direction** and the **distance** are reserved trailing elements (unweighted — measured
-    // first, so they keep their width and the **name** clips first, recognized from its start). The
-    // distance is short and bounded ("(1.2 km)"). The direction, rather than clip to an ambiguous
-    // stub when the full word won't fit, falls back to its **single-letter** form ("– E") — which is
-    // narrow enough to always fit, so the direction cue that tells two blocks of one place apart
-    // never vanishes (maintainer, PR follow-up). Whether the full word fits, and the width the
-    // direction is bounded to so the distance stays reserved even in a narrow pane, are decided by
-    // the pure [headerDirection] from the measured widths below. The name still clips when even the
-    // letter form leaves it no room. The direction is uppercased to match the small-caps name; the
-    // distance keeps its lowercase unit.
-    if (directionLabel == null) {
-        // Near-me bus pole: a distance but no direction. Name (clips) + reserved distance, no measure.
+    if (qualifier == null) {
+        // A distance but no qualifier (a near-me place with no compass or shared terminus): name
+        // (clips) + reserved distance, no measure. fill = false so a short name packs left with the
+        // distance right after it, not stretched to push it to the far edge; a long name clips.
         Row(modifier = headerModifier, verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = name.uppercase(),
@@ -769,8 +767,6 @@ private fun StopGroupHeader(
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Clip,
-                // fill = false so a short name packs left with the distance right after it, not
-                // stretched to push the distance to the far edge; a long name still clips to the share.
                 modifier = Modifier.weight(1f, fill = false),
             )
             Text(
@@ -783,6 +779,10 @@ private fun StopGroupHeader(
         }
         return
     }
+    // Qualifier present (compass or bus terminus). The qualifier and the distance are reserved; the
+    // name clips first (recognized from its start). When the full qualifier won't fit it falls back
+    // to its shorter form, and the reserved distance and the name's floor bound the qualifier so
+    // neither is starved — all decided by the pure [headerQualifierFit] from the measured widths.
     BoxWithConstraints(modifier = headerModifier) {
         val measurer = rememberTextMeasurer()
         // Key each measurement on the font scale as well as the text: a display-size / accessibility
@@ -790,25 +790,26 @@ private fun StopGroupHeader(
         // string alone would stay stale and the fallback never fire (mirrors DestinationLine).
         val fontScale = LocalDensity.current.fontScale
         val nameText = name.uppercase()
-        val fullDirectionText = " – ${directionLabel.uppercase()}"
-        val letterDirectionText = " – ${PlatformDirection.abbreviation(directionLabel)}"
         val distanceText = distanceLabel?.let { " ($it)" }.orEmpty()
         fun widthOf(text: String) =
             if (text.isEmpty()) 0 else measurer.measure(text, style, maxLines = 1).size.width
         val nameWidth = remember(nameText, style, fontScale) { widthOf(nameText) }
-        val fullDirectionWidth = remember(fullDirectionText, style, fontScale) { widthOf(fullDirectionText) }
+        val fullQualifierWidth = remember(qualifier.fullText, style, fontScale) { widthOf(qualifier.fullText) }
         val distanceWidth = remember(distanceText, style, fontScale) { widthOf(distanceText) }
-        // Choose the direction form (full word when it fits at the name's natural width, else the
-        // letter) and its width budget, reserving the distance first — pure and unit-tested.
-        val direction = headerDirection(
-            fullText = fullDirectionText,
-            letterText = letterDirectionText,
+        // The name keeps at least its floor share of the row past the reserved distance, so a long
+        // bus terminus can't crowd it to zero (the compass floor is 0 — its letter is narrow).
+        val nameFloorPx = ((constraints.maxWidth - distanceWidth) * qualifier.nameFloorFraction)
+            .toInt().coerceAtLeast(0)
+        val fit = headerQualifierFit(
+            fullText = qualifier.fullText,
+            shortText = qualifier.shortText,
             nameWidth = nameWidth,
-            fullWidth = fullDirectionWidth,
+            fullWidth = fullQualifierWidth,
             distanceWidth = distanceWidth,
+            nameFloorPx = nameFloorPx,
             maxWidth = constraints.maxWidth,
         )
-        val directionMaxWidth = with(LocalDensity.current) { direction.maxWidthPx.toDp() }
+        val qualifierMaxWidth = with(LocalDensity.current) { fit.maxWidthPx.toDp() }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = nameText,
@@ -817,30 +818,24 @@ private fun StopGroupHeader(
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Clip,
-                // fill = false so a short name sits directly before the direction (adjacent, packed
-                // left), not stretched to push it right; the reserved direction/distance keep their
+                // fill = false so a short name sits directly before the qualifier (adjacent, packed
+                // left), not stretched to push it right; the reserved qualifier/distance keep their
                 // width and the name clips to its share only when the row is too tight.
                 modifier = Modifier.weight(1f, fill = false),
             )
             Text(
-                text = direction.text,
+                text = fit.text,
                 style = style,
                 color = color,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Clip,
-                // Bounded so the reserved distance keeps its width in a pane too narrow for both;
-                // announce the full direction when the letter is shown, so a screen reader hears
-                // "Eastbound", not "E".
+                // Bounded so the reserved distance and the name's floor keep their width; announce
+                // the full form when the fallback is shown, so a screen reader hears "Eastbound" /
+                // "to Bank", not "E" or a bare arrow.
                 modifier = Modifier
-                    .widthIn(max = directionMaxWidth)
-                    .then(
-                        if (direction.abbreviated) {
-                            Modifier.semantics { contentDescription = directionLabel }
-                        } else {
-                            Modifier
-                        },
-                    ),
+                    .widthIn(max = qualifierMaxWidth)
+                    .semantics { contentDescription = qualifier.spoken },
             )
             if (distanceLabel != null) {
                 Text(
