@@ -577,10 +577,11 @@ class MainScreenScreenshotTest {
     @Test
     fun `a near-me rail header keeps the direction and distance in the row at the max scale`() {
         // The combined worst case (1.6x in-app scale on top of a ~2x system font ≈ 3.2x): a rail
-        // stop's near-me header carries a name, a compass direction, AND a distance. The direction
-        // must not consume the row and push the reserved distance off the end — both the direction
-        // and the distance stay within the row while the name clips (Codex P2, PR #109). Logic-only —
-        // no baseline. Public station name + synthetic distance only (SPEC *Privacy*).
+        // stop's near-me header carries a name, a compass direction, AND a distance. With no room for
+        // the full word, the direction falls back to its single letter ("– S") rather than clip to an
+        // ambiguous stub, so the direction cue survives AND the reserved distance still isn't pushed
+        // off the end while the name clips (PR follow-up; Codex P2, PR #109). Logic-only — no
+        // baseline. Public station name + synthetic distance only (SPEC *Privacy*).
         val stop = StopArrivals(
             "940GZZLUKSX",
             "King's Cross St. Pancras International",
@@ -605,14 +606,50 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
-        // The direction survives (it is the cue that tells two groups apart) and starts within the row.
-        val dir = composeRule.onNodeWithText("– SOUTHBOUND", substring = true).getUnclippedBoundsInRoot()
+        // The full word doesn't fit, so the direction shows as its letter — but still keeps width and
+        // starts within the row (the cue that tells two groups apart survives).
+        val dir = composeRule.onNodeWithText("– S", substring = true).getUnclippedBoundsInRoot()
         assertTrue("direction should keep width, was ${dir.right - dir.left}", dir.right - dir.left > 0.dp)
         assertTrue("direction should start within the row, left was ${dir.left}", dir.left < 411.dp)
+        // The full word is not shown at this scale (it wouldn't fit) — the letter stood in for it.
+        composeRule.onNodeWithText("– SOUTHBOUND", substring = true).assertDoesNotExist()
+        // ...but the letter still announces "Southbound" to a screen reader.
+        composeRule.onNodeWithContentDescription("Southbound").assertExists()
         // The reserved distance is not pushed off the end by the direction — the strong guard.
         val dist = composeRule.onNodeWithText("(1.2 km)", substring = true).getUnclippedBoundsInRoot()
         assertTrue("distance should keep width, was ${dist.right - dist.left}", dist.right - dist.left > 0.dp)
         assertTrue("distance should stay within the row, right was ${dist.right}", dist.right <= 412.dp)
+    }
+
+    @Test
+    fun `a rail header shows the full direction word when it fits`() {
+        // The fallback is a shrink step, not always-on: at a normal width and font a short place name
+        // leaves room for the full compass word, so "Eastbound" shows in full (not "E"). Logic-only —
+        // no baseline. Public station name only (SPEC *Privacy*).
+        val stop = StopArrivals(
+            "940GZZLUKSX", "King's Cross",
+            listOf(dep("circle", "Circle", "inbound", "Edgware Road", 120, "Eastbound - Platform 2")),
+            fetchedAt = now.minusSeconds(60), clusterId = "940GZZLUKSX",
+        )
+        val other = StopArrivals(
+            "940GZZLUKSX-W", "King's Cross",
+            listOf(dep("circle", "Circle", "outbound", "Aldgate", 180, "Westbound - Platform 1")),
+            fetchedAt = now.minusSeconds(60), clusterId = "940GZZLUKSX",
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(stop, other), now.minusSeconds(60)),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("– EASTBOUND", substring = true).assertExists()
+        composeRule.onNodeWithText("– WESTBOUND", substring = true).assertExists()
     }
 
     @Test

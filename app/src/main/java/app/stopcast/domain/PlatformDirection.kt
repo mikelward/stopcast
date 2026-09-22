@@ -58,4 +58,23 @@ object PlatformDirection {
         }
         return LOOP_LABELS[normalized]
     }
+
+    /**
+     * The shortest unambiguous form of an [of] direction label, for a header too tight to show the
+     * full word: a compass "…bound" collapses to its **initial** ("Eastbound" → "E") — the four
+     * cardinals have distinct initials, so the letter still tells them apart (that's why [of] admits
+     * only the cardinals) — and a loop label to the initials of its words ("Inner Rail" → "IR"). The
+     * result is always narrower than the full label, so the header can fall back to it where the word
+     * won't fit rather than clip the direction to an ambiguous stub (maintainer, PR follow-up).
+     * `uppercaseChar()` is locale-invariant (safe from the Turkish-ı trap).
+     */
+    fun abbreviation(direction: String): String =
+        if (direction.endsWith("bound", ignoreCase = true)) {
+            direction.first().uppercaseChar().toString()
+        } else {
+            direction.split(' ')
+                .filter { it.isNotEmpty() }
+                .map { it.first().uppercaseChar() }
+                .joinToString("")
+        }
 }

@@ -335,6 +335,14 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         (`StopGroupingTest`, `PlatformDirectionTest`) and the `main-connected-station` screenshot
         (real King's Cross data, TfL's inconsistent directions preserved). **Rail-first**: a stop
         with no compass in the feed (a bus pole, a bare "Platform 4") falls to the bare name.
+  - [x] **Abbreviate the direction to a single letter when the header is too tight** (maintainer,
+        2026-09-22). When the full compass word won't fit the header row, it falls back to the
+        direction's initial ("– E", loop labels "– IR"/"– OR") rather than clip to an ambiguous
+        stub — the four cardinals have distinct initials, so the letter still disambiguates, and it
+        stays narrow enough to always fit, so the direction cue never vanishes even at the max font
+        scale. `PlatformDirection.abbreviation` + a width-measured fallback in `StopGroupHeader`
+        (the same `TextMeasurer` pattern the destination line uses); the letter still announces the
+        full word for a screen reader. JVM + logic screenshot tests.
   - [ ] **Bus direction/terminus qualifier — the rest of the header** (maintainer's lean, settled
         from mocks 2026-09-21). The rail compass split shipped (above); still to add: the **bus**
         letter/bearing (`(S)` / `(→S)`, pending the StopPoint-indicator capture below) and a
