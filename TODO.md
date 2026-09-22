@@ -849,16 +849,22 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       ragged-width blobs (equal-width-line-chips). Follow-up: eyeball the column and the
       widest codes on a device — the width is verified by unit test but not yet seen on
       real hardware.
-- [ ] (Later, open call) **Colors and codes for National Rail services.** When rail
-      departures land (National Rail / Thameslink item below — TfL's feed doesn't carry them
-      today), give each operator its own pill instead of the neutral fallback (Google Maps,
-      for one, shows Southern as a green fill with yellow text). And rethink the abbreviation:
-      the shipped first-three-letters code collides for multi-word operators (Southern and
-      Southeastern both → "SOU"), so use the official two-letter TOC (train operating
-      company) codes for National Rail operators — SN Southern, SE Southeastern, SW South
-      Western, TL Thameslink, GN Great Northern, GX Gatwick Express. National Rail only: the
-      Elizabeth line and Overground keep their current pills — their TOC codes (XR, LO) read
-      worse than what they already show ("ELI", and the named-line hollow pills).
+- [x] **Codes for National Rail services.** First-three-letters collided (Southern and
+      Southeastern both → "SOU"), so a rail operator now shows its initials — the capitals in a
+      multi-word name (East Midlands Railway → EMR, Greater Anglia → GA), the initialism a rider
+      sees on the train, which also beats the cryptic legacy TOC codes (EM, LE, GR, VT). The few
+      single-word operators that would still collide are hand-pinned to their TOC code (Southern
+      SN, Southeastern SE, Thameslink TL); c2c stays verbatim; unmapped single-word operators
+      fall back to first-three-letters. Elizabeth line and Overground are their own modes and
+      keep "ELI"/the hollow pills. The pinned list and the initials want a final eyeball on a
+      real device — TfL egress isn't reachable from CI to enumerate the live operator set.
+- [ ] (Later, open call) **Colors for National Rail services.** When rail departures land
+      (National Rail / Thameslink item below — TfL's feed doesn't carry them today), give each
+      operator its own pill instead of the neutral fallback (Google Maps, for one, shows
+      Southern as a green fill with yellow text; East Midlands Railway is a burgundy/maroon).
+      These are operator **brand** colors, not TfL's palette, so this is a deliberate departure
+      from "add a line color only as a confirmed TfL hex" (maintainer-authorized above) — source
+      a confirmed brand hex per operator.
 - [ ] (Later) **Revisit auto-locate-on-open and the location states.** StopCast
       resolves location once on open (a `LaunchedEffect` gated on `PermissionRequired`) and
       the nearby set never re-resolves afterward except via the temporary crosshair button.

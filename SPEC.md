@@ -332,7 +332,12 @@ stop, which is what a rider wants. StopCast calls them departures throughout the
 Each service wears its line's identity: a pill filled with the line's official TfL color
 carries the line's **three-letter code** (its first three letters, uppercased — VIC, BAK,
 ELI; a bus keeps its route number), so the pill stays narrow and the row keeps its width
-for the countdown, while the list still scans by line the way the network map does. **Every
+for the countdown, while the list still scans by line the way the network map does. **National
+Rail is the exception** to first-three-letters — it collides ("Southern" and "Southeastern"
+both → SOU) — so a rail operator shows its initials (the capitals in a multi-word name: East
+Midlands Railway → EMR, Greater Anglia → GA), which is also the initialism a rider sees on the
+train and beats the cryptic legacy TOC codes; the few single-word operators that would still
+collide are pinned by hand to their official TOC code (Southern SN, Southeastern SE). **Every
 pill shares one fixed width**, sized to the widest code shown (a four-character bus route),
 so the codes form a tidy left column the eye runs straight down a card list, rather than a
 ragged edge that steps in and out as each code's length changes; a shorter code centers in
