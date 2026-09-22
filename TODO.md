@@ -551,7 +551,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         fetch, and how to present the rest) — a product decision on junction presentation, so its
         own change; it pairs naturally with the "More" reveal, which also reshapes how a junction
         expands. Until then SPEC/`NearbySelection` say plainly the cap bounds clusters, not
-        requests.
+        requests. **Impact (est.):** caps worst-case requests per refresh to a fixed ceiling — bounds
+        the tail at a dense multi-junction corner (two big junctions could otherwise be dozens of
+        poles); average case unchanged.
   - [ ] **A "More" tap should fetch only the newly revealed page, not re-fetch the whole set**
         (Codex, PR #87 — deferred there as out of scope). `reveal()` adds the new cluster keys and
         calls `refresh()`, which re-fetches every already-shown stop too (the derived `fetchedStops`),
@@ -562,6 +564,48 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         path (fetch just the added keys, merge into the current `Loaded` state, persist) rather than
         bolting a second fetch path onto the fragile refresh/persist code late in the reveal PR. Pairs
         with the eager-request-count cap — both are about bounding the near-me request burst.
+        **Impact (est.):** the Nth "More" tap drops from re-fetching every shown pole to just the
+        newly revealed page — on a list already expanded a few pages, roughly a 60–80% cut on that
+        tap; steady-state auto-refresh unchanged (it already fetches the whole shown set once).
+  - [ ] **A shared client-side TfL limiter — best-effort throttling toward the budget**
+        (2026-09-22). The items above *reduce* request demand; none *bounds* it, so a future caller
+        (a new surface, a tighter refresh interval) can still push over. Add a token bucket sized to
+        the active budget — ~50 req/min keyless, ~500 with a user `app_key` (below) — that
+        delays/queues when empty rather than firing and taking a 429, up to a bounded wait, then
+        surfaces the honest rate-limited state (SPEC principle 2) instead of hanging. It sits below
+        the render path (network never renders), so the wait only defers a background refresh. Two
+        limits to state plainly rather than overclaim a "hard guarantee" (Codex, PR #101): (1) it must
+        be a **single shared** bucket, not one per client — `MainActivity` builds separate discovery
+        and departures clients and `WidgetRefreshWorker` its own, so per-client buckets would each
+        consume the full allowance; and (2) an in-memory bucket **resets on process death** (incl. a
+        WorkManager restart) while TfL still counts the prior calls, and won't span a separate widget
+        process — so this is best-effort throttling that keeps normal operation within budget, not an
+        absolute cross-restart guarantee. **Persisting the accounting across restarts** (a small
+        on-disk ring of recent request timestamps) would close the restart gap and is worth doing
+        *if it stays cheap* (maintainer, 2026-09-22) — otherwise leave it best-effort. The case that
+        makes it matter is a **cold start right after an app update** (maintainer, 2026-09-22): a
+        fresh process refreshing every watched stop at once, with no memory of the pre-update spend,
+        is exactly when a burst hits the limit and the first post-update experience is a rate-limited
+        screen — so **staggering the cold-start fan-out** (and/or persisting the accounting) is a
+        real mitigation, not just a nicety. Highest-value
+        pairing for the next PR is this + the incremental reveal fetch above (the throttle + the
+        biggest single demand cut). **Impact (est.):** total requests unchanged; bounds the app's
+        in-process outbound rate toward the budget, turning a likely 429 storm at a dense corner into
+        staying within budget in the common case; the residual is the process-restart window above.
+  - [ ] **Batch a junction's poles into one request if TfL's arrivals/disruption endpoints accept
+        comma-separated stop ids** (2026-09-22). Today each lettered pole is its own
+        `/StopPoint/{id}/Arrivals` + disruption call, so a junction cluster is many requests — the
+        root of the per-request-cap and incremental-fetch items above. If `/StopPoint/{ids}/Arrivals`
+        (and the disruption endpoint) take a comma-separated id list, a whole cluster collapses to
+        one arrivals + one disruption request, cutting the burst at the source and largely mooting
+        the pole budget. **Verify first:** recollection is that arrivals is single-id, and this
+        sandbox can't reach `api.tfl.gov.uk` (network policy 403), so it needs a device/allowed-
+        network check before it's committed to; if unsupported, drop it and rely on the limiter +
+        budget. Batching *disruptions* by id must keep per-pole closure coverage (principle 1) — a
+        one-pole-per-cluster shortcut would drop a single closed pole's warning. **Impact (est., if
+        supported):** a P-pole junction drops from 2P requests (arrivals + disruption per pole) to
+        ~2 — e.g. a 4-pole junction 8→2, ~75% — the single biggest structural cut, and it largely
+        moots the per-pole budget. Conditional on the API, so unverified.
   - [ ] **A revealed stop whose first fetch fails isn't in the widget's polling set** (Codex P2, PR
         #87 — deferred there). When a newly revealed stop's first arrivals request fails with no prior
         while an eager stop succeeds, the authoritative save persists only the merged (eager) stops, so
@@ -625,7 +669,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         clusters whose rows the near-me dedupe then hides, spending requests for nothing. Skipping the
         fetch for a cluster whose *declared* routes are all already shown would cut the burst, but a
         declared line isn't proof of what shows live (and skipping risks missing an opposite-direction
-        row the metadata can't reveal), so it needs care. Pairs with the eager request-count budget
+        row the metadata can't reveal), so it needs care. **Impact (est.):** saves the wasted
+        arrivals+disruption on each reveal-through redundant cluster — e.g. a tap that spans 3
+        redundant clusters before the new one saves ~6 requests; variable, biggest on dense corridors.
+        Pairs with the eager request-count budget
         and the incremental-fetch item (fetch only the newly revealed page, not the whole set) — all
         three bound the near-me request burst.
   - [ ] **"More" reveal riders** (the reveal now exists, above): a **widget "More"** that just
@@ -671,7 +718,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       device-to-device transfer — the platform channel covered by SPEC *Privacy*'s backup
       note, not an app-initiated send (so not "on-device only"). Design the model and where
       it surfaces before building.
-- [ ] Optional user `app_key` in settings (D7).
+- [ ] Optional user `app_key` in settings (D7). **Impact (est.):** raises the TfL budget ~50→~500
+      req/min (10×) — a higher, still-finite ceiling, not the removal of the constraint: keyed
+      traffic can still reach ~500/min, so the limiter and demand controls still apply, sized to
+      whichever budget is active.
 - [ ] Extend the persisted snapshot (from Phase 1) to cover the watched-stop set,
       filters, and key. **This is what re-enables persistence for the location view**: the
       interim nearby view (PR #21) uses no persisted snapshot, because one process-wide
