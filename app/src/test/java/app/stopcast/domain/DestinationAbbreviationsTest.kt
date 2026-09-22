@@ -7,6 +7,8 @@ class DestinationAbbreviationsTest {
 
     private fun abbrev(name: String) = DestinationAbbreviations.abbreviate(name)
 
+    private fun floor(name: String) = DestinationAbbreviations.floor(name)
+
     @Test
     fun `single-letter forms take a period`() {
         assertEquals("N. Greenwich", abbrev("North Greenwich"))
@@ -67,5 +69,32 @@ class DestinationAbbreviationsTest {
         assertEquals(once, abbrev(once))
         val gt = abbrev("Great Portland Street")
         assertEquals(gt, abbrev(gt))
+    }
+
+    @Test
+    fun `a mapped word is itself the floor, keeping the identity word`() {
+        // When [abbreviate] shortens a word (the throwaway compass/qualifier), that IS the floor —
+        // it keeps the identity ("Finchley", "Barnet"), better than a blind first-word form would.
+        assertEquals("N. Finchley", floor("North Finchley"))
+        assertEquals("H. Barnet", floor("High Barnet"))
+        assertEquals("Mill Hill E.", floor("Mill Hill East"))
+        assertEquals("Tottenham Court Rd", floor("Tottenham Court Road"))
+    }
+
+    @Test
+    fun `an un-mapped name floors to the first word plus initials`() {
+        // No mapped word, so the first word carries the identity: keep it whole, initial the rest.
+        // Our worked case — "Battersea Power Station" reaches here as "Battersea Power" (suffix
+        // stripped) and has no mapped word, so the general rule floors it with no special-casing.
+        assertEquals("Battersea P.", floor("Battersea Power"))
+        // A non-letter token is left whole, so it never reads "Elephant &. C.".
+        assertEquals("Elephant & C.", floor("Elephant & Castle"))
+    }
+
+    @Test
+    fun `a one-word or blank name has no floor to take`() {
+        assertEquals("Morden", floor("Morden"))
+        assertEquals("Brixton", floor("Brixton"))
+        assertEquals("", floor(""))
     }
 }

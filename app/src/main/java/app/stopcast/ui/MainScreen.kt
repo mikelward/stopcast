@@ -773,7 +773,9 @@ private fun StopGroupHeader(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 softWrap = false,
-                overflow = TextOverflow.Clip,
+                // Elide with a single "…" (never a mid-glyph cut) when the name and qualifier can't
+                // both fit their shared half of the row.
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
         }
@@ -1378,35 +1380,42 @@ private fun RowScope.DestinationLabelContent(label: String, branch: String?, mod
     if (branch == null) {
         val style = MaterialTheme.typography.titleMedium
         val abbreviated = remember(label) { DestinationAbbreviations.abbreviate(label) }
-        if (abbreviated == label) {
-            // Nothing to abbreviate — keep the cheap no-measuring path: the destination takes the
-            // space the countdown leaves and is hard-clipped (a clean cut, no ellipsis) if it must.
+        val floor = remember(label) { DestinationAbbreviations.floor(label) }
+        if (abbreviated == label && floor == label) {
+            // Nothing to shorten (a one-word name, no mapped words): show it, and elide with a single
+            // "…" (never a mid-glyph cut) only if the countdown leaves too little room.
             Text(
                 text = label,
                 style = style,
                 maxLines = 1,
-                overflow = TextOverflow.Clip,
+                overflow = TextOverflow.Ellipsis,
                 modifier = modifier,
             )
         } else {
-            // The name has a word we can shorten, so measure: show it in full when it fits, shrink to
-            // the abbreviated form when it wouldn't, and clip only if even that is too wide (SPEC
-            // destination-label — abbreviate before truncating).
+            // Measure the ladder and show the longest form that fits — full, then word-abbreviated
+            // ("East Finchley" → "E. Finchley"), then the floor ("Battersea Power" → "Battersea P.") —
+            // eliding with a single "…" only below the floor (SPEC destination-label — shorten before
+            // eliding, and never cut mid-glyph).
             BoxWithConstraints(modifier = modifier) {
                 val measurer = rememberTextMeasurer()
-                // Key the measurement on the font scale, not the label alone: a display-size /
+                // Key each measurement on the font scale, not the text alone: a display-size /
                 // accessibility resize grows the text while the row's px width is unchanged, so a
-                // width cached on the label would stay stale and the abbreviation never fire.
+                // width cached on the string would stay stale and the shrink never fire.
                 val fontScale = LocalDensity.current.fontScale
-                val fullWidth = remember(label, style, fontScale) {
-                    measurer.measure(label, style, maxLines = 1).size.width
+                fun widthOf(text: String) = measurer.measure(text, style, maxLines = 1).size.width
+                val fullWidth = remember(label, style, fontScale) { widthOf(label) }
+                val abbrevWidth = remember(abbreviated, style, fontScale) { widthOf(abbreviated) }
+                val max = constraints.maxWidth
+                val display = when {
+                    fullWidth <= max -> label
+                    abbrevWidth <= max -> abbreviated
+                    else -> floor
                 }
-                val display = if (fullWidth <= constraints.maxWidth) label else abbreviated
                 Text(
                     text = display,
                     style = style,
                     maxLines = 1,
-                    overflow = TextOverflow.Clip,
+                    overflow = TextOverflow.Ellipsis,
                     // Keep the full name for a screen reader when the visible text is shortened.
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1418,73 +1427,78 @@ private fun RowScope.DestinationLabelContent(label: String, branch: String?, mod
             }
         }
     } else {
-        // The branch is the cue that tells a branching line's two trunks apart, so it outranks the
-        // terminus for space: the full branch is kept while an abbreviated terminus can sit beside it,
-        // and the terminus yields first — full name, then its abbreviated form, then a clean clip
-        // (SPEC destination-label). The branch's own label is already the board short form ("Charing
-        // X"), so [abbreviateBranch] is a no-op here; a fuller rider-readable form is a follow-up (TODO).
+        // The branch is the cue that tells a branching line's two trunks apart, so it is kept whole:
+        // the branch lays out at its natural width and the terminus takes the leftover, shrinking
+        // (word-abbreviated, then floored) and eliding with a single "…" before it would cut — never
+        // mid-glyph (SPEC destination-label). The branch's own label is already the board short form
+        // ("Charing X"), so [abbreviateBranch] is a no-op here; a fuller rider-readable form is a
+        // follow-up (TODO). branchedLabel turns the measured widths into the strings, so the rule is
+        // unit-tested apart from the render.
         BoxWithConstraints(modifier = modifier) {
             val style = MaterialTheme.typography.titleMedium
             val measurer = rememberTextMeasurer()
             val abbreviatedLabel = remember(label) { DestinationAbbreviations.abbreviate(label) }
+            val floorLabel = remember(label) { DestinationAbbreviations.floor(label) }
             val shortBranch = remember(branch) { abbreviateBranch(branch) }
-            // Measure each candidate string, keyed on the font scale as well as the text, so a
-            // display-size / accessibility resize re-measures rather than reusing a width cached on
-            // the string alone. branchedLabel turns the widths into the terminus/branch strings so the
-            // rule (branch outranks terminus; branch-alone and bare when the terminus has no room at
-            // all) is unit-tested apart from the render.
+            // Key each measurement on the font scale as well as the text, so a display-size /
+            // accessibility resize re-measures rather than reusing a width cached on the string alone.
             val fontScale = LocalDensity.current.fontScale
             fun widthOf(text: String) = measurer.measure(text, style, maxLines = 1).size.width
             val resolved = branchedLabel(
                 label = label,
                 abbreviatedLabel = abbreviatedLabel,
+                floorLabel = floorLabel,
                 branch = branch,
                 abbreviatedBranch = shortBranch,
                 maxWidth = constraints.maxWidth,
                 labelWidth = remember(label, style, fontScale) { widthOf(label) },
                 abbrevLabelWidth = remember(abbreviatedLabel, style, fontScale) { widthOf(abbreviatedLabel) },
+                floorLabelWidth = remember(floorLabel, style, fontScale) { widthOf(floorLabel) },
                 fullBranchWidth = remember(branch, style, fontScale) { widthOf("/$branch") },
                 abbrevBranchWidth = remember(shortBranch, style, fontScale) { widthOf("/$shortBranch") },
-                firstGlyphWidth = remember(abbreviatedLabel, style, fontScale) { widthOf(abbreviatedLabel.take(1)) },
-                branchFirstGlyphWidth = remember(shortBranch, style, fontScale) { widthOf("/${shortBranch.take(1)}") },
+                minStubWidth = remember(floorLabel, style, fontScale) { widthOf("${floorLabel.take(1)}…") },
             )
-            val density = LocalDensity.current
-            val terminusMaxWidth = with(density) { resolved.terminusMaxWidthPx.toDp() }
-            val branchMaxWidth = with(density) { resolved.branchMaxWidthPx.toDp() }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = resolved.terminus,
-                    style = style,
-                    maxLines = 1,
-                    // One line, no wrap: without this a two-word terminus ("Battersea Power") wraps
-                    // its second word onto a dropped line while the Text still fills its slot, floating
-                    // the branch off to the far edge. softWrap = false clips on one line so the slash
-                    // stays against the last visible glyph. Hard clip (a clean cut, no ellipsis). The
-                    // width budget from branchedLabel caps each side; under pressure the two share the
-                    // row in proportion so both clip by the same fraction (equal truncation).
-                    softWrap = false,
-                    overflow = TextOverflow.Clip,
-                    modifier = Modifier
-                        .widthIn(max = terminusMaxWidth)
-                        // Keep the full name for a screen reader when the visible text is shortened or hidden.
-                        .then(
-                            resolved.contentDescription?.let { full ->
-                                Modifier.semantics { contentDescription = full }
-                            } ?: Modifier,
-                        ),
-                )
+                if (resolved.terminus.isNotEmpty()) {
+                    Text(
+                        text = resolved.terminus,
+                        style = style,
+                        maxLines = 1,
+                        softWrap = false,
+                        // Ellipsize cleanly (single "…", never mid-glyph) in the room the whole branch
+                        // leaves; branchedLabel already shrank the terminus to a form that fits.
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            // Keep the full name for a screen reader when the visible text is shortened.
+                            .then(
+                                resolved.contentDescription?.let { full ->
+                                    Modifier.semantics { contentDescription = full }
+                                } ?: Modifier,
+                            ),
+                    )
+                }
                 Text(
                     text = resolved.branch,
                     style = style,
                     maxLines = 1,
-                    // Hard-clipped to its own budget too, so under pressure the branch cuts cleanly at
-                    // the same fraction as the terminus instead of pushing it off.
+                    // Kept whole at its natural width; ellipsis is a last resort only for a long
+                    // branch standing alone in the narrowest row (nothing left to yield).
                     softWrap = false,
-                    overflow = TextOverflow.Clip,
-                    modifier = Modifier.widthIn(max = branchMaxWidth),
+                    overflow = TextOverflow.Ellipsis,
+                    // When the branch stands alone (no terminus shown), its contentDescription carries
+                    // BOTH the full terminus and the branch, so a screen reader can still tell two
+                    // otherwise-identical Bank and Charing Cross rows apart (Codex P2).
+                    modifier = if (resolved.terminus.isEmpty()) {
+                        resolved.contentDescription?.let { full ->
+                            Modifier.semantics { contentDescription = "$full via ${resolved.branch}" }
+                        } ?: Modifier
+                    } else {
+                        Modifier
+                    },
                 )
             }
         }

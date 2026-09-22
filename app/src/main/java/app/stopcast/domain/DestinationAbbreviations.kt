@@ -36,4 +36,27 @@ object DestinationAbbreviations {
     /** The name with each recognized standalone word replaced by its short form. */
     fun abbreviate(name: String): String =
         name.split(" ").joinToString(" ") { token -> forms[token] ?: token }
+
+    /**
+     * The shortest still-recognizable form, the **floor** below [abbreviate]: the row shows the
+     * longest form that fits and drops to this before any clean `…`, so a cut lands on a word or
+     * initial boundary — never mid-glyph (SPEC destination-label).
+     *
+     * When [abbreviate] already shortens a word it is the floor (`North Finchley` → `N. Finchley`,
+     * `High Barnet` → `H. Barnet`) — the mapped word is the throwaway one, so this keeps the
+     * identity ("Finchley", "Barnet"). Only when nothing maps does it fall to **first word in full,
+     * each later word an initial** (`Battersea Power` → `Battersea P.`), where the first word carries
+     * the identity. A non-letter token (`&`, a number) is left whole so `Elephant & Castle` reads
+     * `Elephant & C.`, not `Elephant &. C.`. A one-word or blank name is returned unchanged.
+     */
+    fun floor(name: String): String {
+        val abbreviated = abbreviate(name)
+        if (abbreviated != name) return abbreviated
+        val words = name.split(" ").filter { it.isNotEmpty() }
+        if (words.size <= 1) return name
+        return words.first() + " " + words.drop(1).joinToString(" ") { word ->
+            val first = word.first()
+            if (first.isLetter()) "${first.uppercaseChar()}." else word
+        }
+    }
 }
