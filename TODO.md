@@ -530,7 +530,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
             step-free notices) are the same "read and clear" kind. The signature would fold in TfL's
             **severity** so a dismissed mild/planned status re-surfaces the moment it escalates (the
             reappear-on-change net the maintainer named). Needs the dismiss control on the
-            line-status chip/row and a severity+description signature.
+            line-status chip/row and a severity+description signature. **Entry point (maintainer,
+            2026-09-22):** the route detail page's service alert gets a dismiss, hidden until its text
+            changes — the same contract as the stop-closure dismiss.
       - [ ] **Expire a dismissal after ~a day?** — *open decision* (maintainer, 2026-09-22: "not
             sure I even want it"). A dismissal currently lasts until the notice text changes; a
             persistent closure then stays hidden indefinitely. Expiring after ~24h would re-surface
@@ -1132,9 +1134,18 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       (line pill + destination) and carries the star (filled gold when starred, matching the list
       card's gold pin border; the vendored outline star when not; long-press on the card stays the
       shortcut), and the body names the boarding stop. A full screen because it will grow per-route
-      actions (the maps/nav hand-off below), which a dialog would cap. **Still outstanding here:**
+      actions (the maps/nav hand-off below), which a dialog would cap. **Stop list (maintainer,
+      2026-09-22):** the page lists every station from the boarding stop to where the soonest train
+      terminates, on a line-colored rail — TfL `/Line/{id}/Route/Sequence/{direction}`, fetched when
+      the page opens (never on the refresh path) and cached in memory for the process; an ambiguous
+      path (no branch to pick a trunk) says so rather than guessing. **Still outstanding here:**
       platform and full direction in the detail, and **accessibility** info (step-free, lifts) once a
       data source exists — the open design questions below are unchanged for those.
+  - [ ] **Show connections/interchanges on the route's stop list** (maintainer, 2026-09-22). Mark
+        each station on the route detail's stop list with the other lines that call there (tube,
+        Overground, Elizabeth line, DLR, rail), e.g. small line pills beside the name. The Route/Sequence
+        response already carries each stop's `lines` and `modes`, so this likely needs no new request;
+        decide which modes count (buses would swamp it) and how much width the pills take.
   - [ ] **Reconsider the detail star: pin vs star, and its relation to favorite routes/destinations**
         (maintainer, 2026-09-22). The detail control is a star for now; decide whether it should be a
         **pin** (pushpin) instead — the user-facing copy and the list marker already use "pin"/"pin to
