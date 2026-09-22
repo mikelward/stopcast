@@ -4,12 +4,8 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
-import androidx.compose.ui.test.hasAnyDescendant
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -27,9 +23,11 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * A TAP on a departure/route card opens the detail view (SPEC D8 / `TODO.md`) — a deliberate no-op
- * before this. A long-press still pins ([StarLongPressTest]); this pins the tap wiring and that the
- * dialog closes on dismiss. The detail's own contents are covered by [RouteDetailDialogScreenshotTest].
+ * A TAP on a departure/route card opens the full-screen route detail (SPEC D8 / `TODO.md`) — a
+ * deliberate no-op before this. A long-press still pins ([StarLongPressTest]); this pins the tap
+ * wiring and that the page closes on back. Because the page REPLACES the departures screen, its
+ * banner isn't composed while the page is open, so these assertions read the page's own text
+ * directly. The page's contents are covered by [RouteDetailScreenScreenshotTest].
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h914dp-420dpi")
@@ -59,8 +57,9 @@ class RouteDetailTapTest {
             }
         }
 
-        // The list card marks a pin with a border only (no star control), so the dialog's star
-        // icon — found by its "Pin to top" contentDescription — appearing means the detail opened.
+        // The list card marks a pin with a border only (no star control), so the page's star —
+        // found by its "Pin to top" contentDescription in the app bar — appearing means the page
+        // opened.
         composeRule.onNodeWithContentDescription("Pin to top").assertDoesNotExist()
         composeRule.onNodeWithText("Brixton").performTouchInput { click() }
         composeRule.onNodeWithContentDescription("Pin to top").assertIsDisplayed()
@@ -86,11 +85,7 @@ class RouteDetailTapTest {
         }
 
         composeRule.onNodeWithText("Brixton").performTouchInput { click() }
-        // Scope to the dialog: the screen also shows a "Couldn't check for disruptions" banner
-        // whenever the aggregate flag is set, so the assertion must be about the dialog's own text.
-        // The dialog naming "No disruptions reported" proves this checked-clean row isn't tainted
-        // by the other line's uncertainty.
-        composeRule.onNode(isDialog()).assert(hasAnyDescendant(hasText("No disruptions reported")))
+        composeRule.onNodeWithText("No disruptions reported").assertIsDisplayed()
     }
 
     @Test
@@ -115,7 +110,7 @@ class RouteDetailTapTest {
         }
 
         composeRule.onNodeWithText("Brixton").performTouchInput { click() }
-        composeRule.onNode(isDialog()).assert(hasAnyDescendant(hasText("Couldn't check for disruptions")))
+        composeRule.onNodeWithText("Couldn't check for disruptions").assertIsDisplayed()
     }
 
     @Test
@@ -136,15 +131,13 @@ class RouteDetailTapTest {
         }
 
         composeRule.onNodeWithText("Brixton").performTouchInput { click() }
-        // Scoped to the dialog (the screen banner carries the same text): the dialog itself names
-        // the unchecked state rather than claiming the row is clean.
-        composeRule.onNode(isDialog()).assert(hasAnyDescendant(hasText("Couldn't check for disruptions")))
+        composeRule.onNodeWithText("Couldn't check for disruptions").assertIsDisplayed()
     }
 
     @Test
     fun `the detail closes for good when its row leaves the list`() {
         // The open route's last departure passes (or the stop is pruned), so its row leaves the
-        // list. The dialog must close AND stay closed — a later refresh reproducing the same
+        // list. The page must close AND stay closed — a later refresh reproducing the same
         // stop/line/direction identity must not silently reopen it (the saved key is cleared).
         val present = loaded()
         val gone = DeparturesUiState.Loaded(
@@ -166,14 +159,14 @@ class RouteDetailTapTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithContentDescription("Pin to top").assertDoesNotExist()
 
-        // The same identity returns on a later refresh — the dialog stays closed.
+        // The same identity returns on a later refresh — the page stays closed.
         composeRule.runOnUiThread { current = present }
         composeRule.waitForIdle()
         composeRule.onNodeWithContentDescription("Pin to top").assertDoesNotExist()
     }
 
     @Test
-    fun `closing the detail dismisses it`() {
+    fun `pressing back closes the detail`() {
         composeRule.setContent {
             StopCastTheme {
                 MainScreen(state = loaded(), now = now, onRefresh = {})
@@ -181,7 +174,9 @@ class RouteDetailTapTest {
         }
 
         composeRule.onNodeWithText("Brixton").performTouchInput { click() }
-        composeRule.onNodeWithText("Close").performClick()
+        composeRule.onNodeWithContentDescription("Pin to top").assertIsDisplayed()
+        // The app bar's back arrow returns to the list.
+        composeRule.onNodeWithContentDescription("Back").performClick()
         composeRule.onNodeWithContentDescription("Pin to top").assertDoesNotExist()
     }
 }

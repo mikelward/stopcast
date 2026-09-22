@@ -346,9 +346,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         fetch → persist on the watched stop) and thread it into the qualifier's letter/bearing
         forms. Lands with Phase 2's watched-stop add flow, where bus stops enter.
   - [ ] **Make the stop header tappable** (maintainer, 2026-09-21). The **route card tap
-        landed** — it opens the `RouteDetailDialog` (star + full disruption text; see the
+        landed** — it opens the full-screen `RouteDetailScreen` (star + full disruption text; see the
         detail-view item under *Watched stops and settings*). Still outstanding: tapping the
-        **station-name header** does nothing yet — decide its destination (a stop-detail view)
+        **station-name header** does nothing yet — decide its destination (a stop-detail view;
+        maintainer leaning toward a full-screen treatment too, with the maps/nav actions living
+        there)
         and wire it.
   - [x] **Dedupe a hub-wide alert; collapse the closure card** (maintainer, 2026-09-21).
         v122 showed the same interchange notice as three full-height cards (King's Cross St.
@@ -492,7 +494,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       starred, currently-suspended line has departures again. **The interaction is a long-press
       on the card, marked by a gold border** (PR #73): the original filled/outline per-card
       `Star` button was removed because it ate width on every row; the discoverable, labeled star
-      now lives in the tap-to-open route detail dialog (below).
+      now lives in the app bar of the tap-to-open full-screen route detail (below).
 - [ ] "Near me now" discovery (on-demand location, nearby `/StopPoint` lookup selected by
       `NearbySelection`) with one-tap add-to-watched; stop search. Distance ranking lives
       here — for *finding* stops to watch — not in ordering the watched list, which stays
@@ -965,16 +967,19 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       **Width follow-up (maintainer, 2026-09-20):** the per-row star button ate row width and
       crushed the destination (observed `B… (Charing X)`). **Done (PR #73):** the button is
       removed, starring is a long-press on the card, and a pinned card is marked by a gold
-      border (no in-row element). **Landed (this PR — dialog, maintainer 2026-09-22):** a card
-      *tap* opens the detail (a `RouteDetailDialog`, no-op tap before), carrying the discoverable
-      star as a **top-right icon button** in the dialog header (maintainer, 2026-09-22 — filled gold
-      when starred, matching the list card's gold pin border; the vendored outline star when not; no
-      bottom text action; long-press on the card stays the shortcut), the destinations the service
-      runs to, and the line's **full disruption text** — the compact chip's prose, shown collapsed to
-      its first line and tapped to expand, the same widget the stop-closure card uses (line status now
-      **retains TfL's `reason`** on `LineStatus.fullText`, previously dropped). **Still outstanding
-      here:** platform and full direction in the detail, and **accessibility** info (step-free, lifts)
-      once a data source exists — the open design questions below are unchanged for those.
+      border (no in-row element). **Landed (#100):** a card *tap* opens the detail (no-op tap
+      before), carrying the discoverable star, the destinations the service runs to, and the line's
+      **full disruption text** — the compact chip's prose, shown collapsed to its first line and
+      tapped to expand, the same widget the stop-closure card uses (line status now **retains TfL's
+      `reason`** on `LineStatus.fullText`, previously dropped). **Now a full-screen page
+      (`RouteDetailScreen`, maintainer 2026-09-22):** the detail was a dialog first; it is now a
+      full screen that replaces the departures screen with its own app bar — the bar names the route
+      (line pill + destination) and carries the star (filled gold when starred, matching the list
+      card's gold pin border; the vendored outline star when not; long-press on the card stays the
+      shortcut), and the body names the boarding stop. A full screen because it will grow per-route
+      actions (the maps/nav hand-off below), which a dialog would cap. **Still outstanding here:**
+      platform and full direction in the detail, and **accessibility** info (step-free, lifts) once a
+      data source exists — the open design questions below are unchanged for those.
   - [ ] **Reconsider the detail star: pin vs star, and its relation to favorite routes/destinations**
         (maintainer, 2026-09-22). The detail control is a star for now; decide whether it should be a
         **pin** (pushpin) instead — the user-facing copy and the list marker already use "pin"/"pin to
@@ -1030,8 +1035,8 @@ Builds on Phase 1's minimal line-status marking.
         still erring toward showing over hiding (SPEC principle 1 — a wrongly-hidden real
         disruption is worse than an extra one).
       - **Landed:** **show the full alert text on tapping the card** (requested 2026-09-20) — a
-        card tap opens the `RouteDetailDialog`, which shows the line's `reason` prose (now retained
-        on `LineStatus.fullText`) collapsed to its first line, tapped to expand. Still open: a
+        card tap opens the full-screen `RouteDetailScreen`, which shows the line's `reason` prose (now
+        retained on `LineStatus.fullText`) collapsed to its first line, tapped to expand. Still open: a
         **per-condition chip** (below) and making the chip itself the tap target once there are
         several.
 - [x] **Bug: the "Couldn't check for disruptions" notice appears to fire constantly**

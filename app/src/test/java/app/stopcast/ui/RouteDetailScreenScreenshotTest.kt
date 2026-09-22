@@ -1,9 +1,11 @@
 package app.stopcast.ui
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
-import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -26,16 +28,18 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The tap-to-open route detail (SPEC D8 / *Disruptions*): the discoverable home for the star (the
- * list card only long-presses to pin) and for the line's full disruption text, which the compact
- * chip stands in for. Collapsed the alert is the reason's first line; tapping expands it — the same
- * widget the stop-closure card uses. The composable is pure, so it renders under Robolectric with
- * nothing wired. Pins the chip + collapsed-alert layout as a golden and the star / expand behavior.
+ * The tap-to-open route detail (SPEC D8 / *Disruptions*): a full-screen page — the discoverable home
+ * for the star (the list card only long-presses to pin) and for the line's full disruption text,
+ * which the compact chip stands in for. Collapsed the alert is the reason's first line; tapping
+ * expands it — the same widget the stop-closure card uses. The app bar names the route (line pill +
+ * destination) and the body names the boarding stop. The composable is pure, so it renders under
+ * Robolectric with nothing wired. Pins the app-bar + body layout as a golden and the star / expand
+ * behavior.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h914dp-420dpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-class RouteDetailDialogScreenshotTest {
+class RouteDetailScreenScreenshotTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
@@ -77,45 +81,43 @@ class RouteDetailDialogScreenshotTest {
     fun disruptedRoute_showsChipStarAndCollapsedAlert() {
         composeRule.setContent {
             StopCastTheme {
-                RouteDetailDialog(
+                RouteDetailScreen(
                     row = disruptedRow(),
                     isStarred = false,
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
                     onToggleStar = {},
-                    onDismiss = {},
+                    onBack = {},
                 )
             }
         }
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("Severe Delays").assertIsDisplayed()
-        // The discoverable star — a top-right icon button whose contentDescription labels the
-        // action, unlike the list card's border-only mark.
+        // The discoverable star — an app-bar icon whose contentDescription labels the action.
         composeRule.onNodeWithContentDescription("Pin to top").assertIsDisplayed()
-        composeRule.onNodeWithText("Towards Walthamstow Central", substring = true).assertIsDisplayed()
+        // The app bar names where the service is going; the body names the boarding stop.
+        composeRule.onNodeWithText("Walthamstow Central", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("From Victoria", substring = true).assertIsDisplayed()
         // Collapsed: the alert shows its first line (clipped), the chevron marks it expandable.
         composeRule.onNodeWithText(reason, substring = true).assertIsDisplayed()
 
-        if (capturing()) {
-            composeRule.onNode(isDialog())
-                .captureRoboImage(filePath = "src/test/snapshots/images/route-detail-disrupted.png")
-        }
+        captureSnapshot("route-detail-disrupted.png")
     }
 
     @Test
     fun tappingTheAlert_expandsToTheFullText() {
         composeRule.setContent {
             StopCastTheme {
-                RouteDetailDialog(
+                RouteDetailScreen(
                     row = disruptedRow(),
                     isStarred = false,
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
                     onToggleStar = {},
-                    onDismiss = {},
+                    onBack = {},
                 )
             }
         }
@@ -127,10 +129,7 @@ class RouteDetailDialogScreenshotTest {
         composeRule.onNodeWithText(reason, substring = true).performTouchInput { click() }
         composeRule.waitForIdle()
 
-        if (capturing()) {
-            composeRule.onNode(isDialog())
-                .captureRoboImage(filePath = "src/test/snapshots/images/route-detail-expanded.png")
-        }
+        captureSnapshot("route-detail-expanded.png")
     }
 
     @Test
@@ -138,14 +137,14 @@ class RouteDetailDialogScreenshotTest {
         var toggled = false
         composeRule.setContent {
             StopCastTheme {
-                RouteDetailDialog(
+                RouteDetailScreen(
                     row = disruptedRow(),
                     isStarred = false,
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
                     onToggleStar = { toggled = true },
-                    onDismiss = {},
+                    onBack = {},
                 )
             }
         }
@@ -159,14 +158,14 @@ class RouteDetailDialogScreenshotTest {
     fun aStarredRoute_offersToUnpin() {
         composeRule.setContent {
             StopCastTheme {
-                RouteDetailDialog(
+                RouteDetailScreen(
                     row = disruptedRow(),
                     isStarred = true,
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
                     onToggleStar = {},
-                    onDismiss = {},
+                    onBack = {},
                 )
             }
         }
@@ -179,14 +178,14 @@ class RouteDetailDialogScreenshotTest {
     fun aHealthyRoute_saysNoDisruptions_andStillStars() {
         composeRule.setContent {
             StopCastTheme {
-                RouteDetailDialog(
+                RouteDetailScreen(
                     row = healthyRow(),
                     isStarred = false,
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
                     onToggleStar = {},
-                    onDismiss = {},
+                    onBack = {},
                 )
             }
         }
@@ -197,49 +196,25 @@ class RouteDetailDialogScreenshotTest {
     }
 
     @Test
-    fun whenDisruptionUnknown_saysCouldntCheck_notNoDisruptions() {
-        // The lookup failed, so a null status is unchecked, not clean: the detail must not claim
-        // "No disruptions reported" (SPEC principle 1).
-        composeRule.setContent {
-            StopCastTheme {
-                RouteDetailDialog(
-                    row = healthyRow(),
-                    isStarred = false,
-                    starrable = true,
-                    disruptionUnknown = true,
-                    stale = false,
-                    onToggleStar = {},
-                    onDismiss = {},
-                )
-            }
-        }
-        composeRule.waitForIdle()
-
-        composeRule.onNodeWithText("Couldn't check for disruptions").assertIsDisplayed()
-        composeRule.onNodeWithText("No disruptions reported").assertDoesNotExist()
-    }
-
-    @Test
     fun aKnownLineAlert_stillFlagsUncheckedStopDisruption() {
         // The line status is known (a disruption is shown), but this stop's own disruption lookup
         // (a closure/move) failed — disruptionUnknown is set. The alert isn't the whole story, so
         // the detail must still say the stop-level disruption wasn't checked (SPEC principle 1).
         composeRule.setContent {
             StopCastTheme {
-                RouteDetailDialog(
+                RouteDetailScreen(
                     row = disruptedRow(),
                     isStarred = false,
                     starrable = false,
                     disruptionUnknown = true,
                     stale = false,
                     onToggleStar = {},
-                    onDismiss = {},
+                    onBack = {},
                 )
             }
         }
         composeRule.waitForIdle()
 
-        // Both the known alert AND the unchecked-disruption note appear.
         composeRule.onNodeWithText("Severe Delays").assertIsDisplayed()
         composeRule.onNodeWithText("Couldn't check for disruptions").assertIsDisplayed()
     }
@@ -251,14 +226,14 @@ class RouteDetailDialogScreenshotTest {
         // both must show — the age warning must not stand in for the failed check (SPEC principle 1).
         composeRule.setContent {
             StopCastTheme {
-                RouteDetailDialog(
+                RouteDetailScreen(
                     row = disruptedRow(),
                     isStarred = false,
                     starrable = false,
                     disruptionUnknown = true,
                     stale = true,
                     onToggleStar = {},
-                    onDismiss = {},
+                    onBack = {},
                 )
             }
         }
@@ -270,19 +245,42 @@ class RouteDetailDialogScreenshotTest {
     }
 
     @Test
+    fun whenDisruptionUnknown_saysCouldntCheck_notNoDisruptions() {
+        // The lookup failed, so a null status is unchecked, not clean: the detail must not claim
+        // "No disruptions reported" (SPEC principle 1).
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = healthyRow(),
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = true,
+                    stale = false,
+                    onToggleStar = {},
+                    onBack = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Couldn't check for disruptions").assertIsDisplayed()
+        composeRule.onNodeWithText("No disruptions reported").assertDoesNotExist()
+    }
+
+    @Test
     fun whenStale_saysStatusMayBeOutOfDate_notNoDisruptions() {
         // A stale snapshot: the disruption status is from an old fetch, so the detail must not
         // claim "No disruptions reported" (SPEC D4) — it caveats instead.
         composeRule.setContent {
             StopCastTheme {
-                RouteDetailDialog(
+                RouteDetailScreen(
                     row = healthyRow(),
                     isStarred = false,
                     starrable = true,
                     disruptionUnknown = false,
                     stale = true,
                     onToggleStar = {},
-                    onDismiss = {},
+                    onBack = {},
                 )
             }
         }
@@ -292,7 +290,24 @@ class RouteDetailDialogScreenshotTest {
         composeRule.onNodeWithText("No disruptions reported").assertDoesNotExist()
     }
 
-    private fun capturing(): Boolean =
-        System.getProperty("roborazzi.test.record") == "true" ||
-            System.getProperty("roborazzi.test.verify") == "true"
+    /**
+     * Draws the activity window into a PNG. Measured and laid out explicitly at the device size —
+     * Robolectric's window has no real surface, so a full-screen composable captures blank
+     * otherwise (the same helper shape as [MainScreenScreenshotTest]).
+     */
+    private fun captureSnapshot(name: String, widthPx: Int = 1080, heightPx: Int = 2400) {
+        val recording = System.getProperty("roborazzi.test.record") == "true"
+        val verifying = System.getProperty("roborazzi.test.verify") == "true"
+        if (!recording && !verifying) return
+
+        val root = composeRule.activity.window.decorView.rootView
+        root.measure(
+            View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(heightPx, View.MeasureSpec.EXACTLY),
+        )
+        root.layout(0, 0, widthPx, heightPx)
+        val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+        root.draw(Canvas(bitmap))
+        bitmap.captureRoboImage(filePath = "src/test/snapshots/images/$name")
+    }
 }
