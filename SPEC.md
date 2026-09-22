@@ -640,8 +640,9 @@ collects or transmits). The guarantee is therefore precise, not absolute — the
 *stopcast* sends off the device on its own goes in its TfL requests (its one other network
 call, the release-only Play update check, carries none — see *Update indicator*); the user's
 own backup/transfer carries their config under their control; and a **consent-gated bug
-report** (see below and `docs/PRIVACY.md`) carries the exact location and per-stop distances
-the user explicitly agrees to share on a screen they can decline.
+report** (see below and `docs/PRIVACY.md`) carries the exact location, per-stop distances, and
+a screenshot of the reporting screen the user explicitly agrees to share on a screen they can
+decline.
 
 No **user data** else leaves the device unbidden — no analytics over the user's stops or
 movements, and no coordinate, stop list, or API key in logs, commits, PRs, or fixtures; the
@@ -699,14 +700,15 @@ Mirrors the sibling fleet:
   diagnostics only (see *Data source, cost, and reliability*). The implementation is the shared
   `mikelward/androidlog` buffer, resolved as a published dependency.
 - **A bug report leaves the device only under explicit consent.** The overflow's *Send bug
-  report* composes the log plus the **exact location** and per-stop distances and hands it to the
-  platform share sheet — user-initiated, £0, no service of stopcast's own. Because it carries the
-  location the log itself never does, it is gated by a consent screen that names exactly what
-  leaves, with a persisted "don't ask again"; nothing is assembled until the user passes it. It is
-  the *honest* report, not a location-safe one — a routing bug is diagnosed from where you were,
-  so it says so rather than stripping that context (a separate location-redacted export stays a
-  distinct, planned tool). It rides the shared `mikelward/androidlog` `DebugReport`; a screenshot
-  is a planned addition, pending that library gaining screenshot support. See `docs/PRIVACY.md`.
+  report* composes the log plus the **exact location**, per-stop distances, and a **screenshot of
+  the reporting screen** and hands it to the platform share sheet — user-initiated, £0, no service
+  of stopcast's own. Because it carries the location the log itself never does, it is gated by a
+  consent screen that names exactly what leaves, with a persisted "don't ask again"; nothing is
+  assembled until the user passes it. It is the *honest* report, not a location-safe one — a
+  routing bug is diagnosed from where you were, so it says so rather than stripping that context (a
+  separate location-redacted export stays a distinct, planned tool). It rides the shared
+  `mikelward/androidlog` `DebugReport`, which attaches the screenshot; the shot is of the app's own
+  window, so the consent dialog (a separate window) is not in it. See `docs/PRIVACY.md`.
 
 ## Non-goals
 

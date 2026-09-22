@@ -355,9 +355,12 @@ class MainActivity : ComponentActivity() {
      *
      * The shared `mikelward/androidlog` `DebugReport` does the mechanism: [DebugReport.collect]
      * reads (and, once shared, consumes) the persisted earlier runs off the main thread, wrapping
-     * this app's section; [DebugReport.deliver] copies to the clipboard and opens the share sheet
-     * on the main thread. Screenshot attachment waits on that library gaining screenshot support
-     * (`TODO.md`). A `COPIED_ONLY`/`FAILED` outcome is surfaced, not swallowed (SPEC principle 2).
+     * this app's section; [DebugReport.deliver] copies to the clipboard, attaches the screenshot,
+     * and opens the share sheet on the main thread. [BugReportScreenshot.capture] takes the shot
+     * first — of this Activity's window, which excludes the consent dialog's separate window, so
+     * it is the screen being reported, not the dialog over it; a failed capture is a text-only
+     * report, never a dropped share. A `COPIED_ONLY`/`FAILED` outcome is surfaced, not swallowed
+     * (SPEC principle 2).
      */
     private fun shareBugReport(request: BugReportRequest) {
         val app = application as? StopcastApp
@@ -372,7 +375,11 @@ class MainActivity : ComponentActivity() {
         // Activity scope only in a test Application that isn't StopcastApp.
         val scope = app?.applicationScope ?: lifecycleScope
         val context = applicationContext
+        // Held only until the capture returns (early in the coroutine, before the ~10 s collect);
+        // capture guards a finished window and yields null rather than touching a stale one.
+        val activity = this
         scope.launch {
+            val screenshot = BugReportScreenshot.capture(activity)
             val report = withContext(Dispatchers.IO) {
                 DebugReport.collect(StopcastDebugLog, sink) {
                     BugReport.compose(
@@ -394,6 +401,7 @@ class MainActivity : ComponentActivity() {
                 subject = context.getString(R.string.bug_report_subject),
                 chooserTitle = context.getString(R.string.bug_report_chooser_title),
                 clipboardLabel = context.getString(R.string.bug_report_clipboard_label),
+                screenshot = screenshot,
             )
             when (outcome) {
                 ShareOutcome.SHARED -> {}

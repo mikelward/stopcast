@@ -1258,14 +1258,15 @@ and these carry the rest as their own PRs:
       agree, and includes the location **openly, under consent** — the honest report, not a
       location-safe one. `docs/PRIVACY.md` and `SPEC.md` describe the channel in those terms; the
       **Play Data Safety** hand-off is a user-initiated share of diagnostics + location. Cost £0.
-- [ ] **Add the screenshot to the bug report.** The consent-gated report above ships without the
-      screenshot: the shared `mikelward/androidlog` `DebugReport` shares **text** (clipboard +
-      `ACTION_SEND`) and has no screenshot support yet, so attaching one is a shared-library change
-      first (PixelCopy capture + `FileProvider` + `EXTRA_STREAM`, the pattern `clothescast`
-      hand-rolls) — being done in a separate session. Once the library gains optional screenshot
-      support and stopcast bumps to it, wire it in and name the screenshot on the consent screen
-      (`bug_report_consent_body`) and in `docs/PRIVACY.md` before it ships. Needs a `FileProvider`
-      + `res/xml/file_paths.xml` (cache path), neither of which exists yet.
+- [x] **Add the screenshot to the bug report.** `androidlog` 2.1 gained the optional
+      `DebugReport.deliver(screenshot = …)` argument (PixelCopy + `FileProvider` + `EXTRA_STREAM`
+      handled in the library), so stopcast bumped `2.0.60 → 2.1.68` and wired it in:
+      `BugReportScreenshot.capture` shoots the Activity's own window (which excludes the consent
+      dialog's separate window), persists the PNG to `cacheDir/bug-reports/`, and hands the
+      `FileProvider` URI to `deliver`. A failed capture is a text-only report, never a dropped
+      share. Added the `FileProvider` + `res/xml/file_paths.xml` (cache path), and named the
+      screenshot on the consent screen (`bug_report_consent_body`), in `docs/PRIVACY.md`, `SPEC.md`,
+      and this repo's Privacy exception. This completes the richer consent-gated report above.
 - [ ] Finalize the store-facing privacy disclosure (location, watched stops, the TfL
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
