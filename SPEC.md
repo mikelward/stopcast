@@ -111,9 +111,14 @@ The app finds stops two ways:
   *count*, not the request count: one large junction cluster is still an arrivals request per
   pole, so a hard per-cluster fetch budget is a `TODO.md` follow-up. The clusters beyond the cap
   are the *more* tier, reached through a per-mode **"More"** control at the foot of the list: a
-  tap pages that mode's next clusters in (a bounded few per tap, so each tap's fetch stays small)
-  and merges them beside the eager ones; a cluster serving two modes appears under each mode's
-  "More". A **revealed expansion survives a relocation** — the near-me set re-resolves only on a
+  tap pages that mode's next clusters in and merges them beside the eager ones; a cluster serving
+  two modes appears under each mode's "More". Because a route shows once from its nearest stop
+  (above), **a tap reaches through to the first farther cluster that adds a route not already on
+  the list** — a run of nearer stops that only repeat routes already shown would otherwise make a
+  tap appear to do nothing — so tapping "More" always surfaces something new when the reach holds
+  one, rather than a dead tap followed by a working one. Each tap stays **bounded** — it reaches
+  through only so many clusters before the next tap continues — so a dense redundant corridor never
+  fans out one oversized fetch that could hit TfL's rate limit. A **revealed expansion survives a relocation** — the near-me set re-resolves only on a
   user-initiated refresh, and the retained view is keyed on the *whole* nearby cluster set (both
   tiers, order-independent), so a small move that only reorders the clusters, or shifts one across
   the eager/more boundary while all stay in range, keeps what the user opened. When a relocation

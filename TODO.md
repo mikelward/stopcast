@@ -599,6 +599,35 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         to resurrect. The widget mirrors the app's current view — see *Decisions needing review*.
         This closed the two roots the seven PR #85 rounds exposed (in-app retention; disk/widget
         persistence).
+  - [x] **A "More" tap reaches through routes already shown to the first new one.** The near-me
+        list shows a route once from its nearest stop, so paging the next cluster(s) when they only
+        repeat routes already on the list surfaced nothing — the tap looked dead, and only a later
+        tap (reaching a stop with a new route) worked. `NearbySelection.nextReveal` now takes the
+        routes already on screen and pages *through* a redundant run to the first farther cluster
+        that adds a new route (still a distance-ordered prefix, so nothing is permanently skipped;
+        it falls back to the bounded page when nothing remaining adds a route). The shown-routes set
+        is read from the live rendered snapshot, not eager stops' declared lines, so a declared-only
+        line doesn't mask a farther stop that actually shows it (Codex P2, PR #98). Each tap is
+        bounded to `NearbySelection.MAX_REVEAL_PER_TAP` clusters so a long redundant run can't fan
+        out an unbounded arrivals+disruption burst past TfL's keyless budget (Codex P1, PR #98).
+        Within the ~1 mile reach only — reaching *beyond* the reach is the radius-expand rider below.
+  - [ ] **Decide "More" progression from fetched/rendered rows, not declared metadata** (Codex P2,
+        PR #98). `nextReveal` decides how far to page from cluster *declared* lines, before fetching —
+        so a nearer cluster that declares a not-shown route but returns no live departure is counted
+        as the productive stop, the page stops there, and a farther cluster that actually has a live
+        new route isn't reached (a residual dead tap in that arrangement). It can't be fixed pre-fetch
+        (declared lines are the only signal a `more` cluster has until fetched); the class-deleting fix
+        is **fetch-then-decide** — reveal incrementally, fetch, check whether a new *rendered* row
+        appeared, continue if not. That is the same redesign as the two request-burst items below, so
+        do them together.
+  - [ ] **Don't fetch a "More" cluster that only repeats routes already shown** (Codex P1 follow-up,
+        PR #98). Reaching through a redundant run reveals — and so fetches arrivals+disruptions for —
+        clusters whose rows the near-me dedupe then hides, spending requests for nothing. Skipping the
+        fetch for a cluster whose *declared* routes are all already shown would cut the burst, but a
+        declared line isn't proof of what shows live (and skipping risks missing an opposite-direction
+        row the metadata can't reveal), so it needs care. Pairs with the eager request-count budget
+        and the incremental-fetch item (fetch only the newly revealed page, not the whole set) — all
+        three bound the near-me request burst.
   - [ ] **"More" reveal riders** (the reveal now exists, above): a **widget "More"** that just
         opens the app (the widget can't expand in place; keep widget + main-screen rendering one
         parameterized implementation, and consider hiding "More" on the widget); **line hints**

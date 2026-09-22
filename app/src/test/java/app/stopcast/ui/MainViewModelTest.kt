@@ -1524,6 +1524,109 @@ class MainViewModelTest {
         ),
     )
 
+    // A single-stop bus `more` cluster whose stop declares [lineIds] (a route can repeat across
+    // clusters, unlike clusterOf which derives the line id from the stop id).
+    private fun busClusterOf(key: String, stopId: String, vararg lineIds: String) =
+        NearbySelection.NearbyCluster(
+            key = key,
+            stops = listOf(
+                StopLocation(
+                    id = stopId, name = stopId, latitude = 0.0, longitude = 0.0,
+                    lines = lineIds.map { LineRef(it, it, "bus") }, clusterId = key,
+                ),
+            ),
+            distanceMeters = 0.0,
+        )
+
+    @Test
+    fun `reveal reaches through redundant clusters to the first with a new route in one tap`() =
+        runTest(dispatcher) {
+            // The eager stop already shows routes L1 and L2. The two nearest `more` clusters only
+            // repeat those (the near-me list would collapse them to nothing), and the farther one
+            // carries a new route L9 — past the two-per-tap page. One tap must reach it, so the new
+            // stop appears rather than the tap looking like it did nothing.
+            val client = FakeClient(
+                mapOf(
+                    // The eager stop shows both L1 and L2 live, so the two nearer `more` clusters
+                    // (which repeat them) are genuinely redundant.
+                    "EAG" to Result.success(listOf(departure("L1", "Dest", 300), departure("L2", "Dest", 300))),
+                    "R1" to Result.success(listOf(departure("L1", "Dest", 200))),
+                    "R2" to Result.success(listOf(departure("L2", "Dest", 200))),
+                    "NEW" to Result.success(listOf(departure("L9", "Dest", 200))),
+                ),
+            )
+            val eager = listOf(StopRef("EAG", "EAG", lines = listOf(LineRef("L1", "L1", "bus"), LineRef("L2", "L2", "bus"))))
+            val more = listOf(
+                busClusterOf("R1", "R1", "L1"),
+                busClusterOf("R2", "R2", "L2"),
+                busClusterOf("NEW", "NEW", "L9"),
+            )
+            val vm = tierVm(client, eager, more)
+            advanceUntilIdle()
+            assertEquals(listOf("EAG"), shownIds(vm))
+
+            vm.reveal("bus")
+            advanceUntilIdle()
+            // The farther new-route stop is revealed on this tap, not left for a second one.
+            assertTrue("the new-route cluster is revealed in one tap", "NEW" in shownIds(vm))
+        }
+
+    @Test
+    fun `a route only declared by an eager stop, not shown, does not mask a farther stop that shows it`() =
+        runTest(dispatcher) {
+            // The eager stop DECLARES L1 and L2 but only has live L1 departures, so L2 is not on
+            // screen. A farther stop with L2 must still be revealed — counting the declared-only L2
+            // as "shown" would treat it as redundant and never reveal it (the dead tap this fixes).
+            val client = FakeClient(
+                mapOf(
+                    "EAG" to Result.success(listOf(departure("L1", "Dest", 300))), // L2 declared, not live
+                    "R1" to Result.success(listOf(departure("L1", "Dest", 200))),
+                    "R2" to Result.success(listOf(departure("L1", "Dest", 200))),
+                    "N" to Result.success(listOf(departure("L2", "Dest", 200))),
+                ),
+            )
+            val eager = listOf(StopRef("EAG", "EAG", lines = listOf(LineRef("L1", "L1", "bus"), LineRef("L2", "L2", "bus"))))
+            val more = listOf(
+                busClusterOf("R1", "R1", "L1"),
+                busClusterOf("R2", "R2", "L1"),
+                busClusterOf("N", "N", "L2"),
+            )
+            val vm = tierVm(client, eager, more)
+            advanceUntilIdle()
+
+            vm.reveal("bus")
+            advanceUntilIdle()
+            assertTrue("the stop with the not-actually-shown route is revealed", "N" in shownIds(vm))
+        }
+
+    @Test
+    fun `an expired departure's route does not count as shown, so a farther stop with it live is revealed`() =
+        runTest(dispatcher) {
+            // The eager stop has an already-departed L1 prediction (no longer rendered) and a live
+            // L2. L1 is not on screen, so a farther stop with live L1 beyond the page must still be
+            // revealed — counting the expired L1 as shown would treat it as redundant (dead tap).
+            val client = FakeClient(
+                mapOf(
+                    "EAG" to Result.success(listOf(departure("L1", "Dest", -60), departure("L2", "Dest", 300))),
+                    "R1" to Result.success(listOf(departure("L2", "Dest", 200))),
+                    "R2" to Result.success(listOf(departure("L2", "Dest", 200))),
+                    "N" to Result.success(listOf(departure("L1", "Dest", 200))),
+                ),
+            )
+            val eager = listOf(StopRef("EAG", "EAG", lines = listOf(LineRef("L1", "L1", "bus"), LineRef("L2", "L2", "bus"))))
+            val more = listOf(
+                busClusterOf("R1", "R1", "L2"),
+                busClusterOf("R2", "R2", "L2"),
+                busClusterOf("N", "N", "L1"),
+            )
+            val vm = tierVm(client, eager, more)
+            advanceUntilIdle()
+
+            vm.reveal("bus")
+            advanceUntilIdle()
+            assertTrue("the stop with the live route whose earlier prediction expired is revealed", "N" in shownIds(vm))
+        }
+
     @Test
     fun `reveal fetches the more cluster and drops its More button`() = runTest(dispatcher) {
         val vm = tierVm(twoStopClient(), listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")))
