@@ -66,6 +66,41 @@ class TflStopPointDtoTest {
     }
 
     @Test
+    fun `an arrow in stopLetter is treated as the compass, not a pole letter`() {
+        // TfL is inconsistent: some poles put the compass in CompassPoint, others jam it into
+        // stopLetter as an arrow ("->N") in place of a real letter. An arrow-in-stopLetter is not a
+        // pole letter — it drops to the bearing, so the pole renders the one ASCII way ("Stop ->N",
+        // the bearing path) rather than a raw letter beside a CompassPoint pole (SPEC D8).
+        val stop = TflStopPointDto(
+            id = "490000000N",
+            commonName = "Example Road",
+            lat = 51.5,
+            lon = -0.12,
+            modes = listOf("bus"),
+            stopLetter = "->N",
+            additionalProperties = listOf(TflAdditionalPropertyDto(key = "CompassPoint", value = "N")),
+        ).toStopLocationOrNull()
+        assertEquals("", stop?.stopLetter)
+        assertEquals("N", stop?.bearing)
+    }
+
+    @Test
+    fun `an arrow-only stopLetter with no CompassPoint still yields the bearing`() {
+        // The same arrow form, but TfL omitted CompassPoint — the compass is recovered from the
+        // arrow's letters so the pole still renders its direction, not a bare name.
+        val stop = TflStopPointDto(
+            id = "490000000S",
+            commonName = "Example Road",
+            lat = 51.5,
+            lon = -0.12,
+            modes = listOf("bus"),
+            stopLetter = "->S",
+        ).toStopLocationOrNull()
+        assertEquals("", stop?.stopLetter)
+        assertEquals("S", stop?.bearing)
+    }
+
+    @Test
     fun `a stop with no letter or compass point carries neither`() {
         val stop = TflStopPointDto(
             id = "940GZZLUKSX",
