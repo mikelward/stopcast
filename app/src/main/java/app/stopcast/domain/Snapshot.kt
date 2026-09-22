@@ -66,10 +66,11 @@ object Snapshot {
         // strip's alias set (SPEC *Disruptions*). Empty for a stop in no hub or a caller that
         // doesn't enrich hubs; not persisted, like the disruption.
         placeAliases: List<String> = emptyList(),
-        // The bus pole's letter and bearing, for the per-pole bus header (SPEC D8). Default blank —
-        // a station, a letter-less bus stop, or a watched stop whose seed carries no letter yet.
+        // The bus pole's letter, bearing, and "towards", for the per-pole bus header (SPEC D8).
+        // Default blank — a station, a letter-less bus stop, or a watched stop whose seed carries none.
         stopLetter: String = "",
         bearing: String = "",
+        towards: String = "",
     ): StopArrivals? {
         val departures = freshDepartures ?: prior?.departures ?: emptyList()
         // A failed disruption fetch drops the notice (no `?: prior`), rather than aging a
@@ -104,6 +105,7 @@ object Snapshot {
             placeAliases = placeAliases,
             stopLetter = stopLetter,
             bearing = bearing,
+            towards = towards,
             // Only a successful arrivals fetch this refresh lets a status row claim "No
             // departures"; a kept-prior or disruption-only stop has no fetched arrivals.
             arrivalsFresh = freshDepartures != null,

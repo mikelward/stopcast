@@ -51,13 +51,14 @@ data class DepartureRow(
     // [stopName], so a station whose poles TfL spells differently still reads as one place, and two
     // genuinely distinct stops that share a name stay apart (SPEC D8). Blank groups the stop alone.
     val clusterId: String = "",
-    // The bus pole's letter ("D") and compass bearing ("E"), from the nearby lookup (see
-    // [StopArrivals.stopLetter]/[StopArrivals.bearing]). A bus place splits into one header per pole
-    // by these — "King's Cross Station (D)", else "(→E)" — the bus analog of a rail platform's
-    // compass (SPEC D8). Blank for a station, a letter-less bus stop, or a watched stop (no letter
-    // captured yet). Not part of a row's identity (that is `(stopId, lineId, directionKey)`).
+    // The bus pole's letter ("D"), compass bearing ("E"), and "towards" description ("Farringdon"),
+    // from the nearby lookup (see [StopArrivals]). A bus place splits into one header per pole by the
+    // letter (else bearing) — "King's Cross Station (D) (towards Farringdon)" — the bus analog of a
+    // rail platform (SPEC D8). All blank for a station, a letter-less bus stop, or a watched stop (no
+    // letter captured yet). Not part of a row's identity (that is `(stopId, lineId, directionKey)`).
     val stopLetter: String = "",
     val bearing: String = "",
+    val towards: String = "",
     val lineId: String,
     val lineName: String,
     val direction: String,

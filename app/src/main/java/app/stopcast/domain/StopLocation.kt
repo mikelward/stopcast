@@ -34,4 +34,8 @@ data class StopLocation(
     // coordinates; safe to carry (SPEC *Privacy*).
     val stopLetter: String = "",
     val bearing: String = "",
+    // The pole's "towards" direction description (TfL's `Towards`, e.g. "Farringdon Or Holborn
+    // Circus"): the human-readable cue on a bus header ("Stop D (towards Farringdon)"). Blank when
+    // TfL gives none. A public fact about the stop, never a coordinate.
+    val towards: String = "",
 )

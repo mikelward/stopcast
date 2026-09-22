@@ -38,9 +38,8 @@ class PlatformDirectionTest {
 
     @Test
     fun `only the four cardinals are compass directions`() {
-        // Only N/S/E/W (distinct first letters, so they stay distinct even when a header clips).
-        // Intercardinals don't appear on TfL rail platforms and would share a "North…" prefix that
-        // clips ambiguously, so they are rejected (Codex P2, PR #109).
+        // Only N/S/E/W — intercardinals don't appear on TfL rail platforms, so they are rejected
+        // rather than admitted as a direction (Codex P2, PR #109).
         assertNull(PlatformDirection.of("Northeastbound - Platform 1"))
         assertNull(PlatformDirection.of("Southwestbound - Platform 1"))
     }
@@ -79,20 +78,20 @@ class PlatformDirectionTest {
     }
 
     @Test
-    fun `a compass direction abbreviates to its initial`() {
-        // The header falls back to this single letter when the full word won't fit; the four
-        // cardinals have distinct initials, so the letter still tells them apart (PR follow-up).
-        assertEquals("N", PlatformDirection.abbreviation("Northbound"))
-        assertEquals("S", PlatformDirection.abbreviation("Southbound"))
-        assertEquals("E", PlatformDirection.abbreviation("Eastbound"))
-        assertEquals("W", PlatformDirection.abbreviation("Westbound"))
+    fun `parses the platform number that a rail place splits on`() {
+        // The platform grouping keys on this number (SPEC D8): the digits after "Platform", whether
+        // or not a compass leads the name.
+        assertEquals("2", PlatformDirection.platformNumber("Eastbound - Platform 2"))
+        assertEquals("4", PlatformDirection.platformNumber("Platform 4"))
+        assertEquals("12", PlatformDirection.platformNumber("Southbound - Platform 12"))
     }
 
     @Test
-    fun `a loop direction abbreviates to its word initials`() {
-        // No single-word compass to shorten, so the two-word loop label takes each word's initial —
-        // "IR"/"OR" stay distinct (the "one or two letter" form the maintainer asked for).
-        assertEquals("IR", PlatformDirection.abbreviation("Inner Rail"))
-        assertEquals("OR", PlatformDirection.abbreviation("Outer Rail"))
+    fun `a name with no platform number has none`() {
+        // A bare compass, a bus stop letter, and an empty value carry no platform to split on.
+        assertNull(PlatformDirection.platformNumber("Northbound"))
+        assertNull(PlatformDirection.platformNumber("Stop A"))
+        assertNull(PlatformDirection.platformNumber(null))
+        assertNull(PlatformDirection.platformNumber(""))
     }
 }
