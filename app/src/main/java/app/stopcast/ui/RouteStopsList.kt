@@ -1,15 +1,11 @@
 package app.stopcast.ui
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,12 +20,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.Placeable
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.stopcast.R
 import app.stopcast.domain.DepartureRow
+import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineSequence
 import app.stopcast.domain.RouteStop
 import app.stopcast.domain.RouteStops
@@ -74,7 +75,7 @@ internal fun rememberRouteStops(row: DepartureRow, retry: Int): RouteStopsUi {
     if (repository == null || next == null || row.lineId.isBlank()) return RouteStopsUi.Hidden
     val destination = next.destination
     fun resolve(sequence: LineSequence): RouteStopsUi =
-        RouteStops.ahead(sequence, row.stopId, destination, next.branch)
+        RouteStops.ahead(sequence, row.stopId, destination, next.branch, row.lineId)
             ?.let { RouteStopsUi.Loaded(destination, it) }
             ?: RouteStopsUi.Unavailable
     // Keyed by the followed train, so a change of soonest train (a refresh, or one departing)
@@ -133,6 +134,7 @@ internal fun RouteStopsSection(
             state.stops.forEachIndexed { index, stop ->
                 StopOnRail(
                     name = stop.name.ifBlank { stop.id },
+                    connections = stop.connections,
                     railColor = railColor,
                     first = index == 0,
                     last = index == state.stops.lastIndex,
@@ -154,47 +156,123 @@ internal fun RouteStopsSection(
     }
 }
 
-/** One station: a dot on the line-colored rail, then its name. The ends of the rail stop at the dot. */
+/**
+ * One station: a dot on the line-colored rail, its name, and a line pill per connection (the same
+ * pill the departures list uses). The pills sit right-aligned on the name's line when the name and
+ * all of them fit; otherwise the name takes its own line and the pills go together on the line(s)
+ * below, right-aligned — never split around the name. The dot stays level with the name, and the
+ * rail's ends stop at the dot.
+ */
 @Composable
-private fun StopOnRail(name: String, railColor: Color, first: Boolean, last: Boolean) {
+private fun StopOnRail(name: String, connections: List<LineRef>, railColor: Color, first: Boolean, last: Boolean) {
     val surface = MaterialTheme.colorScheme.surface
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        // Intrinsic height so the rail spans a wrapped two-line name without a gap.
-        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).heightIn(min = 32.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .width(24.dp)
-                .fillMaxHeight()
-                .drawBehind {
-                    val x = size.width / 2
-                    val mid = size.height / 2
-                    val rail = 4.dp.toPx()
-                    drawLine(
-                        color = railColor,
-                        start = Offset(x, if (first) mid else 0f),
-                        end = Offset(x, if (last) mid else size.height),
-                        strokeWidth = rail,
-                    )
-                    val radius = 6.dp.toPx()
-                    // The boarding stop and terminus are solid; a calling point is hollow, like a
-                    // TfL line diagram's tick.
-                    if (first || last) {
-                        drawCircle(railColor, radius, Offset(x, mid))
-                    } else {
-                        drawCircle(surface, radius, Offset(x, mid))
-                        drawCircle(railColor, radius - 1.dp.toPx(), Offset(x, mid), style = Stroke(2.dp.toPx()))
-                    }
-                },
-        )
-        Text(
-            text = name,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = if (first || last) FontWeight.SemiBold else FontWeight.Normal,
-            modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
-        )
+    val railStroke = Modifier.fillMaxSize()
+    Layout(
+        contents = listOf(
+            // The rail: the segment above the dot, the segment below it, and the dot itself —
+            // separate so the layout can put the dot level with the name.
+            {
+                Box(railStroke.drawBehind { if (!first) drawRail(railColor) })
+                Box(railStroke.drawBehind { if (!last) drawRail(railColor) })
+                Box(
+                    railStroke.drawBehind {
+                        val center = Offset(size.width / 2, size.height / 2)
+                        val radius = 6.dp.toPx()
+                        // The boarding stop and terminus are solid; a calling point is hollow, like
+                        // a TfL line diagram's tick.
+                        if (first || last) {
+                            drawCircle(railColor, radius, center)
+                        } else {
+                            drawCircle(surface, radius, center)
+                            drawCircle(railColor, radius - 1.dp.toPx(), center, style = Stroke(2.dp.toPx()))
+                        }
+                    },
+                )
+            },
+            {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (first || last) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            },
+            { connections.forEach { line -> LinePill(lineName = line.name, lineId = line.id, mode = line.mode) } },
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) { (railParts, nameParts, pillParts), constraints ->
+        val railWidth = 24.dp.roundToPx()
+        val textStart = railWidth + 12.dp.roundToPx()
+        // 8dp between the name and its pills; 4dp between pills, a tight group (five fit a phone row).
+        val nameGap = 8.dp.roundToPx()
+        val gap = 4.dp.roundToPx()
+        val lineGap = 4.dp.roundToPx()
+        val padV = 4.dp.roundToPx()
+        val available = (constraints.maxWidth - textStart).coerceAtLeast(0)
+        val pills = pillParts.map { it.measure(Constraints(maxWidth = available)) }
+        val pillsWidth = pills.sumOf { it.width } + gap * (pills.size - 1).coerceAtLeast(0)
+        val nameMeasurable = nameParts.single()
+        val oneLine = pills.isEmpty() ||
+            nameMeasurable.maxIntrinsicWidth(Constraints.Infinity) + nameGap + pillsWidth <= available
+        val placements = ArrayList<Triple<Placeable, Int, Int>>()
+        val height: Int
+        val dotY: Int
+        if (oneLine) {
+            val nameWidth = if (pills.isEmpty()) available else available - pillsWidth - nameGap
+            val namePlaceable = nameMeasurable.measure(Constraints(maxWidth = nameWidth.coerceAtLeast(0)))
+            val lineHeight = maxOf(namePlaceable.height, pills.maxOfOrNull { it.height } ?: 0)
+            height = maxOf(32.dp.roundToPx(), lineHeight + 2 * padV)
+            dotY = height / 2
+            placements += Triple(namePlaceable, textStart, (height - namePlaceable.height) / 2)
+            var x = constraints.maxWidth - pillsWidth
+            for (pill in pills) {
+                placements += Triple(pill, x, (height - pill.height) / 2)
+                x += pill.width + gap
+            }
+        } else {
+            val namePlaceable = nameMeasurable.measure(Constraints(maxWidth = available))
+            placements += Triple(namePlaceable, textStart, padV)
+            dotY = padV + namePlaceable.height / 2
+            // Greedy rows, each right-aligned, under the name.
+            var y = padV + namePlaceable.height + lineGap
+            var row = ArrayList<Placeable>()
+            fun flush() {
+                if (row.isEmpty()) return
+                val rowWidth = row.sumOf { it.width } + gap * (row.size - 1)
+                val rowHeight = row.maxOf { it.height }
+                var x = constraints.maxWidth - rowWidth
+                for (pill in row) {
+                    placements += Triple(pill, x, y + (rowHeight - pill.height) / 2)
+                    x += pill.width + gap
+                }
+                y += rowHeight + lineGap
+                row = ArrayList()
+            }
+            for (pill in pills) {
+                val rowWidth = row.sumOf { it.width } + gap * row.size
+                if (row.isNotEmpty() && rowWidth + pill.width > available) flush()
+                row += pill
+            }
+            flush()
+            height = y - lineGap + padV
+        }
+        val (above, below, dot) = railParts
+        val abovePlaceable = above.measure(Constraints.fixed(railWidth, dotY))
+        val belowPlaceable = below.measure(Constraints.fixed(railWidth, height - dotY))
+        val dotSize = 16.dp.roundToPx()
+        val dotPlaceable = dot.measure(Constraints.fixed(railWidth, dotSize))
+        layout(constraints.maxWidth, height) {
+            abovePlaceable.place(0, 0)
+            belowPlaceable.place(0, dotY)
+            dotPlaceable.place(0, dotY - dotSize / 2)
+            placements.forEach { (placeable, x, y) -> placeable.place(x, y) }
+        }
     }
+}
+
+/** A rail segment down the middle of this box, its full height. */
+private fun DrawScope.drawRail(color: Color) {
+    val x = size.width / 2
+    drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = 4.dp.toPx())
 }
 
 private fun routeStopsFailureMessage(kind: DeparturesUiState.Error.Kind): Int = when (kind) {

@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performTouchInput
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.RouteStop
 import app.stopcast.domain.StopArrivals
@@ -303,7 +304,7 @@ class RouteDetailScreenScreenshotTest {
             "Victoria", "Green Park", "Oxford Circus", "Warren Street", "Euston", "King's Cross St. Pancras",
             "Highbury & Islington", "Finsbury Park", "Seven Sisters", "Tottenham Hale", "Blackhorse Road",
             "Walthamstow Central",
-        ).mapIndexed { i, name -> RouteStop("stop$i", name) }
+        ).mapIndexed { i, name -> RouteStop("stop$i", name, victoriaLineConnections[name].orEmpty()) }
         composeRule.setContent {
             StopCastTheme {
                 RouteDetailScreen(
@@ -322,6 +323,8 @@ class RouteDetailScreenScreenshotTest {
 
         composeRule.onNodeWithText("Stops to Walthamstow Central").assertIsDisplayed()
         composeRule.onNodeWithText("Seven Sisters").assertIsDisplayed()
+        // A connection chip beside its station: the Lioness line at Euston, named for a screen reader.
+        composeRule.onNodeWithContentDescription("Lioness").assertIsDisplayed()
 
         captureSnapshot("route-detail-stops.png")
     }
@@ -381,6 +384,25 @@ class RouteDetailScreenScreenshotTest {
         composeRule.onNodeWithText("Retry").performClick()
         assertEquals(1, retried)
     }
+
+    // Public network facts for the Victoria line example: the lines a rider can change to.
+    private val victoriaLineConnections = mapOf(
+        "Green Park" to listOf(LineRef("jubilee", "Jubilee", "tube"), LineRef("piccadilly", "Piccadilly", "tube")),
+        "Oxford Circus" to listOf(LineRef("bakerloo", "Bakerloo", "tube"), LineRef("central", "Central", "tube")),
+        "Warren Street" to listOf(LineRef("northern", "Northern", "tube")),
+        "Euston" to listOf(LineRef("northern", "Northern", "tube"), LineRef("lioness", "Lioness", "overground")),
+        "King's Cross St. Pancras" to listOf(
+            LineRef("circle", "Circle", "tube"),
+            LineRef("hammersmith-city", "Hammersmith & City", "tube"),
+            LineRef("metropolitan", "Metropolitan", "tube"),
+            LineRef("northern", "Northern", "tube"),
+            LineRef("piccadilly", "Piccadilly", "tube"),
+        ),
+        "Highbury & Islington" to listOf(LineRef("mildmay", "Mildmay", "overground"), LineRef("windrush", "Windrush", "overground")),
+        "Finsbury Park" to listOf(LineRef("piccadilly", "Piccadilly", "tube")),
+        "Seven Sisters" to listOf(LineRef("weaver", "Weaver", "overground")),
+        "Walthamstow Central" to listOf(LineRef("weaver", "Weaver", "overground")),
+    )
 
     private fun captureSnapshot(name: String, widthPx: Int = 1080, heightPx: Int = 2400) {
         val recording = System.getProperty("roborazzi.test.record") == "true"

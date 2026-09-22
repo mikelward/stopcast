@@ -360,7 +360,10 @@ it arrives the page says so, a failed fetch says why with a retry, and where TfL
 than one path from here (a Northern train with no branch named) the page says the list is
 unavailable rather than guessing a trunk (principle 1). The list follows one predicted train, so
 it is **withheld while the row is stale** — that prediction may no longer be the next train — and
-returns with the next refresh (D4). It is a full screen rather than a dialog
+returns with the next refresh (D4). Each station carries a **line pill per connection** — the
+other tube, Overground, DLR, Elizabeth line and tram lines at the station or its interchange,
+from the same response. Buses are left out, since nearly every station has several and they would
+swamp the list. It is a full screen rather than a dialog
 because it will grow per-route actions (a maps/nav hand-off), which a dialog would cap. **On the watched list, warning rows still lead**, above even a starred service — a stop
 closure or a no-prediction line-status row is something the user must see, and pinning a
 starred service above it would push a warning down the list (principle 2). **On the near-me
