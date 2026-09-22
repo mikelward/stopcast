@@ -53,12 +53,26 @@ jobs:
         run: ./gradlew test
       - name: Lint
         run: ./gradlew lint
+      # The weekly dependency-update workflow trusts this script to decide when a
+      # batch changes what the app legally declares, so its suite runs here —
+      # dependency-free, under node --test, nothing to install.
+      - name: Test the license inventory check
+        run: node --test scripts/check-license-inventory.test.js
       # The open-source attribution (res/raw/aboutlibraries.json) is committed and only
       # regenerated on demand, so a dependency change could otherwise ship a stale list
       # that no build step catches (Codex). Regenerate here and fail on any diff.
-      - name: Check licenses export is up to date
+      #
+      # The policy audit sits BETWEEN the regenerate and the drift diff, on purpose: a
+      # hand-added dependency's license is already in the freshly regenerated working-tree
+      # file, but its stale committed copy would fail the diff first — and then the generic
+      # "export drifted" failure is what a reader sees, not the copyleft one this exists to
+      # catch. StopCast ships proprietary, so a copyleft or source-available license is
+      # incompatible outright; the script's tier table and its tests are the policy
+      # (scripts/check-license-inventory.mjs).
+      - name: Check licenses export is up to date and policy-clean
         run: |
           ./gradlew :app:exportBundledLicenses --rerun
+          node scripts/check-license-inventory.mjs --forbidden
           git diff --exit-code app/src/main/res/raw/aboutlibraries.json
       - name: Test the GitHub-release publisher
         # The only coverage `scripts/publish-github-release.sh` can get:

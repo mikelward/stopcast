@@ -1,0 +1,96 @@
+name: gradle-update
+
+# One batched Gradle dependency PR per week, produced by the shared
+# mikelward/gradle-update workflow: every gradle/libs.versions.toml entry
+# moves to the newest stable release within its current major, the checks
+# below validate the batch, and a passing batch lands by auto-merge. All
+# policy lives in the shared workflow; this caller owns only the schedule
+# and the permission grant, which the called workflow downscopes per job —
+# the job that runs Gradle only ever sees contents: read.
+#
+# The @main reference is deliberate, not an unpinned third-party action:
+# gradle-update is this owner's repo, its main only moves through its own
+# gated pull requests (CI + automated review, no direct pushes), and the
+# whole point of the shared workflow is that a fix there reaches every
+# consumer's next run with no per-repo bump PRs — the drift those bumps
+# reintroduce is what the shared repo exists to kill. A SHA pin here would
+# also pin less than it appears to: the workflow checks its engine out at
+# main by design, so the moving piece would move regardless.
+#
+# Cost and reliability (AGENTS.md): 0 pounds -- GitHub Actions minutes on this
+# account, one scheduled run a week plus the CI it triggers on the batch PR;
+# no paid third-party action (the engine is this owner's own repo) and no Play
+# Data Safety surface (a dev-time workflow, nothing the app ships or sends, no
+# battery or runtime cost). It is off every app path, so a failure never
+# reaches a user: if the shared workflow, the `gradle-update` credential, or
+# the androidlog repo is unavailable, the run just opens no PR that week --
+# dependencies stay where they are pinned and the next Saturday retries.
+# Nothing lands unreviewed: CI and the license review-check gate every batch,
+# and a license-metadata change withholds auto-merge for a human.
+on:
+  schedule:
+    - cron: '17 6 * * 6'   # Saturdays, off the congested top of the hour
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: gradle-update
+  cancel-in-progress: false
+jobs:
+  update:
+    uses: mikelward/gradle-update/.github/workflows/gradle-update.yml@main
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    # `inherit`, not a `secrets:` block: the called workflow's publish job
+    # reads GRADLE_UPDATE_PAT (or the App pair) from this repository's
+    # `gradle-update` environment, and an environment secret reaches a
+    # called workflow no other way. A secret passed by name reaches the
+    # runner of every job in the called workflow, the untrusted update job
+    # included, which is what this replaces — see docs/PAT.md in
+    # mikelward/gradle-update (the PAT takes priority over the App
+    # credential there; either opens the PR as a real collaborator, so CI
+    # starts on it normally — no first-time-contributor approval to click
+    # through). The corresponding zizmor finding (secrets-inherit) is
+    # excused inline on that one line, with the same reason;
+    # .github/zizmor.yml says why the inline form rather than a file entry.
+    secrets: inherit # zizmor: ignore[secrets-inherit]
+    with:
+      # androidlog is published to a branch of its own repository rather than
+      # to Maven Central, so the engine cannot discover its releases through
+      # the default repositories. Declaring it here is what lets the weekly
+      # batch see a new version at all — without it the coordinate sits at
+      # whatever it was pinned to, silently, with no failing run to say so.
+      # settings.gradle.kts already declares the same repository, scoped to
+      # that one group, so Gradle can resolve what the batch selects.
+      extra-repositories: |
+        https://raw.githubusercontent.com/mikelward/androidlog/maven
+      # Both coordinates, because they share one `androidlog` version key and
+      # the input exempts a key only when every coordinate it pins is named.
+      # The cooldown exists to let a compromised third-party release be yanked
+      # before an unattended job takes it; it guards nothing against a library
+      # this owner publishes and reviews, and would never expire anyway —
+      # raw.githubusercontent.com serves no `Last-Modified`, so there is no
+      # release date to age out and the coordinate would be deferred forever
+      # rather than merely delayed.
+      no-cooldown-for: |
+        com.mikelward.androidlog:logging-core
+        com.mikelward.androidlog:logging-android
+      # The license inventory is derived from the dependency set, so the
+      # batch rebuilds it and commits it alongside the catalog — without
+      # this, CI's own drift check turns every benign bump into a manual
+      # regeneration push.
+      regenerate: |
+        ./gradlew :app:exportBundledLicenses --rerun
+      regenerated-files: |
+        app/src/main/res/raw/aboutlibraries.json
+      # A batch that changes the LICENSE METADATA of what the app bundles
+      # stops for a human: the script diffs each library's declared license
+      # names between the base and the regenerated inventory, and a new or
+      # changed line exits nonzero — which titles the weekly PR NEEDS HUMAN
+      # REVIEW, puts the script's attribution (which library, which
+      # license) in the PR body's Review section, and leaves auto-merge
+      # unarmed. Version churn and removals never flag; they are visible in
+      # the PR's own diff of the regenerated file.
+      review-checks: |
+        node scripts/check-license-inventory.mjs
