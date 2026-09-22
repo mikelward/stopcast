@@ -62,21 +62,21 @@ class HeaderQualifierTest {
 
     @Test
     fun `a bus bearing renders an arrow glyph and speaks the direction`() {
-        assertEquals("→SW", groupHeaderLabel(StopQualifier.BusBearing("sw")))
+        assertEquals("Stop ->SW", groupHeaderLabel(StopQualifier.BusBearing("sw")))
         assertEquals("Southwest-bound", groupHeaderSpoken(StopQualifier.BusBearing("sw")))
     }
 
     @Test
     fun `a bus terminus renders an arrow and the destination`() {
-        assertEquals("→ Bank", groupHeaderLabel(StopQualifier.Terminus("Bank")))
+        assertEquals("Stop -> Bank", groupHeaderLabel(StopQualifier.Terminus("Bank")))
         assertEquals("to Bank", groupHeaderSpoken(StopQualifier.Terminus("Bank")))
     }
 
     @Test
     fun `a bus terminus with a display rename shows the renamed form, matching the card`() {
         // The destination line renames "Battersea Power" → "Battersea" (DepartureLabels); the header
-        // must use the same so it doesn't read "→ Battersea Power" above a "Battersea" card.
-        assertEquals("→ Battersea", groupHeaderLabel(StopQualifier.Terminus("Battersea Power")))
+        // must use the same so it doesn't read "Stop -> Battersea Power" above a "Battersea" card.
+        assertEquals("Stop -> Battersea", groupHeaderLabel(StopQualifier.Terminus("Battersea Power")))
         assertEquals("to Battersea", groupHeaderSpoken(StopQualifier.Terminus("Battersea Power")))
     }
 }

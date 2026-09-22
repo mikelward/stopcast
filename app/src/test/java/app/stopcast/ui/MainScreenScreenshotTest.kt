@@ -755,7 +755,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `a bus stop whose routes all head one way shows the terminus`() {
         // The bus analog of the rail compass: a compass-less bus place where every route heads one
-        // way is qualified "→ BANK", so a rider reads the stop's direction off the header. Logic-only —
+        // way is qualified "Stop -> BANK", so a rider reads the stop's direction off the header. Logic-only —
         // no baseline. Public route/place names only (SPEC *Privacy*).
         val stop = StopArrivals(
             "490G00TPL", "Turnpike Lane",
@@ -778,7 +778,7 @@ class MainScreenScreenshotTest {
         }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Turnpike Lane", substring = true).assertExists()
-        composeRule.onNodeWithText("→ Bank", substring = true).assertExists()
+        composeRule.onNodeWithText("Stop -> Bank", substring = true).assertExists()
     }
 
     @Test
@@ -819,7 +819,7 @@ class MainScreenScreenshotTest {
 
     @Test
     fun `a long bus terminus shares the header with the place name, neither crowded out`() {
-        // On the one-line header the place name and the "→ Terminus" qualifier SHARE the row (each
+        // On the one-line header the place name and the "Stop -> Terminus" qualifier SHARE the row (each
         // weighted), so a long terminus at a large font can't consume the whole line and crowd the
         // place name to zero — both keep at least their half and clip within it (Codex P1, PR #122).
         // The header announces "to Finsbury Park Interchange" to a screen reader. Logic-only — no
@@ -851,7 +851,7 @@ class MainScreenScreenshotTest {
         val nameBounds = composeRule.onNodeWithText("Turnpike Lane", substring = true).getUnclippedBoundsInRoot()
         assertTrue("place name should keep width, was ${nameBounds.right - nameBounds.left}", nameBounds.right - nameBounds.left > 0.dp)
         // The terminus segment is present and starts within the row (the cue survives, clipped if need be).
-        val terminus = composeRule.onNodeWithText("→ Finsbury", substring = true).getUnclippedBoundsInRoot()
+        val terminus = composeRule.onNodeWithText("Stop -> Finsbury", substring = true).getUnclippedBoundsInRoot()
         assertTrue("terminus should start within the row, left was ${terminus.left}", terminus.left < 360.dp)
         // The full terminus is the header's spoken label.
         composeRule.onNodeWithContentDescription("to Finsbury Park Interchange", substring = true).assertExists()

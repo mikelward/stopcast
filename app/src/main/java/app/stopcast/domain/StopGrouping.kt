@@ -17,9 +17,9 @@ package app.stopcast.domain
  * but the Piccadilly on Platform 6). The platform number and its compass are parsed from
  * `platformName` ([PlatformDirection]); a rail direction with no platform number falls to a bare
  * compass. A **bus** pole, which carries no platform in the arrivals feed, splits on its **stop
- * letter** ("King's Cross Station (D) (towards Farringdon)"), else its **compass bearing** ("(→E)"),
+ * letter** ("King's Cross Station (D) (towards Farringdon)"), else its **compass bearing** ("(->E)"),
  * from the nearby lookup's [DepartureRow.stopLetter]/[DepartureRow.bearing]/[DepartureRow.towards]. A
- * bus place with neither falls back to a **shared terminus** ("→ Bank") when the whole stop heads one
+ * bus place with neither falls back to a **shared terminus** ("-> Bank") when the whole stop heads one
  * way ([sharedBusTerminus]), else the bare place name. The group's [StopQualifier] carries whichever
  * cue it split on. The cluster (top level) is uniform across modes; the split (sub-level) is
  * mode-aware — rail-family modes (tube, DLR, Overground, rail) carry a `platformName`, trams don't
@@ -161,7 +161,7 @@ object StopGrouping {
                 // the place name (SPEC D8). A **rail** place splits on its platform ("Platform 2
                 // (Eastbound)"), else a bare compass; a **bus** pole on its letter ("Stop D (towards
                 // Farringdon)"), else its bearing; a letter/bearing-less bus place falls back to the
-                // shared terminus ("→ Bank") when its whole stop heads one way ([sharedBusTerminus]).
+                // shared terminus ("-> Bank") when its whole stop heads one way ([sharedBusTerminus]).
                 val qualifier = when (val s = info.split) {
                     // The platform's direction is a consensus across EVERY row in the group, not just
                     // the first row's split: separate line rows share a platform number but TfL can
@@ -189,7 +189,7 @@ object StopGrouping {
     }
 
     /**
-     * The single terminus a **bus** place heads to, for the "→ Terminus" header qualifier, or null
+     * The single terminus a **bus** place heads to, for the "-> Terminus" header qualifier, or null
      * when it has none to stand behind. Bus-only, and only for a place with no letter or bearing to
      * split on (this is called only for a [RowSplit.None] group): the letter/bearing is the primary
      * bus cue, the terminus its fallback; other compass-less modes stay bare.
@@ -197,7 +197,7 @@ object StopGrouping {
      * "Heads one way" is judged from **every timed prediction** in the group, not the row headline:
      * a single (line, direction) row can carry departures to more than one terminus (a short-working
      * among the through buses), and [DepartureRow.destination] names only the *soonest* — so keying
-     * on it could assert "→ Bank" while a card below still shows a later Waterloo departure (Codex
+     * on it could assert "-> Bank" while a card below still shows a later Waterloo departure (Codex
      * P1, PR #116). So this checks each upcoming departure's destination: they must all name the
      * **same, non-blank** terminus. Any divergence, or a blank TfL didn't fill (which can't confirm
      * the shared terminus — SPEC principle 1), yields null so the header stays the bare name rather
@@ -205,7 +205,7 @@ object StopGrouping {
      *
      * A **status row** (a suspended line, [DepartureRow.upcoming] empty) names no destination to
      * confirm, and it rides in the group at the same stop id — so it too withholds the terminus,
-     * rather than let its card sit under a "→ Terminus" header for a direction it may not share
+     * rather than let its card sit under a "-> Terminus" header for a direction it may not share
      * (Codex P2, PR #116): every route in the group must name the confirmed terminus, so any route
      * that can't disqualifies it.
      */
@@ -365,7 +365,7 @@ object StopGrouping {
 /**
  * The cue a group header carries beside the place name — the one thing that tells two groups of one
  * place apart (SPEC D8). Exactly one kind per group; null on [StopGroup.qualifier] is the bare name.
- * The screen ([app.stopcast.ui]) owns how each renders ("– Eastbound", "(D)", "(→E)", "→ Bank").
+ * The screen ([app.stopcast.ui]) owns how each renders ("– Eastbound", "(D)", "(->E)", "-> Bank").
  */
 sealed interface StopQualifier {
     /** A rail platform: its [number] ("2", rendered "Platform 2") and the compass [direction]
