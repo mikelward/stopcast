@@ -5,8 +5,9 @@ import org.junit.Test
 
 /**
  * [lineCode]: a line's first three letters (uppercased) for a named line, but a
- * number/code-identified route (bus, river bus) kept verbatim so distinct routes don't
- * collapse to the same letters.
+ * number/code-identified route (bus, river bus, c2c) kept verbatim so distinct routes don't
+ * collapse to the same letters, and a National Rail operator shown by its initials or a
+ * hand-pinned code.
  */
 class LineCodeTest {
     @Test
@@ -33,5 +34,43 @@ class LineCodeTest {
         // collapsing to "RB".
         assertEquals("RB1", lineCode("RB1", "river-bus"))
         assertEquals("RB6", lineCode("RB6", "river-bus"))
+        // c2c carries a digit, so it stays verbatim as its own brand rather than an abbreviation.
+        assertEquals("c2c", lineCode("c2c", "national-rail"))
+    }
+
+    @Test
+    fun `a National Rail operator with a multi-word name uses its initials`() {
+        // More than one capital letter ⇒ a multi-word brand ⇒ its capitals, the initialism a
+        // rider sees on the train (beats the cryptic legacy TOC codes EM/GW/GR/LE/VT).
+        assertEquals("EMR", lineCode("East Midlands Railway", "national-rail"))
+        assertEquals("GWR", lineCode("Great Western Railway", "national-rail"))
+        assertEquals("LNER", lineCode("London North Eastern Railway", "national-rail"))
+        assertEquals("GA", lineCode("Greater Anglia", "national-rail"))
+        assertEquals("AWC", lineCode("Avanti West Coast", "national-rail"))
+        assertEquals("GN", lineCode("Great Northern", "national-rail"))
+    }
+
+    @Test
+    fun `single-word rail operators that would collide are pinned to their TOC code`() {
+        // First-three-letters makes Southern and Southeastern both "SOU"; the pinned TOC codes
+        // keep them distinct.
+        assertEquals("SN", lineCode("Southern", "national-rail"))
+        assertEquals("SE", lineCode("Southeastern", "national-rail"))
+        assertEquals("TL", lineCode("Thameslink", "national-rail"))
+    }
+
+    @Test
+    fun `pinned rail codes override the initials where those read worse`() {
+        // The Express services take the "…X" TOC code, nicer than plain initials (GE/HE).
+        assertEquals("GX", lineCode("Gatwick Express", "national-rail"))
+        assertEquals("HX", lineCode("Heathrow Express", "national-rail"))
+        // CrossCountry takes its TOC code, not "CC", to stay clear of c2c.
+        assertEquals("XC", lineCode("CrossCountry", "national-rail"))
+    }
+
+    @Test
+    fun `an unpinned single-word rail operator falls back to first three letters`() {
+        // One capital, not pinned ⇒ the ordinary rule, so a future operator still shows something.
+        assertEquals("MER", lineCode("Merseyrail", "national-rail"))
     }
 }

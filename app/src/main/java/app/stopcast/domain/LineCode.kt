@@ -6,8 +6,13 @@ package app.stopcast.domain
  * letters" call, not a cleverer abbreviation, so the pill stays narrow and the row keeps
  * its width for the countdown.
  *
- * A route identified by a number or code keeps it verbatim: a bus route (`24`, `N73`) or a
- * river-bus route (`RB1`, `RB6`) carries a digit, so it is returned as-is rather than
+ * **National Rail is the exception** (see [railOperatorCode]): first-three-letters collides
+ * for operators ("Southern" and "Southeastern" both → SOU) and reads as noise for the rest,
+ * so a rail operator shows its initials (East Midlands Railway → EMR) or, for the few that
+ * need it, a hand-pinned code.
+ *
+ * A route identified by a number or code keeps it verbatim: a bus route (`24`, `N73`), a
+ * river-bus route (`RB1`, `RB6`), or c2c carries a digit, so it is returned as-is rather than
  * collapsed to its letters — otherwise every `RBn` would read "RB" and be indistinguishable
  * at a shared pier. A name with no letters falls back to itself. `uppercase()` is the
  * no-arg, locale-invariant overload, so it's safe from the Turkish-ı trap.
@@ -19,6 +24,65 @@ fun lineCode(lineName: String, mode: String): String {
     if (mode.equals("bus", ignoreCase = true) || lineName.any { it.isDigit() }) {
         return lineName.trim()
     }
+    if (mode.equals("national-rail", ignoreCase = true)) {
+        railOperatorCode(lineName)?.let { return it }
+    }
     val letters = lineName.filter { it.isLetter() }
     return if (letters.isEmpty()) lineName.trim() else letters.take(3).uppercase()
 }
+
+/**
+ * The National Rail pill code for [operator], or `null` to let [lineCode] fall back to the
+ * first-three-letters rule. Two steps, in order:
+ *
+ * 1. A **hand-pinned exception** ([railOperatorExceptions]) wins. This is where the
+ *    single-word operators that would otherwise collide take their official two-letter TOC
+ *    (train operating company) code — Southern SN, Southeastern SE (both are "SOU" under
+ *    first-three-letters) — and where any operator whose auto-initials read wrong can be
+ *    corrected by hand.
+ * 2. Otherwise, an operator whose name carries **more than one capital letter** — i.e. a
+ *    multi-word brand — is those capitals: East Midlands Railway → EMR, Great Western Railway
+ *    → GWR, London North Eastern Railway → LNER (four chars, the widest the pill holds),
+ *    Greater Anglia → GA, Avanti West Coast → AWC, Great Northern → GN. This is the initialism
+ *    a rider sees on the train and beats the cryptic legacy TOC codes (EM, GW, GR, LE, VT) for
+ *    exactly these. It assumes TfL's Title-Case operator names; if one ever arrives ALL CAPS,
+ *    pin it in step 1.
+ *
+ * A single-capital name not pinned in step 1 (a future single-word operator) is left to the
+ * first-three-letters fallback. c2c never reaches here — it carries a digit and stays verbatim
+ * ("c2c", its full brand name, which fits) via [lineCode]'s number path. Elizabeth line and
+ * London Overground are their own modes, not national-rail; even were one tagged national-rail
+ * it is unpinned and single-capital, so it falls back to ELI / LON.
+ */
+private fun railOperatorCode(operator: String): String? {
+    railOperatorExceptions[normalizeOperator(operator)]?.let { return it }
+    val initials = operator.filter { it.isUpperCase() }
+    return if (initials.length > 1) initials else null
+}
+
+/**
+ * Hand-pinned National Rail codes, keyed by a punctuation- and case-insensitive form of the
+ * operator name (see [normalizeOperator]). Add an entry whenever the capital-initials heuristic
+ * ([railOperatorCode]) produces something wrong or unwanted. These want a final eyeball against
+ * a real device — TfL egress isn't reachable from CI to enumerate the live set.
+ *
+ * The pins so far:
+ * - single-word operators whose first-three-letters collide (Southern/Southeastern → SOU) take
+ *   their official TOC code (SN, SE); Thameslink (TL) rides along for a consistent single-word set;
+ * - the Express services take the "…X" TOC code (Gatwick GX, Heathrow HX) — nicer than the plain
+ *   initials GE/HE;
+ * - CrossCountry takes its TOC code XC rather than the heuristic's "CC", to stay clear of c2c.
+ */
+private val railOperatorExceptions: Map<String, String> = mapOf(
+    "southern" to "SN",
+    "southeastern" to "SE",
+    "thameslink" to "TL",
+    "gatwickexpress" to "GX",
+    "heathrowexpress" to "HX",
+    "crosscountry" to "XC",
+)
+
+/** An operator name reduced to lowercase letters and digits, so "South Western Railway",
+ *  "south western railway" and stray punctuation all key the same [railOperatorExceptions]
+ *  entry. */
+private fun normalizeOperator(name: String): String = name.lowercase().filter { it.isLetterOrDigit() }
