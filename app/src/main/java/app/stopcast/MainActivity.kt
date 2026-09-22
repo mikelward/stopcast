@@ -45,6 +45,7 @@ import app.stopcast.data.logAppSettingsWarning
 import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.RouteTopologyStore
+import app.stopcast.data.SharedTflRateLimiter
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.BugReport
 import app.stopcast.domain.Coordinates
@@ -107,7 +108,7 @@ class MainActivity : ComponentActivity() {
             initializer {
                 NearbyStopsViewModel(
                     location = AndroidLocationProvider(applicationContext, warn = ::logLocationWarning),
-                    finder = KtorTflClient(httpClient),
+                    finder = KtorTflClient(httpClient, rateLimiter = SharedTflRateLimiter.instance),
                     warn = ::logLocationWarning,
                 )
             }
@@ -518,7 +519,7 @@ class MainActivity : ComponentActivity() {
                 factory = viewModelFactory {
                     initializer {
                         MainViewModel(
-                            client = KtorTflClient(httpClient),
+                            client = KtorTflClient(httpClient, rateLimiter = SharedTflRateLimiter.instance),
                             seedStops = ready.eagerStops,
                             initialMore = ready.more,
                             // Save-only snapshot store: the app writes each fresh snapshot for
