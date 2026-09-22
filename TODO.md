@@ -357,7 +357,8 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         "make bus stop letters like rail station compass directions"). A bus place now **splits by
         stop letter** — one header per pole, "King's Cross Station (D)" — the way rail splits by
         compass, so a bus interchange isn't a wall of cards under one bare name. No letter → falls
-        back to the pole's **bearing** ("(->E)"); neither → the shared terminus (above); none → bare.
+        back to the pole's **bearing** (a direction word, "Southbound"); neither → the shared terminus
+        (above); none → bare.
         Precedence: letter → bearing → terminus → bare. `TflStopPointDto` now parses `stopLetter` +
         the `CompassPoint` property, threaded `StopLocation → StopRef → Snapshot.mergeStop →
         StopArrivals → DepartureRow` (the `clusterId` route). The group cue unified into a
@@ -397,14 +398,29 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         multi-row card (keep long-press-to-star and tap-to-detail per row).
   - [ ] **Tap a route row → all stops for that route** (maintainer, 2026-09-22). Extends the
         route-detail tap to show the route's full stop sequence, not just star + disruption text.
-  - [ ] **A unified, arrow-free appearance for the bus direction header** (maintainer, 2026-09-22).
-        The bus compass renders `Stop ->S` (TfL's own pole format) today, ASCII to avoid the misaligned
-        glyph. Maintainer leans toward dropping the arrow entirely and showing a plain compass **word**
-        — just `Southbound`/`Northbound` — so both direction cases (a `CompassPoint` bearing and an
-        arrow-in-`stopLetter`, now on one path) read the same and match the rail compass qualifier
-        (`Eastbound`). `bearingSpoken` in `HeaderQualifier.kt` already has the letter→word map; decide
-        the intercardinal form (`Southwest-bound`?) and whether the shared terminus follows. A
-        better-aligned arrow glyph would be an acceptable alternative to ASCII if the word doesn't fit.
+  - [x] **A unified, arrow-free appearance for the bus direction header** (maintainer, 2026-09-22;
+        landed). The bus compass now reads as a bare direction word (`Southbound`), like the rail
+        compass; `Stop` is reserved for a literal pole letter (`Stop E`); the shared terminus reads
+        as an arrow plus the destination (`-> Bank`). Both direction cases (a `CompassPoint` bearing
+        and an arrow-in-`stopLetter`) share the one word path. Intercardinals use `bearingSpoken`'s
+        hyphenated `-bound` form.
+  - [ ] **Find a better arrow glyph for the "-> destination" header** (maintainer, 2026-09-22). The
+        terminus arrow is ASCII `->` for now — the only thing that aligns to the text baseline
+        reliably. Preview single-glyph options (the maintainer thought `➔` U+2794 looked ok; also
+        `→`, `⟶`, `➜`, `»`) rendered in the app font to judge vertical alignment, and/or a centered
+        inline vector `ArrowRightAlt` icon (pixel-perfect, but the header can no longer be one plain
+        string — `InlineTextContent` in `StopGroupHeader`). Pick one and swap it in for the ASCII `->`.
+  - [ ] **Rethink the bus header cue: what's most informative, matched to the signage** (maintainer,
+        2026-09-22; longer-term). A pole often carries several cues — a real `stopLetter`, a
+        `CompassPoint`, a `Towards`, and the live departures' shared terminus. Today's precedence is
+        letter → compass word → shared terminus → bare. Open questions to settle: which is most
+        informative *about the service* (where it's going) vs *about the stop* (which pole/where the
+        rider stands); what riders actually look for at the stop; and what to fall back to when the
+        preferred cue is missing — ideally matching the **physical signage**. Cranley Gardens has no
+        letter on the pole but the sign reads "Towards Friern Barnet", so `-> Friern Barnet` (the
+        `Towards`) would match reality where `Northbound` (our derived compass) does not. Leaning
+        toward preferring `Towards` (`-> Archway`) over the bare compass; handle TfL's two-way
+        `Towards` (`"Farringdon Or Holborn Circus"` — already trimmed at `" Or "` for the spoken label).
   - [ ] **Split a mixed-platform row into a card per platform** (Codex P1, PR #119). A single
         (line, direction) row can carry departures from more than one platform (a terminus, a platform
         change), since `DepartureRows.forStop` merges a line's one direction into one card. The

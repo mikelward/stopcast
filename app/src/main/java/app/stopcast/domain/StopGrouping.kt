@@ -17,7 +17,7 @@ package app.stopcast.domain
  * but the Piccadilly on Platform 6). The platform number and its compass are parsed from
  * `platformName` ([PlatformDirection]); a rail direction with no platform number falls to a bare
  * compass. A **bus** pole, which carries no platform in the arrivals feed, splits on its **stop
- * letter** ("King's Cross Station (D) (towards Farringdon)"), else its **compass bearing** ("(->E)"),
+ * letter** ("King's Cross Station (D) (towards Farringdon)"), else its **compass bearing** ("(Eastbound)"),
  * from the nearby lookup's [DepartureRow.stopLetter]/[DepartureRow.bearing]/[DepartureRow.towards]. A
  * bus place with neither falls back to a **shared terminus** ("-> Bank") when the whole stop heads one
  * way ([sharedBusTerminus]), else the bare place name. The group's [StopQualifier] carries whichever
@@ -365,7 +365,8 @@ object StopGrouping {
 /**
  * The cue a group header carries beside the place name — the one thing that tells two groups of one
  * place apart (SPEC D8). Exactly one kind per group; null on [StopGroup.qualifier] is the bare name.
- * The screen ([app.stopcast.ui]) owns how each renders ("– Eastbound", "(D)", "(->E)", "-> Bank").
+ * The screen ([app.stopcast.ui]) owns how each renders ("Platform 2", "Eastbound", "Stop D",
+ * "Southbound", "-> Bank" — "Stop" only on a literal letter).
  */
 sealed interface StopQualifier {
     /** A rail platform: its [number] ("2", rendered "Platform 2") and the compass [direction]

@@ -29,7 +29,7 @@ data class StopLocation(
     val hubId: String = "",
     // The bus pole's letter ("D", from TfL's `stopLetter`) and compass bearing ("E", from the
     // `CompassPoint` property): the per-pole cue that splits a bus place into one header per pole
-    // ("King's Cross Station (D)" / "(->E)"), the bus analog of a rail platform's compass (SPEC D8).
+    // ("King's Cross Station (D)" / "(Eastbound)"), the bus analog of a rail platform's compass (SPEC D8).
     // Blank for a station or a bus stop TfL gives neither. Public facts about the stop, never
     // coordinates; safe to carry (SPEC *Privacy*).
     val stopLetter: String = "",

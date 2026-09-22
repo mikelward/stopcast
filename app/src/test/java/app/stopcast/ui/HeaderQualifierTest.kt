@@ -61,22 +61,25 @@ class HeaderQualifierTest {
     }
 
     @Test
-    fun `a bus bearing renders an arrow glyph and speaks the direction`() {
-        assertEquals("Stop ->SW", groupHeaderLabel(StopQualifier.BusBearing("sw")))
+    fun `a bus bearing reads as a bare direction word, no Stop and no arrow`() {
+        // "Stop" is reserved for a literal pole letter; a compass bearing is just the direction word,
+        // like the rail compass ("Eastbound") — and the visible form matches the spoken.
+        assertEquals("Southwest-bound", groupHeaderLabel(StopQualifier.BusBearing("sw")))
         assertEquals("Southwest-bound", groupHeaderSpoken(StopQualifier.BusBearing("sw")))
+        assertEquals("Southbound", groupHeaderLabel(StopQualifier.BusBearing("s")))
     }
 
     @Test
-    fun `a bus terminus renders an arrow and the destination`() {
-        assertEquals("Stop -> Bank", groupHeaderLabel(StopQualifier.Terminus("Bank")))
+    fun `a bus terminus renders an arrow and the destination, no Stop`() {
+        assertEquals("-> Bank", groupHeaderLabel(StopQualifier.Terminus("Bank")))
         assertEquals("to Bank", groupHeaderSpoken(StopQualifier.Terminus("Bank")))
     }
 
     @Test
     fun `a bus terminus with a display rename shows the renamed form, matching the card`() {
         // The destination line renames "Battersea Power" → "Battersea" (DepartureLabels); the header
-        // must use the same so it doesn't read "Stop -> Battersea Power" above a "Battersea" card.
-        assertEquals("Stop -> Battersea", groupHeaderLabel(StopQualifier.Terminus("Battersea Power")))
+        // must use the same so it doesn't read "-> Battersea Power" above a "Battersea" card.
+        assertEquals("-> Battersea", groupHeaderLabel(StopQualifier.Terminus("Battersea Power")))
         assertEquals("to Battersea", groupHeaderSpoken(StopQualifier.Terminus("Battersea Power")))
     }
 }
