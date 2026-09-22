@@ -1,6 +1,7 @@
 package app.stopcast.data
 
 import app.stopcast.domain.Departure
+import app.stopcast.domain.HubInfo
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.StopFinder
@@ -72,13 +73,14 @@ class KtorTflClient(
             }.body<TflStopPointsResponseDto>().stopPoints.mapNotNull { it.toStopLocationOrNull() }
         }
 
-    override suspend fun hubName(hubId: String): String =
+    override suspend fun hubInfo(hubId: String): HubInfo =
         tflRequest {
-            cleanStopName(
-                httpClient.get("$baseUrl/StopPoint/$hubId") {
-                    if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
-                }.body<TflStopPointDto>().commonName,
-            )
+            val dto = httpClient.get("$baseUrl/StopPoint/$hubId") {
+                if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+            }.body<TflStopPointDto>()
+            // The hub's own cleaned name titles the alert; the member-station spellings across the
+            // tree are the alias set the disruption strip matches against (SPEC *Disruptions*).
+            HubInfo(name = cleanStopName(dto.commonName), aliases = dto.hubStationNames())
         }
 
     override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {

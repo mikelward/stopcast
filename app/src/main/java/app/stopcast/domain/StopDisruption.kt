@@ -50,16 +50,25 @@ fun normalizeDisruptionText(rawDescription: String): String =
  * Whether TfL leads with the name is **not** decided by mode — a tube closure usually opens
  * with "&lt;Station&gt; Underground Station: …" while a bus "Bus Stop Closed" notice never
  * names the stop — so the name is stripped by **detection, not by mode**: a prefix is removed
- * only when the text actually starts with a form of [stopName] or [hubName] (the bare name, or
- * the name plus one of TfL's station-type words, followed by a punctuation separator or a line
- * break). The bus case, whose body names no stop, is returned unchanged and relies on the
- * heading to supply the name. The strip never empties the notice: a text that is only the name
- * is kept as-is, so a heading-plus-nothing card is never produced.
+ * only when the text actually starts with a form of [stopName], [hubName], or any of [aliases]
+ * (the bare name, or the name plus one of TfL's station-type words, followed by a punctuation
+ * separator or a line break). [aliases] are the interchange's other member-station spellings, so a
+ * King's Cross notice that leads with a *different* member's name than the watched stop
+ * ("St Pancras International: …" while you watch "King's Cross St. Pancras") is still stripped — no
+ * one name catches the interchange's dozen spellings, but the union of its members does. The bus
+ * case, whose body names no stop, is returned unchanged and relies on the heading to supply the
+ * name. The strip never empties the notice: a text that is only the name is kept as-is, so a
+ * heading-plus-nothing card is never produced.
  */
-fun cleanDisruptionBody(rawDescription: String, stopName: String, hubName: String = ""): String {
+fun cleanDisruptionBody(
+    rawDescription: String,
+    stopName: String,
+    hubName: String = "",
+    aliases: List<String> = emptyList(),
+): String {
     val text = normalizeDisruptionText(rawDescription)
     if (text.isEmpty()) return text
-    val stripped = stripLeadingPlaceName(text, stopName = stopName, hubName = hubName)
+    val stripped = stripLeadingPlaceName(text, stopName = stopName, hubName = hubName, aliases = aliases)
     return stripped.ifBlank { text }
 }
 
@@ -86,8 +95,9 @@ private const val NAME_TOKEN_SEP = "[ \\t.,'’&/-]*"
 
 /**
  * Strips a leading "&lt;place name&gt;: " / "&lt;place name&gt; Underground Station: " run when
- * [text] begins with one. Tries [hubName] and [stopName] (longest first, so an interchange name
- * that contains a member's is preferred).
+ * [text] begins with one. Tries [hubName], [stopName], and every [aliases] entry (longest first,
+ * so an interchange name that contains a member's is preferred), so any of an interchange's member
+ * spellings can match.
  *
  * Matching is **spelling-tolerant**: TfL spells one station many ways — "King's Cross St. Pancras"
  * vs "Kings Cross St Pancras" vs "King's Cross St. Pancras International" — so the name is matched
@@ -112,8 +122,14 @@ private const val NAME_TOKEN_SEP = "[ \\t.,'’&/-]*"
  * Best-effort: [text] is returned unchanged when nothing matches (the heading still carries the
  * name), so a spelling neither path covers only misses the strip, never mangles the notice.
  */
-private fun stripLeadingPlaceName(text: String, stopName: String, hubName: String): String {
-    val names = listOf(hubName.trim(), stopName.trim())
+private fun stripLeadingPlaceName(
+    text: String,
+    stopName: String,
+    hubName: String,
+    aliases: List<String>,
+): String {
+    val names = (listOf(hubName, stopName) + aliases)
+        .map { it.trim() }
         .filter { it.isNotEmpty() }
         .distinct()
         .sortedByDescending { it.length }

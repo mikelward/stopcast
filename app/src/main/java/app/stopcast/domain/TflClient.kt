@@ -34,14 +34,18 @@ interface TflClient {
     suspend fun stopDisruptions(stopId: String): List<StopDisruption>
 
     /**
-     * The display name of the interchange [hubId] (TfL `hubNaptanCode`), from
-     * `/StopPoint/{hubId}` — e.g. "King's Cross & St Pancras International" for `HUBKGX` —
-     * cleaned of its type suffix like a stop name. Used to title an interchange's folded
-     * disruption by the interchange rather than one member stop (SPEC *Disruptions*). The real
-     * client throws on a transport/decode failure, like [arrivals]; the caller falls back to
-     * the stop's own name so a failed lookup never blanks the alert. Defaults to blank ("no hub
-     * name resolved") so a client that doesn't enrich hub names, and a test fake, take the same
-     * safe fallback without implementing it.
+     * The interchange [hubId] (TfL `hubNaptanCode`) resolved from `/StopPoint/{hubId}`: its display
+     * [HubInfo.name] — e.g. "King's Cross & St Pancras International" for `HUBKGX`, cleaned of its
+     * type suffix like a stop name — plus [HubInfo.aliases], every member station's cleaned name.
+     * The name titles an interchange's folded disruption by the interchange rather than one member
+     * stop; the aliases let the display strip drop a redundant leading name even when the notice
+     * uses a different member's spelling than the watched stop (SPEC *Disruptions*). The real client
+     * throws on a transport/decode failure, like [arrivals]; the caller falls back to the stop's own
+     * name so a failed lookup never blanks the alert. Defaults to empty so a client that doesn't
+     * enrich hubs, and a test fake, take the same safe fallback without implementing it.
      */
-    suspend fun hubName(hubId: String): String = ""
+    suspend fun hubInfo(hubId: String): HubInfo = HubInfo()
 }
+
+/** An interchange's resolved display [name] and every member-station [aliases] spelling. */
+data class HubInfo(val name: String = "", val aliases: List<String> = emptyList())

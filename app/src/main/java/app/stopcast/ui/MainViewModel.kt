@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DeparturesSnapshot
+import app.stopcast.domain.HubInfo
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.NearbySelection
@@ -144,13 +145,13 @@ class MainViewModel(
 
     private var fetchJob: Job? = null
 
-    // Resolved interchange display names (hubId → name), so a hub with a disruption is looked up
-    // once and reused across refreshes and across the stops sharing it (King's Cross and St
-    // Pancras both resolve `HUBKGX` from one call). Only a real name is cached here — a failed or
-    // blank lookup is retried on a later refresh rather than pinned. Within a single refresh a
-    // failure is memoized separately (see `resolveHubName`), so a failing hub is not re-requested
+    // Resolved interchange info (hubId → name + member aliases), so a hub with a disruption is
+    // looked up once and reused across refreshes and across the stops sharing it (King's Cross and
+    // St Pancras both resolve `HUBKGX` from one call). Only a real result is cached here — a failed
+    // or blank lookup is retried on a later refresh rather than pinned. Within a single refresh a
+    // failure is memoized separately (see `resolveHubInfo`), so a failing hub is not re-requested
     // once per member. In-memory only; hub names are public TfL place names, never persisted.
-    private val hubNameCache = mutableMapOf<String, String>()
+    private val hubInfoCache = mutableMapOf<String, HubInfo>()
 
     // The init coroutine that loads the last-good snapshot and then calls refresh(). Tracked so
     // cancelFetch() can stop it too: during its load() the fetchJob isn't assigned yet, so
@@ -282,9 +283,9 @@ class MainViewModel(
         // by several disrupted stops is requested at most once, even when the lookup fails:
         // without it a failing hub would be re-requested (and re-timed-out) once per member,
         // and members could disagree if a later one happened to succeed. A success also
-        // promotes to the durable `hubNameCache`; a failure stays here only, so the next
+        // promotes to the durable `hubInfoCache`; a failure stays here only, so the next
         // batch (a fresh map) retries (Codex).
-        val hubNamesThisBatch = HashMap<String, String>()
+        val hubInfoThisBatch = HashMap<String, HubInfo>()
 
         for (stop in stops) {
             val departures = try {
@@ -316,15 +317,15 @@ class MainViewModel(
             }
             if (departures != null) anyFreshArrivals = true
             if (departures != null || disruptions != null) anyFreshData = true
-            // Resolve the interchange name only when this stop has a fresh disruption to
-            // title AND belongs to a hub — the one case a folded alert titles by the
-            // interchange (SPEC *Disruptions*). Cached and off the render path; a stop with
-            // no disruption, or no hub, costs no call and titles by its own name.
-            val hubName =
+            // Resolve the interchange only when this stop has a fresh disruption to title AND
+            // belongs to a hub — the one case a folded alert titles by the interchange and the
+            // strip needs its member aliases (SPEC *Disruptions*). Cached and off the render path; a
+            // stop with no disruption, or no hub, costs no call and titles by its own name.
+            val hub =
                 if (stop.hubId.isNotBlank() && !disruptions.isNullOrEmpty()) {
-                    resolveHubName(stop.hubId, hubNamesThisBatch)
+                    resolveHubInfo(stop.hubId, hubInfoThisBatch)
                 } else {
-                    ""
+                    HubInfo()
                 }
             Snapshot.mergeStop(
                 stopId = stop.id,
@@ -336,7 +337,8 @@ class MainViewModel(
                 prior = prior[stop.id],
                 now = now,
                 hubId = stop.hubId,
-                hubName = hubName,
+                hubName = hub.name,
+                placeAliases = hub.aliases,
             )?.let { merged += it }
         }
 
@@ -900,35 +902,36 @@ class MainViewModel(
         )
 
     /**
-     * The display name of interchange [hubId], from cache or a one-time [TflClient.hubName]
-     * lookup, so a folded near-me disruption alert titles by the interchange (SPEC *Disruptions*).
+     * The interchange [hubId]'s name + member aliases, from cache or a one-time [TflClient.hubInfo]
+     * lookup, so a folded near-me disruption alert titles by the interchange and the strip can drop
+     * a redundant leading name in any member spelling (SPEC *Disruptions*).
      *
-     * Two-tier memoization: the durable [hubNameCache] holds successes across refreshes, while
+     * Two-tier memoization: the durable [hubInfoCache] holds successes across refreshes, while
      * [thisRefresh] holds this refresh's attempts — successes and failures alike — so a hub shared
      * by several disrupted stops costs at most one call per refresh even when it fails (every later
-     * member this cycle reuses the recorded blank, and they agree). A failure is memoized only in
+     * member this cycle reuses the recorded empty, and they agree). A failure is memoized only in
      * [thisRefresh], never the durable cache, so a fresh map next refresh retries rather than the
      * title being permanently blanked.
      *
-     * Best-effort: a failed lookup returns blank and the alert falls back to the stop's own name.
+     * Best-effort: a failed lookup returns empty and the alert falls back to the stop's own name.
      * Rethrows [CancellationException] first (structured concurrency). The log carries only the hub
      * id — a public TfL place identifier, like a stop id (SPEC *Privacy*).
      */
-    private suspend fun resolveHubName(hubId: String, thisRefresh: MutableMap<String, String>): String {
-        hubNameCache[hubId]?.let { return it }
+    private suspend fun resolveHubInfo(hubId: String, thisRefresh: MutableMap<String, HubInfo>): HubInfo {
+        hubInfoCache[hubId]?.let { return it }
         thisRefresh[hubId]?.let { return it }
-        val name = try {
-            withContext(io) { client.hubName(hubId) }
+        val info = try {
+            withContext(io) { client.hubInfo(hubId) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            warn("hub name lookup failed for $hubId: ${reason(e)}")
-            ""
+            warn("hub lookup failed for $hubId: ${reason(e)}")
+            HubInfo()
         }
-        // A success is durable; a blank is remembered only for this refresh, so the next one retries.
-        if (name.isNotBlank()) hubNameCache[hubId] = name
-        thisRefresh[hubId] = name
-        return name
+        // A success is durable; an empty is remembered only for this refresh, so the next one retries.
+        if (info.name.isNotBlank()) hubInfoCache[hubId] = info
+        thisRefresh[hubId] = info
+        return info
     }
 
     private fun reason(e: Throwable): String =

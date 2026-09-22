@@ -370,6 +370,7 @@ object DepartureRows {
                 clusterId = stop.clusterId,
                 hubId = stop.hubId,
                 hubName = stop.hubName,
+                placeAliases = stop.placeAliases,
                 lineId = "",
                 lineName = "",
                 direction = "",
@@ -508,6 +509,11 @@ data class StopArrivals(
     // no hub or when the name lookup failed.
     val hubId: String = "",
     val hubName: String = "",
+    // Every member-station spelling of this stop's interchange, resolved alongside [hubName] for a
+    // stop with a disruption. Carried onto the stop-status row so the display strip can drop a
+    // redundant leading name even when the notice uses a different member's spelling than [stopName]
+    // (SPEC *Disruptions*). Empty for a stop in no hub or when the lookup failed; not persisted.
+    val placeAliases: List<String> = emptyList(),
 )
 
 /**

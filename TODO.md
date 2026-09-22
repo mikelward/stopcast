@@ -397,6 +397,14 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           **newline-normalized, not name-stripped** body (the strip is deferred to display), so a
           hub's differently-named members keep one identity for a shared notice; folding on the
           stripped text would split them.
+    - [x] **Strip the leading name in any member spelling (hub alias set)** (maintainer,
+          2026-09-22). The display strip matched only the watched stop's own name, so a King's Cross
+          notice that led with a *different* member spelling than the watched stop kept the name in
+          the body. The hub lookup (`TflClient.hubInfo`) now returns the interchange's whole member
+          alias set alongside its name, threaded to the stop-status row (`placeAliases`) and matched
+          by the strip — no one name catches the dozen spellings, the union does. Cosmetic only
+          (dedup was always spelling-proof via `hubNaptanCode`); best-effort, so a spelling no alias
+          covers still just leaves the name in.
     - [ ] **Per-description dedup** (Codex P2, PR #91). A stop's disruptions are joined into its one
           stop-status row's text (`stopStatusRow`), so the hub fold keys on the joined string: where
           two members of a hub carry *different sets* of notices — one reports X, the other X · Y —

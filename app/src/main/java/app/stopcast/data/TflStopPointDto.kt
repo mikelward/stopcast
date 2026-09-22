@@ -42,7 +42,25 @@ data class TflStopPointDto(
     // Pancras together. Blank for a stop in no hub. Used to fold an interchange's shared disruption
     // (SPEC *Disruptions*); a public id, never a coordinate.
     val hubNaptanCode: String = "",
+    // The member stop points nested under this one — populated when TfL returns a hub tree from
+    // `/StopPoint/{hubId}` (the interchange's stations and their platforms). Walked to collect every
+    // member station's name for the disruption strip's alias set ([hubStationNames]); empty in the
+    // flat nearby-search response.
+    val children: List<TflStopPointDto> = emptyList(),
 )
+
+/**
+ * Every distinct station-name spelling in this hub tree — this node's cleaned [commonName] plus all
+ * descendants' — for the disruption strip's alias set. TfL spells one interchange a dozen ways
+ * ("King's Cross St. Pancras Underground Station", "London St Pancras International LL Rail Station",
+ * "St Pancras Intern'l & King's X Stns"); the union lets the strip drop whichever spelling a notice
+ * leads with. Blank names are dropped and the rest deduped. Public station names, safe to carry.
+ */
+fun TflStopPointDto.hubStationNames(): List<String> =
+    (listOf(commonName) + children.flatMap { it.hubStationNames() })
+        .map { cleanStopName(it) }
+        .filter { it.isNotBlank() }
+        .distinct()
 
 @Serializable
 data class TflStopLineDto(
