@@ -244,12 +244,17 @@ object DepartureRows {
      * strictly same-stop tiebreak and their rows never interleave. A stop missing from
      * [stopDistanceMeters] sorts last (`Double.MAX_VALUE`).
      *
-     * **Warnings still lead** (by [rank], above the distance sort — a closure the user must see
-     * isn't buried under nearer departures); **starred rows are lifted afterward by [pinStarred]**,
-     * whose sort is stable so this closest-first order carries through within each band. Applied
-     * only on the near-me path (distances present); the location-free watched list keeps its
-     * soonest-first [across] order (D1 — distance ranking is for *finding* stops, not the watched
-     * list). Distance arrives as [stopDistanceMeters] (`stopId` → meters), the nearby flow's input.
+     * **A line-status alert rides with its stop and gets no special order** (maintainer,
+     * 2026-09-22): it is neither hoisted above a closer stop nor lifted within its own stop's
+     * section — a no-countdown alert row sorts *after* the stop's timed departures (`Instant.MAX`),
+     * so the alert simply trails its stop's services rather than leading them for being an alert.
+     * (Stop *closures* still lead the distance sort — they render as standalone cards ahead of the
+     * groups today, SPEC *Disruptions*; making a closure a normal stop section is a `TODO.md`
+     * follow-up.) **Starred rows are lifted afterward by [pinStarred]**, whose sort is stable so this
+     * closest-first order carries through within each band. Applied only on the near-me path
+     * (distances present); the location-free watched list keeps its soonest-first [across] order
+     * (D1 — distance ranking is for *finding* stops, not the watched list). Distance arrives as
+     * [stopDistanceMeters] (`stopId` → meters), the nearby flow's input.
      *
      * This is the current near-me display experiment (closest-first, soonest same-stop tiebreak),
      * to be judged on a device against the earlier two-band lean — see `TODO.md`.
@@ -260,13 +265,19 @@ object DepartureRows {
     ): List<DepartureRow> {
         fun distanceOf(stopId: String): Double = stopDistanceMeters[stopId] ?: Double.MAX_VALUE
         return rows.sortedWith(
-            compareBy<DepartureRow> { rank(it) }
+            // Only a stop closure leads (0); everything else — a line-status alert included — sorts by
+            // distance (1), so an alert never hoists its stop above a closer one. A closure still leads
+            // because the screen renders closures as standalone cards ahead of the groups.
+            compareBy<DepartureRow> { if (it.stopDisruption != null) 0 else 1 }
                 .thenBy { distanceOf(it.stopId) }
                 // Group two *distinct* stops that compute an equal distance (e.g. StopPoints
                 // sharing coordinates) by stop identity BEFORE arrival time, so their rows don't
                 // interleave (A, B, A) — soonest-first stays a strictly same-stop tiebreak.
                 .thenBy { it.stopId }
-                .thenBy { it.upcoming.firstOrNull()?.expectedArrival ?: Instant.MIN }
+                // A no-countdown line-status alert sorts to MAX, so it trails its stop's timed
+                // departures rather than leading them — the alert rides with the stop, with no
+                // special order for being an alert (maintainer, 2026-09-22).
+                .thenBy { it.upcoming.firstOrNull()?.expectedArrival ?: Instant.MAX }
                 .thenBy { it.lineName }
                 .thenBy { it.direction }
                 .thenBy { it.directionKey }
@@ -280,20 +291,34 @@ object DepartureRows {
      * remove anything. Applied after [across]/[nearbyDeduped], so the rows are already in
      * soonest-first order and this only lifts the starred ones.
      *
-     * **Warning rows stay on top of everything**, above even a starred service: a stop-closure
-     * or a no-departure line-status row is a warning the user must see, and pinning a starred
-     * service above it would push a closure down the list (SPEC principle 2 — never hide a
-     * warning). So a starred *service that is itself currently a warning row* (a starred line
-     * gone suspended, now a no-prediction status row) stays in the warning band too — its star
-     * re-pins it the moment it has departures again. The sort is stable, so within each band the
-     * soonest-first order carries through unchanged; an empty [starred] set returns [rows] as-is.
+     * **With [warningsLead] (the default), warning rows stay on top of everything**, above even a
+     * starred service: on the location-free watched list a stop-closure or no-departure line-status
+     * row is a warning the user must see, and pinning a starred service above it would push a closure
+     * down the list (SPEC principle 2 — never hide a warning). So a starred *service that is itself
+     * currently a warning row* (a starred line gone suspended, now a no-prediction status row) stays
+     * in the warning band too — its star re-pins it the moment it has departures again.
+     *
+     * **On the near-me list the caller passes `warningsLead = false`**, so an unstarred alert is not
+     * hoisted — it stays at its stop's distance ([byStopDistance]) rather than jumping a closer stop
+     * (maintainer, 2026-09-22). A stop closure still leads there because the screen renders closures
+     * as standalone cards ahead of the groups; only a line-status alert's stop is left in place. A
+     * starred alert still lifts with the starred band.
+     *
+     * The sort is stable, so within each band the prior order (soonest- or closest-first) carries
+     * through unchanged; an empty [starred] set returns [rows] as-is.
      */
-    fun pinStarred(rows: List<DepartureRow>, starred: Set<StarredRow>): List<DepartureRow> {
+    fun pinStarred(
+        rows: List<DepartureRow>,
+        starred: Set<StarredRow>,
+        warningsLead: Boolean = true,
+    ): List<DepartureRow> {
         if (starred.isEmpty()) return rows
         return rows.sortedBy { row ->
             when {
-                // Warnings (closures, no-prediction status) lead, whether starred or not.
-                row.stopDisruption != null || row.upcoming.isEmpty() -> 0
+                // Warnings (closures, no-prediction status) lead only where warnings are meant to —
+                // the watched list. On the near-me list (warningsLead=false) an unstarred alert is
+                // not hoisted; a starred alert still lifts with the starred band.
+                warningsLead && (row.stopDisruption != null || row.upcoming.isEmpty()) -> 0
                 StarredRow.of(row) in starred -> 1
                 else -> 2
             }

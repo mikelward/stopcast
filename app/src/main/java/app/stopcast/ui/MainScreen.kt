@@ -202,8 +202,14 @@ fun MainScreen(
                 DepartureRows.byStopDistance(deduped, stopDistanceMeters)
             }
         // Drop the stop-closure alerts the user has dismissed (hidden until their text changes),
-        // then lift the user's starred services to the top (SPEC D8), warnings still leading.
-        DepartureRows.pinStarred(DepartureRows.withoutDismissed(ordered, dismissed), starred)
+        // then lift the user's starred services to the top (SPEC D8). Warnings still lead on the
+        // location-free watched list; on the near-me list (distances present) an alert is not
+        // hoisted, so a nearer stop is never pushed below a farther one for carrying one.
+        DepartureRows.pinStarred(
+            DepartureRows.withoutDismissed(ordered, dismissed),
+            starred,
+            warningsLead = stopDistanceMeters.isEmpty(),
+        )
     }
 
     // The route whose detail is open, held by its stable row identity rather than the row object: a
@@ -586,7 +592,11 @@ private fun DepartureList(
     // Pass the full row set: groupByStop groups only the non-closure rows but counts each closure
     // alert's stop as a place, so a lone departures group beside a closure-only stop still shows
     // its header (SPEC *Disruptions*).
-    val groups = remember(rows) { StopGrouping.groupByStop(rows) }
+    // On the near-me list (distances present) a place is ordered by distance, not lifted for
+    // carrying a line-status alert; the watched list keeps warnings leading (D1, SPEC *Disruptions*).
+    val groups = remember(rows, stopDistanceMeters) {
+        StopGrouping.groupByStop(rows, warningsLead = stopDistanceMeters.isEmpty())
+    }
     // One place-wide header distance per cluster: the nearest of ALL the place's members, shared by
     // every direction group of that place — so a station split into direction headers shows one
     // consistent distance (its nearest member), not each direction's own members' nearest, which

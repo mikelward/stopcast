@@ -112,4 +112,27 @@ class DepartureRowsPinStarredTest {
         val pinned = DepartureRows.pinStarred(rows, setOf(StarredRow.of(suspendedStarred)))
         assertEquals(listOf(suspendedStarred, timedUnstarred), pinned)
     }
+
+    @Test
+    fun `with warningsLead false an unstarred alert is not hoisted above a starred service`() {
+        // On the near-me list the caller passes warningsLead=false: an unstarred suspended line stays
+        // where the distance sort left it (last here) rather than jumping the starred service, so a
+        // stop isn't hoisted merely for carrying an alert (maintainer, 2026-09-22).
+        val starredTimed = timed("A", "central", "e", 60)
+        val unstarredAlert = statusRow("B", "victoria")
+        val rows = listOf(starredTimed, unstarredAlert)
+        val pinned = DepartureRows.pinStarred(rows, setOf(StarredRow.of(starredTimed)), warningsLead = false)
+        assertEquals(listOf(starredTimed, unstarredAlert), pinned)
+    }
+
+    @Test
+    fun `with warningsLead false a starred alert still lifts with the starred band`() {
+        // The star still wins: a starred service that is currently an alert lifts with the starred
+        // band even when warnings no longer form their own leading band.
+        val starredAlert = statusRow("A", "victoria")
+        val unstarredTimed = timed("B", "central", "e", 60)
+        val rows = listOf(unstarredTimed, starredAlert)
+        val pinned = DepartureRows.pinStarred(rows, setOf(StarredRow.of(starredAlert)), warningsLead = false)
+        assertEquals(listOf(starredAlert, unstarredTimed), pinned)
+    }
 }
