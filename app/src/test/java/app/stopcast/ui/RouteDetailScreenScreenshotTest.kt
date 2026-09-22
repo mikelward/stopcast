@@ -15,6 +15,7 @@ import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.LineStatus
+import app.stopcast.domain.RouteStop
 import app.stopcast.domain.StopArrivals
 import app.stopcast.ui.theme.StopCastTheme
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -295,6 +296,92 @@ class RouteDetailScreenScreenshotTest {
      * Robolectric's window has no real surface, so a full-screen composable captures blank
      * otherwise (the same helper shape as [MainScreenScreenshotTest]).
      */
+    @Test
+    fun stopList_showsEveryStationToTheTerminus() {
+        // Victoria line northbound from Victoria: public station names, a well-known example route.
+        val stops = listOf(
+            "Victoria", "Green Park", "Oxford Circus", "Warren Street", "Euston", "King's Cross St. Pancras",
+            "Highbury & Islington", "Finsbury Park", "Seven Sisters", "Tottenham Hale", "Blackhorse Road",
+            "Walthamstow Central",
+        ).mapIndexed { i, name -> RouteStop("stop$i", name) }
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = healthyRow(),
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded("Walthamstow Central", stops),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Stops to Walthamstow Central").assertIsDisplayed()
+        composeRule.onNodeWithText("Seven Sisters").assertIsDisplayed()
+
+        captureSnapshot("route-detail-stops.png")
+    }
+
+    @Test
+    fun staleRow_withholdsTheStopList() {
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = healthyRow(),
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = true,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded("Walthamstow Central", listOf(RouteStop("a", "Green Park"))),
+                )
+            }
+        }
+        composeRule.onNodeWithText("Stops shown once departures refresh").assertIsDisplayed()
+        composeRule.onNodeWithText("Green Park").assertDoesNotExist()
+    }
+
+    @Test
+    fun staleStatusRow_showsNoStopMessage() {
+        val statusRow = disruptedRow().copy(upcoming = emptyList())
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = statusRow,
+                    isStarred = false,
+                    starrable = false,
+                    disruptionUnknown = false,
+                    stale = true,
+                    onToggleStar = {},
+                    onBack = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText("Stops shown once departures refresh").assertDoesNotExist()
+    }
+
+    @Test
+    fun stopListFailure_saysWhyAndRetries() {
+        var retried = 0
+        composeRule.setContent {
+            StopCastTheme {
+                RouteStopsSection(
+                    state = RouteStopsUi.Failed(DeparturesUiState.Error.Kind.OFFLINE),
+                    railColor = androidx.compose.ui.graphics.Color.Blue,
+                    onRetry = { retried++ },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Couldn't load stops — you're offline").assertIsDisplayed()
+        composeRule.onNodeWithText("Retry").performClick()
+        assertEquals(1, retried)
+    }
+
     private fun captureSnapshot(name: String, widthPx: Int = 1080, heightPx: Int = 2400) {
         val recording = System.getProperty("roborazzi.test.record") == "true"
         val verifying = System.getProperty("roborazzi.test.verify") == "true"

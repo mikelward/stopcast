@@ -46,6 +46,7 @@ import app.stopcast.data.DataStoreDismissedAlertsStore
 import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.RouteTopologyStore
+import app.stopcast.domain.RouteStopsRepository
 import app.stopcast.data.SharedTflRateLimiter
 import app.stopcast.data.SharedTflRequestPool
 import app.stopcast.data.UserApiKeySetting
@@ -54,6 +55,7 @@ import app.stopcast.domain.BugReport
 import app.stopcast.domain.Coordinates
 import app.stopcast.ui.BugReportConsentDialog
 import app.stopcast.ui.FontSizeSetting
+import app.stopcast.ui.LocalRouteStops
 import app.stopcast.ui.LocalRouteTopology
 import app.stopcast.ui.LicensesScreen
 import app.stopcast.ui.LocationGate
@@ -633,7 +635,10 @@ class MainActivity : ComponentActivity() {
             // Provide the branch topology so the card groups a branching row the way the widget
             // does — equivalent trunks merged, the label kept only where the trunk is a choice
             // ahead of the stop (see DepartureRows.destinationLines).
-            CompositionLocalProvider(LocalRouteTopology provides routeTopology.value) {
+            CompositionLocalProvider(
+                LocalRouteTopology provides routeTopology.value,
+                LocalRouteStops provides routeStops,
+            ) {
                 MainScreen(
                     state = state,
                     now = tickingNow(),
@@ -732,6 +737,21 @@ class MainActivity : ComponentActivity() {
         // single long-lived client is OkHttp's own recommended shape; it lives for the
         // process and dies with it.
         private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
+
+        // The route detail's stop lists, cached for the process so reopening a route (or the
+        // activity after rotation) shows its stops without refetching. Fetched only when a route
+        // page opens — never on the refresh path.
+        private val routeStops by lazy {
+            RouteStopsRepository(
+                source = KtorTflClient(
+                    httpClient,
+                    appKey = { UserApiKeySetting.current },
+                    rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                    requestPool = SharedTflRequestPool.pool,
+                ),
+                warn = { StopcastDebugLog.warning("route stops: %s", it) },
+            )
+        }
     }
 }
 

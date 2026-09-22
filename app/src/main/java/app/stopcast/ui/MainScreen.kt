@@ -57,6 +57,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -1172,8 +1173,20 @@ internal fun RouteDetailScreen(
     stale: Boolean,
     onToggleStar: () -> Unit,
     onBack: () -> Unit,
+    // The stop list for the soonest train. Null resolves it from [LocalRouteStops]; a screenshot
+    // test passes a fixed state.
+    routeStops: RouteStopsUi? = null,
 ) {
     BackHandler(onBack = onBack)
+    var routeStopsRetry by rememberSaveable { mutableIntStateOf(0) }
+    // A stale row's soonest prediction may not be the next train any more, so its stop list is
+    // withheld rather than shown as current (SPEC D4); it returns as soon as a refresh lands.
+    val stops = when {
+        // Only a row with a train to follow: a status row has no list to withhold.
+        stale && row.upcoming.isNotEmpty() && row.lineId.isNotBlank() -> RouteStopsUi.Stale
+        routeStops != null -> routeStops
+        else -> rememberRouteStops(row, routeStopsRetry)
+    }
     val place = row.hubName.ifBlank { row.stopName }
     // The terminus(es) this service runs to, from its own departures — empty for a status row
     // (no predictions), which then shows only the line and its disruption.
@@ -1305,6 +1318,13 @@ internal fun RouteDetailScreen(
                     modifier = Modifier.padding(top = 12.dp),
                 )
             }
+            // Every station from here to where the soonest train terminates (SPEC *Route detail*).
+            RouteStopsSection(
+                state = stops,
+                railColor = railColorFor(row),
+                onRetry = { routeStopsRetry++ },
+                modifier = Modifier.padding(top = 16.dp),
+            )
         }
     }
 }
