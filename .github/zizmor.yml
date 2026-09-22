@@ -15,6 +15,11 @@ rules:
         # their merges.
         "mikelward/codex-review": ref-pin
         "mikelward/codex-review/.github/workflows/check-consumer.yml": ref-pin
+        # The weekly dependency batch (gradle-update.yml) — same reasoning:
+        # this account's own reusable workflow, gated behind its own CI and
+        # review, tracked deliberately at @main. The key matches the whole
+        # `uses:` value including the workflow path.
+        "mikelward/gradle-update/.github/workflows/gradle-update.yml": ref-pin
         "mikelward/lanes": ref-pin
         "mikelward/ci-commit-artifact/.github/workflows/commit-artifact.yml": ref-pin
         # Official actions may pin to a tag, as every workflow here does.

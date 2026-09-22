@@ -39,6 +39,13 @@ exercises the whole spine the widget later renders from.
       after merge may show screenshot drift red on `lanes` if the committed baselines differ
       from the CI render — the next UI PR's `sync-screenshots` commits the CI-accurate set
       and self-heals it once the token is in place.
+- [ ] Weekly dependency update — **workflow landed** (`gradle-update.yml` calling the shared
+      `mikelward/gradle-update@main`, plus `scripts/check-license-inventory.mjs` + tests and
+      its CI wiring), matching the sibling fleet. **Human setup still owed before the batch
+      can open a PR**: add `GRADLE_UPDATE_PAT` (or the GitHub App credential pair) to a
+      `gradle-update` environment in this repo's settings — an environment secret reaches the
+      called workflow no other way. Until then the scheduled/manual run executes but opens no
+      PR. Verify with a `workflow_dispatch` run once the secret is in place.
 - [x] Deploy job (Play internal track, release notes from commit subjects) — **pipeline
       landed**: `release-apk` (PR-lane R8 smoke test), `release-build` (signed AAB) and
       `deploy` (GitHub prerelease + Play internal-track upload, notes built from commit
