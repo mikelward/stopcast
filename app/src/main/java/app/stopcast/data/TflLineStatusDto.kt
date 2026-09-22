@@ -59,7 +59,14 @@ fun TflLineDto.toLineStatus(): LineStatus? {
             .map { resolveDisruption(it.statusSeverityDescription, it.statusSeverity, it.reason) },
     )
     return if (worst != null) {
-        LineStatus(lineId = id, severity = worst.severity, description = worst.label)
+        LineStatus(
+            lineId = id,
+            severity = worst.severity,
+            description = worst.label,
+            // The chosen disruption's prose, for the route detail view; null when TfL named
+            // the status but gave no reason (nothing to expand beyond the chip label).
+            fullText = worst.fullText.ifBlank { null },
+        )
     } else {
         // Non-empty, all good service: name the good status.
         LineStatus(

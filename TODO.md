@@ -345,11 +345,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         `platformName`, not the letter. Add the indicator to the stop metadata (StopPoint
         fetch → persist on the watched stop) and thread it into the qualifier's letter/bearing
         forms. Lands with Phase 2's watched-stop add flow, where bus stops enter.
-  - [ ] **Make the stop header and the route card tappable** (maintainer, 2026-09-21).
-        Tapping the station-name header and tapping a departure card should both do
-        something — a stop-detail / route-detail view. The card long-press already toggles
-        the star; a tap is a deliberate no-op today (`DepartureRowCard`), and the header has
-        no interaction. Decide the destinations and wire them.
+  - [ ] **Make the stop header tappable** (maintainer, 2026-09-21). The **route card tap
+        landed** — it opens the `RouteDetailDialog` (star + full disruption text; see the
+        detail-view item under *Watched stops and settings*). Still outstanding: tapping the
+        **station-name header** does nothing yet — decide its destination (a stop-detail view)
+        and wire it.
   - [x] **Dedupe a hub-wide alert; collapse the closure card** (maintainer, 2026-09-21).
         v122 showed the same interchange notice as three full-height cards (King's Cross St.
         Pancras + St Pancras International both carrying TfL's "no step-free access" text).
@@ -458,8 +458,8 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       send. Starring is available only on timed cards — a star restores its pin the moment a
       starred, currently-suspended line has departures again. **The interaction is a long-press
       on the card, marked by a gold border** (PR #73): the original filled/outline per-card
-      `Star` button was removed because it ate width on every row; a discoverable, labeled star
-      returns with the tap-to-open stop detail view (below).
+      `Star` button was removed because it ate width on every row; the discoverable, labeled star
+      now lives in the tap-to-open route detail dialog (below).
 - [ ] "Near me now" discovery (on-demand location, nearby `/StopPoint` lookup selected by
       `NearbySelection`) with one-tap add-to-watched; stop search. Distance ranking lives
       here — for *finding* stops to watch — not in ordering the watched list, which stays
@@ -890,10 +890,23 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       **Width follow-up (maintainer, 2026-09-20):** the per-row star button ate row width and
       crushed the destination (observed `B… (Charing X)`). **Done (PR #73):** the button is
       removed, starring is a long-press on the card, and a pinned card is marked by a gold
-      border (no in-row element). **Still outstanding here:** move the star into this detail
-      view — opened by a card *tap* — as a discoverable, labeled control, so the long-press is
-      the shortcut and the detail view is the obvious path. Its own PR, after the truncation
-      change above.
+      border (no in-row element). **Landed (this PR — dialog, maintainer 2026-09-22):** a card
+      *tap* opens the detail (a `RouteDetailDialog`, no-op tap before), carrying the discoverable
+      star as a **top-right icon button** in the dialog header (maintainer, 2026-09-22 — filled gold
+      when starred, matching the list card's gold pin border; the vendored outline star when not; no
+      bottom text action; long-press on the card stays the shortcut), the destinations the service
+      runs to, and the line's **full disruption text** — the compact chip's prose, shown collapsed to
+      its first line and tapped to expand, the same widget the stop-closure card uses (line status now
+      **retains TfL's `reason`** on `LineStatus.fullText`, previously dropped). **Still outstanding
+      here:** platform and full direction in the detail, and **accessibility** info (step-free, lifts)
+      once a data source exists — the open design questions below are unchanged for those.
+  - [ ] **Reconsider the detail star: pin vs star, and its relation to favorite routes/destinations**
+        (maintainer, 2026-09-22). The detail control is a star for now; decide whether it should be a
+        **pin** (pushpin) instead — the user-facing copy and the list marker already use "pin"/"pin to
+        top", so the metaphor is mixed — and how a starred/pinned *route* relates to any future
+        **favorite routes or destinations** feature (are they the same list, or is pin-to-top a
+        lighter, per-session ordering distinct from a saved favorite?). Settle the metaphor and the
+        data model together before a favorites feature hardens the current star into an API.
 - [ ] **Hand off to a navigation app** (requested 2026-09-19, on-device). From a stop (likely
       the detail view above), let the user open the stop in Google Maps or their default nav
       app — a geo/maps intent to the stop's coordinates or name. No new dependency (a plain
@@ -941,8 +954,11 @@ Builds on Phase 1's minimal line-status marking.
         through the stop (the observed case was a detour miles away), with any relevance test
         still erring toward showing over hiding (SPEC principle 1 — a wrongly-hidden real
         disruption is worse than an extra one).
-      - Then **show the full alert text on tapping the card/chip** (requested 2026-09-20), the
-        detail surface the compact chip below points at.
+      - **Landed:** **show the full alert text on tapping the card** (requested 2026-09-20) — a
+        card tap opens the `RouteDetailDialog`, which shows the line's `reason` prose (now retained
+        on `LineStatus.fullText`) collapsed to its first line, tapped to expand. Still open: a
+        **per-condition chip** (below) and making the chip itself the tap target once there are
+        several.
 - [x] **Bug: the "Couldn't check for disruptions" notice appears to fire constantly**
       (reported 2026-09-20, on-device; fixed 2026-09-20). Root cause: with `getFamily=true`
       the endpoint returns a `DisruptedPointFamily` **tree object**, not the flat

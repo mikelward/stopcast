@@ -12,11 +12,18 @@ package app.stopcast.domain
  * Delays", "Suspended", "Good Service") where that already names the disruption, else a
  * concise label recovered from TfL's free-text reason when the wording is only a vague
  * "Special Service" ([resolveDisruption]).
+ *
+ * [fullText] is TfL's free-text reason for the shown disruption — the prose behind the chip
+ * ("Victoria line: Severe delays while we fix a signal failure…"), for the tap-to-open route
+ * detail (SPEC *Disruptions*): the compact card shows only [description], the detail shows
+ * this. Null when there is no prose to show — a good service, or a disruption TfL worded but
+ * gave no reason for — so the detail then has nothing to expand beyond the label.
  */
 data class LineStatus(
     val lineId: String,
     val severity: Int,
     val description: String,
+    val fullText: String? = null,
 ) {
     /** True when TfL reports anything other than a good service on this line. */
     val disrupted: Boolean get() = severity != GOOD_SERVICE

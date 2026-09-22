@@ -10,7 +10,8 @@ class DisruptionLabelTest {
         // "Severe Delays" says what is wrong; the reason only elaborates, so it is not
         // second-guessed, and TfL's severity is kept as the comparison key.
         assertEquals(
-            ResolvedDisruption("Severe Delays", 6),
+            // The reason is retained as fullText for the route detail, though the label is TfL's.
+            ResolvedDisruption("Severe Delays", 6, fullText = "Severe delays while we fix a faulty train."),
             resolveDisruption("Severe Delays", 6, "Severe delays while we fix a faulty train."),
         )
         assertEquals(ResolvedDisruption("Part Closure", 5), resolveDisruption("Part Closure", 5, ""))
@@ -19,7 +20,7 @@ class DisruptionLabelTest {
     @Test
     fun `names a bus diversion hidden behind Special Service`() {
         val reason = "Road will be closed for works. Buses will be diverted and will miss stops."
-        assertEquals(ResolvedDisruption("Diversion", 5), resolveDisruption("Special Service", 0, reason))
+        assertEquals(ResolvedDisruption("Diversion", 5, fullText = reason), resolveDisruption("Special Service", 0, reason))
     }
 
     @Test
@@ -57,7 +58,7 @@ class DisruptionLabelTest {
         // A catch-all that named nothing is a true fallback (isFallback = true) — the one
         // thing sorted below every informative status regardless of severity.
         assertEquals(
-            ResolvedDisruption("Service Alert", 9, isFallback = true),
+            ResolvedDisruption("Service Alert", 9, isFallback = true, fullText = "Planned engineering works this weekend."),
             resolveDisruption("Special Service", 0, "Planned engineering works this weekend."),
         )
         assertEquals(
