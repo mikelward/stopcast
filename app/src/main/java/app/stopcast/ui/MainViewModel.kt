@@ -223,6 +223,213 @@ class MainViewModel(
         _refreshing.value = false
     }
 
+    /**
+     * The result of fetching a set of stops: the merged [StopArrivals] and the disruption/freshness
+     * flags the caller needs to build state and decide whether to persist. Shared by [refresh] (the
+     * whole fetched set) and [fetchIncremental] (only the newly revealed stops), so both fetch, merge
+     * and status-check identically and neither drifts from the other.
+     */
+    private data class FetchBatch(
+        val merged: List<StopArrivals>,
+        val lineStatuses: Map<String, LineStatus>,
+        // The line ids TfL returned a definitive status for in this batch (disrupted OR clean), so a
+        // per-line surface can tell "checked, good service" from "never checked" and an incremental
+        // merge can REPLACE their prior entries — dropping a now-clean line's stale disrupted flag —
+        // rather than only appending the disrupted ones (Codex on #100, PR #104).
+        val determinedLineIds: Set<String>,
+        // The non-blank line ids this batch actually queried. On an incremental merge it's what lets a
+        // line the batch re-checked but TfL then omitted drop out of the merged determined set, rather
+        // than keeping a stale "checked" from an earlier fetch.
+        val attemptedLineIds: Set<String>,
+        // Stop ids whose OWN stop-level disruption request failed this batch — an axis independent of
+        // line status (a stop's line can be determined while its closure was never checked), so a
+        // per-stop surface says "couldn't check" for it (SPEC principle 1, Codex on #100).
+        val stopsDisruptionUnknown: Set<String>,
+        val anyArrivalsFailed: Boolean,
+        val anyFreshData: Boolean,
+        val anyFreshArrivals: Boolean,
+        val firstError: Throwable?,
+    )
+
+    /**
+     * Fetch [stops] (arrivals + disruptions, each merged into its [prior] at age [now]) and check the
+     * status of every line they show, returning a [FetchBatch]. Pure of UI state — the caller decides
+     * how to turn it into a [DeparturesUiState] and whether to save — so the same fetch serves a
+     * whole-set refresh and an incremental reveal.
+     */
+    private suspend fun fetchBatch(
+        stops: List<StopRef>,
+        prior: Map<String, StopArrivals>,
+        now: Instant,
+    ): FetchBatch {
+        val merged = mutableListOf<StopArrivals>()
+        var firstError: Throwable? = null
+        var anyArrivalsFailed = false
+        // True once any request returned fresh data (arrivals or disruption, any stop):
+        // the difference between a partial refresh (keep the fresh, age the rest) and a
+        // total failure (nothing new — keep the whole aged snapshot and say so).
+        var anyFreshData = false
+        // True once any stop's ARRIVALS returned (fresh durable content). Distinct from
+        // anyFreshData because disruptions aren't persisted: a cycle where every arrivals
+        // request failed but a disruption returned has nothing durable to save, so it must
+        // not overwrite a complete saved snapshot with carried arrivalsFresh=false rows.
+        var anyFreshArrivals = false
+        // Stop ids whose OWN stop-level disruption request failed this batch (a closure/move was
+        // never checked) — an axis independent of line status, carried out so a per-stop surface
+        // says "couldn't check" for it even when its line was determined (SPEC principle 1).
+        val stopsDisruptionUnknown = mutableSetOf<String>()
+        // Memoizes this batch's hub-name attempts — successes AND failures — so a hub shared
+        // by several disrupted stops is requested at most once, even when the lookup fails:
+        // without it a failing hub would be re-requested (and re-timed-out) once per member,
+        // and members could disagree if a later one happened to succeed. A success also
+        // promotes to the durable `hubNameCache`; a failure stays here only, so the next
+        // batch (a fresh map) retries (Codex).
+        val hubNamesThisBatch = HashMap<String, String>()
+
+        for (stop in stops) {
+            val departures = try {
+                withContext(io) { client.arrivals(stop.id) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (firstError == null) firstError = e
+                anyArrivalsFailed = true
+                warn("arrivals fetch failed for stop ${stop.id}: ${reason(e)}")
+                null
+            }
+            // Fetch the stop's disruption independently of its arrivals (a closure, a
+            // moved stop), so a closed stop is flagged rather than shown with
+            // catchable-looking departures — and a stop whose *arrivals* failed still
+            // surfaces its available closure rather than dropping out entirely (SPEC
+            // *Disruptions*). Per stop (the endpoint scopes to it), off the render path.
+            // A lookup that fails falls back to the aged disruption and flags the state
+            // unknown rather than passing the stop off as verified-clear.
+            val disruptions = try {
+                withContext(io) { client.stopDisruptions(stop.id) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (firstError == null) firstError = e
+                stopsDisruptionUnknown += stop.id
+                warn("stop disruption fetch failed for stop ${stop.id}: ${reason(e)}")
+                null
+            }
+            if (departures != null) anyFreshArrivals = true
+            if (departures != null || disruptions != null) anyFreshData = true
+            // Resolve the interchange name only when this stop has a fresh disruption to
+            // title AND belongs to a hub — the one case a folded alert titles by the
+            // interchange (SPEC *Disruptions*). Cached and off the render path; a stop with
+            // no disruption, or no hub, costs no call and titles by its own name.
+            val hubName =
+                if (stop.hubId.isNotBlank() && !disruptions.isNullOrEmpty()) {
+                    resolveHubName(stop.hubId, hubNamesThisBatch)
+                } else {
+                    ""
+                }
+            Snapshot.mergeStop(
+                stopId = stop.id,
+                stopName = stop.name,
+                clusterId = stop.clusterId,
+                lines = stop.lines,
+                freshDepartures = departures,
+                freshDisruptions = disruptions,
+                prior = prior[stop.id],
+                now = now,
+                hubId = stop.hubId,
+                hubName = hubName,
+            )?.let { merged += it }
+        }
+
+        // Check the status of every line we're about to show, so a disrupted line is
+        // marked rather than its countdowns shown as trustworthy (SPEC *Disruptions* /
+        // D3). One batched request, off the arrivals path. The set is the stops'
+        // declared lines PLUS every predicted line: the declared lines cover a
+        // suspended line that returned no predictions (so it can surface as a status
+        // row), and the predicted set catches anything a stop didn't declare. A lookup
+        // that fails leaves the arrivals shown but flags them "status unknown" rather
+        // than passing them off as verified-clean.
+        var lineStatuses = emptyMap<String, LineStatus>()
+        // The lines TfL returned a status for (good or disrupted), and the non-blank lines this batch
+        // queried. Both feed the incremental merge: determined replaces prior verdicts, attempted lets
+        // a re-checked-but-now-omitted line drop out of the merged determined set (see [fetchIncremental]).
+        var determinedLineIds = emptySet<String>()
+        var attemptedLineIds = emptySet<String>()
+        if (merged.isNotEmpty()) {
+            val predictedLineIds = merged.flatMap { it.departures }.map { it.lineId }
+            val declaredLineIds = merged.flatMap { it.lines }.map { it.id }
+            val lineIds = (predictedLineIds + declaredLineIds)
+                .filterTo(mutableSetOf()) { it.isNotBlank() }
+            attemptedLineIds = lineIds
+            // A departure whose line TfL didn't identify (blank id) can't have its
+            // status checked, so its presence alone leaves the disruption state
+            // unknown — never shown as verified-clean (SPEC principle 1). This also
+            // covers the all-blank case, where no status request is made at all.
+            val blankLineIdCount = predictedLineIds.count { it.isBlank() }
+            if (blankLineIdCount > 0) {
+                // Per-stop attribution (a blank prediction on the stop that showed it) is done
+                // below; this logs the batch-wide count so a persistent "couldn't check for
+                // disruptions" is diagnosable — a count of unidentifiable predictions, no user data.
+                warn("disruption status unknown: $blankLineIdCount prediction(s) had no line id to check")
+            }
+            if (lineIds.isNotEmpty()) {
+                try {
+                    val statuses = withContext(io) { client.lineStatuses(lineIds) }
+                    lineStatuses = statuses.filter { it.disrupted }.associateBy { it.lineId }
+                    // A line TfL returned no determinable status for is unknown, not
+                    // clean — flag it so those rows aren't shown as verified-clean
+                    // (the client drops such lines, so they're absent here).
+                    val determined = statuses.mapTo(mutableSetOf()) { it.lineId }
+                    determinedLineIds = determined
+                    val undetermined = lineIds.filterNot { it in determined }
+                    if (undetermined.isNotEmpty()) {
+                        // Name the specific lines so a persistent "couldn't check for disruptions" is
+                        // diagnosable — a line id is a canned identifier, not user data (SPEC
+                        // *Privacy*: line ids are allowed in the log).
+                        warn("disruption status unknown: TfL returned no status for line(s) ${undetermined.joinToString(",")}")
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // determinedLineIds stays empty, so every shown line reads undetermined — the
+                    // screen-wide flag the callers derive is set (nothing was verified this batch).
+                    warn("line status fetch failed for ${lineIds.joinToString(",")}: ${reason(e)}")
+                }
+            }
+        }
+
+        return FetchBatch(
+            merged = merged,
+            lineStatuses = lineStatuses,
+            determinedLineIds = determinedLineIds,
+            attemptedLineIds = attemptedLineIds,
+            stopsDisruptionUnknown = stopsDisruptionUnknown,
+            anyArrivalsFailed = anyArrivalsFailed,
+            anyFreshData = anyFreshData,
+            anyFreshArrivals = anyFreshArrivals,
+            firstError = firstError,
+        )
+    }
+
+    /**
+     * The screen-wide "some shown departures' disruption state is unverified" flag, derived from the
+     * merged set and its provenance so [refresh] and an incremental reveal compute it identically and
+     * a reveal can't leave it stuck: true when any shown stop's own closure check failed
+     * ([stopsDisruptionUnknown]), any shown prediction has no line id to check, or any shown line TfL
+     * returned no status for (not in [determinedLineIds]) — never show an unverified line as clean
+     * (SPEC principle 1).
+     */
+    private fun disruptionUnknownOf(
+        stops: List<StopArrivals>,
+        determinedLineIds: Set<String>,
+        stopsDisruptionUnknown: Set<String>,
+    ): Boolean =
+        stopsDisruptionUnknown.isNotEmpty() ||
+            stops.any { s ->
+                s.departures.any { it.lineId.isBlank() } ||
+                    (s.departures.map { it.lineId } + s.lines.map { it.id })
+                        .any { it.isNotBlank() && it !in determinedLineIds }
+            }
+
     /** Re-fetch every fetched stop and swap in a fresh snapshot; safe to call repeatedly. */
     fun refresh() {
         fetchJob?.cancel()
@@ -278,142 +485,19 @@ class MainViewModel(
                 }
             }
             val prior = priorStops.associateBy { it.stopId }
-            val merged = mutableListOf<StopArrivals>()
-            var firstError: Throwable? = null
-            var anyArrivalsFailed = false
-            // True once any request returned fresh data (arrivals or disruption, any stop):
-            // the difference between a partial refresh (keep the fresh, age the rest) and a
-            // total failure (nothing new — keep the whole aged snapshot and say so).
-            var anyFreshData = false
-            // True once any stop's ARRIVALS returned (fresh durable content). Distinct from
-            // anyFreshData because disruptions aren't persisted: a cycle where every arrivals
-            // request failed but a disruption returned has nothing durable to save, so it must
-            // not overwrite a complete saved snapshot with carried arrivalsFresh=false rows.
-            var anyFreshArrivals = false
-            var disruptionUnknown = false
-            // The stops whose STOP-level disruption lookup failed this cycle (a closure/move was
-            // never checked), tracked per stop because that axis is independent of line status:
-            // a stop's line can be determined (good service) while its own disruption request
-            // failed, and a per-stop surface must still say "couldn't check" for it rather than
-            // pass it off as clean (SPEC principle 1, Codex on #100).
-            val stopsDisruptionUnknown = mutableSetOf<String>()
-            // Memoizes this refresh's hub-name attempts — successes AND failures — so a hub shared
-            // by several disrupted stops is requested at most once per refresh, even when the
-            // lookup fails: without it a failing hub would be re-requested (and re-timed-out) once
-            // per member, and members could disagree if a later one happened to succeed. A success
-            // also promotes to the durable `hubNameCache`; a failure stays here only, so the next
-            // refresh (a fresh map) retries (Codex).
-            val hubNamesThisRefresh = HashMap<String, String>()
-
-            for (stop in fetchedStops) {
-                val departures = try {
-                    withContext(io) { client.arrivals(stop.id) }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    if (firstError == null) firstError = e
-                    anyArrivalsFailed = true
-                    warn("arrivals fetch failed for stop ${stop.id}: ${reason(e)}")
-                    null
-                }
-                // Fetch the stop's disruption independently of its arrivals (a closure, a
-                // moved stop), so a closed stop is flagged rather than shown with
-                // catchable-looking departures — and a stop whose *arrivals* failed still
-                // surfaces its available closure rather than dropping out entirely (SPEC
-                // *Disruptions*). Per stop (the endpoint scopes to it), off the render path.
-                // A lookup that fails falls back to the aged disruption and flags the state
-                // unknown rather than passing the stop off as verified-clear.
-                val disruptions = try {
-                    withContext(io) { client.stopDisruptions(stop.id) }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    if (firstError == null) firstError = e
-                    disruptionUnknown = true
-                    stopsDisruptionUnknown += stop.id
-                    warn("stop disruption fetch failed for stop ${stop.id}: ${reason(e)}")
-                    null
-                }
-                if (departures != null) anyFreshArrivals = true
-                if (departures != null || disruptions != null) anyFreshData = true
-                // Resolve the interchange name only when this stop has a fresh disruption to
-                // title AND belongs to a hub — the one case a folded alert titles by the
-                // interchange (SPEC *Disruptions*). Cached and off the render path; a stop with
-                // no disruption, or no hub, costs no call and titles by its own name.
-                val hubName =
-                    if (stop.hubId.isNotBlank() && !disruptions.isNullOrEmpty()) {
-                        resolveHubName(stop.hubId, hubNamesThisRefresh)
-                    } else {
-                        ""
-                    }
-                Snapshot.mergeStop(
-                    stopId = stop.id,
-                    stopName = stop.name,
-                    clusterId = stop.clusterId,
-                    lines = stop.lines,
-                    freshDepartures = departures,
-                    freshDisruptions = disruptions,
-                    prior = prior[stop.id],
-                    now = now,
-                    hubId = stop.hubId,
-                    hubName = hubName,
-                )?.let { merged += it }
-            }
-
-            // Check the status of every line we're about to show, so a disrupted line is
-            // marked rather than its countdowns shown as trustworthy (SPEC *Disruptions* /
-            // D3). One batched request, off the arrivals path. The set is the stops'
-            // declared lines PLUS every predicted line: the declared lines cover a
-            // suspended line that returned no predictions (so it can surface as a status
-            // row), and the predicted set catches anything a stop didn't declare. A lookup
-            // that fails leaves the arrivals shown but flags them "status unknown" rather
-            // than passing them off as verified-clean.
-            var lineStatuses = emptyMap<String, LineStatus>()
-            // The lines TfL actually returned a status for (good or disrupted): what lets a
-            // per-line surface tell "checked, good service" from "never checked" when only some
-            // lines are undetermined (Codex on #100). Empty when the lookup failed or wasn't made.
-            var determinedLineIds = emptySet<String>()
-            if (merged.isNotEmpty()) {
-                val predictedLineIds = merged.flatMap { it.departures }.map { it.lineId }
-                val declaredLineIds = merged.flatMap { it.lines }.map { it.id }
-                val lineIds = (predictedLineIds + declaredLineIds)
-                    .filterTo(mutableSetOf()) { it.isNotBlank() }
-                // A departure whose line TfL didn't identify (blank id) can't have its
-                // status checked, so its presence alone leaves the disruption state
-                // unknown — never shown as verified-clean (SPEC principle 1). This also
-                // covers the all-blank case, where no status request is made at all.
-                val blankLineIdCount = predictedLineIds.count { it.isBlank() }
-                if (blankLineIdCount > 0) {
-                    disruptionUnknown = true
-                    // Name the reason so a persistent "couldn't check for disruptions" is
-                    // diagnosable: a count of unidentifiable predictions, no user data.
-                    warn("disruption status unknown: $blankLineIdCount prediction(s) had no line id to check")
-                }
-                if (lineIds.isNotEmpty()) {
-                    try {
-                        val statuses = withContext(io) { client.lineStatuses(lineIds) }
-                        lineStatuses = statuses.filter { it.disrupted }.associateBy { it.lineId }
-                        // A line TfL returned no determinable status for is unknown, not
-                        // clean — flag it so those rows aren't shown as verified-clean
-                        // (the client drops such lines, so they're absent here).
-                        val determined = statuses.mapTo(mutableSetOf()) { it.lineId }
-                        determinedLineIds = determined
-                        val undetermined = lineIds.filterNot { it in determined }
-                        if (undetermined.isNotEmpty()) {
-                            disruptionUnknown = true
-                            // Name the specific lines so a persistent "couldn't check for
-                            // disruptions" is diagnosable — a line id is a canned identifier,
-                            // not user data (SPEC *Privacy*: line ids are allowed in the log).
-                            warn("disruption status unknown: TfL returned no status for line(s) ${undetermined.joinToString(",")}")
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        disruptionUnknown = true
-                        warn("line status fetch failed for ${lineIds.joinToString(",")}: ${reason(e)}")
-                    }
-                }
-            }
+            // Fetch the whole set, merged into the prior at this cycle's stamp (see [fetchBatch]).
+            val batch = fetchBatch(fetchedStops, prior, now)
+            val merged = batch.merged
+            val firstError = batch.firstError
+            val anyArrivalsFailed = batch.anyArrivalsFailed
+            val anyFreshData = batch.anyFreshData
+            val anyFreshArrivals = batch.anyFreshArrivals
+            val lineStatuses = batch.lineStatuses
+            val determinedLineIds = batch.determinedLineIds
+            val stopsDisruptionUnknown = batch.stopsDisruptionUnknown
+            // Screen-wide "status unknown" derives from the merged set and this batch's provenance,
+            // so refresh() and an incremental reveal compute it the same way ([disruptionUnknownOf]).
+            val disruptionUnknown = disruptionUnknownOf(merged, determinedLineIds, stopsDisruptionUnknown)
 
             val newState = when {
                 merged.isNotEmpty() ->
@@ -481,6 +565,13 @@ class MainViewModel(
                 }
             if (toSave != null) {
                 try {
+                    // Deliberately CANCELLABLE: cancelFetch() is the relocation guard — it cancels this
+                    // job before a fresh fix so the soon-to-be-previous location's snapshot is NOT
+                    // persisted during the fix window (SPEC D4 / principle 1). A superseding "More" tap
+                    // also cancels here, but that page isn't stranded: fetchIncremental persists the
+                    // merged set whenever it carries fresh arrivals — including these just-published
+                    // ones carried onto the reveal — so the fix doesn't need a NonCancellable save that
+                    // would defeat the relocation guard (Codex, PR #104).
                     withContext(io) { snapshotStore.save(toSave) }
                     // save() pokes the widget itself (WidgetSnapshotStore), so it re-renders with
                     // the fresh snapshot; no separate redraw needed on this path.
@@ -506,10 +597,11 @@ class MainViewModel(
 
     /**
      * Reveal the next page of [bucket]'s farther clusters (SPEC *Finding stops → Near me now*):
-     * add them to the fetched set and re-fetch so they merge in beside the eager stops. A no-op
-     * when the bucket has nothing left to page; the caller ignores a tap while a relocation's
-     * fresh fix is in flight, so a "More" never pages the pre-fix set. Reveal only *adds* stops,
-     * so no prune is needed — an already-present stop keeps its aged rows until its fetch returns.
+     * add them to the fetched set and fetch **only** the newly revealed stops, merging them in
+     * beside the ones already shown, rather than re-fetching the whole set. A no-op when the bucket
+     * has nothing left to page; the caller ignores a tap while a relocation's fresh fix is in flight,
+     * so a "More" never pages the pre-fix set. Reveal only *adds* stops, so no prune is needed — an
+     * already-present stop keeps its rows untouched.
      */
     fun reveal(bucket: String) {
         // The lines already on screen (eager plus revealed), so nextReveal can page THROUGH a run of
@@ -519,7 +611,111 @@ class MainViewModel(
         if (next.isEmpty()) return
         revealedKeys = revealedKeys + next
         _moreState.value = NearbySelection.revealableBuckets(more, revealedKeys)
-        refresh()
+        // Fetch only the stops that aren't already shown, merging into the current snapshot, so the
+        // Nth "More" tap costs one page of requests, not the whole shown set (TfL request budget).
+        // Computed as fetchedStops minus what's on screen — so it also picks up any earlier revealed
+        // stop a superseded tap didn't finish fetching, keeping this self-correcting on quick taps.
+        val current = _state.value as? DeparturesUiState.Loaded
+        if (current == null) {
+            // No snapshot to merge into yet (still Loading, or an Error) — fall back to a full fetch,
+            // which builds the first Loaded from the whole set.
+            refresh()
+            return
+        }
+        val shown = current.stops.mapTo(mutableSetOf()) { it.stopId }
+        val newStops = fetchedStops.filterNot { it.id in shown }
+        if (newStops.isEmpty()) return
+        fetchIncremental(current, newStops)
+    }
+
+    /**
+     * Fetch [newStops] and merge them into [current], without re-fetching the stops already shown
+     * (SPEC *Finding stops → Near me now* — a "More" tap pages one bounded burst, not the whole
+     * set). A newly revealed stop whose fetch fails is simply absent (the reveal is flagged partial),
+     * never an [DeparturesUiState.Error] — the existing snapshot still stands (SPEC principle 2).
+     * The widened set is persisted only when the fetch brought fresh arrivals, so the widget polls
+     * the new stops too (matching [refresh]'s save rule); a reveal with nothing durable leaves the
+     * saved snapshot as-is.
+     */
+    private fun fetchIncremental(current: DeparturesUiState.Loaded, newStops: List<StopRef>) {
+        fetchJob?.cancel()
+        _refreshing.value = true
+        val job = viewModelScope.launch {
+            val now = clock()
+            val prior = current.stops.associateBy { it.stopId }
+            val batch = fetchBatch(newStops, prior, now)
+            // Merge the newly fetched stops beside the ones already shown, keeping the shown order
+            // then appending the new ones; the screen re-sorts by distance, so order here is only for
+            // a stable snapshot.
+            val byId = LinkedHashMap<String, StopArrivals>()
+            for (s in current.stops) byId[s.stopId] = s
+            for (s in batch.merged) byId[s.stopId] = s
+            val mergedStops = byId.values.toList()
+            val mergedIds = byId.keys
+            // Merge the disruption provenance across the shown set and the new batch, so the per-line
+            // and per-stop route-detail signals — and the screen-wide banner derived from them — stay
+            // coherent over a partial (incremental) fetch instead of dropping the shown stops' verdicts.
+            // determinedLineIds: keep the shown lines' determinations except ones this batch re-queried
+            // (which its result replaces — so a line TfL now omits drops out), then add the batch's.
+            val determinedLineIds =
+                (current.determinedLineIds - batch.attemptedLineIds) + batch.determinedLineIds
+            // stopsDisruptionUnknown: the shown stops still on screen plus the batch's failed stops.
+            val stopsDisruptionUnknown =
+                (current.stopsDisruptionUnknown + batch.stopsDisruptionUnknown)
+                    .filterTo(mutableSetOf()) { it in mergedIds }
+            val newState = current.copy(
+                stops = mergedStops,
+                fetchedAt = mergedStops.maxOfOrNull { it.fetchedAt } ?: current.fetchedAt,
+                // Recompute incompleteness over the merged set rather than OR-ing the prior flag, so a
+                // later reveal that retries and recovers an earlier missing stop CLEARS the "some stops
+                // couldn't refresh" banner instead of leaving it stuck until a full refresh. A stop
+                // still missing (its fetch failed) or carried stale keeps it set (see [isIncomplete]).
+                partialRefresh = isIncomplete(mergedStops),
+                // Merge the new batch's line statuses, REPLACING the prior verdict for every line the
+                // batch re-queried (attemptedLineIds), not only the ones it definitively determined:
+                // a line the batch re-checked but TfL now omits (or whose lookup failed) must drop its
+                // stale disrupted entry — it's undetermined now, surfaced via disruptionUnknown — rather
+                // than keep flagging a status this fetch couldn't stand behind (Codex, PR #104). Lines
+                // the batch didn't touch keep theirs.
+                lineStatuses = current.lineStatuses.filterKeys { it !in batch.attemptedLineIds } +
+                    batch.lineStatuses,
+                // Recompute the screen-wide flag over the merged set and merged provenance (like
+                // partialRefresh) rather than OR-ing the prior flag, so a reveal that re-established a
+                // previously unknown line/stop CLEARS the "status unknown" banner ([disruptionUnknownOf]).
+                disruptionUnknown = disruptionUnknownOf(mergedStops, determinedLineIds, stopsDisruptionUnknown),
+                determinedLineIds = determinedLineIds,
+                stopsDisruptionUnknown = stopsDisruptionUnknown,
+                // Clear a prior total-failure "couldn't refresh" banner once this reveal reaches TfL
+                // and gets anything fresh — matching Loaded's contract that the flag clears on the
+                // next fetch that gets anything; a reveal that got nothing keeps the prior state.
+                refreshFailure = if (batch.anyFreshData) null else current.refreshFailure,
+            )
+            _state.value = newState
+            // Persist when the MERGED set carries fresh arrivals — not only when THIS batch did —
+            // matching refresh()'s authoritative rule (it saves a partial that has any fresh stop).
+            // Keying on the merged set is what lets a superseding "More" tap that canceled a full
+            // refresh's still-in-flight save carry that refresh's just-published fresh stops to disk
+            // here, so the save stays CANCELLABLE (the relocation guard keeps working) yet the page
+            // is never stranded (Codex, PR #104). A reveal whose merged set is all aged (nothing
+            // fresh anywhere) saves nothing and just redraws, as before — the merged stops keep their
+            // own arrivalsFresh, so this never rewrites a complete snapshot to stale.
+            if (mergedStops.any { it.arrivalsFresh }) {
+                try {
+                    withContext(io) { snapshotStore.save(DeparturesSnapshot(newState.stops, newState.fetchedAt)) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    warn("snapshot save failed: ${reason(e)}")
+                }
+            } else {
+                // Nothing fresh anywhere in the merged set — like refresh()'s no-save path, poke a
+                // best-effort widget redraw so its static RemoteViews recompute staleness from the
+                // current clock rather than ageing invisibly past the cutoff (SPEC D4 / principle 2).
+                redrawWidgetBestEffort("incremental reveal with no fresh arrivals")
+            }
+        }
+        fetchJob = job
+        job.invokeOnCompletion { if (fetchJob === job) _refreshing.value = false }
     }
 
     /**

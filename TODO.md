@@ -578,19 +578,17 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         requests. **Impact (est.):** caps worst-case requests per refresh to a fixed ceiling — bounds
         the tail at a dense multi-junction corner (two big junctions could otherwise be dozens of
         poles); average case unchanged.
-  - [ ] **A "More" tap should fetch only the newly revealed page, not re-fetch the whole set**
-        (Codex, PR #87 — deferred there as out of scope). `reveal()` adds the new cluster keys and
-        calls `refresh()`, which re-fetches every already-shown stop too (the derived `fetchedStops`),
-        so the Nth tap issues an N-pages-wide burst and delays the new results behind the old ones —
-        raising keyless-rate-limit exposure, the same family as the eager-request-count cap above.
-        It's correct today (the whole-set refresh is the app's established model, and the already-
-        shown stops just carry their recent ages), only wasteful; a fix wants an incremental fetch
-        path (fetch just the added keys, merge into the current `Loaded` state, persist) rather than
-        bolting a second fetch path onto the fragile refresh/persist code late in the reveal PR. Pairs
-        with the eager-request-count cap — both are about bounding the near-me request burst.
-        **Impact (est.):** the Nth "More" tap drops from re-fetching every shown pole to just the
-        newly revealed page — on a list already expanded a few pages, roughly a 60–80% cut on that
-        tap; steady-state auto-refresh unchanged (it already fetches the whole shown set once).
+  - [x] **A "More" tap fetches only the newly revealed page, not the whole set** (landed). `reveal()`
+        no longer calls `refresh()`; it fetches just the stops not already shown and merges them into
+        the current `Loaded` via `fetchIncremental`, persisting the widened set only when the fetch
+        brought fresh arrivals. The per-stop fetch + line-status logic was extracted into `fetchBatch`
+        so the whole-set refresh and the incremental reveal share one path and can't drift. A newly
+        revealed stop whose fetch fails is absent and the reveal is flagged partial, never an Error —
+        the existing snapshot stands. `newStops` is computed as `fetchedStops` minus what's on screen,
+        so a quick double-tap self-corrects (a superseded tap's stops are picked up by the next).
+        **Impact:** the Nth "More" tap drops from re-fetching every shown pole to just the newly
+        revealed page — on a list already expanded a few pages, roughly a 60–80% cut on that tap;
+        steady-state auto-refresh unchanged (it already fetches the whole shown set once).
   - [ ] **A shared client-side TfL limiter — best-effort throttling toward the budget**
         (2026-09-22). The items above *reduce* request demand; none *bounds* it, so a future caller
         (a new surface, a tighter refresh interval) can still push over. Add a token bucket sized to
