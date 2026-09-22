@@ -72,8 +72,9 @@ private val overgroundLineColors: Map<String, Color> = mapOf(
  * so these resolve by mode rather than by line id. Buses are TfL's roundel red; DLR
  * turquoise, the Elizabeth line purple, and London Trams green are their TfL line colors.
  * `overground` is the legacy single orange, a fallback for an Overground service whose line
- * id isn't one of the six named ones (see [overgroundLineColors]); anything not here (e.g.
- * national rail) falls back to a neutral pill.
+ * id isn't one of the six named ones (see [overgroundLineColors]). National rail resolves by
+ * operator instead (see [railOperatorColors]), not by mode; anything else falls back to a
+ * neutral pill.
  */
 private val modeColors: Map<String, Color> = mapOf(
     "bus" to Color(0xFFDC241F),
@@ -83,6 +84,51 @@ private val modeColors: Map<String, Color> = mapOf(
     "tram" to Color(0xFF84B817),
     "trams" to Color(0xFF84B817),
 )
+
+/**
+ * National Rail operator **brand** colors, keyed by a punctuation- and case-insensitive form
+ * of the operator name (see [normalizeRailOperator]) — TfL's `lineName` for a national-rail
+ * service, the same field [lineCode] reads for the operator code. Unlike the tube/mode colors
+ * these are each operator's own brand hex, not a TfL palette color — the deliberate departure
+ * from "add a line color only as a confirmed TfL hex" the maintainer authorized (SPEC / TODO),
+ * so a rail departure wears its operator's identity (c2c magenta, Southern green, EMR aubergine)
+ * instead of the neutral fallback, the way Google Maps shows them.
+ *
+ * Each value is the operator's **confirmed** brand hex — the color Wikipedia's UK-railways colour
+ * templates carry, except Great Northern, whose Wikipedia value is a route-diagram blue rather
+ * than its brand, so its purple is taken from the operator's own site (greatnorthernrail.com).
+ * A national-rail operator not listed here still falls back to a neutral pill rather than an
+ * invented shade.
+ *
+ * Rendered as a **solid** pill (APCA black/white label) like the tube, not the Overground's
+ * hollow treatment: the operator code (EMR, AWC, c2c) already reads distinct from any tube code,
+ * so the rare collision with a tube color (LNER / Gatwick / Greater Anglia reds near Central,
+ * Thameslink pink near Hammersmith & City) can't be mistaken for that line — and Google Maps,
+ * the precedent here, fills the pill too.
+ */
+private val railOperatorColors: Map<String, Color> = mapOf(
+    "c2c" to Color(0xFFB7007C),
+    "southern" to Color(0xFF8CC63E),
+    "southeastern" to Color(0xFF389CFF),
+    "thameslink" to Color(0xFFFF5AA4),
+    "greatnorthern" to Color(0xFF43165C),
+    "greateranglia" to Color(0xFFD70428),
+    "greatwesternrailway" to Color(0xFF0A493E),
+    "southwesternrailway" to Color(0xFF24398C),
+    "londonnortheasternrailway" to Color(0xFFCE0E2D),
+    "avantiwestcoast" to Color(0xFF004354),
+    "eastmidlandsrailway" to Color(0xFF713563),
+    "crosscountry" to Color(0xFF660F21),
+    "chilternrailways" to Color(0xFF00BFFF),
+    "gatwickexpress" to Color(0xFFEB1E2D),
+    "heathrowexpress" to Color(0xFF532E63),
+)
+
+/** An operator name reduced to lowercase letters and digits, so "Great Western Railway",
+ *  "great western railway" and stray punctuation all key the same [railOperatorColors] entry
+ *  (matching the domain's operator-code normalization). */
+private fun normalizeRailOperator(name: String): String =
+    name.lowercase().filter { it.isLetterOrDigit() }
 
 /**
  * The **solid** pill fill color for a service, or `null` when its line/mode has no solid
@@ -95,6 +141,18 @@ fun lineFillColor(lineId: String, mode: String): Color? {
     tubeLineColors[lineId]?.let { return it }
     if (overgroundLineColors.containsKey(lineId)) return null
     return modeColors[mode.lowercase()]
+}
+
+/**
+ * The **solid** brand fill for a national-rail [operator] (TfL's `lineName`), or `null` for a
+ * non-rail mode or a rail operator without a confirmed brand hex (→ neutral pill). Gated on
+ * [mode] so a tube/bus line that happens to share an operator's name can't pick up a rail
+ * brand color. Resolved by operator, not by [lineId]/mode, because every national-rail service
+ * shares the one `national-rail` mode — its operator is its identity (see [railOperatorColors]).
+ */
+fun railOperatorColor(mode: String, operator: String): Color? {
+    if (!mode.equals("national-rail", ignoreCase = true)) return null
+    return railOperatorColors[normalizeRailOperator(operator)]
 }
 
 /**
@@ -227,7 +285,13 @@ private const val ACCENT_BORDER_MIN_LC = 30.0
 @Composable
 fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier = Modifier) {
     val accent = overgroundAccentColor(lineId)
-    val fill = if (accent == null) lineFillColor(lineId, mode) else null
+    // A national-rail service wears its operator's brand color (solid, like the tube); every
+    // other line/mode resolves by id/mode. Named Overground stays hollow (accent), so it wins.
+    val fill = if (accent == null) {
+        railOperatorColor(mode, lineName) ?: lineFillColor(lineId, mode)
+    } else {
+        null
+    }
     val surface = MaterialTheme.colorScheme.surface
 
     val background = when {
