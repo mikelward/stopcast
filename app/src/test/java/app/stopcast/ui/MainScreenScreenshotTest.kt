@@ -523,12 +523,12 @@ class MainScreenScreenshotTest {
     @Test
     fun `via branch joined to the terminus with a slash`() {
         // The Northern line's branch (TfL's `towards` "via Charing Cross") joins the terminus
-        // with a slash ("Morden/Bank"), so a rider can pick the train by its central trunk
-        // (SPEC destination-label). Canned public line/place names only (SPEC *Privacy*).
-        // Two cards, so the layout shows both behaviors: a short destination lets the branch
-        // sit fully beside it (Morden/Bank), while a long one keeps the branch (the trunk
-        // cue) by shortening it to the board's own form and hard-clipping the destination to
-        // make room (Batter/Charing X) — the branch outranks the terminus (SPEC destination-label).
+        // with a slash ("Battersea/Charing X", "Morden/Bank"), so a rider can pick the train by
+        // its central trunk (SPEC destination-label). Canned public line/place names only (SPEC
+        // *Privacy*). Both cards fit at the default width, so the pair shows in full; the tight
+        // case where they truncate together is `via branch truncates both equally` below. The
+        // first card feeds the raw "Battersea Power" terminus, so the render also proves the
+        // hardcoded display rename to "Battersea" (DepartureLabels).
         val euston = StopArrivals(
             "940GZZLUEUS",
             "Euston",
@@ -549,13 +549,55 @@ class MainScreenScreenshotTest {
         capture("main-via-branch.png") {
             MainScreen(DeparturesUiState.Loaded(listOf(euston, kennington), now.minusSeconds(60)), now, {})
         }
-        // The destination's semantic text stays the full "Battersea Power" even where it's
-        // visually truncated; the branch shortens to the board's form where the row is tight,
-        // and stays full where it fits.
-        composeRule.onNodeWithText("Battersea Power").assertExists()
-        composeRule.onNodeWithText("/Charing X").assertExists()
+        // "Battersea Power" renders as the renamed "Battersea"; each row carries its branch cue.
+        // Both fit at this width, so the branch shows in full ("/Charing Cross", not the board
+        // short form) — the tight case where it shortens is the next test.
+        composeRule.onNodeWithText("Battersea").assertExists()
+        composeRule.onNodeWithText("Battersea Power").assertDoesNotExist()
+        composeRule.onNodeWithText("/Charing Cross").assertExists()
         composeRule.onNodeWithText("Morden").assertExists()
         composeRule.onNodeWithText("/Bank").assertExists()
+    }
+
+    @Test
+    fun `via branch truncates both equally under a large font scale`() {
+        // At a large accessibility font scale on a narrow row, "High Barnet/Charing X" no longer
+        // fits, so the terminus and branch share the width in proportion and both clip (SPEC
+        // destination-label — equal truncation), rather than the branch taking the whole row.
+        // The semantic strings stay whole (the clip is visual only), so the full name and the
+        // trunk cue both remain the accessible label. Public line/place names only (SPEC *Privacy*).
+        val kennington = StopArrivals(
+            "940GZZLUKNG",
+            "Kennington",
+            listOf(
+                dep("northern", "Northern", "northbound", "High Barnet", 120, "Platform 1", branch = "Charing Cross"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                val base = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density = base.density, fontScale = 2f),
+                ) {
+                    Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(kennington), now.minusSeconds(60)),
+                            now,
+                            {},
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        captureSnapshot("main-via-branch-equal.png")
+        // Under pressure the terminus abbreviates ("High"→"H.") and the branch shortens to its
+        // board form; the full name stays the accessible label. Both survive — the branch does
+        // not take the whole row.
+        composeRule.onNodeWithText("H. Barnet").assertExists()
+        composeRule.onNodeWithContentDescription("High Barnet").assertExists()
+        composeRule.onNodeWithText("/Charing X").assertExists()
     }
 
     @Test

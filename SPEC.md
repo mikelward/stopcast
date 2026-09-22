@@ -206,7 +206,10 @@ single line, so a long one ("Harrow & Wealdstone") truncates rather than wrappin
 taller or pushing the countdown off the edge. The destination's **station-type suffix is
 trimmed** the way stop names are — TfL's "Brixton Underground Station" shows as "Brixton"
 (*Concise copy*); the bare " Station" is dropped too, so a terminus like "Battersea Power
-Station" reads "Battersea Power" rather than running longer than every other label. **The
+Station" reads "Battersea Power". A short list of **hardcoded display renames** shortens a
+terminus further where the trimmed name is still longer than a rider needs — "Battersea Power"
+shows as "Battersea" — applied at label time only, so grouping and branch resolution still key
+on the full terminus and a rename never changes which trains share a row. **The
 one exception is a destination-less
 service**: when TfL gives neither a destination nor a "towards", the direction word — or,
 failing that, the platform — is shown *in the destination's place* as the only cue that
@@ -218,7 +221,8 @@ On a **branching line** (the Northern most visibly) two trains to the same termi
 run via different central trunks, and TfL names the trunk in `towards` ("Battersea Power
 Station via Charing Cross") — the cue a rider uses to pick their train. So when `towards`
 carries a "via", the branch is shown **joined after the destination with a slash**
-("Battersea Power/Charing X"). The branch **participates in grouping**: within a direction, a
+("Battersea/Charing X", the destination display-renamed from "Battersea Power Station" as
+above). The branch **participates in grouping**: within a direction, a
 line is split not just per destination (D8) but per terminus-and-branch, so two trains to
 one terminus via different trunks (Edgware via Bank and via Charing Cross) each get their
 own line and their own merged countdown. Merging across branches would label the later
@@ -265,19 +269,20 @@ stop, never a choice, so the label is dropped even for a short-working the asset
 as a terminus. King's Cross is Bank-only, so a Bank-branch train there terminating at Golders
 Green or Finchley Central shows no "/Bank".
 
-The **branch outranks the terminus for space**, because on a branching line the trunk is
-what tells two otherwise-identical trains apart — losing it defeats the row. So where the
-pair won't fit, the branch is kept (its board short form, "Charing X") and the **terminus
-yields**, in two steps: it first shortens common whole words to a compact form
-(`East`→`E.`, `Street`→`St`, and the rest — `DestinationAbbreviations`), and only a name
-still too long after that is **hard-clipped with a clean cut** — no ellipsis (maintainer
-preference: a `…` on a narrow row crushed the name to a glyph and read as a glitch). So a
-tight row reads "E. Finchley", or "Batter/Charing X" at the extreme. The full name shows
-whenever it fits and stays the accessible label throughout. Giving branch and terminus
-equal width was considered and declined: the branch is always short, so equal space would
-only clip the terminus sooner. A fuller rider-readable branch form under pressure
-("Charing X"→"via Charing Cross"), which would reopen that balance, remains a tracked
-refinement (`TODO.md`).
+Where the pair won't fit, the **terminus yields first**: it shortens common whole words to a
+compact form (`East`→`E.`, `Street`→`St`, and the rest — `DestinationAbbreviations`) while the
+branch stays whole in its board short form ("Charing X"). If even the abbreviated terminus
+won't sit beside the full branch, the two then **truncate equally** — the row's width is split
+between them in proportion to their natural sizes, so both clip by the same fraction rather than
+the branch taking the whole row and the terminus vanishing. Every clip is a **clean cut** — no
+ellipsis (maintainer preference: a `…` on a narrow row crushed the name to a glyph and read as a
+glitch). So a tight row reads "E. Finchley", or "H. Barn/Charin" at the extreme (a hard cut, no
+ellipsis). The full
+name shows whenever it fits and stays the accessible label throughout. Equal truncation
+replaces an earlier branch-always-wins rule: the branch is short and canonical, so proportional
+splitting only bites at the largest font scales, and there it keeps both cues on screen instead
+of one. A fuller rider-readable branch form under pressure ("Charing X"→"via Charing Cross")
+remains a tracked refinement (`TODO.md`).
 
 The row set is not purely prediction-derived: a watched stop or line with a **known
 disruption** but **zero predictions** still contributes a row — a status row (for the
