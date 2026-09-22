@@ -56,6 +56,89 @@ class RouteStopsTest {
         assertNull(RouteStops.ahead(variants, "A", "Victoria", null))
     }
 
+    // A synthetic bus route whose blind reads a place ("Northtown") that names neither its last
+    // stop nor the route — the common shape for London buses, which left most without a list.
+    private val labeledBus = LineSequence(
+        routes = listOf(LineRoute("Southgate &harr;  Corner Stand", listOf("S", "P", "Q", "N", "E"))),
+        stopNames = mapOf(
+            "S" to "Southgate", "P" to "Park Road", "Q" to "Queens Avenue",
+            "N" to "Northtown High Road", "E" to "Corner Stand",
+        ),
+    )
+
+    @Test
+    fun `a bus whose destination names no stop or route runs to the route's end`() {
+        assertEquals(
+            listOf("P", "Q", "N", "E"),
+            RouteStops.ahead(labeledBus, "P", "Northtown", null, bus = true)?.map { it.id },
+        )
+    }
+
+    @Test
+    fun `rail keeps the strict rule - an unmatched destination has no list`() {
+        assertEquals(
+            RouteStops.Resolution.NoMatch,
+            RouteStops.resolve(labeledBus, "P", "Northtown", null, bus = false),
+        )
+    }
+
+    @Test
+    fun `a bus short-working that names a stop still ends there`() {
+        assertEquals(
+            listOf("P", "Q"),
+            RouteStops.ahead(labeledBus, "P", "Queens Avenue", null, bus = true)?.map { it.id },
+        )
+    }
+
+    @Test
+    fun `a bus with two variants diverging ahead stays ambiguous`() {
+        val variants = LineSequence(
+            routes = listOf(
+                LineRoute("A &harr; X", listOf("A", "B", "X")),
+                LineRoute("A &harr; Y", listOf("A", "C", "Y")),
+            ),
+            stopNames = mapOf("A" to "Start", "B" to "Bee", "C" to "Sea", "X" to "Ex", "Y" to "Why"),
+        )
+        assertEquals(RouteStops.Resolution.Ambiguous(2), RouteStops.resolve(variants, "A", "Town", null, bus = true))
+        // Variants that only differ *behind* the stop agree from here on: one path.
+        val behind = LineSequence(
+            routes = listOf(
+                LineRoute("A &harr; X", listOf("A", "B", "X")),
+                LineRoute("G &harr; X", listOf("G", "B", "X")),
+            ),
+            stopNames = mapOf("A" to "Start", "G" to "Garage", "B" to "Bee", "X" to "Ex"),
+        )
+        assertEquals(listOf("B", "X"), RouteStops.ahead(behind, "B", "Town", null, bus = true)?.map { it.id })
+    }
+
+    @Test
+    fun `a stop off every route, or at a route's end, is reported as such`() {
+        assertEquals(RouteStops.Resolution.NotOnRoute, RouteStops.resolve(labeledBus, "Z", "Northtown", null, bus = true))
+        assertEquals(RouteStops.Resolution.NoMatch, RouteStops.resolve(labeledBus, "E", "Northtown", null, bus = true))
+        assertEquals(RouteStops.Resolution.NoDestination, RouteStops.resolve(labeledBus, "P", "", null, bus = true))
+    }
+
+    @Test
+    fun `an unresolved list is logged with its reason, a resolved one is not`() {
+        val warnings = mutableListOf<String>()
+        val repository = RouteStopsRepository(
+            source = object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String) = labeledBus
+            },
+            warn = { warnings += it },
+        )
+        repository.reportUnresolved("43", "P", RouteStops.Resolution.Found(emptyList()))
+        repository.reportUnresolved("43", "P", RouteStops.Resolution.Ambiguous(2))
+        repository.reportUnresolved("43", "P", RouteStops.Resolution.NoMatch)
+        assertEquals(
+            listOf(
+                "route stops unavailable for line 43 at stop P: 2 possible paths",
+                "route stops unavailable for line 43 at stop P: destination matches no route",
+            ),
+            warnings,
+        )
+    }
+
     @Test
     fun `route names parse to their far end`() {
         assertEquals("Edgware", RouteStops.terminusOf("Morden  &harr;  Edgware  via Bank"))

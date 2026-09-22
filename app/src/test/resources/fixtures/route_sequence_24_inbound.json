@@ -1,0 +1,368 @@
+{
+ "orderedLineRoutes": [
+  {
+   "name": "South End Green &harr;  Grosvenor Road",
+   "naptanIds": [
+    "490012280A",
+    "490005756E",
+    "490009204E",
+    "490012651S",
+    "490011330S",
+    "490011330S2",
+    "490012765S",
+    "490006798CL",
+    "490007927M",
+    "490004713D",
+    "490000036S",
+    "490011168S2",
+    "490000152C",
+    "490012158S",
+    "490010158S",
+    "490015042U",
+    "490002121ZT",
+    "490005084Z",
+    "490002124ZZ",
+    "490000235GX",
+    "490004695D",
+    "490000135B",
+    "490016161S",
+    "490013767D",
+    "490014585N",
+    "490008376S",
+    "490015048T",
+    "490010260SD",
+    "490003384SB",
+    "490014496M",
+    "490000248S",
+    "490014259S",
+    "490003837S",
+    "490012708G",
+    "490011004W",
+    "490003179S",
+    "490014504W",
+    "490014504S",
+    "490015832E"
+   ]
+  }
+ ],
+ "stopPointSequences": [
+  {
+   "stopPoint": [
+    {
+     "id": "490012280A",
+     "name": "South End Green"
+    },
+    {
+     "id": "490005756E",
+     "name": "Cressy Road"
+    },
+    {
+     "id": "490009204E",
+     "name": "Mansfield Road"
+    },
+    {
+     "id": "490012651S",
+     "name": "St Dominic's Priory"
+    },
+    {
+     "id": "490011330S",
+     "name": "Grafton Terrace"
+    },
+    {
+     "id": "490011330S2",
+     "name": "Queen's Crescent"
+    },
+    {
+     "id": "490012765S",
+     "name": "Prince of Wales Road"
+    },
+    {
+     "id": "490006798CL",
+     "name": "Ferdinand Street"
+    },
+    {
+     "id": "490007927M",
+     "name": "Hawley Road"
+    },
+    {
+     "id": "490004713D",
+     "name": "Camden Gardens"
+    },
+    {
+     "id": "490000036S",
+     "name": "Camden Town Station"
+    },
+    {
+     "id": "490011168S2",
+     "name": "Pratt Street"
+    },
+    {
+     "id": "490000152C",
+     "name": "Mornington Crescent Station"
+    },
+    {
+     "id": "490012158S",
+     "name": "Silverdale"
+    },
+    {
+     "id": "490010158S",
+     "name": "William Road"
+    },
+    {
+     "id": "490015042U",
+     "name": "Warren Street Station  / Euston Road"
+    },
+    {
+     "id": "490002121ZT",
+     "name": "Capper Street"
+    },
+    {
+     "id": "490005084Z",
+     "name": "Goodge Street Station"
+    },
+    {
+     "id": "490002124ZZ",
+     "name": "Stephen Street"
+    },
+    {
+     "id": "490000235GX",
+     "name": "Tottenham Court Road Station"
+    },
+    {
+     "id": "490004695D",
+     "name": "Cambridge Circus"
+    },
+    {
+     "id": "490000135B",
+     "name": "Leicester Square Station"
+    },
+    {
+     "id": "490016161S",
+     "name": "St Martin's Place"
+    },
+    {
+     "id": "490013767D",
+     "name": "Trafalgar Square / Charing Cross Stn"
+    },
+    {
+     "id": "490014585N",
+     "name": "Whitehall / Trafalgar Square"
+    },
+    {
+     "id": "490008376S",
+     "name": "Horse Guards Parade"
+    },
+    {
+     "id": "490015048T",
+     "name": "Westminster Stn  / Parliament Square"
+    },
+    {
+     "id": "490010260SD",
+     "name": "St James's Park Station"
+    },
+    {
+     "id": "490003384SB",
+     "name": "Westminster City Hall"
+    },
+    {
+     "id": "490014496M",
+     "name": "Westminster Cathedral / Victoria Stn"
+    },
+    {
+     "id": "490000248S",
+     "name": "Victoria Station"
+    },
+    {
+     "id": "490014259S",
+     "name": "Warwick Way"
+    },
+    {
+     "id": "490003837S",
+     "name": "Belgrave Road"
+    },
+    {
+     "id": "490012708G",
+     "name": "St George's Square / Pimlico Station"
+    },
+    {
+     "id": "490011004W",
+     "name": "Pimlico Academy & Library"
+    },
+    {
+     "id": "490003179S",
+     "name": "Alderney Street"
+    },
+    {
+     "id": "490014504W",
+     "name": "Winchester Street"
+    },
+    {
+     "id": "490014504S",
+     "name": "Westmoreland Terrace"
+    },
+    {
+     "id": "490015832E",
+     "name": "Grosvenor Road"
+    }
+   ]
+  }
+ ],
+ "stations": [
+  {
+   "id": "490000036S",
+   "name": "Camden Town Station"
+  },
+  {
+   "id": "490000135B",
+   "name": "Leicester Square Station"
+  },
+  {
+   "id": "490000152C",
+   "name": "Mornington Crescent Station"
+  },
+  {
+   "id": "490000235GX",
+   "name": "Tottenham Court Road Station"
+  },
+  {
+   "id": "490000248S",
+   "name": "Victoria Station"
+  },
+  {
+   "id": "490005084Z",
+   "name": "Goodge Street Station"
+  },
+  {
+   "id": "490010260SD",
+   "name": "St James's Park Station"
+  },
+  {
+   "id": "490G00002319",
+   "name": "William Road"
+  },
+  {
+   "id": "490G00003179",
+   "name": "Alderney Street"
+  },
+  {
+   "id": "490G00003837",
+   "name": "Belgrave Road"
+  },
+  {
+   "id": "490G00004695",
+   "name": "Cambridge Circus"
+  },
+  {
+   "id": "490G00004713",
+   "name": "Camden Gardens"
+  },
+  {
+   "id": "490G00005756",
+   "name": "Cressy Road"
+  },
+  {
+   "id": "490G00006798",
+   "name": "Ferdinand Street"
+  },
+  {
+   "id": "490G00007927",
+   "name": "Hawley Road"
+  },
+  {
+   "id": "490G00008376",
+   "name": "Horse Guards Parade"
+  },
+  {
+   "id": "490G00009204",
+   "name": "Mansfield Road"
+  },
+  {
+   "id": "490G00011004",
+   "name": "Pimlico Academy & Library"
+  },
+  {
+   "id": "490G00011168",
+   "name": "Pratt Street"
+  },
+  {
+   "id": "490G00011200",
+   "name": "Prince of Wales Road"
+  },
+  {
+   "id": "490G00011330",
+   "name": "Queen's Crescent"
+  },
+  {
+   "id": "490G00011344",
+   "name": "Grafton Terrace"
+  },
+  {
+   "id": "490G00012158",
+   "name": "Silverdale"
+  },
+  {
+   "id": "490G00012651",
+   "name": "St Dominic's Priory"
+  },
+  {
+   "id": "490G00012708",
+   "name": "St George's Square / Pimlico Station"
+  },
+  {
+   "id": "490G00014259",
+   "name": "Warwick Way"
+  },
+  {
+   "id": "490G00014504",
+   "name": "Westmoreland Terrace"
+  },
+  {
+   "id": "490G00015047",
+   "name": "Warren Street Station  / Euston Road"
+  },
+  {
+   "id": "490G00015832",
+   "name": "Grosvenor Road"
+  },
+  {
+   "id": "490G00016161",
+   "name": "St Martin's Place"
+  },
+  {
+   "id": "490G00016309",
+   "name": "Winchester Street"
+  },
+  {
+   "id": "490G000343",
+   "name": "Capper Street"
+  },
+  {
+   "id": "490G000346",
+   "name": "Stephen Street"
+  },
+  {
+   "id": "490G000394",
+   "name": "Westminster City Hall"
+  },
+  {
+   "id": "490G000751",
+   "name": "South End Green"
+  },
+  {
+   "id": "490G000804",
+   "name": "Northumberland Avenue / Trafalgar Square"
+  },
+  {
+   "id": "490G000830",
+   "name": "Westminster Cathedral / Victoria Stn"
+  },
+  {
+   "id": "490G000832",
+   "name": "Whitehall / Trafalgar Square"
+  },
+  {
+   "id": "HUBWSM",
+   "name": "Westminster"
+  }
+ ]
+}

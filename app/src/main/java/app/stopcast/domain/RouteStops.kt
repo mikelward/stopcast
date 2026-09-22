@@ -49,9 +49,36 @@ object RouteStops {
         if (direction in DIRECTIONS) listOf(direction) else DIRECTIONS
 
     /**
+     * Why [resolve] could or couldn't produce a stop list — the reason is what the debug log
+     * records when the route page says the list is unavailable (SPEC principle 2: never fail
+     * silently). Carries only network data (TfL stop and line ids), no user data.
+     */
+    sealed interface Resolution {
+        data class Found(val stops: List<RouteStop>) : Resolution
+        /** No destination to follow. */
+        data object NoDestination : Resolution
+        /** No route in the sequence calls at the boarding stop. */
+        data object NotOnRoute : Resolution
+        /** The stop is on a route, but nothing ahead of it matches the destination. */
+        data object NoMatch : Resolution
+        /** More than one distinct path matches; [paths] of them. */
+        data class Ambiguous(val paths: Int) : Resolution
+    }
+
+    /** The stop list, or null when [resolve] can't say which path the train takes. */
+    fun ahead(
+        sequence: LineSequence,
+        stopId: String,
+        destination: String,
+        branch: String?,
+        lineId: String = "",
+        bus: Boolean = false,
+    ): List<RouteStop>? = (resolve(sequence, stopId, destination, branch, lineId, bus) as? Resolution.Found)?.stops
+
+    /**
      * The stations a train at [stopId] bound for [destination] (cleaned, as on a [Departure]) via
-     * [branch] calls at, from the boarding stop through its terminus — or null when [sequence]
-     * can't say which path it takes (SPEC principle 1: no guessed stop list).
+     * [branch] calls at, from the boarding stop through its terminus — or a non-[Resolution.Found]
+     * reason when [sequence] can't say which path it takes (SPEC principle 1: no guessed stop list).
      *
      * A route matches when it calls at [stopId] and, later, at a stop named [destination] — so a
      * short-working (a Northern train terminating at Kennington) ends where the train does, not at
@@ -59,15 +86,25 @@ object RouteStops {
      * (a bus destination TfL spells differently from its last stop), running to its end. Where TfL
      * names the branch ("via Bank"), only matching routes count; the answer must then be one
      * unambiguous path. Each stop carries its connections other than [lineId], the line ridden.
+     *
+     * A [bus] gets one more fallback when neither test matches any route: its route end. A bus
+     * arrival's destination is the blind's place label (an area or landmark, not the last stop's
+     * name), which usually names no stop and not the route either, so without
+     * this nearly every bus had no list. It still has to be a single path from here to the end, and
+     * a short-working whose label *does* name a stop still ends there (the tests above run first).
+     * Rail keeps the strict rule: its destinations name real stations, so a miss there means a
+     * working the sequence doesn't model, and running it to the line's end would be a guess.
      */
-    fun ahead(
+    fun resolve(
         sequence: LineSequence,
         stopId: String,
         destination: String,
         branch: String?,
         lineId: String = "",
-    ): List<RouteStop>? {
-        if (destination.isBlank()) return null
+        bus: Boolean = false,
+    ): Resolution {
+        if (destination.isBlank()) return Resolution.NoDestination
+        if (sequence.routes.none { visits(it, stopId).isNotEmpty() }) return Resolution.NotOnRoute
         // Every visit to [stopId] is a candidate origin and every later stop named [destination] a
         // candidate end: a loop can call here twice, and two stops can share a cleaned name (a
         // loop, a bus route passing a place twice, TfL's line qualifiers that [cleanStopName]
@@ -75,7 +112,7 @@ object RouteStops {
         // than one leaves the answer ambiguous below rather than picking the first.
         // Per route: its stop-name matches, else (none on that route) its route-name terminus — so
         // one variant matching by stop name can't hide another that only matches by its name.
-        val candidates = sequence.routes.flatMap { route ->
+        val matched = sequence.routes.flatMap { route ->
             val byStopName = visits(route, stopId).flatMap { i ->
                 (i + 1 until route.stopIds.size).filter { k ->
                     sequence.stopNames[route.stopIds[k]].equals(destination, ignoreCase = true)
@@ -83,10 +120,12 @@ object RouteStops {
             }
             byStopName.ifEmpty {
                 if (!terminusOf(route.name).equals(destination, ignoreCase = true)) return@ifEmpty emptyList()
-                visits(route, stopId).filter { it < route.stopIds.lastIndex }
-                    .map { i -> route to route.stopIds.subList(i, route.stopIds.size) }
+                toEnd(route, stopId)
             }
         }
+        // A bus whose label matched nothing: every route calling here, run to its end.
+        val candidates = if (matched.isEmpty() && bus) sequence.routes.flatMap { toEnd(it, stopId) } else matched
+        if (candidates.isEmpty()) return Resolution.NoMatch
         // A branch TfL named narrows to the routes carrying it; if none carry it (an unlabeled
         // Battersea route for a "via CX" train), the branch can't narrow and all candidates stand.
         val onBranch = if (branch == null) {
@@ -94,11 +133,19 @@ object RouteStops {
         } else {
             candidates.filter { (route, _) -> branchOf(route.name) == branch }.ifEmpty { candidates }
         }
-        val path = onBranch.map { it.second }.distinct().singleOrNull() ?: return null
-        return path.map { id ->
-            RouteStop(id, sequence.stopNames[id].orEmpty(), Connections.of(sequence.stopLines[id].orEmpty(), lineId))
-        }
+        val paths = onBranch.map { it.second }.distinct()
+        val path = paths.singleOrNull() ?: return Resolution.Ambiguous(paths.size)
+        return Resolution.Found(
+            path.map { id ->
+                RouteStop(id, sequence.stopNames[id].orEmpty(), Connections.of(sequence.stopLines[id].orEmpty(), lineId))
+            },
+        )
     }
+
+    /** From each visit to [stopId] on [route] (bar its last stop) through the route's end. */
+    private fun toEnd(route: LineRoute, stopId: String): List<Pair<LineRoute, List<String>>> =
+        visits(route, stopId).filter { it < route.stopIds.lastIndex }
+            .map { i -> route to route.stopIds.subList(i, route.stopIds.size) }
 
     private fun visits(route: LineRoute, stopId: String): List<Int> =
         route.stopIds.indices.filter { route.stopIds[it] == stopId }
@@ -120,6 +167,23 @@ class RouteStopsRepository(
     private val warn: (String) -> Unit = {},
 ) {
     private val cache = ConcurrentHashMap<String, LineSequence>()
+
+    /**
+     * Logs why a fetched sequence gave no stop list for a train on [lineId] at [stopId] — the page
+     * shows only "unavailable", so this line is what explains it in a bug report (SPEC principle 2).
+     * Ids and the reason only; the destination is TfL's label, kept out as it adds nothing the ids
+     * don't.
+     */
+    fun reportUnresolved(lineId: String, stopId: String, resolution: RouteStops.Resolution) {
+        val reason = when (resolution) {
+            is RouteStops.Resolution.Found -> return
+            RouteStops.Resolution.NoDestination -> "no destination"
+            RouteStops.Resolution.NotOnRoute -> "stop not on any route"
+            RouteStops.Resolution.NoMatch -> "destination matches no route"
+            is RouteStops.Resolution.Ambiguous -> "${resolution.paths} possible paths"
+        }
+        warn("route stops unavailable for line $lineId at stop $stopId: $reason")
+    }
 
     /** The merged sequence if already fetched, else null. No IO. */
     fun cached(lineId: String, direction: String): LineSequence? {

@@ -1132,6 +1132,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       path (no branch to pick a trunk) says so rather than guessing. **Still outstanding here:**
       platform and full direction in the detail, and **accessibility** info (step-free, lifts) once a
       data source exists — the open design questions below are unchanged for those.
+  - [x] **Bus routes' stop list** — a bus blind's destination rarely names a stop or the
+        route, so most buses showed "unavailable"; a bus now runs to its route's end when nothing
+        matches, and an unavailable list logs why.
   - [x] **Show connections/interchanges on the route's stop list** (maintainer, 2026-09-22). Each
         station on the route detail's stop list carries a right-aligned line pill per rail-type line a
         rider can change to there — tube, Overground, DLR, Elizabeth line, tram — from the station's own lines
