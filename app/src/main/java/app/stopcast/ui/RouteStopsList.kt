@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
@@ -56,7 +57,7 @@ sealed interface RouteStopsUi {
     data object Stale : RouteStopsUi
 
     /** TfL answered, but no single path from here to this train's destination matched. */
-    data object Unavailable : RouteStopsUi
+    data class Unavailable(val reason: RouteStops.Resolution) : RouteStopsUi
     data class Failed(val kind: DeparturesUiState.Error.Kind) : RouteStopsUi
     data class Loaded(val destination: String, val stops: List<RouteStop>) : RouteStopsUi
 }
@@ -73,14 +74,16 @@ internal fun rememberRouteStops(row: DepartureRow, retry: Int): RouteStopsUi {
     val next = row.upcoming.firstOrNull()
     if (repository == null || next == null || row.lineId.isBlank()) return RouteStopsUi.Hidden
     val destination = next.destination
+    val bus = row.mode.equals("bus", ignoreCase = true)
     fun resolve(sequence: LineSequence): RouteStopsUi =
-        RouteStops.ahead(sequence, row.stopId, destination, next.branch)
-            ?.let { RouteStopsUi.Loaded(destination, it) }
-            ?: RouteStopsUi.Unavailable
-    // Keyed by the followed train, so a change of soonest train (a refresh, or one departing)
+        when (val resolution = RouteStops.resolve(sequence, row.stopId, destination, next.branch, bus)) {
+            is RouteStops.Resolution.Found -> RouteStopsUi.Loaded(destination, resolution.stops)
+            else -> RouteStopsUi.Unavailable(resolution)
+        }
+    // Keyed by the followed train (and the mode, which changes the matching rule), so a change of soonest train (a refresh, or one departing)
     // discards the old state outright: the first frame for the new train is its cached list or
     // Loading, never the previous train's stops.
-    return key(repository, row.lineId, row.direction, row.stopId, destination, next.branch) {
+    return key(repository, row.lineId, row.direction, row.stopId, destination, next.branch, bus) {
         val initial = remember { repository.cached(row.lineId, row.direction)?.let(::resolve) ?: RouteStopsUi.Loading }
         val state by produceState(initial, retry) {
             if (value !is RouteStopsUi.Loading && value !is RouteStopsUi.Failed) return@produceState
@@ -100,6 +103,10 @@ internal fun rememberRouteStops(row: DepartureRow, retry: Int): RouteStopsUi {
                 )
             }
         }
+        // Logged once per followed train, off composition: the page itself only says "unavailable".
+        LaunchedEffect(state) {
+            (state as? RouteStopsUi.Unavailable)?.let { repository.reportUnresolved(row.lineId, row.stopId, it.reason) }
+        }
         state
     }
 }
@@ -118,7 +125,7 @@ internal fun RouteStopsSection(
     val note = when (state) {
         RouteStopsUi.Hidden -> return
         RouteStopsUi.Loading -> stringResource(R.string.route_stops_loading)
-        RouteStopsUi.Unavailable -> stringResource(R.string.route_stops_unavailable)
+        is RouteStopsUi.Unavailable -> stringResource(R.string.route_stops_unavailable)
         RouteStopsUi.Stale -> stringResource(R.string.route_stops_stale)
         is RouteStopsUi.Failed -> stringResource(routeStopsFailureMessage(state.kind))
         is RouteStopsUi.Loaded -> null

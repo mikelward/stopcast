@@ -358,7 +358,13 @@ color. The list comes from TfL's Route/Sequence for the line, fetched **when the
 on the refresh path — and held in memory for the process, so a reopened route shows at once; until
 it arrives the page says so, a failed fetch says why with a retry, and where TfL's data admits more
 than one path from here (a Northern train with no branch named) the page says the list is
-unavailable rather than guessing a trunk (principle 1). The list follows one predicted train, so
+unavailable rather than guessing a trunk (principle 1). **A bus runs to its route's end** when its
+destination names neither a stop ahead nor the route: a bus blind shows an area or landmark, not
+its last stop's name, so matching by name alone left most buses with no list. A
+bus short-working whose label *does* name a stop ahead still ends there, and two variants that part
+ways ahead are still unavailable. Rail keeps the strict name match — its destinations are stations,
+so a miss there is a working the sequence doesn't model. Whenever the list is unavailable, the
+debug log records why (principle 2). The list follows one predicted train, so
 it is **withheld while the row is stale** — that prediction may no longer be the next train — and
 returns with the next refresh (D4). It is a full screen rather than a dialog
 because it will grow per-route actions (a maps/nav hand-off), which a dialog would cap. **On the watched list, warning rows still lead**, above even a starred service — a stop
