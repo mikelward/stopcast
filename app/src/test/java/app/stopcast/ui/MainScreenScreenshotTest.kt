@@ -4,12 +4,15 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -598,6 +601,40 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("H. Barnet").assertExists()
         composeRule.onNodeWithContentDescription("High Barnet").assertExists()
         composeRule.onNodeWithText("/Charing X").assertExists()
+    }
+
+    @Test
+    fun `terminus re-abbreviates when the font scale grows`() {
+        // Isolated so the font scale is the ONLY variable (Codex #102): DestinationLine alone in a
+        // fixed-dp-width box with no countdown, so its BoxWithConstraints.maxWidth stays constant
+        // (dp→px ignores font scale) while the text width grows. Otherwise a larger font also grows
+        // the pill/countdown and shrinks maxWidth, which can trip the abbreviation even from a stale
+        // cached width — hiding whether the widths actually re-measure. "North Finchley" fits at 1x
+        // and must shorten to "N. Finchley" once the font grows: the widths must re-measure, not
+        // reuse a value cached on the label alone. Public line/place names only (SPEC *Privacy*).
+        val fontScale = mutableFloatStateOf(1f)
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                val base = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density = base.density, fontScale = fontScale.floatValue),
+                ) {
+                    Surface {
+                        Box(Modifier.width(150.dp)) {
+                            DestinationLine(label = "North Finchley", times = emptyList(), stale = false, now = now)
+                        }
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // At 1x the full name fits the fixed width.
+        composeRule.onNodeWithText("North Finchley").assertExists()
+        // Grow the font with the width held fixed: the text must re-measure and shorten.
+        fontScale.floatValue = 2f
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("N. Finchley").assertExists()
+        composeRule.onNodeWithText("North Finchley").assertDoesNotExist()
     }
 
     @Test
