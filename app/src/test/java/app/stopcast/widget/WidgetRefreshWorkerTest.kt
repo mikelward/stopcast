@@ -113,6 +113,8 @@ class WidgetRefreshWorkerTest {
         override suspend fun setPinchEnabled(enabled: Boolean) {}
         override fun skipBugReportConsent(): Flow<Boolean> = flowOf(false)
         override suspend fun setSkipBugReportConsent(enabled: Boolean) {}
+        override fun userApiKey(): Flow<String?> = flowOf(null)
+        override suspend fun setUserApiKey(key: String?) {}
     }
 
     @Test

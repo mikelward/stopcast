@@ -1,0 +1,100 @@
+package app.stopcast.data
+
+import app.stopcast.domain.AppSettings
+import app.stopcast.domain.FontSizeSettings
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+/**
+ * The concurrency-critical behavior of the app_key cache (SPEC D7): FIFO write ordering, and the
+ * `userHasSet` latch that stops a late store echo from restoring a key the user has since cleared —
+ * a credential must never be sent after the user clears it. Driven on the test scheduler via the
+ * injected [backgroundScope].
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class UserApiKeyHolderTest {
+
+    /** An [AppSettings] whose stored key is [flow]; each write appends to [written] in order. */
+    private class FakeSettings(
+        private val flow: Flow<String?>,
+        val written: MutableList<String?> = mutableListOf(),
+    ) : AppSettings {
+        override fun userApiKey(): Flow<String?> = flow
+        override suspend fun setUserApiKey(key: String?) {
+            written += key
+        }
+
+        override fun liveWidgetRefresh(): Flow<Boolean> = flowOf(false)
+        override suspend fun setLiveWidgetRefresh(enabled: Boolean) {}
+        override fun fontSize(): Flow<FontSizeSettings> = flowOf(FontSizeSettings())
+        override suspend fun setFontScale(scale: Float) {}
+        override suspend fun setPinchEnabled(enabled: Boolean) {}
+        override fun skipBugReportConsent(): Flow<Boolean> = flowOf(false)
+        override suspend fun setSkipBugReportConsent(enabled: Boolean) {}
+    }
+
+    // A holder whose coroutines run eagerly on the test scheduler (so warm/set effects land without
+    // manual advancing) and are cancelled with the test via backgroundScope's Job.
+    private fun TestScope.eagerHolder() =
+        UserApiKeyHolder(CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)))
+
+    @Test
+    fun `warm reads the stored key into current`() = runTest {
+        val holder = eagerHolder()
+        holder.warm(FakeSettings(flowOf("EXAMPLE")))
+        advanceUntilIdle()
+        assertEquals("EXAMPLE", holder.current)
+    }
+
+    @Test
+    fun `set applies the key to current at once and trims it`() = runTest {
+        val holder = eagerHolder()
+        holder.warm(FakeSettings(MutableSharedFlow()))
+        holder.set("  EXAMPLE  ")
+        // No scheduler advance: current is updated synchronously, before the background write.
+        assertEquals("EXAMPLE", holder.current)
+    }
+
+    @Test
+    fun `rapid edits persist in FIFO order`() = runTest {
+        val settings = FakeSettings(MutableSharedFlow())
+        val holder = eagerHolder()
+        holder.warm(settings)
+
+        holder.set("A")
+        holder.set("B")
+        holder.set(null) // a Clear
+        advanceUntilIdle()
+
+        // Normalized and written newest-last, so a restart reads the user's final choice.
+        assertEquals(listOf("A", "B", null), settings.written)
+    }
+
+    @Test
+    fun `a late store echo cannot restore a key the user has cleared`() = runTest {
+        val stored = MutableSharedFlow<String?>(replay = 1)
+        val holder = eagerHolder()
+        holder.warm(FakeSettings(stored))
+
+        stored.emit("EXAMPLE") // the stored key warms in
+        advanceUntilIdle()
+        assertEquals("EXAMPLE", holder.current)
+
+        holder.set(null) // the user clears it
+        assertNull(holder.current)
+
+        stored.emit("EXAMPLE") // a delayed echo of the old write
+        advanceUntilIdle()
+        assertNull(holder.current) // the latch keeps the cleared value — never restored
+    }
+}

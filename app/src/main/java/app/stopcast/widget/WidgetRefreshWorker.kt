@@ -193,10 +193,21 @@ class WidgetRefreshWorker(appContext: Context, params: WorkerParameters) :
         // resumeWidgetRefreshIfEnabled), which restarts the chain. A load failure throws and the
         // outer catch turns it into Result.retry().
         val prior = store.load() ?: return Result.success()
+        // The user's app_key for this refresh, read once here (SPEC D7). A snapshot is enough — the
+        // worker is a one-shot background run — so unlike the app's long-lived clients it needs no
+        // live provider. Keyless (null) when unset; never logged. The client reads this provider
+        // once per request and drives both the app_key and the limiter's budget from that one read
+        // (rateLimiterFor), so a widget-only process needn't wait for the process-wide holder to
+        // warm and the budget always matches the key sent.
+        val userKey = settings.userApiKey().first()
         try {
             val http = KtorTflClient.defaultHttpClient()
             try {
-                val client = KtorTflClient(http, rateLimiter = SharedTflRateLimiter.instance)
+                val client = KtorTflClient(
+                    http,
+                    appKey = { userKey },
+                    rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                )
                 val refreshed = WidgetRefresh.refreshedArrivals(prior, Instant.now()) { stopId ->
                     try {
                         client.arrivals(stopId)

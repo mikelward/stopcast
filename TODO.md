@@ -659,11 +659,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         close it. Worth doing **only if it stays cheap** (maintainer, 2026-09-22) — a DataStore
         read/write on every request is not; a periodic/batched flush might be. Otherwise leave it
         best-effort.
-  - [ ] **Size the shared limiter to the active budget from the user `app_key`** (item-6 follow-up,
-        2026-09-22). It's fixed at the keyless ~50/min today because the clients aren't yet passed an
-        `app_key`. When the key is threaded to the clients (the Settings paste path), derive the
-        bucket's capacity/refill from it (~500/min with a key, SPEC D7), and decide how a mid-session
-        key change re-sizes the singleton (simplest: next process start).
+  - [x] **Size the shared limiter to the active budget from the user `app_key`** (item-6 follow-up,
+        2026-09-22). Done with the Settings paste path: `KeyedTflRateLimiter` holds a keyless
+        (~50/min) and a keyed (~500/min, SPEC D7) bucket and selects between them **per acquire** by
+        whether a key is active, so a mid-session paste or clear re-sizes at once (no process
+        restart). The app's clients read the process-wide `UserApiKeySetting`; the widget worker
+        passes its own loaded key so its request and its throttling share one source.
   - [ ] **Batch a junction's poles into one request if TfL's arrivals/disruption endpoints accept
         comma-separated stop ids** (2026-09-22). Today each lettered pole is its own
         `/StopPoint/{id}/Arrivals` + disruption call, so a junction cluster is many requests — the
@@ -790,12 +791,25 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       device-to-device transfer — the platform channel covered by SPEC *Privacy*'s backup
       note, not an app-initiated send (so not "on-device only"). Design the model and where
       it surfaces before building.
-- [ ] Optional user `app_key` in settings (D7). **Impact (est.):** raises the TfL budget ~50→~500
+- [x] Optional user `app_key` in settings (D7). **Impact (est.):** raises the TfL budget ~50→~500
       req/min (10×) — a higher, still-finite ceiling, not the removal of the constraint: keyed
       traffic can still reach ~500/min, so the limiter and demand controls still apply, sized to
-      whichever budget is active.
+      whichever budget is active. Pasted in Settings, persisted with the other app settings, and
+      warmed into `UserApiKeySetting` so the long-lived request clients read it per request (a
+      paste takes effect on the next refresh, no rebuild). Sent only with the user's own TfL
+      requests; never logged or put in any other off-device artifact.
+- [ ] **Surface a rejected user `app_key` distinctly** (follow-up to the D7 paste field, Codex).
+      A mistyped/expired/revoked key that TfL rejects with a non-429 4xx currently maps to the
+      generic `Unreachable` state, so the app says "can't reach TfL" and keeps retrying the bad key
+      (the user recovers by clearing it in Settings — an honest but imprecise state). Map an auth
+      4xx (401/403) to a key-specific `TflException` and render it with a one-tap "clear key" action
+      on the affected surfaces, **or** validate the key on Save. Weigh validate-on-save's extra TfL
+      round-trip (a network call, offline handling, and a Data Safety note) against the simpler
+      surface-the-error path. Kept out of the paste-field PR to avoid widening it into error-UX
+      plumbing; the baseline there stays an honest typed error, not a silent failure.
 - [ ] Extend the persisted snapshot (from Phase 1) to cover the watched-stop set,
-      filters, and key. **This is what re-enables persistence for the location view**: the
+      filters, and the **stop-set key it's keyed by** (not the TfL `app_key`, which persists
+      separately in settings). **This is what re-enables persistence for the location view**: the
       interim nearby view (PR #21) uses no persisted snapshot, because one process-wide
       snapshot can't represent a set that changes as the user moves (restoring it would show
       a previous location's departures under the newly-resolved stops). Keying the snapshot

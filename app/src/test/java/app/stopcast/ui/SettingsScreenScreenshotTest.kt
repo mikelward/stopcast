@@ -8,10 +8,13 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import app.stopcast.ui.theme.StopCastTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -203,6 +206,261 @@ class SettingsScreenScreenshotTest {
         composeRule.onNodeWithTag("textSizeSlider").assertExists()
         composeRule.onNodeWithText("Pinch to resize text").assertIsDisplayed()
         composeRule.onNodeWithTag("pinchSwitch").assertIsOn()
+    }
+
+    /**
+     * The TfL API-key control renders (SPEC D7): the title, the paste field, and Save — which
+     * starts disabled since an untouched field has nothing new to persist. It sits below the
+     * live-widget row, so the recorded settings snapshots capture it too.
+     */
+    @Test
+    fun apiKeyControl_render() {
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(liveWidgetRefresh = false, onLiveWidgetRefreshChange = {}, onBack = {})
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("TfL API key").assertIsDisplayed()
+        composeRule.onNodeWithTag("apiKeyField").assertExists()
+        composeRule.onNodeWithTag("apiKeySave").assertIsNotEnabled()
+    }
+
+    /**
+     * Until the stored key has been read (a slow or persistently-failing DataStore read leaves the
+     * flow silent), the field is disabled so it can't be edited over a value that hasn't loaded yet
+     * and would reset the draft on arrival (Codex P2, mirroring the switch).
+     */
+    @Test
+    fun apiKeyField_disabled_whileNotLoaded() {
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    userApiKey = "",
+                    userApiKeyLoaded = false,
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("apiKeyField").assertIsNotEnabled()
+    }
+
+    /** Typing a key then tapping Save reports the pasted value; Clear is absent until one is saved. */
+    @Test
+    fun pastingAndSaving_reportsTheKey() {
+        var saved: String? = null
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    userApiKey = "",
+                    onUserApiKeyChange = { saved = it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("apiKeyClear").assertDoesNotExist()
+        composeRule.onNodeWithTag("apiKeyField").performTextInput("EXAMPLE")
+        composeRule.onNodeWithTag("apiKeySave").performClick()
+        composeRule.runOnIdle { assert(saved == "EXAMPLE") }
+    }
+
+    /**
+     * The key is masked by default (a credential), with a Show/Hide toggle that appears only once
+     * there's text to reveal, so an empty field stays uncluttered (Codex P2).
+     */
+    @Test
+    fun theKeyIsMasked_withARevealToggleWhenPresent() {
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    userApiKey = "EXAMPLE",
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        // Masked by default → the Show affordance is present; toggling flips it to Hide.
+        composeRule.onNodeWithText("Show").assertIsDisplayed()
+        composeRule.onNodeWithTag("apiKeyReveal").performClick()
+        composeRule.onNodeWithText("Hide").assertIsDisplayed()
+    }
+
+    /**
+     * An in-progress edit survives a saved-value change arriving underneath it (a save's own async
+     * store echo, or a late load) — the field follows a new saved value only when it isn't dirty, so
+     * the user's typing isn't discarded (Codex).
+     */
+    @Test
+    fun anInProgressEditSurvivesALateSavedValueChange() {
+        val stored = mutableStateOf("")
+        var saved: String? = null
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    userApiKey = stored.value,
+                    onUserApiKeyChange = { saved = it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("apiKeyField").performTextInput("ABC")
+        // A saved value lands from elsewhere while the user is still editing.
+        composeRule.runOnIdle { stored.value = "XYZ" }
+        composeRule.waitForIdle()
+
+        // The edit is kept; saving reports it, not the value that arrived underneath.
+        composeRule.onNodeWithTag("apiKeySave").performClick()
+        composeRule.runOnIdle { assert(saved == "ABC") }
+    }
+
+    /**
+     * An edit that lands back on the previously-saved value is still dirty, so a save's echo can't
+     * overwrite it — the dirty flag tracks that the user edited, not whether the text happens to
+     * equal a saved value (Codex).
+     */
+    @Test
+    fun anEditBackToTheOldValueIsStillDirty() {
+        val stored = mutableStateOf("A")
+        var saved: String? = null
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    userApiKey = stored.value,
+                    onUserApiKeyChange = { saved = it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        // Edit away and back to "A" (the current saved value), then the save of "B" echoes in.
+        composeRule.onNodeWithTag("apiKeyField").performTextClearance()
+        composeRule.onNodeWithTag("apiKeyField").performTextInput("A")
+        composeRule.runOnIdle { stored.value = "B" }
+        composeRule.waitForIdle()
+
+        // The edit is kept (not replaced by "B"): saving reports "A".
+        composeRule.onNodeWithTag("apiKeySave").performClick()
+        composeRule.runOnIdle { assert(saved == "A") }
+    }
+
+    /** Clearing re-arms masking, so a key pasted afterward isn't shown in plaintext (Codex). */
+    @Test
+    fun clearing_remasksTheField() {
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    userApiKey = "EXAMPLE",
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("apiKeyReveal").performClick() // reveal → "Hide"
+        composeRule.onNodeWithText("Hide").assertIsDisplayed()
+        composeRule.onNodeWithTag("apiKeyClear").performClick() // clears and re-masks
+        composeRule.onNodeWithTag("apiKeyField").performTextInput("NEW")
+        // Masked again: the toggle offers Show, not Hide.
+        composeRule.onNodeWithText("Show").assertIsDisplayed()
+    }
+
+    /** No reveal toggle on an empty field — nothing to reveal. */
+    @Test
+    fun noRevealToggle_whenTheFieldIsEmpty() {
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(liveWidgetRefresh = false, onLiveWidgetRefreshChange = {}, onBack = {})
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("apiKeyReveal").assertDoesNotExist()
+    }
+
+    /** Save reports the trimmed value, matching how the store normalizes a pasted key (Codex). */
+    @Test
+    fun saving_reportsTheTrimmedValue() {
+        var saved: String? = null
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    userApiKey = "",
+                    onUserApiKeyChange = { saved = it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("apiKeyField").performTextInput("  EXAMPLE  ")
+        composeRule.onNodeWithTag("apiKeySave").performClick()
+        composeRule.runOnIdle { assert(saved == "EXAMPLE") }
+    }
+
+    /**
+     * A draft that differs from the saved key only by surrounding whitespace normalizes to the same
+     * value, so Save stays disabled rather than getting stuck enabled after a no-op save (Codex).
+     */
+    @Test
+    fun save_disabledForAWhitespaceOnlyDifference() {
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    userApiKey = "EXAMPLE",
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("apiKeyField").performTextInput(" ")
+        composeRule.onNodeWithTag("apiKeySave").assertIsNotEnabled()
+    }
+
+    /** With a key already stored, Clear reports an empty string (back to keyless). */
+    @Test
+    fun clearing_reportsEmpty() {
+        var saved: String? = null
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    userApiKey = "EXAMPLE",
+                    onUserApiKeyChange = { saved = it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("apiKeyClear").performClick()
+        composeRule.runOnIdle { assert(saved == "") }
     }
 
     /**

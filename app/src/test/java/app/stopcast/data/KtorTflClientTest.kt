@@ -265,7 +265,7 @@ class KtorTflClientTest {
                 if (acquires > 1) throw TflException.RateLimited(null)
             }
         }
-        val client = KtorTflClient(httpClient = http, baseUrl = "https://tfl.example", rateLimiter = limiter)
+        val client = KtorTflClient(httpClient = http, baseUrl = "https://tfl.example", rateLimiterFor = { limiter })
 
         client.arrivals("940GZZLUVIC")
         assertEquals("the granted request hit the network", 1, requests)
@@ -279,6 +279,39 @@ class KtorTflClientTest {
         assertTrue("a turned-away request surfaces RateLimited", rateLimited)
         assertEquals("the limiter was consulted for both requests", 2, acquires)
         assertEquals("the turned-away request made no network call", 1, requests)
+    }
+
+    @Test
+    fun `one key snapshot drives both the limiter budget and the app_key`() = runTest {
+        var limiterKey: String? = "unset"
+        var captured: HttpRequestData? = null
+        val engine = MockEngine { request ->
+            captured = request
+            respond(
+                content = ByteReadChannel("[]"),
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val http = HttpClient(engine) {
+            expectSuccess = true
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        }
+        val client = KtorTflClient(
+            httpClient = http,
+            baseUrl = "https://tfl.example",
+            appKey = { "EXAMPLE" },
+            rateLimiterFor = { key ->
+                limiterKey = key
+                TflRateLimiter.UNLIMITED
+            },
+        )
+
+        client.arrivals("940GZZLUVIC")
+
+        // The limiter was selected from the same key the request carries — one read, no disagreement.
+        assertEquals("EXAMPLE", limiterKey)
+        assertEquals("EXAMPLE", checkNotNull(captured).url.parameters["app_key"])
     }
 
     private fun client(
@@ -299,7 +332,7 @@ class KtorTflClientTest {
             expectSuccess = true
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         }
-        return KtorTflClient(httpClient = http, baseUrl = "https://tfl.example", appKey = appKey)
+        return KtorTflClient(httpClient = http, baseUrl = "https://tfl.example", appKey = { appKey })
     }
 
     @Test

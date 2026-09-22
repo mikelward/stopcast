@@ -10,19 +10,31 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -55,6 +67,16 @@ fun SettingsScreen(
     // value that may not reflect the stored choice — showing it off-and-tappable would let a
     // previously-enabled install read as off (Codex P2 on #56).
     liveWidgetRefreshEnabled: Boolean = true,
+    // The user's saved TfL app_key (empty when keyless — the default), and a report of a new value
+    // to save. UI-only like the rest of the screen: persistence and the request clients are the
+    // caller's job, so this stays Robolectric-renderable with no store and no network (SPEC D7).
+    userApiKey: String = "",
+    onUserApiKeyChange: (String) -> Unit = {},
+    // False while the stored key hasn't been read yet (a slow or persistently-failing DataStore
+    // read leaves the flow silent): the field is disabled so the user can't edit over a value that
+    // may not reflect what's stored — a key arriving mid-edit would otherwise reset the field
+    // (Codex P2, mirroring the live-widget switch). The key's own null (keyless) is a loaded state.
+    userApiKeyLoaded: Boolean = true,
 ) {
     BackHandler(onBack = onBack)
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -110,7 +132,145 @@ fun SettingsScreen(
                 if (liveWidgetRefreshFailed) {
                     LiveWidgetRefreshErrorRow(onDismiss = onDismissLiveWidgetRefreshError)
                 }
+                // The optional user app_key (SPEC D7): keyless out of the box, a pasted key raises
+                // the TfL request budget. Last because it's the advanced, rarely-touched control.
+                ApiKeyRow(apiKey = userApiKey, loaded = userApiKeyLoaded, onSave = onUserApiKeyChange)
             }
+        }
+    }
+}
+
+/**
+ * The optional TfL `app_key` control (SPEC D7): a title + one-line explanation, a paste field, and
+ * a Save (with a Clear once a key is stored). StopCast works keyless; a user's own free key raises
+ * the request budget ~50→~500 req/min.
+ *
+ * [apiKey] is the saved value; the field edits a local [draft] seeded from it, so typing doesn't
+ * persist until Save — Save reports [draft], Clear reports an empty string (keyless). Re-seeding on
+ * [apiKey] change keeps the field honest if the stored value changes underneath (e.g. a restore).
+ *
+ * While [loaded] is false the stored key hasn't been read yet, so the field and its actions are
+ * disabled — the field must not be editable over a value that hasn't arrived, since a key landing
+ * mid-edit would re-seed [draft] and discard the input (Codex P2). The key is the user's own
+ * credential shown on their own screen; it is sent only with their own TfL requests, never logged,
+ * and never placed in any other off-device artifact (SPEC *Privacy*).
+ */
+@Composable
+private fun ApiKeyRow(
+    apiKey: String,
+    loaded: Boolean,
+    onSave: (String) -> Unit,
+) {
+    // The editable text, saved across rotation (rememberSaveable) so an unsaved paste survives a
+    // configuration change. NOT keyed on [apiKey]: keying it would re-seed the draft on any
+    // saved-value change, discarding an in-progress edit — including a save's own async store echo
+    // arriving while the user keeps typing, or a rotation's transient load (Codex). Instead the
+    // draft follows a new saved value only when it isn't dirty (see below). The draft is the user's
+    // own key in the on-device saved-state bundle, not an off-device channel (SPEC *Privacy*).
+    var draft by rememberSaveable { mutableStateOf(apiKey) }
+    // Whether the user has edited since the field last synced to the saved value. An explicit flag,
+    // not a `draft == savedValue` comparison: comparison would wrongly count an edit *back to* the
+    // old key as clean and let a save's echo overwrite it (Codex). Set on any keystroke; cleared
+    // when we adopt a saved value or the user commits one (Save/Clear).
+    var dirty by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(apiKey) {
+        // Adopt a genuinely-changed saved value (a Save landed, or an external restore) only when
+        // the user hasn't edited since — otherwise keep their in-progress edit, so a stale echo
+        // can't overwrite it.
+        if (!dirty) draft = apiKey
+    }
+    // Masked by default — a credential shouldn't sit in plain sight (shoulder-surfing, screen
+    // recordings; Codex P2). A Show/Hide toggle still lets the user verify a paste. Not saveable:
+    // it resets to hidden on every recomposition-from-scratch, which is the safe default.
+    var revealed by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(
+            text = stringResource(R.string.settings_api_key_title),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_api_key_summary),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = draft,
+            onValueChange = {
+                draft = it
+                dirty = true
+                // Emptying the field (delete-all or before a fresh paste) re-arms masking, so a
+                // pasted replacement isn't shown in plaintext off the back of an earlier Show (Codex).
+                if (it.isEmpty()) revealed = false
+            },
+            singleLine = true,
+            enabled = loaded,
+            label = { Text(stringResource(R.string.settings_api_key_label)) },
+            visualTransformation =
+                if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                autoCorrectEnabled = false,
+            ),
+            // The reveal toggle appears only once there's something to reveal, so an empty field
+            // stays uncluttered.
+            trailingIcon = if (draft.isNotEmpty()) {
+                {
+                    TextButton(
+                        onClick = { revealed = !revealed },
+                        modifier = Modifier.testTag("apiKeyReveal"),
+                    ) {
+                        Text(
+                            stringResource(
+                                if (revealed) R.string.settings_api_key_hide
+                                else R.string.settings_api_key_show,
+                            ),
+                        )
+                    }
+                }
+            } else {
+                null
+            },
+            modifier = Modifier.fillMaxWidth().testTag("apiKeyField"),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Clear appears only once a loaded key is stored — it returns to keyless in one tap
+            // without making the user select-and-delete the field first. Hidden while unloaded,
+            // where an empty [apiKey] doesn't yet mean keyless.
+            if (loaded && apiKey.isNotEmpty()) {
+                TextButton(
+                    onClick = {
+                        draft = ""
+                        dirty = false // committing keyless — the field now matches the saved value
+                        revealed = false // nothing to reveal; re-arm masking for a later paste
+                        onSave("")
+                    },
+                    modifier = Modifier.testTag("apiKeyClear"),
+                ) { Text(stringResource(R.string.settings_api_key_clear)) }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            TextButton(
+                onClick = {
+                    // Normalize before saving, and adopt it locally: the store normalizes a pasted
+                    // key the same way (trim, blank → keyless), so a draft that differs from the
+                    // saved value only by surrounding whitespace would persist to the same value,
+                    // re-emit nothing, and leave Save stuck enabled (Codex). Trimming here disables
+                    // Save at once and shows the user the value that was actually stored.
+                    val normalized = draft.trim()
+                    draft = normalized
+                    // The field now matches the value being persisted — clean until the next edit.
+                    dirty = false
+                    onSave(normalized)
+                },
+                // Enabled only once loaded and the field's normalized value differs from the saved
+                // (already-normalized) value, so Save is a no-op only when there's a real change.
+                enabled = loaded && draft.trim() != apiKey,
+                modifier = Modifier.testTag("apiKeySave"),
+            ) { Text(stringResource(R.string.settings_api_key_save)) }
         }
     }
 }

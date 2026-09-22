@@ -46,6 +46,7 @@ import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.RouteTopologyStore
 import app.stopcast.data.SharedTflRateLimiter
+import app.stopcast.data.UserApiKeySetting
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.BugReport
 import app.stopcast.domain.Coordinates
@@ -77,6 +78,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -100,6 +102,17 @@ internal fun bugReportScreenshotUri(file: File, log: DebugLog, mint: (File) -> U
         null
     }
 
+/**
+ * Load state of the stored TfL app_key for the Settings field. Needed because the key itself is
+ * nullable (null = keyless), so a plain nullable couldn't distinguish "not read yet" from "read,
+ * no key" — and the field stays disabled until [Loaded] so a slow read can't be edited over a value
+ * that hasn't arrived (Codex P2).
+ */
+private sealed interface ApiKeyLoad {
+    data object Loading : ApiKeyLoad
+    data class Loaded(val key: String?) : ApiKeyLoad
+}
+
 class MainActivity : ComponentActivity() {
     // The location gate: resolves the nearby stops (an on-demand, location-sending action)
     // before the departures view, which then refreshes those stops location-free.
@@ -108,7 +121,11 @@ class MainActivity : ComponentActivity() {
             initializer {
                 NearbyStopsViewModel(
                     location = AndroidLocationProvider(applicationContext, warn = ::logLocationWarning),
-                    finder = KtorTflClient(httpClient, rateLimiter = SharedTflRateLimiter.instance),
+                    finder = KtorTflClient(
+                        httpClient,
+                        appKey = { UserApiKeySetting.current },
+                        rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                    ),
                     warn = ::logLocationWarning,
                 )
             }
@@ -138,7 +155,12 @@ class MainActivity : ComponentActivity() {
         // from the user's setting rather than the default, then resized a beat later (SPEC *Display
         // size*). Idempotent and shares the process-singleton DataStore instance the settings
         // collector below uses.
-        FontSizeSetting.warm(DataStoreAppSettings.from(applicationContext, warn = ::logAppSettingsWarning))
+        val appSettings = DataStoreAppSettings.from(applicationContext, warn = ::logAppSettingsWarning)
+        FontSizeSetting.warm(appSettings)
+        // The user's TfL app_key holder ([UserApiKeySetting]) is warmed at process start in
+        // StopcastApp (every process, so a widget-only process has it too), not here. The request
+        // clients read the current key per request — a paste raises the budget on the next refresh
+        // without rebuilding them (SPEC D7).
         lifecycleScope.launch {
             routeTopology.value = withContext(Dispatchers.IO) { RouteTopologyStore.load(applicationContext) }
         }
@@ -236,6 +258,38 @@ class MainActivity : ComponentActivity() {
                 // (persisted) skips straight to the share sheet (SPEC *Privacy*).
                 val skipBugReportConsent: Boolean by settings.skipBugReportConsent()
                     .collectAsStateWithLifecycle(initialValue = false)
+
+                // The user's TfL app_key for the Settings field. Read from the store (the source of
+                // truth), so an external change — a restore, or the warmed holder's own write —
+                // reflects in the field. Wrapped in a load marker because the stored value is itself
+                // nullable (null = keyless), so a bare `null` couldn't tell "not read yet" from
+                // "loaded, no key" — and the field must stay disabled until it's really loaded, so a
+                // slow read can't present an empty field the user edits over a key that then arrives
+                // and resets the draft (Codex P2, mirroring the live-widget switch).
+                val apiKeyLoadFlow = remember(settings) {
+                    settings.userApiKey().map<String?, ApiKeyLoad> { ApiKeyLoad.Loaded(it) }
+                }
+                val apiKeyLoad: ApiKeyLoad by apiKeyLoadFlow
+                    .collectAsStateWithLifecycle(initialValue = ApiKeyLoad.Loading)
+                // Loading is a first-open concern, not a per-rotation one: the collection restarts at
+                // Loading on every configuration change, and letting the field flash back through
+                // "not loaded"/empty would re-seed and drop an unsaved edit the user was making
+                // (Codex). Retain the last loaded key and the loaded flag across recreation, so after
+                // a rotation the field keeps the real key (and stays enabled) with no transient.
+                var lastLoadedKey by rememberSaveable { mutableStateOf<String?>(null) }
+                var apiKeyEverLoaded by rememberSaveable { mutableStateOf(false) }
+                LaunchedEffect(apiKeyLoad) {
+                    (apiKeyLoad as? ApiKeyLoad.Loaded)?.let {
+                        lastLoadedKey = it.key
+                        apiKeyEverLoaded = true
+                    }
+                }
+                val apiKeyLoaded = apiKeyLoad is ApiKeyLoad.Loaded || apiKeyEverLoaded
+                // Loaded(null) is keyless — keep it null, don't fall back to the retained key.
+                val userApiKeyValue = when (val load = apiKeyLoad) {
+                    is ApiKeyLoad.Loaded -> load.key
+                    ApiKeyLoad.Loading -> lastLoadedKey
+                }
                 // Whether the consent dialog is open is held in a retained ViewModel, not the saved
                 // bundle: it survives a configuration change (rotation) so the open dialog isn't
                 // discarded with the Send (Codex P2 on #86), but resets on process death — where the
@@ -266,6 +320,13 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onDismissLiveWidgetRefreshError = { liveWidgetRefreshFailed = false },
+                        // The paste field. Applied to memory at once (next refresh uses it) and
+                        // persisted in the background; a blank clears it back to keyless (SPEC D7).
+                        // Disabled until the stored key has actually been read, so the field can't be
+                        // edited over a value that hasn't loaded yet.
+                        userApiKey = userApiKeyValue.orEmpty(),
+                        userApiKeyLoaded = apiKeyLoaded,
+                        onUserApiKeyChange = { key -> UserApiKeySetting.set(key) },
                         onBack = { settingsOpen = false },
                     )
                     else -> when (val state = nearby) {
@@ -519,7 +580,11 @@ class MainActivity : ComponentActivity() {
                 factory = viewModelFactory {
                     initializer {
                         MainViewModel(
-                            client = KtorTflClient(httpClient, rateLimiter = SharedTflRateLimiter.instance),
+                            client = KtorTflClient(
+                                httpClient,
+                                appKey = { UserApiKeySetting.current },
+                                rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                            ),
                             seedStops = ready.eagerStops,
                             initialMore = ready.more,
                             // Save-only snapshot store: the app writes each fresh snapshot for

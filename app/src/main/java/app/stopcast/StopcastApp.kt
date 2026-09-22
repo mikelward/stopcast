@@ -3,6 +3,9 @@ package app.stopcast
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import app.stopcast.data.DataStoreAppSettings
+import app.stopcast.data.UserApiKeySetting
+import app.stopcast.data.logAppSettingsWarning
 import com.mikelward.androidlog.DebugLog
 import com.mikelward.androidlog.android.DebugFileSink
 import com.mikelward.androidlog.android.LogcatSink
@@ -69,6 +72,21 @@ open class StopcastApp : Application() {
     override fun onCreate() {
         super.onCreate()
         installDiagnosticLog()
+        warmSharedState()
+    }
+
+    /**
+     * Warms the process-wide TfL `app_key` holder ([UserApiKeySetting]) at process start, so the
+     * app's long-lived request clients read the current key (their `appKey` provider is
+     * `{ UserApiKeySetting.current }`) without a disk hit on any request path (SPEC D7). Done here
+     * rather than in [MainActivity] so it happens once, early, for whatever entry point runs first.
+     * (The widget worker doesn't rely on this — it reads its own key snapshot directly.)
+     *
+     * `open` so the test [Application] skips it — a unit test needs no real DataStore-backed holder
+     * or its background collector. Launches coroutines only (no first-frame I/O), like the log setup.
+     */
+    protected open fun warmSharedState() {
+        UserApiKeySetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
     }
 
     /**

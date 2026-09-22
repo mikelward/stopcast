@@ -50,6 +50,23 @@ interface AppSettings {
     /** Set [skipBugReportConsent]. Suspending, off the main thread; best-effort. */
     suspend fun setSkipBugReportConsent(enabled: Boolean)
 
+    /**
+     * The user's own free TfL `app_key`, pasted in Settings for the higher request budget
+     * (SPEC D7), or null when keyless — the default. StopCast ships no baked-in key; a
+     * per-user key raises the limit ~50→~500 req/min. Blank is normalized to null on write,
+     * so the accessor emits either a non-blank key or null, never an empty string. It is a
+     * credential: sent only with the user's own TfL requests (its purpose), persisted in a
+     * private app file that rides Android backup like any setting, and never logged or placed
+     * in any other off-device artifact (SPEC *Privacy*, `docs/PRIVACY.md`).
+     */
+    fun userApiKey(): Flow<String?>
+
+    /**
+     * Set [userApiKey]; a null or blank value clears it (back to keyless). Suspending, off the
+     * main thread; best-effort.
+     */
+    suspend fun setUserApiKey(key: String?)
+
     companion object {
         /** A store that persists nothing and always reads the defaults — the default for tests
          *  and a build with no wired DataStore, so the app runs identically minus persistence. */
@@ -61,6 +78,8 @@ interface AppSettings {
             override suspend fun setPinchEnabled(enabled: Boolean) {}
             override fun skipBugReportConsent(): Flow<Boolean> = flowOf(false)
             override suspend fun setSkipBugReportConsent(enabled: Boolean) {}
+            override fun userApiKey(): Flow<String?> = flowOf(null)
+            override suspend fun setUserApiKey(key: String?) {}
         }
     }
 }

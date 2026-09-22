@@ -16,6 +16,7 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.ServerResponseException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.http.HttpStatusCode
@@ -31,25 +32,30 @@ import kotlinx.serialization.json.Json
  * mirrors clothescast). Off the render path — a surface renders the snapshot and
  * a refresh calls this in the background (SPEC *Snapshot-render*).
  *
- * A blank [appKey] means keyless access (SPEC D7): stopcast ships no baked-in key,
- * and a user may supply their own for the higher rate limit. `expectSuccess` makes
- * a non-2xx (e.g. 429 rate-limited) throw, which the caller turns into the honest
- * user-facing state rather than a silent empty list.
+ * [appKey] is read per request, not captured at construction, so a key the user pastes
+ * in Settings takes effect on the next refresh without rebuilding the long-lived clients
+ * (SPEC D7). A null/blank result means keyless access: stopcast ships no baked-in key, and
+ * a user may supply their own for the higher rate limit. `expectSuccess` makes a non-2xx
+ * (e.g. 429 rate-limited) throw, which the caller turns into the honest user-facing state
+ * rather than a silent empty list.
  */
 class KtorTflClient(
     private val httpClient: HttpClient,
     private val baseUrl: String = DEFAULT_BASE_URL,
-    private val appKey: String? = null,
-    // The shared TfL limiter (item 6). Every request acquires a token first, so a dense corner
-    // or a new caller throttles toward the budget instead of firing a 429 storm. Defaults to the
-    // no-op limiter so a test (or an unwired client) runs unthrottled; production passes the one
-    // shared bucket ([SharedTflRateLimiter]).
-    private val rateLimiter: TflRateLimiter = TflRateLimiter.UNLIMITED,
+    private val appKey: () -> String? = { null },
+    // The shared TfL limiter (item 6), selected from the request's key snapshot: every request
+    // acquires a token first, so a dense corner or a new caller throttles toward the budget instead
+    // of firing a 429 storm. Taking the key means one read of the active key drives BOTH which
+    // budget the request is charged to and the `app_key` it carries — a paste/clear can't leave a
+    // request charged to one bucket but sent with the other key state (Codex). Defaults to the no-op
+    // limiter so a test (or an unwired client) runs unthrottled; production passes the shared buckets
+    // ([SharedTflRateLimiter.rateLimiterFor]).
+    private val rateLimiterFor: (String?) -> TflRateLimiter = { TflRateLimiter.UNLIMITED },
 ) : TflClient, StopFinder {
     override suspend fun arrivals(stopId: String): List<Departure> =
-        tflRequest {
+        tflRequest { key ->
             httpClient.get("$baseUrl/StopPoint/$stopId/Arrivals") {
-                if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+                applyAppKey(key)
             }.body<List<TflArrivalDto>>().map { it.toDeparture() }
         }
 
@@ -59,7 +65,7 @@ class KtorTflClient(
         radiusMeters: Int,
         stopTypes: List<String>,
     ): List<StopLocation> =
-        tflRequest {
+        tflRequest { key ->
             httpClient.get("$baseUrl/StopPoint") {
                 parameter("lat", latitude)
                 parameter("lon", longitude)
@@ -69,14 +75,14 @@ class KtorTflClient(
                 // stops come back line-less in production (the fixture has them), so a suspended
                 // no-prediction line couldn't surface as a status row without a second lookup.
                 parameter("returnLines", true)
-                if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+                applyAppKey(key)
             }.body<TflStopPointsResponseDto>().stopPoints.mapNotNull { it.toStopLocationOrNull() }
         }
 
     override suspend fun hubInfo(hubId: String): HubInfo =
-        tflRequest {
+        tflRequest { key ->
             val dto = httpClient.get("$baseUrl/StopPoint/$hubId") {
-                if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+                applyAppKey(key)
             }.body<TflStopPointDto>()
             // The hub's own cleaned name titles the alert; the member-station spellings across the
             // tree are the alias set the disruption strip matches against (SPEC *Disruptions*).
@@ -88,15 +94,15 @@ class KtorTflClient(
         // and an empty `/Line//Status` path would 404.
         if (lineIds.isEmpty()) return emptyList()
         val ids = lineIds.joinToString(",")
-        return tflRequest {
+        return tflRequest { key ->
             httpClient.get("$baseUrl/Line/$ids/Status") {
-                if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+                applyAppKey(key)
             }.body<List<TflLineDto>>().mapNotNull { it.toLineStatus() }
         }
     }
 
     override suspend fun stopDisruptions(stopId: String): List<StopDisruption> =
-        tflRequest {
+        tflRequest { key ->
             httpClient.get("$baseUrl/StopPoint/$stopId/Disruption") {
                 // Both default false, which would miss the very closures this exists to
                 // surface (SPEC principle 1): getFamily includes disruptions recorded
@@ -105,9 +111,18 @@ class KtorTflClient(
                 // route-level disruption.
                 parameter("getFamily", true)
                 parameter("includeRouteBlockedStops", true)
-                if (!appKey.isNullOrBlank()) parameter("app_key", appKey)
+                applyAppKey(key)
             }.body<TflDisruptedPointFamilyDto>().allDisruptions()
         }
+
+    /**
+     * Adds the request's `app_key` [key] when one is set (SPEC D7); a null/blank value adds nothing
+     * (keyless). [key] is the single per-request snapshot [tflRequest] took, the same value the
+     * limiter's budget was selected from — so the two never disagree.
+     */
+    private fun HttpRequestBuilder.applyAppKey(key: String?) {
+        if (!key.isNullOrBlank()) parameter("app_key", key)
+    }
 
     /**
      * Runs a TfL request and maps every transport/decode failure to the domain
@@ -115,14 +130,16 @@ class KtorTflClient(
      * so both endpoints share one error contract rather than repeating the mapping.
      * Sanitized throughout — a status code or class name, never a payload (SPEC *Privacy*).
      */
-    private suspend inline fun <T> tflRequest(block: () -> T): T =
+    private suspend inline fun <T> tflRequest(block: (key: String?) -> T): T =
         try {
-            // Throttle toward the budget before issuing the request (item 6). acquire() may
-            // suspend (deferring this background refresh) or throw RateLimited when the budget is
-            // spent; both are handled below — RateLimited propagates as the honest state, and a
-            // canceled wait rethrows CancellationException.
-            rateLimiter.acquire()
-            block()
+            // One read of the active key per request, used for both the budget and the app_key so
+            // they can't disagree (Codex). Throttle toward the budget before issuing the request
+            // (item 6): acquire() may suspend (deferring this background refresh) or throw
+            // RateLimited when the budget is spent; both are handled below — RateLimited propagates
+            // as the honest state, and a canceled wait rethrows CancellationException.
+            val key = appKey()
+            rateLimiterFor(key).acquire()
+            block(key)
         } catch (e: CancellationException) {
             // Never swallow cancellation — rethrow first so structured concurrency
             // isn't broken (a canceled refresh must actually cancel).
