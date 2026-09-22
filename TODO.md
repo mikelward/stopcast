@@ -346,7 +346,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         (the same `TextMeasurer` pattern the destination line uses); the letter still announces the
         full word for a screen reader. JVM + logic screenshot tests.
   - [x] **Bus terminus qualifier** (maintainer, 2026-09-22; "try the terminus form first"). A
-        compass-less **bus** place now takes "→ Terminus" when the whole stop heads one way (every
+        compass-less **bus** place now takes "-> Terminus" when the whole stop heads one way (every
         timed bus row names the same, non-blank destination), else the bare name — the bus analog of
         the rail compass, judged honestly (diverging routes or a blank destination stay bare, SPEC
         principle 1). `StopGrouping.sharedBusTerminus` + `StopGroup.terminusLabel`; the header's
@@ -357,7 +357,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         "make bus stop letters like rail station compass directions"). A bus place now **splits by
         stop letter** — one header per pole, "King's Cross Station (D)" — the way rail splits by
         compass, so a bus interchange isn't a wall of cards under one bare name. No letter → falls
-        back to the pole's **bearing** ("(→E)"); neither → the shared terminus (above); none → bare.
+        back to the pole's **bearing** ("(->E)"); neither → the shared terminus (above); none → bare.
         Precedence: letter → bearing → terminus → bare. `TflStopPointDto` now parses `stopLetter` +
         the `CompassPoint` property, threaded `StopLocation → StopRef → Snapshot.mergeStop →
         StopArrivals → DepartureRow` (the `clusterId` route). The group cue unified into a
@@ -397,6 +397,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         multi-row card (keep long-press-to-star and tap-to-detail per row).
   - [ ] **Tap a route row → all stops for that route** (maintainer, 2026-09-22). Extends the
         route-detail tap to show the route's full stop sequence, not just star + disruption text.
+  - [ ] **Try a compass word for the bus bearing header** (maintainer, 2026-09-22). The bearing
+        qualifier renders `Stop ->S` (TfL's own pole format) today; try normalizing it to a compass
+        word — `Southbound`/`Northbound` — so it reads like the rail compass qualifier (`Eastbound`)
+        and drops the arrow. `bearingSpoken` in `HeaderQualifier.kt` already has the letter→word map;
+        decide the intercardinal form (`Southwest-bound`?) and whether the shared terminus follows.
   - [ ] **Split a mixed-platform row into a card per platform** (Codex P1, PR #119). A single
         (line, direction) row can carry departures from more than one platform (a terminus, a platform
         change), since `DepartureRows.forStop` merges a line's one direction into one card. The

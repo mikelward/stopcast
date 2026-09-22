@@ -208,8 +208,8 @@ direction cue and disambiguates a rail direction with no platform number, which 
 splits on its **stop letter** — the "D" a rider reads on the physical stop: "**Stop D**". The letter,
 bearing, and "towards" come from the near-me `/StopPoint` lookup (`stopLetter`, `CompassPoint`,
 `Towards`), not the arrivals feed, so a **watched** bus stop (no near-me lookup yet) has none until
-that capture lands. With no letter, the pole falls back to its **compass bearing** ("→E"); with
-neither, to the **shared terminus** ("**→ Bank**") when the whole stop heads one way (every route
+that capture lands. With no letter, the pole falls back to its **compass bearing** ("Stop ->E"); with
+neither, to the **shared terminus** ("**Stop -> Bank**") when the whole stop heads one way (every route
 names the same, non-blank terminus, principle 1); with none of the three, the **bare place name**.
 Precedence: letter → bearing → terminus → bare. The header is **one line** — "Place – Qualifier
 (distance)", title case, no small caps — where the place name and the qualifier **share the row**
@@ -889,8 +889,8 @@ Mirrors the sibling fleet:
   the cue that tells its groups apart: a rail **platform** ("Platform 2", parsed from
   `platformName`, keyed on the platform not the compass, since one compass spans physically
   distinct platforms; a platform-less rail direction falls to the bare compass), a **bus** pole's
-  **letter** ("Stop D"), else its **bearing** ("→E"), else a bus place's shared **terminus**
-  ("→ Bank") — settled 2026-09-22, superseding the two-level header (place name once + indented
+  **letter** ("Stop D"), else its **bearing** ("Stop ->E"), else a bus place's shared **terminus**
+  ("Stop -> Bank") — settled 2026-09-22, superseding the two-level header (place name once + indented
   sub-header) and the one-level `(place, direction)` step before it. The compass direction is not
   shown on the header (the destinations carry it). The cluster key is TfL's `stationNaptan` where
   the nearby lookup gives one,
