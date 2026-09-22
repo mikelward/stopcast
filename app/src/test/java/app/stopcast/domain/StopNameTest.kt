@@ -34,6 +34,32 @@ class StopNameTest {
     }
 
     @Test
+    fun `strips a trailing line-name parenthetical that only names the serving line`() {
+        // The line pill already shows the line, so "(H&C Line)" is noise; both Hammersmiths
+        // collapse to "Hammersmith" and the pill tells them apart.
+        assertEquals("Hammersmith", cleanStopName("Hammersmith (H&C Line)"))
+        assertEquals("Hammersmith", cleanStopName("Hammersmith (Dist&Picc Line)"))
+        assertEquals("Paddington", cleanStopName("Paddington (H&C Line)"))
+        // Plural "Lines" too.
+        assertEquals("Edgware Road", cleanStopName("Edgware Road (Circle Line)"))
+    }
+
+    @Test
+    fun `strips both the type suffix and the line parenthetical from a full commonName`() {
+        // TfL's raw commonName puts the type suffix last, after the parenthetical, so the
+        // suffix must be stripped first for the parenthetical to reach the end.
+        assertEquals("Hammersmith", cleanStopName("Hammersmith (H&C Line) Underground Station"))
+        assertEquals("Hammersmith", cleanStopName("Hammersmith (Dist&Picc Line) Underground Station"))
+        assertEquals("Paddington", cleanStopName("Paddington (H&C Line) Underground Station"))
+    }
+
+    @Test
+    fun `keeps a geographic parenthetical that names no line`() {
+        // "(London)" disambiguates the place, not a line, so it stays.
+        assertEquals("Stratford (London)", cleanStopName("Stratford (London)"))
+    }
+
+    @Test
     fun `does not empty a name that is only the suffix`() {
         // Guarded so a stop literally named "Station" survives rather than becoming blank.
         assertEquals("Station", cleanStopName("Station"))

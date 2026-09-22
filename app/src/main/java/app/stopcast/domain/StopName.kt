@@ -1,6 +1,12 @@
 package app.stopcast.domain
 
 /**
+ * A trailing "(… Line)"/"(… Lines)" parenthetical — TfL disambiguates co-located stations
+ * by the line that serves them ("Hammersmith (H&C Line)", "Hammersmith (Dist&Picc Line)").
+ */
+private val LINE_PARENTHETICAL = Regex("""\s*\([^()]*\bLines?\)\s*$""", RegexOption.IGNORE_CASE)
+
+/**
  * Trims TfL's `commonName` down to what a rider reads on a sign. TfL suffixes a stop's
  * type onto the name — "Charing Cross Underground Station", "London Bridge Rail Station",
  * "Canary Wharf DLR Station" — which is noise once the app is already a departures board;
@@ -8,11 +14,21 @@ package app.stopcast.domain
  * no type suffix (most bus stops) is returned unchanged, and a stop literally called
  * "Station" is never emptied.
  *
- * Order matters — the specific multi-word suffixes are tried before the bare " Station"
- * catch-all, so "X Underground Station" loses the whole phrase, not just "Station".
+ * Also drops a trailing line-name parenthetical — "Hammersmith (H&C Line)" → "Hammersmith" —
+ * which just names the line that serves the stop, already shown by the row's line pill. A
+ * *geographic* parenthetical has no "Line" and is kept ("Stratford (London)"), so a name that
+ * genuinely needs the disambiguator keeps it. The two Hammersmiths (H&C vs Dist&Picc) both
+ * collapse to "Hammersmith"; the line pill tells them apart.
+ *
+ * Order matters twice. Among the type suffixes the specific multi-word ones are tried before
+ * the bare " Station" catch-all, so "X Underground Station" loses the whole phrase, not just
+ * "Station". And the type suffix is stripped *before* the parenthetical, because TfL puts the
+ * suffix last — the full `commonName` is "Hammersmith (H&C Line) Underground Station", so the
+ * parenthetical only reaches the end (where the end-anchored [LINE_PARENTHETICAL] can catch it)
+ * once "Underground Station" is gone.
  */
 fun cleanStopName(raw: String): String {
-    val trimmed = raw.trim()
+    var name = raw.trim()
     val suffixes = listOf(
         " Underground Station",
         " DLR Station",
@@ -21,11 +37,16 @@ fun cleanStopName(raw: String): String {
         " Station",
     )
     for (suffix in suffixes) {
-        if (trimmed.length > suffix.length && trimmed.endsWith(suffix, ignoreCase = true)) {
-            return trimmed.substring(0, trimmed.length - suffix.length).trim()
+        if (name.length > suffix.length && name.endsWith(suffix, ignoreCase = true)) {
+            name = name.substring(0, name.length - suffix.length).trim()
+            break
         }
     }
-    return trimmed
+    LINE_PARENTHETICAL.find(name)?.let { match ->
+        val stripped = name.removeRange(match.range).trim()
+        if (stripped.isNotEmpty()) name = stripped
+    }
+    return name
 }
 
 private const val VIA = " via "
