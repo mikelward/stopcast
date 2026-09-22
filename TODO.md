@@ -251,11 +251,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       user-facing latency) when it lands.
 - [ ] **Branch truncation follow-up: a fuller branch form under pressure** (maintainer,
       2026-09-19). **Superseded design (2026-09-22):** the original ask below — abbreviate across
-      both halves, keep one full word in each — was replaced by equal truncation (a different
-      design; see the note at the end of this item), so what stays open is only the
+      both halves, keep one full word in each — was replaced, ultimately by the floor-and-ellipsis
+      ladder (PR #127; see the note at the end of this item), so what stays open is only the
       fuller-branch-form idea, not the parens/per-half rungs. The real-width device check is
-      **done** — the maintainer confirmed the shipped equal-truncation result on device and is
-      happy with it (2026-09-22). Kept for the rationale. The original ask: rendering
+      **done** — the maintainer confirmed the shipped result on device and is happy with it
+      (2026-09-22). Kept for the rationale. The original ask: rendering
       "Destination (Branch)" at decreasing width, don't
       spend the space keeping one half fully spelled while gutting the other; instead
       abbreviate words across both and **preserve at least one full (unabbreviated) word per
@@ -267,10 +267,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       the "CX" initialism (both words gone) is only a last resort "if necessary" when even one
       full word per half won't fit. Word-abbreviate-then-clip shipped (the widget always
       abbreviates since it can't measure), but the one-full-word-per-half allocation and the
-      CX/ellipsis last-resort rung were **not** built as written — equal truncation (the note at
-      the end of this item) shipped proportional splitting instead, and the device check is done
-      (see above). What is left is the fuller-branch-form idea, plus the parked CX idea below. (An
-      earlier note said "prefer plain ellipsis" — backwards.)
+      CX/ellipsis last-resort rung were **not** built as written — they were overtaken (a
+      proportional equal-truncation split shipped first, then the **floor-and-ellipsis ladder**
+      of PR #127 replaced that; see the note at the end of this item), and the device check is
+      done (see above). What is left is only the fuller-branch-form idea. (An earlier note said
+      "prefer plain ellipsis" — backwards.)
       Names with no mappable word (High Barnet, Walthamstow Central once "Central"→"C." is
       spent, Battersea Power Station) can only ellipsize, keeping the most recognizable word.
       **On-device confirmation (2026-09-19, maintainer screenshot):** the shipped card renders
@@ -281,33 +282,30 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       `Charing X`) — TfL's inconsistent `Bank` / `Bank Branch` / `CX` / `Charing Cross`
       folded to one spelling per trunk, on fetch and on snapshot restore. The
       width-adaptive shortening above (one full word per half, the `Charing` / `CX` rungs)
-      belonged to the parens/per-half model that **equal truncation superseded** (see below):
-      truncation-not-elision shipped, and the `CX`-instead-of-a-mid-word-clip rung is now the
-      parked idea recorded below, not committed follow-up.
+      belonged to the parens/per-half model that later designs superseded (see the note at the
+      end of this item): the branch is now kept whole and the terminus yields down to its floor
+      then a single `…`, so the `CX`-instead-of-a-mid-word-clip rung is moot — nothing clips
+      mid-word now.
       **Partly shipped (PR #76):** the *destination* now word-abbreviates before it clips —
       a whole-word map (`DestinationAbbreviations`: `East`→`E.`, `Street`→`St`, …, single
       letters dotted, multi-letter bare) applied only when the full name wouldn't fit, then a
       clean clip (no ellipsis). Note there are now two maps — `abbreviateBranch` (branch) and
       `DestinationAbbreviations` (terminus) — that a fuller version might converge.
-      **Equal truncation shipped (2026-09-22):** once the abbreviated terminus won't sit beside
-      the full branch, `branchedLabel` splits the row width between them in proportion to their
-      natural sizes so both clip by the same fraction, replacing the earlier branch-always-wins
-      rule (the earlier "equal width declined" note predated the `Charing X` canonicalization and
-      the terminus abbreviation, which is why it no longer holds). A fuller rider-readable branch
-      form under pressure (`via Charing Cross`) is the remaining follow-up here.
-      **Consider, maybe — not committed (2026-09-22):** under extreme truncation the branch can
-      clip mid-word ("Charing X" → "Chari"); the board short form "CX" might read better than a
-      mid-word cut. This is the single status for that `CX` rung, reconciling the older mentions
-      above: with equal truncation shipped it's a parked idea to weigh, not scheduled work — it
-      only bites at the largest font scales on the narrowest rows.
+      **Superseded by the floor-and-ellipsis ladder (PR #127, 2026-09-22):** the proportional
+      equal-truncation split was replaced. The branch is now kept whole and the **terminus yields**
+      — full, then word-abbreviated, then its **floor** (first word + initials,
+      `DestinationAbbreviations.floor`), then a single clean `…` only below the floor, never a
+      mid-glyph cut. Where the whole branch fills the narrowest row the terminus drops and the
+      branch stands **alone and bare** (no orphaned slash). The old "CX rung / mid-word clip" concern
+      is therefore moot — nothing clips mid-word now. A fuller rider-readable branch form under
+      pressure (`via Charing Cross`) is the remaining follow-up here.
 - [x] **When the row has literally no room for the terminus, reconsider preferring the terminus
-      over the branch** (maintainer, 2026-09-21, PR #92; settled 2026-09-22). Equal truncation
-      answers this: instead of the branch taking the whole row and the terminus vanishing, the two
-      now share the width in proportion, so **both** survive and clip together. The branch-alone,
-      bare fallback (no leading slash) is kept only for the genuinely degenerate case — the
-      terminus's proportional share falling below its own first glyph, which needs a terminus
-      naturally far narrower than the branch at a large font scale, rarer than the old zero-room
-      case.
+      over the branch** (maintainer, 2026-09-21, PR #92; settled 2026-09-22, revised PR #127). The
+      floor-and-ellipsis ladder answers this: the branch is kept whole and the terminus yields
+      (word-abbreviated, then its floor, then a single `…`), so it survives as a stub rather than
+      vanishing. The branch-alone, bare fallback (no leading slash) is kept only for the genuinely
+      degenerate case — not even a terminus stub (a glyph plus its ellipsis) fitting beside the
+      whole branch, at a large font scale on the narrowest row.
 - [x] **Cluster departures under a per-stop header** (maintainer, 2026-09-20; PR #78).
       Rather than a per-card subtitle, the list clusters by stop, **one header per stop**,
       showing the **bare stop name**, with each stop's own warning leading its block (option
@@ -999,9 +997,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       **participates in grouping**: within a direction a line splits per terminus *and*
       branch, so two trains to one terminus via different trunks each get their own line
       and countdown (a countdown never sits under the wrong branch). Under width pressure the
-      **terminus yields first** (abbreviate, then clip); once even the abbreviated terminus won't
-      sit beside the full branch the two **truncate equally**, sharing the row in proportion so
-      both clip together — a hard cut like "H. Barn/Charin" at the extreme. The branch is normalized to one
+      **branch is kept whole and the terminus yields** (word-abbreviated, then its floor, then a
+      single clean `…` — never a mid-glyph cut; PR #127 replaced the earlier equal-truncation
+      hard-clip). At the narrowest row the branch stands alone and bare. The branch is normalized to one
       short board form per trunk ("Charing X") on every surface, up front, not measured against
       the row; a fuller rider-readable branch form under pressure ("via Charing Cross") is the
       tracked follow-up. The separator settled on a slash: parentheses (#92 shipped a comma list
@@ -1086,23 +1084,16 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       a factor over the system scale), warmed at startup; see SPEC *Display size*. The pinch
       works anywhere in the app, not only the departures view. Device check still owed: the
       gesture and the live resize want an eyeball on hardware.
-- [x] **Truncate the row destination instead of ellipsizing it** (maintainer, 2026-09-20).
-      The user prefers a clean cut to a `…` on the destination, which on a narrow row crushes
-      to a single character plus `…` (observed `B… (Charing X)` for a Northern-line Charing
-      Cross branch) and reads as a glitch. Scope this to the **destination text only** — not
-      the countdown, disruption chip, stop name, or line pill: the countdown deliberately
-      keeps its ellipsis so a cut like `0 · 3 …` stays intelligible rather than being sliced
-      after a separator. **Done:** the whole row destination line now uses `TextOverflow.Clip`
-      — the terminus (no-branch and branch cases) and its branch/via label alike, so the line
-      cuts cleanly (`Batter (Charing X)`); the countdown, disruption chip, stop name, and line
-      pill keep their ellipsis (the via was added to the clip scope at the maintainer's request
-      during the PR). The tension with the
-      "Branch truncation" task above is **settled (2026-09-22):** equal truncation shipped — a
-      hard clip with no ellipsis, terminus and branch sharing the row in proportion under
-      pressure — which *replaces* the word-abbreviation / per-half / last-resort-ellipsis
-      alternatives (`Battersea… (Charing X)`), now retired rather than deferred. The only open
-      follow-up on that task is a fuller rider-readable branch form under pressure (plus the
-      parked CX idea); nothing here is left to decide among, and it needs no separate PR.
+- [x] **Truncate the row destination instead of ellipsizing it** (maintainer, 2026-09-20;
+      **reversed PR #127, 2026-09-22**). The original ask was a clean hard clip over a `…`, because
+      the `…` crushed the name to a single character plus `…` and read as a glitch. In practice the
+      hard clip cut **mid-glyph** (`/Charin`), which reads worse — so PR #127 reversed this: the
+      destination line now **word-abbreviates → floors → a single `…`** (no surrounding spaces,
+      never a mid-glyph cut), across the terminus (no-branch and branch cases) and the branch/via
+      label alike. The countdown, disruption chip, stop name, and line pill are unaffected. The
+      tension with the "Branch truncation" task above is settled the same way: the branch is kept
+      whole and the terminus yields; the only open follow-up there is a fuller rider-readable branch
+      form under pressure.
 - [ ] (Later, open call) **Walk-time reachability filter** — hide departures the user
       couldn't physically reach in time. Rough model: ~6 km/h ≈ 100 m/min walking, so a
       stop 200 m away is ~2 min out; drop a departure leaving sooner than the walk time to

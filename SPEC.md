@@ -312,20 +312,24 @@ stop, never a choice, so the label is dropped even for a short-working the asset
 as a terminus. King's Cross is Bank-only, so a Bank-branch train there terminating at Golders
 Green or Finchley Central shows no "/Bank".
 
-Where the pair won't fit, the **terminus yields first**: it shortens common whole words to a
-compact form (`East`→`E.`, `Street`→`St`, and the rest — `DestinationAbbreviations`) while the
-branch stays whole in its board short form ("Charing X"). If even the abbreviated terminus
-won't sit beside the full branch, the two then **truncate equally** — the row's width is split
-between them in proportion to their natural sizes, so both clip by the same fraction rather than
-the branch taking the whole row and the terminus vanishing. Every clip is a **clean cut** — no
-ellipsis (maintainer preference: a `…` on a narrow row crushed the name to a glyph and read as a
-glitch). So a tight row reads "E. Finchley", or "H. Barn/Charin" at the extreme (a hard cut, no
-ellipsis). The full
-name shows whenever it fits and stays the accessible label throughout. Equal truncation
-replaces an earlier branch-always-wins rule: the branch is short and canonical, so proportional
-splitting only bites at the largest font scales, and there it keeps both cues on screen instead
-of one. A fuller rider-readable branch form under pressure ("Charing X"→"via Charing Cross")
-remains a tracked refinement (`TODO.md`).
+Where the pair won't fit, the **branch is kept whole** — it is the cue that tells the two trunks
+apart, so truncating it would lose which train this is — and the **terminus yields**: it shortens
+common whole words to a compact form (`East`→`E.`, `Street`→`St`, and the rest —
+`DestinationAbbreviations`), then, for a name no word maps, drops to its **floor** — the first word
+in full with each later word an initial (`Battersea Power`→`Battersea P.`) — and only below the
+floor does it **elide with a single `…`** — never a mid-glyph cut, and the **terminus yields before
+the branch**. The full branch is kept while the terminus floor fits beside it, else its board short
+form ("Charing X"). So a tight row reads "Battersea P. /Charing X"; at the largest font scales, where
+the whole branch fills the row and not even the terminus's first glyph fits beside it, the branch
+stands **alone and bare** — its board form with no leading slash, so no orphaned "/". Only an
+unusually long branch (an unabbreviated loop branch, e.g. "Newbury Park") standing alone in that
+narrowest row can itself reach the single-`…` last resort — there is nothing left to yield, and a
+clean elision beats a mid-glyph cut. The full name shows whenever it fits and stays the accessible
+label throughout. This supersedes an earlier proportional-split rule
+that clipped both halves mid-glyph and a no-ellipsis preference alongside it (maintainer,
+2026-09-22): a clean word/initial boundary, then a single `…`, reads better than a hard cut. The
+`…` carries no surrounding spaces. A fuller rider-readable branch form under pressure ("Charing
+X"→"via Charing Cross") remains a tracked refinement (`TODO.md`).
 
 The row set is not purely prediction-derived: a watched stop or line with a **known
 disruption** but **zero predictions** still contributes a row — a status row (for the

@@ -1,165 +1,178 @@
 package app.stopcast.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [branchedLabel]'s width rule, tested apart from the measuring composable. Widths are the
- * abstract px the caller measures; only their relative sizes matter, so the numbers here are
- * chosen to land each case rather than to match any real font.
+ * [branchedLabel]'s rule, tested apart from the measuring composable. Widths are the abstract px the
+ * caller measures; only their relative sizes matter, so the numbers here are chosen to land each
+ * case rather than to match any real font. The composable lays the branch out whole at its natural
+ * width and gives the terminus the leftover (ellipsized), so [branchedLabel] only picks which
+ * strings show.
  */
 class BranchedLabelTest {
 
     @Test
-    fun `joins terminus and branch with a slash when both fit`() {
+    fun `joins the full terminus and full branch with a slash when both fit`() {
         val r = branchedLabel(
             label = "Battersea Power",
             abbreviatedLabel = "Battersea Power",
+            floorLabel = "Battersea P.",
             branch = "Charing Cross",
             abbreviatedBranch = "Charing X",
             maxWidth = 1000,
             labelWidth = 300,
             abbrevLabelWidth = 300,
+            floorLabelWidth = 180,
             fullBranchWidth = 200,
             abbrevBranchWidth = 140,
-            firstGlyphWidth = 20,
-            branchFirstGlyphWidth = 30,
+            minStubWidth = 20,
         )
         assertEquals("Battersea Power", r.terminus)
         assertEquals("/Charing Cross", r.branch)
-        assertEquals(200, r.branchMaxWidthPx)
-        assertEquals(800, r.terminusMaxWidthPx)
         assertEquals(null, r.contentDescription)
     }
 
     @Test
     fun `abbreviates the terminus while the full branch still fits beside it`() {
+        // Floor + full branch fit, so the full branch is kept; the full terminus doesn't fit the
+        // leftover but its word-abbreviated form does.
         val r = branchedLabel(
             label = "High Barnet",
             abbreviatedLabel = "H. Barnet",
+            floorLabel = "High B.",
             branch = "Bank",
             abbreviatedBranch = "Bank",
             maxWidth = 200,
             labelWidth = 180,
             abbrevLabelWidth = 120,
+            floorLabelWidth = 100,
             fullBranchWidth = 60,
             abbrevBranchWidth = 60,
-            firstGlyphWidth = 20,
-            branchFirstGlyphWidth = 30,
+            minStubWidth = 20,
         )
         assertEquals("H. Barnet", r.terminus)
         assertEquals("/Bank", r.branch)
-        assertEquals(60, r.branchMaxWidthPx)
-        assertEquals(140, r.terminusMaxWidthPx)
-        // Full name kept for a screen reader now that the visible terminus is shortened.
         assertEquals("High Barnet", r.contentDescription)
     }
 
     @Test
-    fun `keeps the full terminus when shortening the branch alone makes it fit`() {
-        // The full branch doesn't fit beside the abbreviated terminus, but the short branch does
-        // beside the FULL terminus (100 + 40 = 140 <= 150), so the terminus stays whole rather than
-        // being needlessly abbreviated and clipped.
+    fun `drops the terminus to its floor beside the kept full branch`() {
+        // Neither the full nor the word-abbreviated terminus fits beside the (whole) full branch, but
+        // the floor does — so the floor shows and the branch is never clipped.
+        val r = branchedLabel(
+            label = "Battersea Power",
+            abbreviatedLabel = "Battersea Power",
+            floorLabel = "Battersea P.",
+            branch = "Bank",
+            abbreviatedBranch = "Bank",
+            maxWidth = 400,
+            labelWidth = 300,
+            abbrevLabelWidth = 300,
+            floorLabelWidth = 180,
+            fullBranchWidth = 150,
+            abbrevBranchWidth = 150,
+            minStubWidth = 30,
+        )
+        assertEquals("Battersea P.", r.terminus)
+        assertEquals("/Bank", r.branch)
+        assertEquals("Battersea Power", r.contentDescription)
+    }
+
+    @Test
+    fun `shortens the branch to its board form to keep the full terminus`() {
+        // The full branch won't fit beside the floor terminus, but the short branch does — and beside
+        // the short branch the FULL terminus fits, so the terminus stays whole.
         val r = branchedLabel(
             label = "High Barnet",
             abbreviatedLabel = "H. Barnet",
+            floorLabel = "High B.",
             branch = "Charing Cross",
             abbreviatedBranch = "Charing X",
             maxWidth = 150,
             labelWidth = 100,
             abbrevLabelWidth = 80,
+            floorLabelWidth = 70,
             fullBranchWidth = 100,
             abbrevBranchWidth = 40,
-            firstGlyphWidth = 20,
-            branchFirstGlyphWidth = 30,
+            minStubWidth = 20,
         )
         assertEquals("High Barnet", r.terminus)
         assertEquals("/Charing X", r.branch)
-        assertEquals(40, r.branchMaxWidthPx)
-        assertEquals(110, r.terminusMaxWidthPx)
         assertEquals(null, r.contentDescription)
     }
 
     @Test
-    fun `splits the width so terminus and branch clip by the same fraction under pressure`() {
-        // Even the abbreviated terminus won't sit beside the full branch, so the width is shared
-        // in proportion to each side's natural size — both clip, rather than the branch taking the
-        // whole row. terminus 300px and branch 150px into 380px: budgets 254 and 126, each ~0.84 of
-        // its natural width.
+    fun `drops the terminus to its floor beside the short branch under tighter pressure`() {
+        // Floor + full branch won't fit, floor + short branch does, and only the floor terminus fits
+        // the leftover beside the short branch.
         val r = branchedLabel(
             label = "Battersea Power",
             abbreviatedLabel = "Battersea Power",
+            floorLabel = "Battersea P.",
             branch = "Charing Cross",
             abbreviatedBranch = "Charing X",
-            maxWidth = 380,
+            maxWidth = 400,
             labelWidth = 300,
             abbrevLabelWidth = 300,
+            floorLabelWidth = 180,
             fullBranchWidth = 250,
             abbrevBranchWidth = 150,
-            firstGlyphWidth = 20,
-            branchFirstGlyphWidth = 40,
+            minStubWidth = 30,
         )
-        assertEquals("Battersea Power", r.terminus)
+        assertEquals("Battersea P.", r.terminus)
         assertEquals("/Charing X", r.branch)
-        // Budgets sum to the row and are proportional to the natural widths (both below natural, so
-        // both clip); the full name stays the accessible label.
-        assertEquals(380, r.terminusMaxWidthPx + r.branchMaxWidthPx)
-        assertEquals(126, r.branchMaxWidthPx)
-        assertEquals(254, r.terminusMaxWidthPx)
-        assertTrue("terminus budget clips its 300px natural width", r.terminusMaxWidthPx < 300)
-        assertTrue("branch budget clips its 150px natural width", r.branchMaxWidthPx < 150)
         assertEquals("Battersea Power", r.contentDescription)
     }
 
     @Test
-    fun `raises a starved branch to its first-glyph floor instead of a bare slash`() {
-        // A very long terminus beside a short branch: the raw proportional share would give the
-        // branch far too little to render its slash and first glyph (120 * 40 / 340 = 14px). The
-        // clamp raises it to its 30px floor and the terminus takes the rest, so the branch cue
-        // still shows rather than becoming a bare or partial slash.
+    fun `shows the branch alone and bare when not even a stub fits beside it`() {
+        // At an extreme font scale on a very narrow row the whole branch fills the column, leaving
+        // less than a stub (a glyph plus its ellipsis) — so the branch takes the row bare (board short
+        // form, no leading slash, no orphaned "/"), the full name kept for a screen reader.
         val r = branchedLabel(
             label = "High Barnet",
             abbreviatedLabel = "H. Barnet",
+            floorLabel = "High B.",
             branch = "Charing Cross",
             abbreviatedBranch = "Charing X",
-            maxWidth = 120,
+            maxWidth = 220,
             labelWidth = 300,
-            abbrevLabelWidth = 300,
-            fullBranchWidth = 40,
-            abbrevBranchWidth = 40,
-            firstGlyphWidth = 30,
-            branchFirstGlyphWidth = 30,
+            abbrevLabelWidth = 200,
+            floorLabelWidth = 150,
+            fullBranchWidth = 260,
+            abbrevBranchWidth = 200,
+            minStubWidth = 30,
         )
-        assertEquals("H. Barnet", r.terminus)
-        assertEquals("/Charing X", r.branch)
-        assertEquals(30, r.branchMaxWidthPx)
-        assertEquals(90, r.terminusMaxWidthPx)
+        assertEquals("", r.terminus)
+        assertEquals("Charing X", r.branch)
+        assertFalse("no leading slash when the branch stands alone", r.branch.startsWith("/"))
         assertEquals("High Barnet", r.contentDescription)
     }
 
     @Test
-    fun `drops the slash and shows the branch alone when the row cannot fit both first glyphs`() {
-        // At an extreme font scale on a very narrow row the terminus's and branch's first glyphs
-        // can't both fit; there the row is the branch, bare (short board form, no leading slash),
-        // and the full name stays the accessible label.
+    fun `keeps a terminus stub beside the short branch when at least a stub fits`() {
+        // One step wider than the bare case: the leftover clears the stub width, so the floor terminus
+        // rides beside the whole short branch (the render ellipsizes it to a stub like "High…").
         val r = branchedLabel(
             label = "High Barnet",
             abbreviatedLabel = "H. Barnet",
+            floorLabel = "High B.",
             branch = "Charing Cross",
             abbreviatedBranch = "Charing X",
-            maxWidth = 50,
+            maxWidth = 240,
             labelWidth = 300,
             abbrevLabelWidth = 200,
+            floorLabelWidth = 150,
             fullBranchWidth = 260,
             abbrevBranchWidth = 200,
-            firstGlyphWidth = 30,
-            branchFirstGlyphWidth = 30,
+            minStubWidth = 30,
         )
-        assertEquals("", r.terminus)
-        assertEquals("Charing X", r.branch)
-        // No leading slash when the branch stands alone.
-        assertEquals(false, r.branch.startsWith("/"))
+        assertEquals("High B.", r.terminus)
+        assertEquals("/Charing X", r.branch)
+        assertTrue("the branch keeps its slash beside the terminus", r.branch.startsWith("/"))
         assertEquals("High Barnet", r.contentDescription)
     }
 }

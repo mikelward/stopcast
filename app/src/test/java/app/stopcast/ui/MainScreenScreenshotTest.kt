@@ -933,12 +933,11 @@ class MainScreenScreenshotTest {
     }
 
     @Test
-    fun `via branch truncates both equally under a large font scale`() {
-        // At a large accessibility font scale on a narrow row, "High Barnet/Charing X" no longer
-        // fits, so the terminus and branch share the width in proportion and both clip (SPEC
-        // destination-label — equal truncation), rather than the branch taking the whole row.
-        // The semantic strings stay whole (the clip is visual only), so the full name and the
-        // trunk cue both remain the accessible label. Public line/place names only (SPEC *Privacy*).
+    fun `via branch shows the trunk alone and bare under a large font scale`() {
+        // At a large accessibility font scale on a narrow row the whole branch fills the column,
+        // leaving less than the terminus's first glyph, so the branch takes the row **bare** — the
+        // board short form "Charing X" with no leading slash (no orphaned "/"), never a mid-glyph
+        // clip. The full name stays the accessible label. Public line/place names only (SPEC *Privacy*).
         val kennington = StopArrivals(
             "940GZZLUKNG",
             "Kennington",
@@ -965,12 +964,12 @@ class MainScreenScreenshotTest {
         }
         composeRule.waitForIdle()
         captureSnapshot("main-via-branch-equal.png")
-        // Under pressure the terminus abbreviates ("High"→"H.") and the branch shortens to its
-        // board form; the full name stays the accessible label. Both survive — the branch does
-        // not take the whole row.
-        composeRule.onNodeWithText("H. Barnet").assertExists()
-        composeRule.onNodeWithContentDescription("High Barnet").assertExists()
-        composeRule.onNodeWithText("/Charing X").assertExists()
+        // The branch stands alone and bare — its board form with no leading slash — and the accessible
+        // label keeps BOTH the full terminus and the branch, so a screen reader can still tell the
+        // Bank and Charing Cross trains apart (Codex P2).
+        composeRule.onNodeWithText("Charing X").assertExists()
+        composeRule.onNodeWithText("/Charing X").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("High Barnet via Charing X").assertExists()
     }
 
     @Test
