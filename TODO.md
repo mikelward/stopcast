@@ -422,6 +422,47 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           by the strip — no one name catches the dozen spellings, the union does. Cosmetic only
           (dedup was always spelling-proof via `hubNaptanCode`); best-effort, so a spelling no alias
           covers still just leaves the name in.
+    - [x] **Dismiss a stop-closure alert; reappear on change** (maintainer, 2026-09-22). A ×
+          on the closure card taps the notice away — for the "acknowledge and clear" kind (planned
+          works, moved stop, step-free outage). Keyed on `(place, notice text)` and persisted
+          (`DismissedAlertsStore` / DataStore); a dismiss only **adds**, so dismissing one of several
+          cards at a place (the fold keeps a card per distinct notice) keeps the others dismissed. It
+          **reappears the moment the text changes** (a reworded notice no longer matches), so a
+          dismiss never buries a new or escalated closure, and a **refresh reconciles the set against
+          the live notices, scoped to places it actually checked** — a resolved incident's dismissal
+          is pruned so it can't later suppress a same-text re-occurrence (keeps it bounded too), while
+          a place not queried this cycle or whose disruption lookup failed keeps its dismissal. Fails safe — an unreadable
+          set reads empty (card returns, never a hidden warning). Filtered in
+          `DepartureRows.withoutDismissed`; the stop's departures still show. Follow-ups below.
+      - [ ] **Extend dismiss to persistent line-status alerts** (maintainer, 2026-09-22). Only the
+            whole-stop closure cards are dismissible today. The *acute* line statuses (severe delays,
+            suspended) you'd never dismiss — keep them non-dismissible — but the persistent
+            informational ones (planned closures running months, long-running diversions, line-level
+            step-free notices) are the same "read and clear" kind. The signature would fold in TfL's
+            **severity** so a dismissed mild/planned status re-surfaces the moment it escalates (the
+            reappear-on-change net the maintainer named). Needs the dismiss control on the
+            line-status chip/row and a severity+description signature.
+      - [ ] **Expire a dismissal after ~a day?** — *open decision* (maintainer, 2026-09-22: "not
+            sure I even want it"). A dismissal currently lasts until the notice text changes; a
+            persistent closure then stays hidden indefinitely. Expiring after ~24h would re-surface
+            it, and *if adopted* would also bound the residual reconcile corner below. Would need a
+            `dismissedAt` timestamp (a schema bump) and a clock-driven max-age filter alongside
+            `withoutDismissed`, in its own PR. Decide whether it's wanted before building.
+      - [ ] **Known limitation: a failed reconcile write can outlast a restart** (Codex P1, PR #113).
+            In-session, `reconcileDismissals` prunes the in-memory set even when the persist fails, so
+            a stale signature can't suppress a card that session. The residual window: the persist
+            fails *and* the process restarts (reloading the stale set) *and* a same-text incident
+            recurs before the next reconcile — then `withoutDismissed` would hide it. Extremely narrow;
+            the day-expiry above would bound it uniformly if adopted, else a local tombstone that
+            survives store emissions would close it directly.
+      - [ ] **Prune a hub-keyed dismissal only when every member was checked** (Codex P2, PR #113).
+            Nearby selection pages stops by `clusterId`, not `hubId` (`NearbySelection`), so a cycle
+            can fetch one StopArea of a multi-station hub, see it clear, and prune the hub-keyed
+            dismissal while another member (unqueried) still carries the notice — the card then
+            reappears when that member is next fetched. Safe direction (a card returns, no warning
+            hidden), so deferred: `reconcileDismissals` would need to prove all of a hub's members
+            were queried before adding the hub id to `checkedPlaces` (track checked source stops, or
+            hub-membership completeness), which the current per-cluster paging doesn't cheaply supply.
     - [ ] **Per-description dedup** (Codex P2, PR #91). A stop's disruptions are joined into its one
           stop-status row's text (`stopStatusRow`), so the hub fold keys on the joined string: where
           two members of a hub carry *different sets* of notices — one reports X, the other X · Y —

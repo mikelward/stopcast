@@ -1,0 +1,123 @@
+package app.stopcast.domain
+
+import java.time.Instant
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+/** [DismissedAlert], [Dismissed], and [stopPlaceKey]: the dismissal identity and toggle rule. */
+class DismissedAlertTest {
+
+    private fun closureRow(
+        stopId: String,
+        stopName: String,
+        notice: String,
+        hubId: String = "",
+        clusterId: String = "",
+    ) = DepartureRow(
+        stopId = stopId,
+        stopName = stopName,
+        clusterId = clusterId,
+        lineId = "",
+        lineName = "",
+        direction = "",
+        directionKey = STOP_STATUS_DIRECTION_KEY,
+        destination = "",
+        mode = "",
+        upcoming = emptyList(),
+        fetchedAt = Instant.EPOCH,
+        stopDisruption = notice,
+        hubId = hubId,
+    )
+
+    @Test
+    fun `place key is the hub when there is one`() {
+        val row = closureRow("940GZZLUKSX", "King's Cross St. Pancras", "closed", hubId = "HUBKGX", clusterId = "940GZZLUKSX")
+        assertEquals("HUBKGX", stopPlaceKey(row))
+    }
+
+    @Test
+    fun `place key is a real StopArea cluster when there is no hub`() {
+        // A real stationNaptan (differs from the display name) — the poles of a junction share it.
+        val row = closureRow("490000001E", "Example Road", "closed", clusterId = "490G000EXAMPLE")
+        assertEquals("490G000EXAMPLE", stopPlaceKey(row))
+    }
+
+    @Test
+    fun `place key falls back to the stop id for a name-fallback cluster`() {
+        // clusterId == stopName means the cluster is only the display-name fallback (no stationNaptan),
+        // which can't distinguish two unrelated same-named stops — so each keys on its own stop id.
+        val row = closureRow("490000010A", "Church Road", "closed", clusterId = "Church Road")
+        assertEquals("490000010A", stopPlaceKey(row))
+    }
+
+    @Test
+    fun `the StopArrivals place key matches the row's`() {
+        // The overload used to scope reconcile must agree with the row overload on "one place".
+        val stop = StopArrivals(
+            stopId = "940GZZLUKSX",
+            stopName = "King's Cross St. Pancras",
+            departures = emptyList(),
+            fetchedAt = Instant.EPOCH,
+            clusterId = "940GZZLUKSX",
+            hubId = "HUBKGX",
+        )
+        assertEquals("HUBKGX", stopPlaceKey(stop))
+    }
+
+    @Test
+    fun `ofStopClosure keys on the place and the notice text`() {
+        val row = closureRow("A", "Stop A", "Bus Stop Closed", clusterId = "490G000A")
+        assertEquals(DismissedAlert("490G000A", "Bus Stop Closed"), DismissedAlert.ofStopClosure(row))
+    }
+
+    @Test
+    fun `dismiss adds an alert`() {
+        val a = DismissedAlert("P", "S1")
+        assertEquals(setOf(a), Dismissed.dismiss(emptySet(), a))
+    }
+
+    @Test
+    fun `dismiss retains a concurrent notice at the same place`() {
+        // Two distinct notices shown at one place (the fold keeps a card for each): dismissing the
+        // second must not un-dismiss the first — a dismiss only adds, so both are kept.
+        val first = DismissedAlert("P", "S1")
+        val second = DismissedAlert("P", "S2")
+        assertEquals(setOf(first, second), Dismissed.dismiss(setOf(first), second))
+    }
+
+    @Test
+    fun `reconcile keeps a dismissal whose notice is still shown`() {
+        val a = DismissedAlert("P", "S1")
+        assertEquals(setOf(a), Dismissed.reconcile(setOf(a), live = setOf(a), checkedPlaces = setOf("P")))
+    }
+
+    @Test
+    fun `reconcile drops a dismissal whose notice has resolved at a checked place`() {
+        // Both places were checked; P's notice is gone, so its stale dismissal is pruned — a later
+        // same-text closure at P is then shown, never suppressed by the resolved incident.
+        val gone = DismissedAlert("P", "S1")
+        val stillThere = DismissedAlert("Q", "T1")
+        assertEquals(
+            setOf(stillThere),
+            Dismissed.reconcile(setOf(gone, stillThere), live = setOf(stillThere), checkedPlaces = setOf("P", "Q")),
+        )
+    }
+
+    @Test
+    fun `reconcile keeps a dismissal for a place not checked this cycle`() {
+        // P wasn't queried this cycle (a different nearby set, or its disruption lookup failed), so
+        // its dismissal is retained even though nothing at P is currently shown — persist-until-change.
+        val a = DismissedAlert("P", "S1")
+        assertEquals(setOf(a), Dismissed.reconcile(setOf(a), live = emptySet(), checkedPlaces = setOf("Q")))
+    }
+
+    @Test
+    fun `reconcile keeps concurrent notices both still shown`() {
+        val first = DismissedAlert("P", "S1")
+        val second = DismissedAlert("P", "S2")
+        assertEquals(
+            setOf(first, second),
+            Dismissed.reconcile(setOf(first, second), live = setOf(first, second), checkedPlaces = setOf("P")),
+        )
+    }
+}

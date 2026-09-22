@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -91,6 +92,7 @@ import app.stopcast.domain.DepartureLabels
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DestinationAbbreviations
+import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.PlatformDirection
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
@@ -143,6 +145,16 @@ fun MainScreen(
     // default so an unwired build/test renders no snackbar.
     starWriteFailed: Boolean = false,
     onStarWriteFailureShown: () -> Unit = {},
+    // The stop-closure alerts the user has dismissed (SPEC *Disruptions*): the matching cards are
+    // hidden until their notice text changes. Empty by default so an unwired build/test shows every
+    // alert. [onDismissAlert] is called with the alert's stop-status row when its dismiss is tapped.
+    dismissed: Set<DismissedAlert> = emptySet(),
+    onDismissAlert: (DepartureRow) -> Unit = {},
+    // True while a dismiss write has failed and not yet been surfaced (SPEC principle 2): same
+    // snackbar seam as [starWriteFailed], so a dismiss tap that didn't persist isn't swallowed
+    // silently. Acknowledged state; the screen calls [onDismissWriteFailureShown] to clear it.
+    dismissWriteFailed: Boolean = false,
+    onDismissWriteFailureShown: () -> Unit = {},
     // Open the open-source licenses screen (from the About dialog). Default no-op so an
     // unwired build/test renders the screen without a licenses destination.
     onOpenLicenses: () -> Unit = {},
@@ -175,7 +187,7 @@ fun MainScreen(
     // both the list and the route-detail page below read the SAME rows. Empty for any non-Loaded
     // state. Cheap and pure; line statuses stamp each row so a disrupted line is marked (SPEC D3).
     val loaded = state as? DeparturesUiState.Loaded
-    val rows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, starred) {
+    val rows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, starred, dismissed) {
         val ld = loaded ?: return@remember emptyList()
         val across = DepartureRows.across(ld.stops, now, ld.lineStatuses)
         // A "near me now" list (distances present) shows a line once, from its nearest stop, then
@@ -188,8 +200,9 @@ fun MainScreen(
                 val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters)
                 DepartureRows.byStopDistance(deduped, stopDistanceMeters)
             }
-        // Lift the user's starred services to the top (SPEC D8), warnings still leading.
-        DepartureRows.pinStarred(ordered, starred)
+        // Drop the stop-closure alerts the user has dismissed (hidden until their text changes),
+        // then lift the user's starred services to the top (SPEC D8), warnings still leading.
+        DepartureRows.pinStarred(DepartureRows.withoutDismissed(ordered, dismissed), starred)
     }
 
     // The route whose detail is open, held by its stable row identity rather than the row object: a
@@ -215,6 +228,17 @@ fun MainScreen(
         if (starWriteFailed && detailRow == null) {
             onStarWriteFailureShown()
             snackbarHostState.showSnackbar(starWriteFailedMessage)
+        }
+    }
+    // Surface a failed dismiss write the same way as a failed star write, and gated the same way —
+    // the snackbar host lives in the departures Scaffold, not the full-screen route page below, so a
+    // failure while the page is open holds the flag until the user returns, then shows.
+    val dismissWriteFailedMessage = stringResource(R.string.dismiss_write_failed)
+    LaunchedEffect(dismissWriteFailed, detailRow == null) {
+        if (dismissWriteFailed && detailRow == null) {
+            // Clear-then-show, same reasoning as the star-write snackbar above.
+            onDismissWriteFailureShown()
+            snackbarHostState.showSnackbar(dismissWriteFailedMessage)
         }
     }
     // A full-screen page (its own app bar) that REPLACES the departures Scaffold, so it covers the
@@ -376,6 +400,8 @@ fun MainScreen(
                     state, now, onRefresh, refreshing, content, rows, stopDistanceMeters,
                     starred, onToggleStar, starringAvailable, revealableModes, onReveal,
                     onOpenDetail = { detailKey = it.detailKey() },
+                    dismissed = dismissed,
+                    onDismissAlert = onDismissAlert,
                 )
 
             is DeparturesUiState.Error ->
@@ -421,6 +447,8 @@ private fun LoadedContent(
     onReveal: (String) -> Unit = {},
     // Open the full-screen route detail for a tapped card; the caller holds the open-route state.
     onOpenDetail: (DepartureRow) -> Unit = {},
+    dismissed: Set<DismissedAlert> = emptySet(),
+    onDismissAlert: (DepartureRow) -> Unit = {},
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -484,6 +512,7 @@ private fun LoadedContent(
                     rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
                     revealableModes, onReveal,
                     onOpenDetail = onOpenDetail,
+                    onDismissAlert = onDismissAlert,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -543,6 +572,7 @@ private fun DepartureList(
     revealableModes: Set<String>,
     onReveal: (String) -> Unit,
     onOpenDetail: (DepartureRow) -> Unit,
+    onDismissAlert: (DepartureRow) -> Unit = {},
     modifier: Modifier,
 ) {
     // Stop-closure alerts render as standalone cards at the top of the list — warnings lead (the
@@ -582,7 +612,7 @@ private fun DepartureList(
         // A closure alert keys on its stop and hub so a recycled row can't carry another
         // alert's expanded state onto it.
         items(closureRows, key = { "closure|${it.stopId}|${it.hubId}" }) { row ->
-            DepartureRowCard(row, now)
+            DepartureRowCard(row, now, onDismiss = { onDismissAlert(row) })
         }
         groups.forEachIndexed { index, group ->
             // The near-me list carries a per-stop distance; the watched list doesn't, so the
@@ -835,6 +865,9 @@ private fun DepartureRowCard(
     // Default no-op so an unwired build/test renders the list without it; a stop-closure row
     // ignores it (that card expands in place instead — see below).
     onOpenDetail: () -> Unit = {},
+    // Dismiss this alert — only a stop-closure row shows the control (see its `StopClosureContent`).
+    // Default no-op so an unwired build/test renders the card without a dismiss button.
+    onDismiss: () -> Unit = {},
 ) {
     // Staleness is per row, from this row's own stop age: a stop that failed to refresh
     // withholds its countdowns ("—") while a fresh stop beside it stays live (SPEC D4).
@@ -930,6 +963,7 @@ private fun DepartureRowCard(
                         aliases = row.placeAliases,
                     ),
                     title = row.hubName.ifBlank { row.stopName },
+                    onDismiss = onDismiss,
                 )
                 return@Column
             }
@@ -1046,8 +1080,8 @@ private fun DepartureRowCard(
  * bleeds onto a different notice when a `LazyColumn` row is recycled.
  */
 @Composable
-private fun StopClosureContent(disruption: String, title: String) {
-    CollapsibleStatus(text = disruption, title = title)
+private fun StopClosureContent(disruption: String, title: String, onDismiss: () -> Unit = {}) {
+    CollapsibleStatus(text = disruption, title = title, onDismiss = onDismiss)
 }
 
 /**
@@ -1064,12 +1098,18 @@ private fun StopClosureContent(disruption: String, title: String) {
  * changes what is drawn. Expanded state is `rememberSaveable`, keyed on [text], so it survives a
  * configuration change and never bleeds onto a different notice when a `LazyColumn` row is
  * recycled.
+ *
+ * When [onDismiss] is non-null a leading dismiss (×) button hides the alert (the stop-closure card
+ * — the user's read-and-clear control, SPEC *Disruptions*); the route detail passes null and shows
+ * no dismiss (a line disruption there isn't dismissible). The button has its own click target, so a
+ * dismiss tap doesn't also toggle the expand/collapse.
  */
 @Composable
 private fun CollapsibleStatus(
     text: String,
     title: String?,
     modifier: Modifier = Modifier,
+    onDismiss: (() -> Unit)? = null,
     container: Color = MaterialTheme.colorScheme.errorContainer,
     contentColor: Color = MaterialTheme.colorScheme.onErrorContainer,
 ) {
@@ -1114,6 +1154,20 @@ private fun CollapsibleStatus(
                 contentDescription = null,
                 modifier = Modifier.padding(start = 8.dp).size(20.dp),
             )
+            // The dismiss (×) sits after the chevron with its own click target, so tapping it hides
+            // the alert without also toggling expand/collapse (SPEC *Disruptions*). The IconButton
+            // keeps its default 48dp interactive target — a 20dp glyph in a full-size touch area — so
+            // a near miss doesn't fall through to the card's expand/collapse. (An explicit small
+            // `size` would clamp that target below 48dp.)
+            if (onDismiss != null) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.alert_dismiss),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
         }
     }
 }

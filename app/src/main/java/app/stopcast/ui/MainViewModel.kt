@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DeparturesSnapshot
+import app.stopcast.domain.Dismissed
+import app.stopcast.domain.DismissedAlert
+import app.stopcast.domain.DismissedAlertsStore
 import app.stopcast.domain.HubInfo
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
@@ -16,6 +19,7 @@ import app.stopcast.domain.StarredRowSet
 import app.stopcast.domain.StarredRowsStore
 import app.stopcast.domain.StopArrivals
 import app.stopcast.domain.TflClient
+import app.stopcast.domain.stopPlaceKey
 import app.stopcast.domain.TflException
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
@@ -23,6 +27,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,6 +52,14 @@ data class StopRef(
     // name is resolved so the near-me alert titles by the interchange (SPEC *Disruptions*).
     val hubId: String = "",
 )
+
+/** The base backoff before restarting a failed dismissed-set read; doubled each attempt, and reset
+ *  after any successful emission. */
+private const val DISMISSED_READ_RETRY_MS = 500L
+
+/** The ceiling the dismissed-set read backoff is capped at, so a persistently failing store is
+ *  retried forever at a steady, quiet interval rather than giving up (storage can recover later). */
+private const val DISMISSED_READ_RETRY_MAX_MS = 30_000L
 
 /**
  * Owns the departures snapshot the screen renders (SPEC staleness contract): the fetch
@@ -74,6 +87,9 @@ class MainViewModel(
     // Persists which rows the user has starred (the ranking overlay). No-op by default, so
     // tests and an unwired build run identically minus starring.
     private val starredStore: StarredRowsStore = StarredRowsStore.NONE,
+    // Persists which stop-closure alerts the user has dismissed (hidden until their text changes).
+    // No-op by default, so tests and an unwired build run identically minus dismissing.
+    private val dismissedStore: DismissedAlertsStore = DismissedAlertsStore.NONE,
     // No-op by default: the shared on-device logger is deferred until `docs/PRIVACY.md`
     // describes what it carries (both are their own Phase 1 items), so nothing is logged
     // in production until then. The seam stays for tests and that later wiring.
@@ -120,6 +136,13 @@ class MainViewModel(
     private val _starred = MutableStateFlow<Set<StarredRow>>(emptySet())
     val starred: StateFlow<Set<StarredRow>> = _starred.asStateFlow()
 
+    // The stop-closure alerts the user has dismissed (SPEC *Disruptions*): the screen drops a
+    // matching stop-status row. Collected from the store so a dismiss hides the card at once, and a
+    // reworded notice (a new signature) is no longer matched and reappears. An unreadable set reads
+    // empty — a dismissed card returns, never a warning hidden (fails safe).
+    private val _dismissed = MutableStateFlow<Set<DismissedAlert>>(emptySet())
+    val dismissed: StateFlow<Set<DismissedAlert>> = _dismissed.asStateFlow()
+
     // Whether the star control should be offered at all. Starts false — the store's first
     // read hasn't arrived, so we don't yet know which rows are starred; enabling the control
     // before then would show a persisted-starred row as unstarred with a "Pin to top" action,
@@ -142,6 +165,13 @@ class MainViewModel(
     // once it has surfaced it, which clears the flag so it isn't shown again.
     private val _starWriteFailed = MutableStateFlow(false)
     val starWriteFailed: StateFlow<Boolean> = _starWriteFailed.asStateFlow()
+
+    // Same seam as [starWriteFailed], for a failed alert dismissal: a tap that didn't persist
+    // leaves the card visible, so the screen surfaces a snackbar rather than let the dismiss
+    // look broken. Acknowledged StateFlow (survives a rotation between the tap and the message),
+    // cleared by [dismissWriteFailureShown].
+    private val _dismissWriteFailed = MutableStateFlow(false)
+    val dismissWriteFailed: StateFlow<Boolean> = _dismissWriteFailed.asStateFlow()
 
     private var fetchJob: Job? = null
 
@@ -186,6 +216,32 @@ class MainViewModel(
                 _starred.value = emptySet()
                 _starringAvailable.value = false
                 warn("starred set read failed: ${reason(e)}")
+            }
+        }
+        viewModelScope.launch {
+            // A read failure fails safe to "nothing dismissed" (every alert shown) — the same
+            // direction the store's empty fallback takes, so a set we can't read never hides a card.
+            // A transient error RESTARTS the collection with capped backoff rather than terminating
+            // it: a dead collector would silently stop dismiss from taking effect (a later write would
+            // update the store with no one listening) until the ViewModel is recreated. The backoff
+            // never gives up (storage can recover later) and resets after any good emission, so
+            // occasional, non-consecutive failures don't ratchet it to the ceiling.
+            var backoff = DISMISSED_READ_RETRY_MS
+            while (true) {
+                try {
+                    dismissedStore.dismissed().collect {
+                        _dismissed.value = it
+                        backoff = DISMISSED_READ_RETRY_MS
+                    }
+                    break
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _dismissed.value = emptySet()
+                    warn("dismissed set read failed, retrying: ${reason(e)}")
+                    delay(backoff)
+                    backoff = (backoff * 2).coerceAtMost(DISMISSED_READ_RETRY_MAX_MS)
+                }
             }
         }
         // Show the persisted last-good at once (a stamped placeholder, aged), then refresh.
@@ -590,6 +646,15 @@ class MainViewModel(
                 // recomputes from the current clock, without overwriting the last-good snapshot.
                 redrawWidgetBestEffort("failed refresh")
             }
+
+            // Reconcile dismissals against this cycle's notices, from the batch directly rather than
+            // the UI state — a total arrivals failure with no prior yields an Error state and an empty
+            // [merged] even though the disruption checks were authoritative, and a resolved closure on
+            // that path must still be pruned (SPEC principle 2). This refresh queries the full watched
+            // set ([fetchedStops]); the reconcile is scoped per place to only the queried stops whose
+            // disruption lookup succeeded (see reconcileDismissals), so it prunes a resolved notice
+            // without touching a place that failed to refresh or belongs to a different nearby set.
+            reconcileDismissals(fetchedStops, merged, lineStatuses, stopsDisruptionUnknown)
         }
         fetchJob = job
         // Clear the in-flight flag only when this job settles — a job superseded by a
@@ -715,6 +780,13 @@ class MainViewModel(
                 // current clock rather than ageing invisibly past the cutoff (SPEC D4 / principle 2).
                 redrawWidgetBestEffort("incremental reveal with no fresh arrivals")
             }
+
+            // Reconcile dismissals for the stops THIS reveal queried too (not just full refreshes):
+            // a "More" tap can surface a previously dismissed place whose notice has since resolved,
+            // and its stale signature must be pruned like on a full refresh. Provenance is [newStops]
+            // (the queried set); the reconcile is scoped per place to the ones whose disruption lookup
+            // succeeded, so it never touches the already-shown stops or a newly-fetched failure.
+            reconcileDismissals(newStops, mergedStops, newState.lineStatuses, stopsDisruptionUnknown)
         }
         fetchJob = job
         job.invokeOnCompletion { if (fetchJob === job) _refreshing.value = false }
@@ -849,6 +921,75 @@ class MainViewModel(
     }
 
     /**
+     * Dismiss [row]'s stop-closure alert (SPEC *Disruptions*) — hide the card until its notice text
+     * changes — and persist it. Off the main thread; the [dismissed] flow re-emits from the store,
+     * so the card disappears without this touching UI state directly. A no-op for a row that is not
+     * a stop-status row (nothing to dismiss). Best-effort: a write failure is logged and the card
+     * stays; the widget shows no alerts, so it needs no redraw.
+     */
+    fun dismissAlert(row: DepartureRow) {
+        if (row.stopDisruption == null) return
+        viewModelScope.launch {
+            try {
+                withContext(io) { dismissedStore.dismiss(DismissedAlert.ofStopClosure(row)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                warn("alert dismiss failed: ${reason(e)}")
+                // The write didn't take and the store won't re-emit, so the card silently stays —
+                // tell the user rather than let the dismiss tap look broken.
+                _dismissWriteFailed.value = true
+            }
+        }
+    }
+
+    /**
+     * Prune dismissals whose notice is no longer in the feed — so a resolved incident's stale
+     * `(place, text)` dismissal can't later suppress a new same-text closure (SPEC principle 2 —
+     * never hide a warning). Scoped to places actually checked this cycle: a place is prunable only
+     * when every one of its stops was **queried** ([queriedStops], the requested set — not the merged
+     * UI set, which drops a stop whose arrivals failed with no prior even when its disruption came
+     * back clear) and its disruption lookup succeeded (not in [stopsDisruptionUnknown]). A place not
+     * queried this cycle (a different nearby set — the store is shared) or with any unknown member is
+     * left alone, so a still-valid dismissal never lapses because its place wasn't looked at.
+     *
+     * The reconciled set is applied to the in-memory [_dismissed] **before** the persist, so it holds
+     * even if the store write fails: an unverified stale signature can't suppress a recurrence this
+     * session (the persisted set self-heals on the next successful reconcile; a restart is bounded by
+     * the day-expiry follow-up). Best-effort; a no-op write when nothing changed.
+     */
+    private suspend fun reconcileDismissals(
+        queriedStops: List<StopRef>,
+        shownStops: List<StopArrivals>,
+        lineStatuses: Map<String, LineStatus>,
+        stopsDisruptionUnknown: Set<String>,
+    ) {
+        val live = DepartureRows.across(shownStops, clock(), lineStatuses)
+            .asSequence()
+            .filter { it.stopDisruption != null }
+            .mapTo(mutableSetOf()) { DismissedAlert.ofStopClosure(it) }
+        fun placeOf(stop: StopRef) = stopPlaceKey(stop.hubId, stop.clusterId, stop.name, stop.id)
+        // A place with any member whose disruption lookup failed this cycle is not fully known, so it
+        // is excluded from the checked set and its dismissals are retained.
+        val unknownPlaces = queriedStops.asSequence()
+            .filter { it.id in stopsDisruptionUnknown }
+            .mapTo(mutableSetOf()) { placeOf(it) }
+        val checkedPlaces = queriedStops.asSequence()
+            .map { placeOf(it) }
+            .filterTo(mutableSetOf()) { it !in unknownPlaces }
+        // Reconcile the in-memory set first — safe regardless of whether the persist below succeeds.
+        val pruned = Dismissed.reconcile(_dismissed.value, live, checkedPlaces)
+        if (pruned != _dismissed.value) _dismissed.value = pruned
+        try {
+            withContext(io) { dismissedStore.reconcile(live, checkedPlaces) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            warn("dismissal reconcile failed: ${reason(e)}")
+        }
+    }
+
+    /**
      * Redraw the widget, best-effort: a secondary surface, so a failure is logged (sanitized) and
      * swallowed — it never fails the primary operation. Rethrows [CancellationException] first so
      * structured concurrency isn't broken. [context] names the trigger for the log line.
@@ -866,6 +1007,11 @@ class MainViewModel(
     /** Called by the screen once it has surfaced the star-write failure, so it isn't shown again. */
     fun starWriteFailureShown() {
         _starWriteFailed.value = false
+    }
+
+    /** Called by the screen once it has surfaced the dismiss-write failure, so it isn't shown again. */
+    fun dismissWriteFailureShown() {
+        _dismissWriteFailed.value = false
     }
 
     /**

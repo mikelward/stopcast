@@ -984,6 +984,50 @@ class DepartureRowsTest {
         assertEquals(listOf("Bank", "Charing X"), lines.map { it.branch })
     }
 
+    // --- withoutDismissed: hiding the stop-closure alerts the user tapped away ---
+
+    @Test
+    fun `withoutDismissed drops a dismissed closure and keeps the rest`() {
+        val kept = stopStatusRow("B", "Stop B", "Escalator out of service", clusterId = "490G000B")
+        val dismissedRow = stopStatusRow("A", "Stop A", "Bus Stop Closed", clusterId = "490G000A")
+        val rows = listOf(dismissedRow, kept)
+
+        val result = DepartureRows.withoutDismissed(rows, setOf(DismissedAlert.ofStopClosure(dismissedRow)))
+
+        assertEquals(listOf(kept), result)
+    }
+
+    @Test
+    fun `withoutDismissed shows a closure again once its notice text changes`() {
+        // The dismissal was recorded against the OLD text; the place now carries a reworded notice,
+        // whose signature differs, so it is not matched and the card returns (reappear-on-change).
+        val old = stopStatusRow("A", "Stop A", "Bus Stop Closed", clusterId = "490G000A")
+        val reworded = stopStatusRow("A", "Stop A", "Bus Stop Closed until 5pm", clusterId = "490G000A")
+
+        val result = DepartureRows.withoutDismissed(listOf(reworded), setOf(DismissedAlert.ofStopClosure(old)))
+
+        assertEquals(listOf(reworded), result)
+    }
+
+    @Test
+    fun `withoutDismissed never drops a timed or line-status row`() {
+        // Only stop-closure rows are dismissible; a same-place timed row and a no-prediction
+        // line-status row are untouched even if a dismissal shares their place (a closed stop's
+        // departures still show).
+        val timed = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 60, mode = "bus"))
+        val closure = stopStatusRow("A", "Stop A", "Bus Stop Closed", clusterId = "490G000A")
+
+        val result = DepartureRows.withoutDismissed(timed + closure, setOf(DismissedAlert.ofStopClosure(closure)))
+
+        assertEquals(timed, result)
+    }
+
+    @Test
+    fun `withoutDismissed returns the rows unchanged when nothing is dismissed`() {
+        val rows = listOf(stopStatusRow("A", "Stop A", "Closed"))
+        assertEquals(rows, DepartureRows.withoutDismissed(rows, emptySet()))
+    }
+
     private companion object {
         const val HBT = "940GZZLUHBT"
         const val HGT = "940GZZLUHGT"

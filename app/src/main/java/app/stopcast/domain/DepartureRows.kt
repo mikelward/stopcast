@@ -214,19 +214,13 @@ object DepartureRows {
             // Folding at the StopArea is what collapses a closed bus stop reported once per pole
             // (both ways) that shares no hub, while two genuinely distinct places keep their own
             // cards even with identical place-less text (SPEC *Disruptions*, principle 1). The
-            // notice keyed on is the **normalized** body, not the name-stripped
-            // one — the strip is per-member (see stopStatusRow), so keying on it would split a
-            // shared name-led notice across a hub's differently-named members (Codex).
-            //
-            // The cluster folds only when it is a **real** TfL StopArea (`stationNaptan`), not the
-            // display-name fallback: `clusterId` is `stationNaptan.ifBlank { stopName }`, and a
-            // naptan code never equals a display name, so `clusterId != stopName` reliably marks a
-            // real StopArea. Folding on a name-fallback cluster would collapse two *unrelated* stops
-            // that merely share a name and a generic notice ("Bus Stop Closed"), hiding one closure
-            // (Codex, principle 1 — no warning dropped); those fall through to their own stop id.
-            val realCluster = row.clusterId.takeUnless { it.isBlank() || it == row.stopName }
-            val placeKey = row.hubId.ifBlank { realCluster ?: row.stopId }
-            statusByPlaceNotice.getOrPut(placeKey to text) { mutableListOf() }.add(row)
+            // notice keyed on is the **normalized** body, not the name-stripped one — the strip is
+            // per-member (see stopStatusRow), so keying on it would split a shared name-led notice
+            // across a hub's differently-named members (Codex). The place key ([stopPlaceKey]) folds
+            // on the interchange, else a real StopArea, else the stop — never the display-name
+            // fallback, which would collapse two unrelated same-named stops (Codex, principle 1).
+            // Shared with the dismissal key so fold and dismiss agree on what "one place" is.
+            statusByPlaceNotice.getOrPut(stopPlaceKey(row) to text) { mutableListOf() }.add(row)
         }
         val keptStatus = statusByPlaceNotice.values.map { group ->
             group.minWith(compareBy({ distanceOf(it.stopId) }, { it.stopId }))
@@ -297,6 +291,22 @@ object DepartureRows {
                 StarredRow.of(row) in starred -> 1
                 else -> 2
             }
+        }
+    }
+
+    /**
+     * Drop the **stop-closure rows the user has dismissed** (SPEC *Disruptions*): a stop-status row
+     * is removed only when its [DismissedAlert.ofStopClosure] identity — place key + the current
+     * notice text — is in [dismissed]. Because the signature is the *current* notice text, a
+     * reworded or replaced closure no longer matches its old dismissal and the card returns, so a
+     * dismiss clears what you've read without ever hiding a changed or escalated notice. Only
+     * stop-status rows are affected; timed rows and line-status rows are never dismissible here (a
+     * closed stop's departures still show). Empty [dismissed] returns [rows] unchanged.
+     */
+    fun withoutDismissed(rows: List<DepartureRow>, dismissed: Set<DismissedAlert>): List<DepartureRow> {
+        if (dismissed.isEmpty()) return rows
+        return rows.filterNot { row ->
+            row.stopDisruption != null && DismissedAlert.ofStopClosure(row) in dismissed
         }
     }
 

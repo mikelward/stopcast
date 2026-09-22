@@ -437,6 +437,18 @@ hub name, from the hub's member stops) is what lets the strip drop a leading nam
 spelling it appears. The strip is **best-effort**: a spelling no alias covers only leaves the name
 in the body, never mangles the notice.
 
+A stop-closure card carries a **dismiss (×)**: these notices are the "acknowledge and clear" kind
+(planned works, a moved stop, "Bus Stop Closed — use the next stop", a step-free-access outage),
+so once read the user can tap them away to declutter. A dismissal is keyed on `(place, notice
+text)` and **reappears the moment the content changes** — a reworded or replaced notice no longer
+matches, so a dismiss never buries a new or escalated closure (maintainer, 2026-09-22). It is
+persisted (survives restart, rides Android backup like the rest of the config — SPEC *Privacy*),
+one entry per place so the set stays bounded, and **fails safe**: a stored set this build can't read
+reads back empty, so the worst case is a dismissed card returning, never a warning hidden. Only the
+whole-stop closure cards are dismissible for now — the stop's departures still show, and the acute
+line-status alerts (severe delays, suspended) are not dismissible; extending dismiss to the
+persistent line statuses, and expiring a dismissal after a day, are `TODO.md` follow-ups.
+
 The order is **dedupe, then title, then strip** (maintainer, 2026-09-22): the near-me fold groups
 by place first, on the newline-normalized-but-**not-name-stripped** text, so it stays independent
 of any one member's name; the kept card then takes its heading (the interchange, else the stop) and

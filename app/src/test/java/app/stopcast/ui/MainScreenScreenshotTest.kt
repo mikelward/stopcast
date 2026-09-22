@@ -27,7 +27,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.stopcast.domain.Departure
+import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.RoutePattern
@@ -441,6 +443,61 @@ class MainScreenScreenshotTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("to catch your bus", substring = true).assertExists()
         captureSnapshot("main-near-me-bus-closure-expanded.png")
+    }
+
+    @Test
+    fun `a stop-closure alert offers a dismiss control that reports the row`() {
+        val stop = StopArrivals(
+            "490000001A", "Example Road", emptyList(),
+            fetchedAt = now.minusSeconds(60),
+            disruptions = listOf(StopDisruption("Bus Stop Closed")),
+            arrivalsFresh = false,
+            clusterId = "490G000EXAMPLE",
+        )
+        var dismissedRow: DepartureRow? = null
+        capture("main-near-me-alert-dismiss.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                now,
+                {},
+                stopDistanceMeters = mapOf("490000001A" to 40.0),
+                onDismissAlert = { dismissedRow = it },
+            )
+        }
+        // The closure card offers a dismiss (×) control.
+        composeRule.onNodeWithContentDescription("Dismiss alert").assertExists()
+        // Tapping it reports the closure's row to the host, which persists the dismissal.
+        composeRule.onNodeWithContentDescription("Dismiss alert").performClick()
+        composeRule.waitForIdle()
+        assertEquals("490000001A", dismissedRow?.stopId)
+    }
+
+    @Test
+    fun `a dismissed stop-closure alert is hidden`() {
+        // Rendered with the alert already in the dismissed set, its card does not show — the same
+        // notice at the same place, once reworded, would no longer match and would return.
+        val stop = StopArrivals(
+            "490000001A", "Example Road", emptyList(),
+            fetchedAt = now.minusSeconds(60),
+            disruptions = listOf(StopDisruption("Bus Stop Closed")),
+            arrivalsFresh = false,
+            clusterId = "490G000EXAMPLE",
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("490000001A" to 40.0),
+                        dismissed = setOf(DismissedAlert("490G000EXAMPLE", "Bus Stop Closed")),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Bus Stop Closed", substring = true).assertDoesNotExist()
     }
 
     @Test
