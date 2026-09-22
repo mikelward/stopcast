@@ -12,7 +12,15 @@ package app.stopcast.domain
  * a real TfL severity — is **not** a fallback: it keeps its severity and the generic label,
  * so a severe-but-unworded closure is never demoted behind a milder named status.
  */
-data class ResolvedDisruption(val label: String, val severity: Int, val isFallback: Boolean = false)
+data class ResolvedDisruption(
+    val label: String,
+    val severity: Int,
+    val isFallback: Boolean = false,
+    // The entry's own free-text reason (trimmed), carried through so the chosen disruption's
+    // prose reaches [LineStatus.fullText] for the route detail view — the compact label is
+    // [label], the prose is this. Blank when TfL gave no reason for the entry.
+    val fullText: String = "",
+)
 
 /**
  * Resolves one TfL line-status entry to its chip label and a comparable severity.
@@ -48,7 +56,7 @@ fun resolveDisruption(
     // and only borrows the generic label — it is NOT a fallback, so a severe-but-unworded
     // status still ranks by that severity and is never demoted behind a milder named one.
     if (description.lowercase() !in CATCH_ALL_DESCRIPTIONS) {
-        return ResolvedDisruption(description.ifBlank { SERVICE_ALERT_LABEL }, statusSeverity)
+        return ResolvedDisruption(description.ifBlank { SERVICE_ALERT_LABEL }, statusSeverity, fullText = reason.trim())
     }
     // The "Special Service" catch-all: infer the label from the reason, taking the most
     // severe when several are named, and let that label supply the severity. When nothing is
@@ -57,8 +65,8 @@ fun resolveDisruption(
     return DISRUPTION_KEYWORDS
         .filter { keyword -> keyword.needles.any { it in text } }
         .minByOrNull { it.severity }
-        ?.let { ResolvedDisruption(it.label, it.severity) }
-        ?: ResolvedDisruption(SERVICE_ALERT_LABEL, SERVICE_ALERT_SEVERITY, isFallback = true)
+        ?.let { ResolvedDisruption(it.label, it.severity, fullText = reason.trim()) }
+        ?: ResolvedDisruption(SERVICE_ALERT_LABEL, SERVICE_ALERT_SEVERITY, isFallback = true, fullText = reason.trim())
 }
 
 /**

@@ -156,4 +156,49 @@ class TflLineStatusDtoTest {
         assertTrue(result.disrupted)
         assertEquals("Service Alert", result.description)
     }
+
+    @Test
+    fun `retains the shown disruption's full reason text for the detail view`() {
+        // The chip is the short label; the detail shows the prose. A graded status carries its
+        // reason through to fullText, trimmed.
+        val reason = "Victoria line: Severe delays while we fix a signal failure at Victoria."
+        val result = checkNotNull(line(status(6, "Severe Delays", "  $reason  ")).toLineStatus())
+        assertEquals("Severe Delays", result.description)
+        assertEquals(reason, result.fullText)
+    }
+
+    @Test
+    fun `the reason retained is the chosen entry's, not a coexisting milder one`() {
+        // Suspended wins over the diversion catch-all; the retained prose must be the suspension's,
+        // so the detail's text matches the chip it sits under rather than a discarded status.
+        val result = checkNotNull(
+            line(
+                status(0, "Special Service", "Buses diverted via London Wall."),
+                status(2, "Suspended", "No service while we deal with a fault."),
+            ).toLineStatus(),
+        )
+        assertEquals("Suspended", result.description)
+        assertEquals("No service while we deal with a fault.", result.fullText)
+    }
+
+    @Test
+    fun `a diversion named from the catch-all keeps the catch-all's reason as its text`() {
+        val result = checkNotNull(
+            line(status(0, "Special Service", "Buses will be diverted and miss stops."))
+                .toLineStatus(),
+        )
+        assertEquals("Diversion", result.description)
+        assertEquals("Buses will be diverted and miss stops.", result.fullText)
+    }
+
+    @Test
+    fun `a good service carries no full text`() {
+        assertNull(checkNotNull(line(status(10, "Good Service")).toLineStatus()).fullText)
+    }
+
+    @Test
+    fun `a disruption TfL gave no reason for carries no full text`() {
+        // Nothing to expand beyond the chip label — the detail shows the label alone.
+        assertNull(checkNotNull(line(status(4, "Part Suspended")).toLineStatus()).fullText)
+    }
 }

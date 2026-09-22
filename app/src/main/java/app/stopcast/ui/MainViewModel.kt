@@ -291,6 +291,12 @@ class MainViewModel(
             // not overwrite a complete saved snapshot with carried arrivalsFresh=false rows.
             var anyFreshArrivals = false
             var disruptionUnknown = false
+            // The stops whose STOP-level disruption lookup failed this cycle (a closure/move was
+            // never checked), tracked per stop because that axis is independent of line status:
+            // a stop's line can be determined (good service) while its own disruption request
+            // failed, and a per-stop surface must still say "couldn't check" for it rather than
+            // pass it off as clean (SPEC principle 1, Codex on #100).
+            val stopsDisruptionUnknown = mutableSetOf<String>()
             // Memoizes this refresh's hub-name attempts — successes AND failures — so a hub shared
             // by several disrupted stops is requested at most once per refresh, even when the
             // lookup fails: without it a failing hub would be re-requested (and re-timed-out) once
@@ -324,6 +330,7 @@ class MainViewModel(
                 } catch (e: Exception) {
                     if (firstError == null) firstError = e
                     disruptionUnknown = true
+                    stopsDisruptionUnknown += stop.id
                     warn("stop disruption fetch failed for stop ${stop.id}: ${reason(e)}")
                     null
                 }
@@ -362,6 +369,10 @@ class MainViewModel(
             // that fails leaves the arrivals shown but flags them "status unknown" rather
             // than passing them off as verified-clean.
             var lineStatuses = emptyMap<String, LineStatus>()
+            // The lines TfL actually returned a status for (good or disrupted): what lets a
+            // per-line surface tell "checked, good service" from "never checked" when only some
+            // lines are undetermined (Codex on #100). Empty when the lookup failed or wasn't made.
+            var determinedLineIds = emptySet<String>()
             if (merged.isNotEmpty()) {
                 val predictedLineIds = merged.flatMap { it.departures }.map { it.lineId }
                 val declaredLineIds = merged.flatMap { it.lines }.map { it.id }
@@ -386,6 +397,7 @@ class MainViewModel(
                         // clean — flag it so those rows aren't shown as verified-clean
                         // (the client drops such lines, so they're absent here).
                         val determined = statuses.mapTo(mutableSetOf()) { it.lineId }
+                        determinedLineIds = determined
                         val undetermined = lineIds.filterNot { it in determined }
                         if (undetermined.isNotEmpty()) {
                             disruptionUnknown = true
@@ -434,6 +446,8 @@ class MainViewModel(
                         refreshFailure = if (!anyFreshData && firstError != null) kindOf(firstError) else null,
                         lineStatuses = lineStatuses,
                         disruptionUnknown = disruptionUnknown,
+                        determinedLineIds = determinedLineIds,
+                        stopsDisruptionUnknown = stopsDisruptionUnknown,
                     )
                 // Nothing came back and nothing failed → there were no stops to fetch
                 // (no watched stops yet, or the seed is empty). That's an empty list, not

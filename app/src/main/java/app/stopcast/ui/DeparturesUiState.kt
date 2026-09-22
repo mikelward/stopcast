@@ -37,9 +37,23 @@ sealed interface DeparturesUiState {
      * [lineStatuses] carries the disruptions found for the shown lines (keyed by line id,
      * disrupted lines only), so a delayed or suspended line's rows are marked rather than
      * shown as trustworthy (SPEC *Disruptions* / D3). [disruptionUnknown] is true when the
-     * status lookup itself failed while arrivals succeeded: the disruption state of these
-     * departures was never checked, so the screen says so rather than pass them off as
+     * status lookup itself failed while arrivals succeeded: the disruption state of some of
+     * these departures was never checked, so the screen says so rather than pass them off as
      * verified-clean (SPEC *Disruptions*).
+     *
+     * [determinedLineIds] is the set of line ids TfL actually returned a status for (good or
+     * disrupted). It is what tells a *specific* line's absent [lineStatuses] entry apart —
+     * "checked, good service" (id present here) from "never checked" (id absent) — so a
+     * per-line surface (the route detail) can say "couldn't check" for only the lines that
+     * weren't checked, even when [disruptionUnknown] is set by a *different* line (a blank
+     * line id, or one TfL omitted). Empty when the whole lookup failed or wasn't made.
+     *
+     * [stopsDisruptionUnknown] is the second, independent uncertainty axis: stop ids whose
+     * *stop-level* disruption lookup (a closure, a moved stop) failed this cycle, while the
+     * line-status lookup is separate and may have succeeded. A row on such a stop is never
+     * "clean" even when its line was determined — a closure was never checked — so a per-stop
+     * surface consults this too, not just [determinedLineIds] (SPEC principle 1). Empty when
+     * every stop's disruption lookup returned.
      */
     data class Loaded(
         val stops: List<StopArrivals>,
@@ -48,6 +62,8 @@ sealed interface DeparturesUiState {
         val refreshFailure: Error.Kind? = null,
         val lineStatuses: Map<String, LineStatus> = emptyMap(),
         val disruptionUnknown: Boolean = false,
+        val determinedLineIds: Set<String> = emptySet(),
+        val stopsDisruptionUnknown: Set<String> = emptySet(),
     ) : DeparturesUiState
 
     /**

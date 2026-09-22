@@ -26,6 +26,17 @@
     <!-- Transient snackbar when saving a pin/unpin fails (storage full, an IO error), so a
          tap that didn't take isn't silent. -->
     <string name="star_write_failed">Couldn\'t save your pin</string>
+    <!-- Route detail dialog, opened by a tap on a departure/route card (a long-press still pins).
+         `departure_details` is the card's tap action label a screen reader announces. The dialog
+         carries the star (the discoverable, labeled control) and the line's full disruption text. -->
+    <string name="departure_details">Show details</string>
+    <!-- %1$s is a comma-separated list of the terminus names the service runs to. -->
+    <string name="route_detail_towards">Towards %1$s</string>
+    <string name="route_detail_no_disruption">No disruptions reported</string>
+    <!-- Shown in the route detail when its snapshot is stale: the disruption status is from old
+         data, so the detail (which carries no freshness stamp of its own) says so rather than
+         present stale status as current (SPEC D4). Not a "no disruptions" claim. -->
+    <string name="route_detail_status_stale">Status may be out of date</string>
     <!-- Shown when some watched stops refreshed but at least one failed. -->
     <string name="partial_refresh">Some stops couldn\'t be refreshed</string>
     <!-- Shown when arrivals loaded but the disruption lookup failed, so these times'

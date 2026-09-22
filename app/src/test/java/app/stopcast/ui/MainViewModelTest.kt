@@ -509,6 +509,9 @@ class MainViewModelTest {
         state as DeparturesUiState.Loaded
         assertEquals(listOf("940GZZLUOXC", "940GZZLUKSX"), state.stops.map { it.stopId })
         assertTrue(state.disruptionUnknown)
+        // Only the stop whose disruption lookup failed is unchecked — per-stop, so its rows
+        // read "couldn't check" while the other stop's determined rows stay clean (Codex #100).
+        assertEquals(setOf("940GZZLUOXC"), state.stopsDisruptionUnknown)
     }
 
     @Test

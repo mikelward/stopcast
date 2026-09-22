@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.luminance
@@ -72,6 +76,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.traversalIndex
@@ -387,6 +392,26 @@ private fun LoadedContent(
         DepartureRows.pinStarred(ordered, starred)
     }
 
+    // The route whose detail dialog is open, held by its stable row identity rather than the row
+    // object: a saveable String survives a configuration change (the dialog stays open on rotation)
+    // and resets on process death, and it re-resolves against the current `rows` each recomposition
+    // so the dialog reflects a refreshed row and closes on its own if the row leaves the list — the
+    // coordinate/prediction it shows is never persisted (mirrors the bug-report dialog's approach).
+    var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val detailRow = detailKey?.let { key ->
+        rows.firstOrNull { "${it.stopId}|${it.lineId}|${it.directionKey}" == key }
+    }
+    // When the open route's row leaves the list — its last departure passed on the 10s clock, or it
+    // was pruned — the dialog stops rendering, but the saved key would linger and silently reopen
+    // the dialog if a later refresh reproduced that same stop/line/direction identity. Clear the key
+    // once the lookup finds no row so a vanished dialog stays closed until the user opens it again
+    // (Codex). A live refresh keeps the same identity, so this fires only on a genuine disappearance.
+    LaunchedEffect(detailKey, detailRow == null) {
+        if (detailKey != null && detailRow == null) {
+            detailKey = null
+        }
+    }
+
     // Pull-to-refresh over the whole loaded surface (SPEC D6).
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = modifier) {
         Column(Modifier.fillMaxSize()) {
@@ -430,10 +455,33 @@ private fun LoadedContent(
             } else {
                 DepartureList(
                     rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
-                    revealableModes, onReveal, Modifier.fillMaxSize(),
+                    revealableModes, onReveal,
+                    onOpenDetail = { detailKey = "${it.stopId}|${it.lineId}|${it.directionKey}" },
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
+    }
+    if (detailRow != null) {
+        RouteDetailDialog(
+            row = detailRow,
+            isStarred = StarredRow.of(detailRow) in starred,
+            // Same rule as the list card: only a timed row with starring available is pinnable.
+            starrable = starringAvailable && detailRow.stopDisruption == null && detailRow.upcoming.isNotEmpty(),
+            // Per this row, not the whole-screen flag, across BOTH uncertainty axes: its line
+            // wasn't determined (a blank id, or one TfL omitted), OR its stop's own disruption
+            // lookup (a closure/move) failed. Either leaves the row unchecked — a row is "clean"
+            // only when TfL checked its line (good service) AND its stop's disruption returned,
+            // even when another line or stop is unknown (SPEC principle 1, Codex on #100).
+            disruptionUnknown = detailRow.lineId.isBlank() ||
+                detailRow.lineId !in state.determinedLineIds ||
+                detailRow.stopId in state.stopsDisruptionUnknown,
+            // This row's own age (same per-row rule the card uses to withhold countdowns): a stale
+            // snapshot's disruption status isn't presented as current (SPEC D4).
+            stale = Staleness.isStale(Duration.between(detailRow.fetchedAt, now).toKotlinDuration()),
+            onToggleStar = { onToggleStar(detailRow) },
+            onDismiss = { detailKey = null },
+        )
     }
 }
 
@@ -488,6 +536,7 @@ private fun DepartureList(
     stopDistanceMeters: Map<String, Double>,
     revealableModes: Set<String>,
     onReveal: (String) -> Unit,
+    onOpenDetail: (DepartureRow) -> Unit,
     modifier: Modifier,
 ) {
     // Stop-closure alerts render as standalone, header-less cards at the top of the list —
@@ -544,6 +593,7 @@ private fun DepartureList(
                     isStarred = StarredRow.of(row) in starred,
                     onToggleStar = { onToggleStar(row) },
                     starAvailable = starringAvailable,
+                    onOpenDetail = { onOpenDetail(row) },
                 )
             }
         }
@@ -663,6 +713,10 @@ private fun DepartureRowCard(
     isStarred: Boolean = false,
     onToggleStar: () -> Unit = {},
     starAvailable: Boolean = true,
+    // Open the tap-to-open route detail (star + full disruption text, SPEC D8 / *Disruptions*).
+    // Default no-op so an unwired build/test renders the list without it; a stop-closure row
+    // ignores it (that card expands in place instead — see below).
+    onOpenDetail: () -> Unit = {},
 ) {
     // Staleness is per row, from this row's own stop age: a stop that failed to refresh
     // withholds its countdowns ("—") while a fresh stop beside it stays live (SPEC D4).
@@ -675,32 +729,58 @@ private fun DepartureRowCard(
     // and the card's 16dp padding. No real line name reaches the cap at the default font.
     val cardInnerWidth = LocalConfiguration.current.screenWidthDp.dp - 64.dp
     val pillModifier = Modifier.widthIn(max = cardInnerWidth * 0.5f)
-    // Star (pin-to-top, SPEC D8) is toggled by a long-press on the card, not a per-row button:
-    // the 48dp IconButton it replaced ate width on every row and crowded the one-line countdown
-    // at large font scales. Only a timed row is starrable — a closure or no-departures status row
-    // was never pinnable — and only when starring is available.
+    // Two gestures on a route card: a TAP opens the detail view (star + full disruption text),
+    // and a LONG-PRESS is the pin-to-top shortcut (SPEC D8) — the star is a per-row button no
+    // longer, since a 48dp IconButton ate width on every row and crowded the one-line countdown.
+    // A stop-closure row is neither tappable-to-detail nor starrable: its own `StopClosureContent`
+    // Surface handles the tap (expand in place), and a whole-stop closure was never pinnable.
+    // Only a timed row is starrable — a no-departures status row has nothing to rank — and only
+    // when starring is available; but a status row is still tappable, so its full disruption text
+    // is reachable.
     //
-    // The long-press is a `pointerInput` gesture plus a `semantics` long-click action, NOT
-    // `combinedClickable`: `combinedClickable` merges the card's descendant semantics into one
-    // node, which flattens the disrupted row's warning-first traversal order (the chip's
-    // `traversalIndex = -1f` below) and also registers a real click action that would do nothing
-    // (a misleading ripple, and a dead TalkBack activate) since a tap has no behavior yet (Codex).
-    // This keeps the descendants separately ordered and exposes only the labeled long-click.
+    // Both are a `pointerInput` gesture plus `semantics` actions, NOT `combinedClickable`:
+    // `combinedClickable` merges the card's descendant semantics into one node, which flattens the
+    // disrupted row's warning-first traversal order (the chip's `traversalIndex = -1f` below). The
+    // gesture and the non-merging `semantics` block keep the descendants separately ordered while
+    // exposing the labeled tap (now a real action — the detail view) and long-press.
+    val tappable = row.stopDisruption == null
     val starrable = starAvailable && row.stopDisruption == null && row.upcoming.isNotEmpty()
     val starActionLabel = stringResource(if (isStarred) R.string.unstar else R.string.star)
-    // Read the latest callback without re-keying the gesture: `DepartureList` rebuilds the per-row
-    // `onToggleStar` on every recomposition, and the 10s `tickingNow` clock recomposes the rows —
-    // so keying `pointerInput` on the callback would cancel an in-progress long-press each tick and
-    // drop its down event (Codex). Key on `Unit` (stable) and invoke the current callback via
+    val detailActionLabel = stringResource(R.string.departure_details)
+    // Read the latest callbacks without re-keying the gesture: `DepartureList` rebuilds the per-row
+    // callbacks on every recomposition, and the 10s `tickingNow` clock recomposes the rows — so
+    // keying `pointerInput` on a callback would cancel an in-progress long-press each tick and drop
+    // its down event (Codex). Key on `Unit` (stable) and invoke the current callbacks via
     // `rememberUpdatedState`.
     val currentToggleStar by rememberUpdatedState(onToggleStar)
+    val currentOpenDetail by rememberUpdatedState(onOpenDetail)
+    // Long-press pins, but only where the row is starrable; typed so the nullable handler is
+    // unambiguous (a status row keeps its tap-to-detail with no long-press).
+    val onLongPress: ((Offset) -> Unit)? = if (starrable) {
+        { currentToggleStar() }
+    } else {
+        null
+    }
     val cardModifier = Modifier.fillMaxWidth().let { base ->
-        if (starrable) {
+        if (tappable) {
             base
-                .pointerInput(Unit) {
-                    detectTapGestures(onLongPress = { currentToggleStar() })
+                // Keyed on `starrable`, not `Unit`: at a cold start the persisted list can render
+                // before `starringAvailable` flips false→true, capturing onLongPress = null; keying
+                // on `starrable` restarts the gesture on that transition so long-press starts
+                // working (Codex). `starrable` is stable across the 10s tick — it flips only on that
+                // rare availability change, not per recomposition — so this doesn't re-key each tick
+                // and drop an in-progress long-press (the callbacks are still read via
+                // rememberUpdatedState to keep the per-tick callback churn from re-keying).
+                .pointerInput(starrable) {
+                    detectTapGestures(
+                        onTap = { currentOpenDetail() },
+                        onLongPress = onLongPress,
+                    )
                 }
-                .semantics { onLongClick(label = starActionLabel) { currentToggleStar(); true } }
+                .semantics {
+                    onClick(label = detailActionLabel) { currentOpenDetail(); true }
+                    if (starrable) onLongClick(label = starActionLabel) { currentToggleStar(); true }
+                }
         } else {
             base
         }
@@ -802,8 +882,8 @@ private fun DepartureRowCard(
                 // No trailing star element at all — the whole point is to reclaim the width the
                 // per-row button took on every card. A starred (pinned) service is marked by the
                 // card's gold border (see cardBorder above) and its position at the top of the
-                // list (SPEC D8); long-press the card to pin/unpin. A visible, labeled star
-                // returns with the tap-to-open stop detail view (deferred, TODO.md).
+                // list (SPEC D8); long-press the card to pin/unpin, or tap it for the detail view,
+                // where a visible, labeled star is the discoverable path ([RouteDetailDialog]).
             }
             // A disrupted line is flagged below the departures, left-aligned with the pill,
             // but announced first (traversalIndex) so the warning precedes the countdowns it
@@ -837,13 +917,38 @@ private fun DepartureRowCard(
  */
 @Composable
 private fun StopClosureContent(disruption: String, title: String) {
-    var expanded by rememberSaveable(disruption) { mutableStateOf(false) }
+    CollapsibleStatus(text = disruption, title = title)
+}
+
+/**
+ * The shared "first line, tap to expand" disruption surface (SPEC *Disruptions* / *Concise
+ * copy*): an error-toned rounded box that collapsed shows [text]'s first line alone and
+ * expanded shows it in full, with a chevron marking it expandable. Used for the stop-closure
+ * card ([StopClosureContent], where [title] is the interchange/stop name shown on expand) and
+ * for the route detail's line disruption ([RouteDetailDialog], where [title] is null — the
+ * dialog header already carries the line and place).
+ *
+ * The `text` `Text` exposes its full string to the accessibility tree regardless of the visual
+ * clip, so a screen reader reads the whole notice whether or not it is expanded; the tap only
+ * changes what is drawn. Expanded state is `rememberSaveable`, keyed on [text], so it survives a
+ * configuration change and never bleeds onto a different notice when a `LazyColumn` row is
+ * recycled.
+ */
+@Composable
+private fun CollapsibleStatus(
+    text: String,
+    title: String?,
+    modifier: Modifier = Modifier,
+    container: Color = MaterialTheme.colorScheme.errorContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onErrorContainer,
+) {
+    var expanded by rememberSaveable(text) { mutableStateOf(false) }
     val clickLabel = stringResource(if (expanded) R.string.alert_collapse else R.string.alert_expand)
     Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        color = container,
+        contentColor = contentColor,
         shape = RoundedCornerShape(8.dp),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClickLabel = clickLabel) { expanded = !expanded },
     ) {
@@ -852,9 +957,9 @@ private fun StopClosureContent(disruption: String, title: String) {
             verticalAlignment = Alignment.Top,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                // The interchange (or stop) name titles the alert, shown only on expand — the
-                // collapsed card is the notice's first line alone.
-                if (expanded) {
+                // A title (the interchange/stop name) is shown only on expand, and only when
+                // given — the collapsed surface is the notice's first line alone.
+                if (expanded && title != null) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleSmall,
@@ -862,11 +967,11 @@ private fun StopClosureContent(disruption: String, title: String) {
                     )
                 }
                 Text(
-                    text = disruption,
+                    text = text,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = if (expanded) Int.MAX_VALUE else 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = if (expanded) Modifier.padding(top = 4.dp) else Modifier,
+                    modifier = if (expanded && title != null) Modifier.padding(top = 4.dp) else Modifier,
                 )
             }
             // A quiet chevron marks the row as expandable; the click label carries the action
@@ -878,6 +983,172 @@ private fun StopClosureContent(disruption: String, title: String) {
             )
         }
     }
+}
+
+/**
+ * The tap-to-open route detail (SPEC D8 / *Disruptions*, `TODO.md`): the discoverable, labeled
+ * home for the star (the list card only long-presses to pin), plus the full disruption text the
+ * compact chip stands in for. Opened by a tap on a timed or line-status card; a stop-closure card
+ * expands in place instead, so it never reaches here.
+ *
+ * A dialog rather than a bottom sheet (maintainer, 2026-09-22). Mirrors [AboutDialog]: a dialog
+ * opens its own window that doesn't inherit the theme's scaled density or pinch handler (SPEC
+ * *Display size*), so [pinchFontSizeHost] hosts the pinch and each slot is wrapped in
+ * [FontSizeWindow].
+ *
+ * Pure: renders only [row] and reports the two actions. The star row shows only when [starrable]
+ * (a timed row with starring available) — a no-departures status row has nothing to rank, matching
+ * the list's own rule — while the disruption text shows whenever the line carries prose, so a
+ * status row still opens to its full alert.
+ */
+@Composable
+internal fun RouteDetailDialog(
+    row: DepartureRow,
+    isStarred: Boolean,
+    starrable: Boolean,
+    // True when THIS row's line status is unchecked (its line was blank-id or omitted by TfL, or
+    // the lookup failed) rather than checked-clean: a null status is then "unknown", not "no
+    // disruptions", so the detail says so (SPEC principle 1 — never present unverified as
+    // verified-clean). The caller decides this per line, so one unknown line doesn't taint a
+    // checked-clean row's detail.
+    disruptionUnknown: Boolean,
+    // True when this row's snapshot has crossed the staleness threshold: the disruption status is
+    // from an old fetch, so the detail — which carries no freshness stamp of its own, unlike the
+    // list — caveats it and never claims "no disruptions" from stale data (SPEC D4).
+    stale: Boolean,
+    onToggleStar: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val place = row.hubName.ifBlank { row.stopName }
+    // The terminus(es) this service runs to, from its own departures — empty for a status row
+    // (no predictions), which then shows only the line and its disruption.
+    val destinations = if (row.upcoming.isEmpty()) {
+        emptyList()
+    } else {
+        DepartureRows.destinationLines(row, MAX_TIMES, LocalRouteTopology.current)
+            .mapNotNull { DepartureLabels.destinationLabel(it.destination, row.directionKey) }
+            .distinct()
+    }
+    AlertDialog(
+        modifier = Modifier.pinchFontSizeHost(),
+        onDismissRequest = onDismiss,
+        title = {
+            FontSizeWindow {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode)
+                    if (place.isNotBlank()) {
+                        Text(
+                            text = place,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).padding(start = 8.dp),
+                        )
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    // The star (pin-to-top) is a top-right icon button — the discoverable control,
+                    // shown only where the row is pinnable (same rule the list card uses). Filled and
+                    // gold when starred, matching the list card's gold pin border; the vendored
+                    // outline star when not (material-icons-core ships the filled Star but not its
+                    // outline). There is no visible label — the contentDescription flips with state
+                    // so a screen reader still hears what the tap does (SPEC principle 2).
+                    if (starrable) {
+                        IconButton(onClick = onToggleStar) {
+                            Icon(
+                                imageVector = if (isStarred) Icons.Filled.Star else StarBorderIcon,
+                                contentDescription = stringResource(
+                                    if (isStarred) R.string.unstar else R.string.star,
+                                ),
+                                tint = if (isStarred) {
+                                    LocalStarredBorderColor.current
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        text = {
+            FontSizeWindow {
+                // Scrollable: an expanded alert (a long TfL reason, or a large text size) can exceed
+                // the dialog's bounded height, which would otherwise clip the full text this feature
+                // exists to expose (Codex; same discipline as the consent dialog).
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    if (destinations.isNotEmpty()) {
+                        Text(
+                            // "Towards Brixton, Walthamstow Central" — the terminus(es) this
+                            // service runs to, so the detail names the route, not only the line.
+                            text = stringResource(R.string.route_detail_towards, destinations.joinToString(", ")),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    val status = row.status
+                    if (status != null) {
+                        // The short chip label always; the full prose below it, collapsed to its
+                        // first line with tap-to-expand, when TfL gave a reason (SPEC *Disruptions*).
+                        DisruptionChip(status.description, Modifier.padding(top = 12.dp))
+                        status.fullText?.let { fullText ->
+                            CollapsibleStatus(
+                                text = fullText,
+                                title = null,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                    }
+                    // The disruption-check state, independent of staleness (the two caveats are
+                    // separate facts, both shown when both apply — Codex): "couldn't check" whenever
+                    // this row's line was undetermined OR its stop's disruption lookup failed — a
+                    // known line alert doesn't mean the stop-level closure/move check ran, so the
+                    // note sits alongside the alert too, and the stale caveat below never stands in
+                    // for it. "No disruptions reported" only when determined-clean AND fresh — never
+                    // claimed from stale or unchecked data (SPEC principle 1 / D4). A stale but
+                    // determined-clean row shows neither here; the stale caveat below covers it.
+                    if (disruptionUnknown) {
+                        Text(
+                            text = stringResource(R.string.disruptions_unknown),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    } else if (status == null && !stale) {
+                        Text(
+                            text = stringResource(R.string.route_detail_no_disruption),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
+                    // The detail has no freshness stamp of its own, so a stale snapshot is caveated
+                    // here — an independent fact from the disruption-check state above: it sits
+                    // under a shown disruption (which may be resolved or superseded), replaces a
+                    // "no disruptions" claim (a new one may exist), and sits alongside a "couldn't
+                    // check" note (age and a failed check are different gaps) alike (SPEC D4).
+                    if (stale) {
+                        Text(
+                            text = stringResource(R.string.route_detail_status_stale),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            FontSizeWindow {
+                // The star moved to the title's top-right icon button, so the only action button
+                // here is Close — no bottom text action for pinning (maintainer, 2026-09-22).
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+            }
+        },
+    )
 }
 
 /**
