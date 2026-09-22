@@ -1,6 +1,7 @@
 package app.stopcast.data
 
 import app.stopcast.domain.TflException
+import app.stopcast.domain.TflRateLimiter
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -239,6 +240,46 @@ class KtorTflClientTest {
           ]
         }
         """.trimIndent()
+
+    @Test
+    fun `the rate limiter gates each request, and its RateLimited surfaces without a network call`() = runTest {
+        var requests = 0
+        var acquires = 0
+        val engine = MockEngine { _ ->
+            requests++
+            respond(
+                content = ByteReadChannel("[]"),
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val http = HttpClient(engine) {
+            expectSuccess = true
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        }
+        // A limiter that grants the first token, then reports the budget spent — so the second
+        // request is turned away before any network call is made.
+        val limiter = object : TflRateLimiter {
+            override suspend fun acquire() {
+                acquires++
+                if (acquires > 1) throw TflException.RateLimited(null)
+            }
+        }
+        val client = KtorTflClient(httpClient = http, baseUrl = "https://tfl.example", rateLimiter = limiter)
+
+        client.arrivals("940GZZLUVIC")
+        assertEquals("the granted request hit the network", 1, requests)
+
+        var rateLimited = false
+        try {
+            client.arrivals("940GZZLUVIC")
+        } catch (e: TflException.RateLimited) {
+            rateLimited = true
+        }
+        assertTrue("a turned-away request surfaces RateLimited", rateLimited)
+        assertEquals("the limiter was consulted for both requests", 2, acquires)
+        assertEquals("the turned-away request made no network call", 1, requests)
+    }
 
     private fun client(
         body: String,

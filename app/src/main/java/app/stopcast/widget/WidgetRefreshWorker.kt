@@ -15,6 +15,7 @@ import androidx.work.await
 import app.stopcast.data.DataStoreAppSettings
 import app.stopcast.data.DataStoreSnapshotStore
 import app.stopcast.data.KtorTflClient
+import app.stopcast.data.SharedTflRateLimiter
 import app.stopcast.data.logAppSettingsWarning
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.WidgetRefresh
@@ -195,7 +196,7 @@ class WidgetRefreshWorker(appContext: Context, params: WorkerParameters) :
         try {
             val http = KtorTflClient.defaultHttpClient()
             try {
-                val client = KtorTflClient(http)
+                val client = KtorTflClient(http, rateLimiter = SharedTflRateLimiter.instance)
                 val refreshed = WidgetRefresh.refreshedArrivals(prior, Instant.now()) { stopId ->
                     try {
                         client.arrivals(stopId)

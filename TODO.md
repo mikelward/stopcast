@@ -614,7 +614,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         **Impact:** the Nth "More" tap drops from re-fetching every shown pole to just the newly
         revealed page — on a list already expanded a few pages, roughly a 60–80% cut on that tap;
         steady-state auto-refresh unchanged (it already fetches the whole shown set once).
-  - [ ] **A shared client-side TfL limiter — best-effort throttling toward the budget**
+  - [x] **A shared client-side TfL limiter — best-effort throttling toward the budget**
         (2026-09-22). The items above *reduce* request demand; none *bounds* it, so a future caller
         (a new surface, a tighter refresh interval) can still push over. Add a token bucket sized to
         the active budget — ~50 req/min keyless, ~500 with a user `app_key` (below) — that
@@ -639,6 +639,23 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         biggest single demand cut). **Impact (est.):** total requests unchanged; bounds the app's
         in-process outbound rate toward the budget, turning a likely 429 storm at a dense corner into
         staying within budget in the common case; the residual is the process-restart window above.
+        **Shipped** as an in-memory shared token bucket: `domain/TflRateLimiter.kt`
+        (`TokenBucketRateLimiter` — burst up to capacity, then paced at the refill rate, which is
+        what staggers the cold-start fan-out; a wait past a bound surfaces `RateLimited`), the one
+        `SharedTflRateLimiter.instance` wired into all three client construction sites, gated inside
+        `KtorTflClient.tflRequest`. Saves the two deferred pieces for follow-ups below.
+  - [ ] **Persist the limiter's accounting across restarts** (item-6 follow-up, 2026-09-22). The
+        shipped bucket is in-memory, so it resets on process death / WorkManager restart while TfL
+        still counts the prior calls, and doesn't span the widget process — the cold-start-after-
+        update window. A small on-disk ring of recent request timestamps, reloaded at start, would
+        close it. Worth doing **only if it stays cheap** (maintainer, 2026-09-22) — a DataStore
+        read/write on every request is not; a periodic/batched flush might be. Otherwise leave it
+        best-effort.
+  - [ ] **Size the shared limiter to the active budget from the user `app_key`** (item-6 follow-up,
+        2026-09-22). It's fixed at the keyless ~50/min today because the clients aren't yet passed an
+        `app_key`. When the key is threaded to the clients (the Settings paste path), derive the
+        bucket's capacity/refill from it (~500/min with a key, SPEC D7), and decide how a mid-session
+        key change re-sizes the singleton (simplest: next process start).
   - [ ] **Batch a junction's poles into one request if TfL's arrivals/disruption endpoints accept
         comma-separated stop ids** (2026-09-22). Today each lettered pole is its own
         `/StopPoint/{id}/Arrivals` + disruption call, so a junction cluster is many requests — the

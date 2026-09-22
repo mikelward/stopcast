@@ -6,6 +6,7 @@ import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.StopFinder
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.TflClient
+import app.stopcast.domain.TflRateLimiter
 import app.stopcast.domain.cleanStopName
 import app.stopcast.domain.TflException
 import io.ktor.client.HttpClient
@@ -38,6 +39,11 @@ class KtorTflClient(
     private val httpClient: HttpClient,
     private val baseUrl: String = DEFAULT_BASE_URL,
     private val appKey: String? = null,
+    // The shared TfL limiter (item 6). Every request acquires a token first, so a dense corner
+    // or a new caller throttles toward the budget instead of firing a 429 storm. Defaults to the
+    // no-op limiter so a test (or an unwired client) runs unthrottled; production passes the one
+    // shared bucket ([SharedTflRateLimiter]).
+    private val rateLimiter: TflRateLimiter = TflRateLimiter.UNLIMITED,
 ) : TflClient, StopFinder {
     override suspend fun arrivals(stopId: String): List<Departure> =
         tflRequest {
@@ -109,6 +115,11 @@ class KtorTflClient(
      */
     private suspend inline fun <T> tflRequest(block: () -> T): T =
         try {
+            // Throttle toward the budget before issuing the request (item 6). acquire() may
+            // suspend (deferring this background refresh) or throw RateLimited when the budget is
+            // spent; both are handled below — RateLimited propagates as the honest state, and a
+            // canceled wait rethrows CancellationException.
+            rateLimiter.acquire()
             block()
         } catch (e: CancellationException) {
             // Never swallow cancellation — rethrow first so structured concurrency
