@@ -64,9 +64,13 @@ import app.stopcast.widget.StopCastWidget
 import app.stopcast.widget.WidgetSnapshotStore
 import app.stopcast.widget.applyLiveWidgetRefresh
 import app.stopcast.widget.syncLiveWidgetRefreshSchedule
+import androidx.core.content.FileProvider
 import androidx.glance.appwidget.updateAll
+import com.mikelward.androidlog.DebugLog
 import com.mikelward.androidlog.android.DebugReport
+import com.mikelward.androidlog.android.ReportScreenshot
 import com.mikelward.androidlog.android.ShareOutcome
+import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +78,26 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * Turns a captured screenshot [file] into a shareable `content://` URI, degrading to `null` — a
+ * text-only report, never a dropped share (SPEC principle 2) — rather than letting a `FileProvider`
+ * failure escape the application-scoped share coroutine and crash it. The app mints the URI (the
+ * provider and its authority are the app's), so this guard lives here rather than in the shared
+ * capture, which took the app-local copy's place. [mint] is `FileProvider.getUriForFile` in
+ * production, injected so the fallback is testable without a real provider. The orphaned PNG is
+ * best-effort deleted; the shared capture's age-prune reclaims it otherwise.
+ */
+internal fun bugReportScreenshotUri(file: File, log: DebugLog, mint: (File) -> Uri): Uri? =
+    try {
+        mint(file)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warning("bug report: could not build the screenshot URI: %s", e.javaClass.simpleName)
+        file.delete()
+        null
+    }
 
 class MainActivity : ComponentActivity() {
     // The location gate: resolves the nearby stops (an on-demand, location-sending action)
@@ -356,10 +380,10 @@ class MainActivity : ComponentActivity() {
      * The shared `mikelward/androidlog` `DebugReport` does the mechanism: [DebugReport.collect]
      * reads (and, once shared, consumes) the persisted earlier runs off the main thread, wrapping
      * this app's section; [DebugReport.deliver] copies to the clipboard, attaches the screenshot,
-     * and opens the share sheet on the main thread. [BugReportScreenshot.capture] takes the shot
-     * first — of this Activity's window, which excludes the consent dialog's separate window, so
-     * it is the screen being reported, not the dialog over it; a failed capture is a text-only
-     * report, never a dropped share. A `COPIED_ONLY`/`FAILED` outcome is surfaced, not swallowed
+     * and opens the share sheet on the main thread. The shared androidlog [ReportScreenshot.capture]
+     * takes the shot first — of this Activity's window, which excludes the consent dialog's separate
+     * window, so it is the screen being reported, not the dialog over it; a failed capture is a
+     * text-only report, never a dropped share. A `COPIED_ONLY`/`FAILED` outcome is surfaced, not swallowed
      * (SPEC principle 2).
      */
     private fun shareBugReport(request: BugReportRequest) {
@@ -379,7 +403,18 @@ class MainActivity : ComponentActivity() {
         // capture guards a finished window and yields null rather than touching a stale one.
         val activity = this
         scope.launch {
-            val screenshot = BugReportScreenshot.capture(activity)
+            // The shared androidlog ReportScreenshot captures the PNG off the main thread and
+            // returns the file; this app mints the FileProvider URI from it — the provider and its
+            // authority are the app's (see the manifest and @xml/file_paths). A null capture is a
+            // text-only report, never a dropped share.
+            val screenshot = withContext(Dispatchers.IO) {
+                ReportScreenshot.capture(activity, File(context.cacheDir, "bug-reports"), StopcastDebugLog)
+                    ?.let { file ->
+                        bugReportScreenshotUri(file, StopcastDebugLog) {
+                            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it)
+                        }
+                    }
+            }
             val report = withContext(Dispatchers.IO) {
                 DebugReport.collect(StopcastDebugLog, sink) {
                     BugReport.compose(

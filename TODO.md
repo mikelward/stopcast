@@ -1298,14 +1298,17 @@ and these carry the rest as their own PRs:
       location-safe one. `docs/PRIVACY.md` and `SPEC.md` describe the channel in those terms; the
       **Play Data Safety** hand-off is a user-initiated share of diagnostics + location. Cost £0.
 - [x] **Add the screenshot to the bug report.** `androidlog` 2.1 gained the optional
-      `DebugReport.deliver(screenshot = …)` argument (PixelCopy + `FileProvider` + `EXTRA_STREAM`
-      handled in the library), so stopcast bumped `2.0.60 → 2.1.68` and wired it in:
-      `BugReportScreenshot.capture` shoots the Activity's own window (which excludes the consent
-      dialog's separate window), persists the PNG to `cacheDir/bug-reports/`, and hands the
-      `FileProvider` URI to `deliver`. A failed capture is a text-only report, never a dropped
-      share. Added the `FileProvider` + `res/xml/file_paths.xml` (cache path), and named the
-      screenshot on the consent screen (`bug_report_consent_body`), in `docs/PRIVACY.md`, `SPEC.md`,
-      and this repo's Privacy exception. This completes the richer consent-gated report above.
+      `DebugReport.deliver(screenshot = …)` argument, and 2.2 added the capture itself as the
+      shared `ReportScreenshot.capture(activity, dir, log)` — a PixelCopy of the Activity's own
+      window (which excludes the consent dialog's separate window), the off-main buffer, the
+      age-based prune, and the recycle. stopcast pins `2.2.69` and calls it off the main thread,
+      minting the `FileProvider` URI from the returned file and handing it to `deliver`. A failed
+      capture is a text-only report, never a dropped share. The `FileProvider` +
+      `res/xml/file_paths.xml` (cache path) stay app-side, and the screenshot is named on the
+      consent screen (`bug_report_consent_body`), in `docs/PRIVACY.md`, `SPEC.md`, and this repo's
+      Privacy exception. This completes the richer consent-gated report above. (First shipped
+      app-local at 2.1.68; the capture moved to the shared library at 2.2.69, so the fleet no
+      longer carries divergent copies.)
 - [ ] Finalize the store-facing privacy disclosure (location, watched stops, the TfL
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
