@@ -213,4 +213,29 @@ class StopDisruptionTest {
         val body = "St Pancras Intern'l & King's X Stns: platform alteration in progress"
         assertEquals(body, cleanDisruptionBody(body, stopName = "King's Cross St. Pancras"))
     }
+
+    @Test
+    fun `strips a leading member alias even when it differs from the watched stop name`() {
+        // You watch King's Cross St. Pancras, but the interchange's notice leads with a *different*
+        // member's name. Passing the hub's member aliases lets the strip drop it — no one name
+        // catches the interchange's spellings, the union does.
+        val raw = "St Pancras International: No step-free access to the Thameslink platforms."
+        assertEquals(
+            "No step-free access to the Thameslink platforms.",
+            cleanDisruptionBody(
+                raw,
+                stopName = "King's Cross St. Pancras",
+                hubName = "King's Cross & St Pancras International",
+                aliases = listOf("King's Cross", "London St Pancras International LL", "St Pancras International"),
+            ),
+        )
+    }
+
+    @Test
+    fun `without the alias set a different member spelling is left in the body`() {
+        // The same notice with no aliases (a stop in no hub, or a failed hub lookup): the leading
+        // name doesn't match the watched stop, so it stays — best-effort, never mangled.
+        val raw = "St Pancras International: No step-free access to the Thameslink platforms."
+        assertEquals(raw, cleanDisruptionBody(raw, stopName = "King's Cross St. Pancras"))
+    }
 }

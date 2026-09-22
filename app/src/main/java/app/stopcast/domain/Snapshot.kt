@@ -62,6 +62,10 @@ object Snapshot {
         // enrich hub names — in which case the alert titles by the stop's own name.
         hubId: String = "",
         hubName: String = "",
+        // The interchange's member-station spellings, resolved alongside [hubName], for the display
+        // strip's alias set (SPEC *Disruptions*). Empty for a stop in no hub or a caller that
+        // doesn't enrich hubs; not persisted, like the disruption.
+        placeAliases: List<String> = emptyList(),
     ): StopArrivals? {
         val departures = freshDepartures ?: prior?.departures ?: emptyList()
         // A failed disruption fetch drops the notice (no `?: prior`), rather than aging a
@@ -93,6 +97,7 @@ object Snapshot {
             fetchedAt = fetchedAt,
             hubId = hubId,
             hubName = hubName,
+            placeAliases = placeAliases,
             // Only a successful arrivals fetch this refresh lets a status row claim "No
             // departures"; a kept-prior or disruption-only stop has no fetched arrivals.
             arrivalsFresh = freshDepartures != null,

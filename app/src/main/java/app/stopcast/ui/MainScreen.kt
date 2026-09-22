@@ -806,7 +806,12 @@ private fun DepartureRowCard(
                 // The place name is stripped from the body here, at display — not upstream — so the
                 // near-me fold's identity stays member-independent (see cleanDisruptionBody).
                 StopClosureContent(
-                    cleanDisruptionBody(row.stopDisruption, stopName = row.stopName, hubName = row.hubName),
+                    cleanDisruptionBody(
+                        row.stopDisruption,
+                        stopName = row.stopName,
+                        hubName = row.hubName,
+                        aliases = row.placeAliases,
+                    ),
                     title = row.hubName.ifBlank { row.stopName },
                 )
                 return@Column

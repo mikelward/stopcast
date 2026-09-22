@@ -453,45 +453,69 @@ class KtorTflClientTest {
         assertEquals(mapOf("central" to "tube", "dlr" to "dlr", "elizabeth" to "elizabeth-line"), modeByLine)
     }
 
-    // A /StopPoint/{hubId} fixture for an interchange: its commonName carries a type suffix to
-    // prove the name is cleaned like a stop's. Public place name only (SPEC *Privacy*).
+    // A /StopPoint/{hubId} fixture for an interchange: its commonName carries a type suffix to prove
+    // the name is cleaned like a stop's, and its `children` carry the member stations whose many
+    // spellings become the disruption strip's alias set. Public place names only (SPEC *Privacy*).
     private val hubJson =
         """
         {
           "${'$'}type": "Tfl.Api.Presentation.Entities.StopPoint",
           "id": "HUBKGX",
           "commonName": "King's Cross St. Pancras Underground Station",
-          "stopType": "TransportInterchange"
+          "stopType": "TransportInterchange",
+          "children": [
+            { "commonName": "King's Cross Rail Station", "children": [
+              { "commonName": "King's Cross Rail Station" }
+            ] },
+            { "commonName": "London St Pancras International LL Rail Station" },
+            { "commonName": "St Pancras International Station" }
+          ]
         }
         """.trimIndent()
 
     @Test
     fun `resolves a hub display name, cleaned of its type suffix`() = runTest {
         var captured: HttpRequestData? = null
-        val name = client(hubJson, capture = { captured = it }).hubName("HUBKGX")
+        val info = client(hubJson, capture = { captured = it }).hubInfo("HUBKGX")
 
         assertEquals("/StopPoint/HUBKGX", checkNotNull(captured).url.encodedPath)
         // The type suffix is stripped, like any stop name (SPEC *Concise copy*).
-        assertEquals("King's Cross St. Pancras", name)
+        assertEquals("King's Cross St. Pancras", info.name)
     }
 
     @Test
-    fun `hub name request adds app_key only when set`() = runTest {
+    fun `collects every member-station spelling as the alias set, cleaned and deduped`() = runTest {
+        val info = client(hubJson).hubInfo("HUBKGX")
+        // The hub's own name plus each member's, cleaned of type suffixes and deduplicated (the
+        // repeated King's Cross platform collapses to one). These are the spellings the strip matches.
+        assertEquals(
+            listOf(
+                "King's Cross St. Pancras",
+                "King's Cross",
+                "London St Pancras International LL",
+                "St Pancras International",
+            ),
+            info.aliases,
+        )
+    }
+
+    @Test
+    fun `hub request adds app_key only when set`() = runTest {
         var keyless: HttpRequestData? = null
-        client(hubJson, capture = { keyless = it }).hubName("HUBKGX")
+        client(hubJson, capture = { keyless = it }).hubInfo("HUBKGX")
         assertNull(checkNotNull(keyless).url.parameters["app_key"])
 
         var keyed: HttpRequestData? = null
-        client(hubJson, appKey = "EXAMPLE", capture = { keyed = it }).hubName("HUBKGX")
+        client(hubJson, appKey = "EXAMPLE", capture = { keyed = it }).hubInfo("HUBKGX")
         assertEquals("EXAMPLE", checkNotNull(keyed).url.parameters["app_key"])
     }
 
     @Test
-    fun `a failed hub name lookup throws, so the caller can fall back`() {
+    fun `a failed hub lookup throws, so the caller can fall back`() {
         // Like arrivals: a transport/decode failure throws (the ViewModel falls back to the
         // stop's own name), never a silent blank that would be mistaken for "no hub name".
         assertThrows(TflException.Unreachable::class.java) {
-            runTest { client("{}", status = HttpStatusCode.InternalServerError).hubName("HUBKGX") }
+            runTest { client("{}", status = HttpStatusCode.InternalServerError).hubInfo("HUBKGX") }
         }
     }
 

@@ -410,8 +410,12 @@ Underground Station: …", a tube closure), that leading repeat is stripped so t
 said twice. Whether the text names the stop is not decided by mode, so the strip is by detection
 — a leading run that matches the place name — not a per-mode rule; and because TfL spells one
 station many ways ("King's Cross St. Pancras" / "Kings Cross St Pancras"), the match is by the
-name's word tokens, not character-for-character. The strip is **best-effort**: a spelling it can't
-match only leaves the name in the body, never mangles the notice.
+name's word tokens, not character-for-character. It matches against **the whole interchange's
+member-station names**, not just the watched stop's: TfL spells King's Cross St. Pancras a dozen
+ways across its members and a notice may lead with any of them, so the alias set (resolved with the
+hub name, from the hub's member stops) is what lets the strip drop a leading name in whichever
+spelling it appears. The strip is **best-effort**: a spelling no alias covers only leaves the name
+in the body, never mangles the notice.
 
 The order is **dedupe, then title, then strip** (maintainer, 2026-09-22): the near-me fold groups
 by place first, on the newline-normalized-but-**not-name-stripped** text, so it stays independent

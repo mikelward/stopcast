@@ -71,6 +71,12 @@ data class DepartureRow(
     // alert then titles itself by the stop's own [stopName] instead. Titles a folded alert by the
     // interchange rather than one member stop (SPEC *Disruptions*).
     val hubName: String = "",
+    // Every member-station spelling of this stop's interchange (TfL spells King's Cross St. Pancras
+    // ~a dozen ways). Used only to strip a redundant leading name from the disruption body when the
+    // notice leads with a *different* member's spelling than [stopName] — no one name catches them
+    // all, the union does. Empty for a stop in no hub, or when the hub lookup failed. Resolved per
+    // refresh alongside [hubName]; not persisted (like the disruption itself).
+    val placeAliases: List<String> = emptyList(),
 )
 
 /**

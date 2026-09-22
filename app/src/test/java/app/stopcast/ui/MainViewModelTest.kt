@@ -3,6 +3,7 @@ package app.stopcast.ui
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DeparturesSnapshot
+import app.stopcast.domain.HubInfo
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.NearbySelection
@@ -762,9 +763,9 @@ class MainViewModelTest {
             override suspend fun stopDisruptions(stopId: String) =
                 listOf(StopDisruption("No step free access"))
 
-            override suspend fun hubName(hubId: String): String {
+            override suspend fun hubInfo(hubId: String): HubInfo {
                 hubNameCalls++
-                return "King's Cross & St Pancras International"
+                return HubInfo("King's Cross & St Pancras International")
             }
         }
         val hubSeeds = listOf(
@@ -795,9 +796,9 @@ class MainViewModelTest {
             override suspend fun arrivals(stopId: String) = listOf(departure("victoria", "Victoria", 300))
             override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
             override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
-            override suspend fun hubName(hubId: String): String {
+            override suspend fun hubInfo(hubId: String): HubInfo {
                 hubNameCalls++
-                return "X"
+                return HubInfo("X")
             }
         }
         val vm = MainViewModel(
@@ -820,10 +821,10 @@ class MainViewModelTest {
             override suspend fun arrivals(stopId: String) = emptyList<Departure>()
             override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
             override suspend fun stopDisruptions(stopId: String) = listOf(StopDisruption("Closed"))
-            override suspend fun hubName(hubId: String): String {
+            override suspend fun hubInfo(hubId: String): HubInfo {
                 hubNameCalls++
                 if (fail) throw TflException.Unreachable("boom", null)
-                return "King's Cross & St Pancras International"
+                return HubInfo("King's Cross & St Pancras International")
             }
         }
         val vm = MainViewModel(
@@ -857,7 +858,7 @@ class MainViewModelTest {
             override suspend fun arrivals(stopId: String) = emptyList<Departure>()
             override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
             override suspend fun stopDisruptions(stopId: String) = listOf(StopDisruption("Closed"))
-            override suspend fun hubName(hubId: String): String {
+            override suspend fun hubInfo(hubId: String): HubInfo {
                 hubNameCalls++
                 throw TflException.Unreachable("boom", null)
             }
