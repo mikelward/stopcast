@@ -14,4 +14,9 @@ class TestStopcastApp : StopcastApp() {
         // Intentionally empty — see the class comment. Not a swallowed failure: there is no
         // work to do here, by design.
     }
+
+    override fun warmSharedState() {
+        // Intentionally empty — a unit test needs no real DataStore-backed app_key holder or its
+        // background collector. Tests that exercise the holder drive it directly.
+    }
 }

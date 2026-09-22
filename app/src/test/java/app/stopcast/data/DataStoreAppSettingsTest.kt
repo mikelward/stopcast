@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,5 +68,48 @@ class DataStoreAppSettingsTest {
     @Test
     fun `the documented consent default is to ask every time`() {
         assertEquals(false, DataStoreAppSettings.DEFAULT_SKIP_BUG_REPORT_CONSENT)
+    }
+
+    @Test
+    fun `user api key reads null (keyless) when nothing is stored`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(null))
+        assertNull(store.userApiKey().first())
+    }
+
+    @Test
+    fun `pasting a user api key persists and re-emits`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(null))
+        store.setUserApiKey("EXAMPLE")
+        assertEquals("EXAMPLE", store.userApiKey().first())
+    }
+
+    @Test
+    fun `a pasted key is trimmed`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(null))
+        store.setUserApiKey("  EXAMPLE  ")
+        assertEquals("EXAMPLE", store.userApiKey().first())
+    }
+
+    @Test
+    fun `clearing the key with blank returns to keyless`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(PersistedSettings(userApiKey = "EXAMPLE")))
+        assertEquals("EXAMPLE", store.userApiKey().first())
+        store.setUserApiKey("   ")
+        assertNull(store.userApiKey().first())
+    }
+
+    @Test
+    fun `clearing the key with null returns to keyless`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(PersistedSettings(userApiKey = "EXAMPLE")))
+        store.setUserApiKey(null)
+        assertNull(store.userApiKey().first())
+    }
+
+    @Test
+    fun `a stored blank key reads as keyless`() = runTest {
+        // An empty string from an older build or a hand-edited file must not be sent as an empty
+        // app_key (which TfL rejects) — it reads back as null.
+        val store = DataStoreAppSettings(FakeDataStore(PersistedSettings(userApiKey = "")))
+        assertNull(store.userApiKey().first())
     }
 }

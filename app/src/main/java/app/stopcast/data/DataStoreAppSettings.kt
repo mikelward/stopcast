@@ -70,6 +70,16 @@ class DataStoreAppSettings internal constructor(
         dataStore.updateData { (it ?: PersistedSettings()).copy(skipBugReportConsent = enabled) }
     }
 
+    // Blank is normalized to null on read too, so a stored empty string (from an older build or a
+    // hand-edited file) reads as keyless rather than sending an empty app_key that TfL rejects.
+    override fun userApiKey(): Flow<String?> =
+        persisted().map { it?.userApiKey?.takeIf(String::isNotBlank) }
+
+    override suspend fun setUserApiKey(key: String?) {
+        val normalized = key?.trim()?.takeIf(String::isNotEmpty)
+        dataStore.updateData { (it ?: PersistedSettings()).copy(userApiKey = normalized) }
+    }
+
     // The shared read flow: DataStore's `data`, with a transient I/O read failure retried rather
     // than collapsed to a terminal default. A `catch`-and-emit would end the flow, leaving a
     // long-lived collector stuck at the default after storage recovered (Codex P2 on #56).
@@ -150,6 +160,11 @@ data class PersistedSettings(
     val fontScale: Float = DEFAULT_FONT_SCALE,
     val pinchEnabled: Boolean = DataStoreAppSettings.DEFAULT_PINCH_ENABLED,
     val skipBugReportConsent: Boolean = DataStoreAppSettings.DEFAULT_SKIP_BUG_REPORT_CONSENT,
+    // The user's own TfL app_key (SPEC D7), or null when keyless. The one persisted setting that is
+    // a credential; it is sent only with the user's own TfL requests (its purpose) and rides Android
+    // backup like the rest of their settings, and is never logged or put in any other off-device
+    // artifact (SPEC *Privacy*).
+    val userApiKey: String? = null,
 )
 
 /**

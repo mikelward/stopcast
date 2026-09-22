@@ -52,6 +52,8 @@ class LiveWidgetRefreshTest {
         override suspend fun setPinchEnabled(enabled: Boolean) {}
         override fun skipBugReportConsent(): Flow<Boolean> = flowOf(false)
         override suspend fun setSkipBugReportConsent(enabled: Boolean) {}
+        override fun userApiKey(): Flow<String?> = flowOf(null)
+        override suspend fun setUserApiKey(key: String?) {}
     }
 
     private fun enqueuedCount() =
@@ -135,6 +137,8 @@ class LiveWidgetRefreshTest {
             override suspend fun setPinchEnabled(enabled: Boolean) {}
             override fun skipBugReportConsent(): Flow<Boolean> = flowOf(false)
             override suspend fun setSkipBugReportConsent(enabled: Boolean) {}
+            override fun userApiKey(): Flow<String?> = flowOf(null)
+            override suspend fun setUserApiKey(key: String?) {}
         }
         launch { applyLiveWidgetRefresh(context, settings, enabled = true) }
         launch { applyLiveWidgetRefresh(context, settings, enabled = false) }
