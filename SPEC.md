@@ -169,15 +169,19 @@ For each watched stop, stopcast shows the next few departures: **line**, **desti
 (where the service is headed), and a **countdown**. Countdowns render as minutes — "0 min"
 when imminent, "3 min", "12 min" — sorted soonest-first.
 
-**The unit of display is a flat row per (service, stop, direction)** — a *service*
-being a line (or bus route) at a stop — presented as a **compact card**: the line pill
-and its destination as the headline, and the service's **next few countdowns merged onto
-one line** ("0 · 3 · 6 min", the "min" unit written once). The **stop name is not
-repeated on every card**: it read as clutter restated per row, and on the lock-screen
-widget the stop is implied by the context the user set up. Instead, once the list spans
-more than one place, a **two-level header** groups the same-place cards, in spaced small caps: the
-**place name** once at the top, then a **sub-header per platform/pole** within it (maintainer,
-2026-09-22). A *place* is the set of stops that share a
+**The unit of display is one card per platform or pole** (maintainer, 2026-09-22) — a
+group of same-cluster stops split by platform / stop letter (see below). Each card is
+headed by a **single title-case line** naming the place and that platform/pole, and holds
+**one row per route** inside it: the line pill on the left, the destination, and the
+service's **next few countdowns merged onto one line** on the right ("0 · 3 · 6 min", the
+"min" unit written once). A line that runs several routes (a branching direction) shows
+its **pill on each route row**, so every destination reads as its own service rather than a
+chip-less continuation. The **stop name is not repeated on every row**: it read as clutter
+restated per row, and on the lock-screen widget the stop is implied by the context the
+user set up. Instead each group's **header names the place and its platform/pole once**, on
+one line — "King's Cross St. Pancras – Platform 1", "Cranley Gardens – Stop G" — with the
+near-me distance dimmed after it ("(120 m)"); place and platform share one weight and color,
+only the distance is muted. A *place* is the set of stops that share a
 **cluster** — a bus junction's two poles, a station's several platforms — grouped together so
 they read as one boarding location, the way a Tube station (a single stop id aggregating its
 platforms) already did; grouping by stop id instead split a junction's northbound and southbound
@@ -187,31 +191,30 @@ what keeps a station it spells several ways together (King's Cross St. Pancras h
 so the name alone is an unreliable key) while holding genuinely distinct adjacent stations apart
 where TfL gives them different clusters — the maintainer's worked example is keeping King's Cross
 St. Pancras separate from St Pancras International (2026-09-21). Within a place, each group's
-sub-header names the **platform or pole** its cards board from — the cue that tells two groups of one
-place apart — so a busy interchange reads as platform blocks under one name rather than a wall of
-cards under one bare name (settled 2026-09-22). A **rail** place splits on its **platform**, with the
-platform's compass in parens: "**Platform 2 (Eastbound)**". The platform number and its compass are
-both parsed from TfL's `platformName` ("Eastbound - Platform 2"); the platform is the grouping key,
-**not** TfL's `inbound`/`outbound` and **not** the compass alone. Not inbound/outbound because at an
-interchange TfL tags one platform inconsistently across lines (King's Cross runs the Circle
-"Eastbound" as `inbound` but the Hammersmith & City the same platform as `outbound`, and omits some
-westbound trains' direction entirely). Not the compass alone because the compass conflates
-physically distinct platforms — King's Cross Eastbound is the Circle/H&C/Metropolitan on one
-sub-surface platform but the Piccadilly on a different deep-tube platform — so keying on the platform
-number keeps a header naming one physical platform. A rail direction with no platform number (a rare
-bare "Northbound") falls back to that bare compass. A **bus** pole carries no platform in the
-arrivals feed, so it splits on its **stop letter** — the "D" a rider reads on the physical stop —
-with where it heads in parens: "**Stop D (towards Farringdon)**". The letter, bearing, and "towards"
-come from the near-me `/StopPoint` lookup (`stopLetter`, `CompassPoint`, and `Towards`), not the
-arrivals feed, so a **watched** bus stop (no near-me lookup yet) has none until that capture lands;
-TfL's `Towards` is trimmed at its " Or " to the first destination ("Farringdon Or Holborn Circus" →
-"Farringdon"). With no letter, the pole falls back to its **compass bearing** ("**(→E)**"); with
+header carries a **qualifier segment** naming the **platform or pole** its card boards from — the
+cue that tells two groups of one place apart — so a busy interchange reads as one card per platform
+rather than a wall of cards under one bare name (settled 2026-09-22). A **rail** place splits on its
+**platform**: "**Platform 2**". The platform number is parsed from TfL's `platformName` ("Eastbound
+- Platform 2"); the platform is the grouping key, **not** TfL's `inbound`/`outbound` and **not** the
+compass. Not inbound/outbound because at an interchange TfL tags one platform inconsistently across
+lines (King's Cross runs the Circle "Eastbound" as `inbound` but the Hammersmith & City the same
+platform as `outbound`, and omits some westbound trains' direction entirely). Not the compass because
+it conflates physically distinct platforms — King's Cross Eastbound is the Circle/H&C/Metropolitan on
+one sub-surface platform but the Piccadilly on a different deep-tube platform — so keying on the
+platform number keeps a header naming one physical platform. The compass is **not shown** on the
+one-line header (the destinations carry the direction a rider reads); it stays in the domain as the
+direction cue and disambiguates a rail direction with no platform number, which falls back to the
+**bare compass** ("Northbound"). A **bus** pole carries no platform in the arrivals feed, so it
+splits on its **stop letter** — the "D" a rider reads on the physical stop: "**Stop D**". The letter,
+bearing, and "towards" come from the near-me `/StopPoint` lookup (`stopLetter`, `CompassPoint`,
+`Towards`), not the arrivals feed, so a **watched** bus stop (no near-me lookup yet) has none until
+that capture lands. With no letter, the pole falls back to its **compass bearing** ("→E"); with
 neither, to the **shared terminus** ("**→ Bank**") when the whole stop heads one way (every route
-names the same, non-blank terminus, principle 1); with none of the three, the **bare place name**
-(no sub-header). Precedence: letter → bearing → terminus → bare. The two levels keep a long place
-name and a long direction off the same line — the name has its own row (with the near-me distance
-reserved at its end), the direction its own row below — so neither crowds the other even at the
-largest font scale, retiring the single-letter direction fallback the one-level header needed. A
+names the same, non-blank terminus, principle 1); with none of the three, the **bare place name**.
+Precedence: letter → bearing → terminus → bare. The header is **one line** — "Place – Qualifier
+(distance)", title case, no small caps — where the place name and the qualifier **share the row**
+(each weighted, each keeps at least its half and clips within it) so neither a long name nor a long
+qualifier can crowd the other to zero, and the short near-me distance is reserved after them. A
 two-way service at a stop is two cards, one per direction; a one-directional case (a terminus
 platform, a
 one-way-street stop, a single branch) is one. Nothing is hidden behind a gesture, which
@@ -227,13 +230,14 @@ departure's destination and merges only that destination's times; each **diverge
 destination keeps its own line and its own merged countdown**, so a countdown is never
 shown under the wrong one.
 
-**On the card**, platform is not shown and the **inbound/outbound direction word** is not
-used ("inbound" / "outbound" is TfL jargon): the destination *is* the direction signal a
-rider reads, so the card carries the destination and drops both — the countdown, the one
-thing that must always stay legible, keeps the room. (This is the *card*; the group **header**
-does name the direction — as the platform **compass**, a different thing from this per-card
-label — see the header paragraph above.) The platform stays in the domain model for a later
-surface (a detail view) but earns no space on the glance card. The destination elides to a
+**On each route row**, the **inbound/outbound direction word** is not used ("inbound" /
+"outbound" is TfL jargon): the destination *is* the direction signal a rider reads, so the
+row carries the destination and drops it — the countdown, the one thing that must always
+stay legible, keeps the room. The platform is named once by the card's header, not repeated
+on every row. A **disrupted route** shows an **inline warning glyph** (⚠) just left of its
+countdown rather than a separate status-chip row, so the route stays one line; the glyph
+announces TfL's status wording to a screen reader and the full text is reachable in the
+detail view. The destination elides to a
 single line, so a long one ("Harrow & Wealdstone") truncates rather than wrapping the card
 taller or pushing the countdown off the edge. The destination's **station-type suffix is
 trimmed** the way stop names are — TfL's "Brixton Underground Station" shows as "Brixton"
@@ -330,14 +334,16 @@ chose ahead of time, not "nearest to me" — ordered **location-free** so the vi
 with location denied: soonest-first, with **starred** rows pinned to the top. Starring is
 ranking only, separate from which stops are watched (add/remove membership). A star keys on
 the row's `(stop, service, resolved direction key)` identity, so it restores to exactly one
-row and survives restart. Starring is toggled by a **long-press on the row**, and a starred row
-is marked by a **gold border** (no in-row element, so it costs no width) plus its position at the
-top; the earlier per-row star button was removed because it consumed width on every card. A
-**tap on the row opens a full-screen route detail page** — its own app bar naming the route
-(line pill + destination) and carrying the star (so the long-press is the shortcut, the page the
-discoverable path), the boarding stop in the body, and the line's **full disruption text**, which
-the compact chip stands in for: shown collapsed to its first line, tapped to expand (the same
-widget the stop-closure card uses). It is a full screen rather than a dialog because it will grow
+row and survives restart. Starring is toggled by a **long-press on a route row**, and a starred
+route is marked by a **gold leading-edge bar** on its row (no in-row element, so it costs no width)
+plus its position at the top; the earlier per-row star button was removed because it consumed width
+on every card. (A card now holds several route rows — one per route — so the mark is a per-row bar
+rather than the whole-card border the one-service card used.) A **tap on a route row opens a
+full-screen route detail page** — its own app bar naming the route (line pill + destination) and
+carrying the star (so the long-press is the shortcut, the page the discoverable path), the boarding
+stop in the body, and the line's **full disruption text**, which the row's inline **⚠** glyph stands
+in for: shown collapsed to its first line, tapped to expand (the same widget the stop-closure card
+uses). It is a full screen rather than a dialog because it will grow
 per-route actions (a maps/nav hand-off), which a dialog would cap. **On the watched list, warning rows still lead**, above even a starred service — a stop
 closure or a no-prediction line-status row is something the user must see, and pinning a
 starred service above it would push a warning down the list (principle 2). **On the near-me
@@ -346,18 +352,16 @@ that stop's departures) rather than being lifted, above starred or otherwise (*F
 stop closure still leads there as a standalone card. Distance ranking belongs to *finding* stops
 (near-me discovery, *Finding stops*), not to ordering the watched list.
 
-**The card *model* is still open** — the flat list vs. the compact swipe card. (How the
-group **header** names a direction is *settled*: the platform's compass, per *Departures*
-above; this paragraph is about the card, not the header.) The flat
-list ships first because it is the simplest thing that is fully glanceable. A more
-compact **(service, stop) card that swipes between directions** is the leading candidate
-to iterate toward once the flat list has been used on a device — it collapses a two-way
-service to one card but hides the other direction behind a gesture the widget host owns,
-so it is a later call, not a prerequisite (**D8**). The **card's** direction headline is the
-resolved terminus the domain carries (`destinationName`, else `towards` before its " via "),
-plus the via-branch alongside it where TfL gives one (see the branching-line paragraph above);
-a branching direction keeps **one line per terminus and branch** (each with its own
-countdown). One refinement is recorded to explore (`TODO.md` Phase 2): labeling a direction
+**The per-platform card model shipped** — one card per platform/pole, a chip-tagged row per
+route (per *Departures* above); the compass is not shown on the header, since the destinations
+carry the direction a rider reads. A more compact **(service, stop) card that swipes between
+directions** remains a candidate to iterate toward once the shipped list has been used on a
+device — it would collapse a two-way service to one card but hides the other direction behind a
+gesture the widget host owns, so it is a later call, not a prerequisite (**D8**). Each **route
+row's** direction headline is the resolved terminus the domain carries (`destinationName`, else
+`towards` before its " via "), plus the via-branch alongside it where TfL gives one (see the
+branching-line paragraph above); a branching direction keeps **one row per terminus and branch**
+(each with its own countdown and its own line pill). One refinement is recorded to explore (`TODO.md` Phase 2): labeling a direction
 by the **next branch or interchange point** downstream rather than the terminus, feeding
 letting users set **favorite destinations** to filter or rank by.
 
@@ -868,26 +872,28 @@ Mirrors the sibling fleet:
 - **D7 — No baked-in TfL key; works keyless, optional user key for the higher limit.**
   A shared key would pool all users into one bucket and ship a credential; a per-user
   key avoids both. See *Data source*.
-- **D8 — Ship a flat list of compact cards (one per service, stop, direction) with
-  star-to-pin; final display model left open.** A station serves many lines and most run
-  two ways, so the display has to present direction somehow. The flat list gives each
-  direction its own card: nothing hidden, fully glanceable, and the simplest thing to
-  build and to render on a widget. Each card is a **compact, near-uniform-height block** —
-  line pill + destination headline, the next few countdowns merged onto one line — so the
-  list scans evenly; only genuinely extra information (a disruption chip, a branch's second
-  destination) adds height. The destination **elides** to one line so a long name never
-  wraps or crowds out the countdown. **Platform and the "inbound/outbound" direction word are dropped from the card** — the
-  destination is the direction signal a rider reads; platform stays in the model for a
-  later detail surface. **The stop name is not on the card but returns as a group header**:
-  the list is **clustered by place (stops sharing a cluster — a junction's poles, a
-  station's platforms), a two-level header** — the **place name once**, then a **sub-header per
-  platform/pole** within it. The sub-header carries the group's **qualifier** — the cue that tells
-  its groups apart: a rail **platform** with its compass in parens ("Platform 2 (Eastbound)", the
-  platform parsed from `platformName`, keyed on the platform not the compass, since one compass spans
-  physically distinct platforms), a **bus** pole's **letter** with its "towards" in parens ("Stop D
-  (towards Farringdon)") or, when it has none, its **bearing** ("(→E)"), else a bus place's shared
-  **terminus** ("→ Bank") — settled 2026-09-22, superseding the one-level `(place, direction)` step.
-  The cluster key is TfL's `stationNaptan` where the nearby lookup gives one,
+- **D8 — Ship one card per platform/pole, a chip-tagged row per route, with star-to-pin;
+  final display model left open.** A station serves many lines and most run two ways, so the
+  display has to present direction somehow. The list gives each **platform (or bus pole) its
+  own card**, and inside it **one row per route** — line pill + destination + the next few
+  countdowns merged onto one line — so nothing is hidden and it stays glanceable, a line's
+  several routes each carrying their own pill. Each route row is a **compact,
+  near-uniform-height block**; only genuinely extra information (a branch's second
+  destination is its own row) adds height, and a disrupted route flags with an **inline ⚠**
+  left of the countdown rather than a chip row. The destination **elides** to one line so a
+  long name never wraps or crowds out the countdown. **The "inbound/outbound" direction word
+  is dropped** — the destination is the direction signal a rider reads. **The stop name is not
+  on every row but heads the card**: the list is **clustered by place (stops sharing a cluster
+  — a junction's poles, a station's platforms) and split by platform/pole**, each group headed
+  by a **single title-case line** — "Place – Qualifier (distance)". The header's **qualifier** is
+  the cue that tells its groups apart: a rail **platform** ("Platform 2", parsed from
+  `platformName`, keyed on the platform not the compass, since one compass spans physically
+  distinct platforms; a platform-less rail direction falls to the bare compass), a **bus** pole's
+  **letter** ("Stop D"), else its **bearing** ("→E"), else a bus place's shared **terminus**
+  ("→ Bank") — settled 2026-09-22, superseding the two-level header (place name once + indented
+  sub-header) and the one-level `(place, direction)` step before it. The compass direction is not
+  shown on the header (the destinations carry it). The cluster key is TfL's `stationNaptan` where
+  the nearby lookup gives one,
   else the cleaned display name — keying on TfL's own cluster keeps a station it spells
   several ways together while holding distinct adjacent stations (King's Cross St. Pancras
   vs St Pancras International) apart. The qualifier's

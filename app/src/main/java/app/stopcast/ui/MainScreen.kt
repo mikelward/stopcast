@@ -3,7 +3,6 @@
 package app.stopcast.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -37,11 +37,11 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -98,6 +99,7 @@ import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopDistance
+import app.stopcast.domain.StopGroup
 import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.StopQualifier
 import app.stopcast.domain.abbreviateBranch
@@ -623,49 +625,42 @@ private fun DepartureList(
         // A closure alert keys on its stop and hub so a recycled row can't carry another
         // alert's expanded state onto it.
         items(closureRows, key = { "closure|${it.stopId}|${it.hubId}" }) { row ->
-            DepartureRowCard(row, now, onDismiss = { onDismissAlert(row) })
+            StopClosureCard(row, onDismiss = { onDismissAlert(row) })
         }
-        // Two levels (SPEC D8): the **place** name once (top), then a **sub-header** per platform/pole
-        // within it. A place's groups are contiguous (the grouping orders them so), so a change of
-        // placeKey marks a new place and emits its name header once.
-        var lastPlaceKey: String? = null
+        // One combined one-line header per group, then the group's card (SPEC D8): the place name and
+        // its platform/pole qualifier read on one title-case line ("King's Cross St. Pancras – Platform
+        // 1 (120 m)"), and every route of the group's stop(s) sits as an interior row of the one card
+        // below. The place name repeats on each platform header of a station (as does the distance) —
+        // the near-me rider judges each platform on its own line.
         groups.forEachIndexed { index, group ->
-            if (group.placeKey != lastPlaceKey) {
-                lastPlaceKey = group.placeKey
-                // The near-me list carries a per-stop distance; the watched list doesn't, so the
-                // label is present only when this place's stops are in the map (D1). A place groups
-                // several stops (a junction's poles, a station's platforms), so it shows the distance
-                // to the *closest* of them — the one a rider walks to (placeDistanceMeters), once.
-                val distanceLabel = placeDistanceMeters[group.placeKey]?.let(StopDistance::label)
-                // Draw the place header when the grouping distinguishes this place (>1 place, a split
-                // into platforms/poles, a closure) OR there's a distance to promise. A lone bare
-                // near-me place still shows its name and distance, else a one-place result would drop
-                // both (Codex, PR #82). The first place on screen takes no extra top break — unless a
-                // closure alert precedes it.
-                if (group.showHeader || distanceLabel != null) {
-                    item(key = "place|${group.placeKey}") {
-                        StopPlaceHeader(
-                            group.stopName,
-                            distanceLabel,
-                            firstOnScreen = index == 0 && closureRows.isEmpty(),
-                        )
-                    }
+            // The near-me list carries a per-stop distance; the watched list doesn't, so the label is
+            // present only when this place's stops are in the map (D1). A place groups several stops (a
+            // junction's poles, a station's platforms), so it shows the distance to the *closest* of
+            // them — the one a rider walks to (placeDistanceMeters).
+            val distanceLabel = placeDistanceMeters[group.placeKey]?.let(StopDistance::label)
+            // Draw the header when the grouping distinguishes this place (>1 place, a split into
+            // platforms/poles, a closure) OR there's a distance to promise. A lone bare near-me place
+            // still shows its name and distance, else a one-place result would drop both (Codex, PR
+            // #82). The first group on screen takes no extra top break — unless a closure alert precedes
+            // it.
+            if (group.showHeader || distanceLabel != null) {
+                item(key = "header|${group.key}") {
+                    StopGroupHeader(
+                        group.stopName,
+                        group.qualifier,
+                        distanceLabel,
+                        firstOnScreen = index == 0 && closureRows.isEmpty(),
+                    )
                 }
             }
-            // The sub-header names the platform/pole the group split on ("Platform 2 (Eastbound)",
-            // "Stop D (towards Farringdon)") — the cue that tells two groups of one place apart. A
-            // group that split on nothing (a lone bare place) carries no qualifier and no sub-header.
-            group.qualifier?.let { qualifier ->
-                item(key = "sub|${group.key}") { StopSubHeader(qualifier) }
-            }
-            items(group.rows, key = { "${it.stopId}|${it.lineId}|${it.directionKey}" }) { row ->
-                DepartureRowCard(
-                    row,
+            item(key = "card|${group.key}") {
+                StopGroupCard(
+                    group,
                     now,
-                    isStarred = StarredRow.of(row) in starred,
-                    onToggleStar = { onToggleStar(row) },
-                    starAvailable = starringAvailable,
-                    onOpenDetail = { onOpenDetail(row) },
+                    starred = starred,
+                    onToggleStar = onToggleStar,
+                    starringAvailable = starringAvailable,
+                    onOpenDetail = onOpenDetail,
                 )
             }
         }
@@ -717,310 +712,305 @@ internal fun moreLabelRes(mode: String): Int = when (mode) {
 }
 
 /**
- * The **top-level** header above a place's departures (SPEC D8): the cluster name, once — a station,
- * a bus junction, a stop — in spaced small caps, text only, no border/background. Below it sit the
- * per-platform/pole sub-headers ([StopSubHeader]). The name hard-truncates (no ellipsis) at the edge;
- * [distanceLabel], the near-me distance to the place's nearest member ("(120 m)", null on the
- * location-free watched list, D1), is a reserved trailing element the name clips before. Extra top
- * space marks the break between places; the first place on screen takes none.
+ * The one combined header above a group's card (SPEC D8): the place name and its platform/pole
+ * qualifier on a single title-case line — "King's Cross St. Pancras – Platform 1", "Cranley Gardens –
+ * Stop G", "Highgate – Eastbound" — with [distanceLabel] ("(120 m)", null on the location-free watched
+ * list, D1) appended dimmed. No small caps, no tracking: the place name and the qualifier share one
+ * [MaterialTheme.typography.labelLarge] / [FontWeight.SemiBold] / `onSurface` style, and only the
+ * distance is muted to `onSurfaceVariant`.
+ *
+ * The place name is the one element that clips: it takes the row's slack and ellipsizes when long,
+ * while the " – <qualifier>" and " (<distance>)" are reserved (measured first) so they stay fully
+ * visible — a long "King's Cross St. Pancras – Platform 7 (120 m)" keeps "– Platform 7 (120 m)" and
+ * clips the name. The whole row announces one screen-reader label — the place name, the spoken
+ * qualifier (which keeps the direction/towards the visible segment drops), then the distance. Extra
+ * top space marks the break between groups; the first on screen takes none.
  */
 @Composable
-private fun StopPlaceHeader(name: String, distanceLabel: String?, firstOnScreen: Boolean) {
-    // labelLarge (a step up from the sub-header's labelMedium) marks the top of the hierarchy;
-    // onSurface (not the muted variant) gives the name a touch more weight. The semi-bold weight and
-    // tracking are baked into [headerTextStyle]. uppercase() is locale-invariant (Turkish-ı safe).
-    val style = headerTextStyle(MaterialTheme.typography.labelLarge)
-    val nameColor = MaterialTheme.colorScheme.onSurface
-    val modifier = Modifier
-        .fillMaxWidth()
-        .padding(start = 4.dp, end = 4.dp, top = if (firstOnScreen) 0.dp else 16.dp)
-    if (distanceLabel == null) {
-        Text(
-            text = name.uppercase(),
-            style = style,
-            color = nameColor,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Clip,
-            modifier = modifier,
-        )
-        return
+private fun StopGroupHeader(
+    name: String,
+    qualifier: StopQualifier?,
+    distanceLabel: String?,
+    firstOnScreen: Boolean,
+) {
+    val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+    val label = remember(qualifier) { groupHeaderLabel(qualifier) }
+    // The full spoken label: the place name, the spoken qualifier (direction/towards kept), then the
+    // distance — read as one, so a screen reader hears the whole header rather than three fragments.
+    val spoken = remember(name, qualifier, distanceLabel) {
+        buildString {
+            append(name)
+            groupHeaderSpoken(qualifier)?.let { append(", ").append(it) }
+            distanceLabel?.let { append(", ").append(it) }
+        }
     }
-    // fill = false so a short name packs left with the distance right after it, not stretched to push
-    // it to the far edge; the reserved distance keeps its width and a long name clips first.
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = name.uppercase(),
-            style = style,
-            color = nameColor,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Clip,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        Text(
-            text = " ($distanceLabel)",
-            style = style,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            softWrap = false,
-        )
-    }
-}
-
-/**
- * The **sub-level** header under a place name (SPEC D8): the platform or pole the group split on,
- * with its direction in parentheses — "Platform 2 (Eastbound)", "Stop D (towards Farringdon)", or a
- * fallback ("(→E)", "→ Bank"). The primary part ([SubHeaderText.primary]) leads in `onSurface`; the
- * parenthetical direction follows in the muted `onSurfaceVariant`, so the pole reads first and the
- * direction qualifies it. Indented under the place name. The whole thing announces its spoken form
- * ("Platform 2, Eastbound") to a screen reader in place of the raw glyphs.
- */
-@Composable
-private fun StopSubHeader(qualifier: StopQualifier) {
-    val style = headerTextStyle(MaterialTheme.typography.labelMedium)
-    val text = remember(qualifier) { subHeaderText(qualifier) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 12.dp, end = 4.dp)
-            .semantics(mergeDescendants = true) { contentDescription = text.spoken },
+            .padding(start = 4.dp, end = 4.dp, top = if (firstOnScreen) 0.dp else 16.dp)
+            .semantics(mergeDescendants = true) { contentDescription = spoken },
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // The distance ("(120 m)") is short and reserved (unweighted, measured first). The name and
+        // the qualifier then SHARE the rest, each weighted, so neither can consume the whole row and
+        // crowd the other to zero: a long place name and a long qualifier each keep at least their
+        // half and clip within it, so the rider's boarding place always stays visible (Codex P1, PR
+        // #122). `fill = false` lets a short name/qualifier sit at its natural width and pack left
+        // rather than pad out its half. The name ellipsizes; the qualifier hard-clips its glyphs.
         Text(
-            text = text.primary,
+            text = name,
             style = style,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Clip,
-            // The primary is short (a platform number, a stop letter), so it takes its natural width
-            // (unweighted) and the parenthetical below gets ALL the rest — not a fixed half, so a long
-            // "towards …" isn't clipped while the primary's half sits empty (Codex P2, PR #119). If the
-            // primary alone somehow overran the row it clips (the more important part wins the space).
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
-        text.paren?.let { paren ->
+        if (label != null) {
             Text(
-                text = " ($paren)",
+                text = " – $label",
+                style = style,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
+        if (distanceLabel != null) {
+            Text(
+                text = " ($distanceLabel)",
                 style = style,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
-                overflow = TextOverflow.Clip,
-                // Weighted so the paren consumes the width the primary left, clipping only if the
-                // remainder is too small.
-                modifier = Modifier.weight(1f, fill = false),
             )
         }
     }
 }
 
+/**
+ * A stop-closure alert as its own header-less card at the top of the list (SPEC *Disruptions*): the
+ * disruption in an error-toned surface titled by the interchange (else the stop), the body collapsed
+ * to its first line and expanded on tap. Kept as a standalone card — a whole-stop closure has no
+ * platform/pole qualifier to head, and its departures (if any) show in the group cards below.
+ */
 @Composable
-private fun DepartureRowCard(
-    row: DepartureRow,
-    now: Instant,
-    isStarred: Boolean = false,
-    onToggleStar: () -> Unit = {},
-    starAvailable: Boolean = true,
-    // Open the tap-to-open route detail (star + full disruption text, SPEC D8 / *Disruptions*).
-    // Default no-op so an unwired build/test renders the list without it; a stop-closure row
-    // ignores it (that card expands in place instead — see below).
-    onOpenDetail: () -> Unit = {},
-    // Dismiss this alert — only a stop-closure row shows the control (see its `StopClosureContent`).
-    // Default no-op so an unwired build/test renders the card without a dismiss button.
-    onDismiss: () -> Unit = {},
-) {
-    // Staleness is per row, from this row's own stop age: a stop that failed to refresh
-    // withholds its countdowns ("—") while a fresh stop beside it stays live (SPEC D4).
-    val stale = remember(row.fetchedAt, now) {
-        Staleness.isStale(Duration.between(row.fetchedAt, now).toKotlinDuration())
+private fun StopClosureCard(row: DepartureRow, onDismiss: () -> Unit) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        // A traversal group, matching the departure cards. The place name is stripped from the body
+        // at display (not upstream) so the near-me fold's identity stays member-independent
+        // (cleanDisruptionBody); the title supplies the stop name a bus "Bus Stop Closed" never does.
+        Column(modifier = Modifier.padding(16.dp).semantics { isTraversalGroup = true }) {
+            StopClosureContent(
+                cleanDisruptionBody(
+                    row.stopDisruption.orEmpty(),
+                    stopName = row.stopName,
+                    hubName = row.hubName,
+                    aliases = row.placeAliases,
+                ),
+                title = row.hubName.ifBlank { row.stopName },
+                onDismiss = onDismiss,
+            )
+        }
     }
-    // Cap the line pill at half the card's inner width, so a long name at a large font
-    // scale ellipsizes rather than consuming the card and starving the countdown — which
-    // must stay one line (SPEC D8). Inner width ≈ screen minus the list's 16dp side padding
-    // and the card's 16dp padding. No real line name reaches the cap at the default font.
+}
+
+/**
+ * One card per group (SPEC D8): an [OutlinedCard] whose body is a [Column] of interior **route
+ * rows** — one per destination line of each of the group's rows — separated by thin dividers. Each
+ * route row carries its line pill, its destination, an inline ⚠ when the line is disrupted, and the
+ * merged countdown; a starred route wears a gold leading-edge bar (the per-row accent that replaces
+ * the old whole-card gold border, which no longer maps now a card holds several routes).
+ *
+ * Interactions live on each route row, not the card: a TAP opens the detail view and a LONG-PRESS
+ * pins (where starrable). Staleness is per row, from the row's own stop age, so a stale stop
+ * withholds its countdowns ("?") while a fresh stop's card beside it stays live (SPEC D4).
+ */
+@Composable
+private fun StopGroupCard(
+    group: StopGroup,
+    now: Instant,
+    starred: Set<StarredRow>,
+    onToggleStar: (DepartureRow) -> Unit,
+    starringAvailable: Boolean,
+    onOpenDetail: (DepartureRow) -> Unit,
+) {
+    // Cap the line pill at half the card's inner width, so a long name at a large font scale
+    // ellipsizes rather than consuming the card and starving the countdown, which must stay one line
+    // (SPEC D8). Inner width ≈ screen minus the list's 16dp side padding and the row's 16dp padding.
     val cardInnerWidth = LocalConfiguration.current.screenWidthDp.dp - 64.dp
     val pillModifier = Modifier.widthIn(max = cardInnerWidth * 0.5f)
-    // Two gestures on a route card: a TAP opens the detail view (star + full disruption text),
-    // and a LONG-PRESS is the pin-to-top shortcut (SPEC D8) — the star is a per-row button no
-    // longer, since a 48dp IconButton ate width on every row and crowded the one-line countdown.
-    // A stop-closure row is neither tappable-to-detail nor starrable: its own `StopClosureContent`
-    // Surface handles the tap (expand in place), and a whole-stop closure was never pinnable.
-    // Only a timed row is starrable — a no-departures status row has nothing to rank — and only
-    // when starring is available; but a status row is still tappable, so its full disruption text
-    // is reachable.
-    //
-    // Both are a `pointerInput` gesture plus `semantics` actions, NOT `combinedClickable`:
-    // `combinedClickable` merges the card's descendant semantics into one node, which flattens the
-    // disrupted row's warning-first traversal order (the chip's `traversalIndex = -1f` below). The
-    // gesture and the non-merging `semantics` block keep the descendants separately ordered while
-    // exposing the labeled tap (now a real action — the detail view) and long-press.
-    val tappable = row.stopDisruption == null
-    val starrable = starAvailable && row.stopDisruption == null && row.upcoming.isNotEmpty()
+    val topology = LocalRouteTopology.current
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        // The card is a traversal group; each interior route row is its own sub-group (below) so its
+        // ⚠ precedes its own countdown, not the next row's (SPEC principle 2).
+        Column(modifier = Modifier.semantics { isTraversalGroup = true }) {
+            var firstRow = true
+            group.rows.forEach { row ->
+                val stale = Staleness.isStale(Duration.between(row.fetchedAt, now).toKotlinDuration())
+                val isStarred = StarredRow.of(row) in starred
+                if (row.upcoming.isEmpty()) {
+                    // A status row: the line is suspended (its reason shown) and returned no
+                    // predictions (SPEC *Departures*). Tappable to the detail view, but not starrable
+                    // — a no-departures row has nothing to rank.
+                    if (!firstRow) RouteDivider()
+                    firstRow = false
+                    RouteRow(
+                        row = row,
+                        isStarred = isStarred,
+                        starrable = false,
+                        onToggleStar = onToggleStar,
+                        onOpenDetail = onOpenDetail,
+                    ) {
+                        LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
+                        // The reason chip lives in the weighted slack so it absorbs the shrink (and
+                        // ellipsizes) when space is tight; "No departures" is unweighted, so the Row
+                        // reserves its width — the status can't be squeezed to zero.
+                        Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                            row.status?.let { status -> DisruptionChip(status.description) }
+                        }
+                        val noDepartures = stringResource(R.string.status_no_departures_description)
+                        Text(
+                            text = stringResource(R.string.status_no_departures),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            // The visible glyph is a compact dash; a screen reader hears the explicit
+                            // "No departures" so a bare dash isn't heard as missing data.
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .semantics { contentDescription = noDepartures },
+                        )
+                    }
+                    return@forEach
+                }
+                // Timed rows: grouped by destination *and branch* (the shared `destinationLines`, so
+                // the widget can't drift), each destination its own route row with its own merged
+                // countdown — a countdown is never read under the wrong destination or branch (SPEC
+                // D8). A branching row (Northern to Morden and to Battersea) shows its pill on each.
+                val starrable = starringAvailable && row.stopDisruption == null && row.upcoming.isNotEmpty()
+                val destinationLines = DepartureRows.destinationLines(row, MAX_TIMES, topology)
+                destinationLines.forEach { group2 ->
+                    if (!firstRow) RouteDivider()
+                    firstRow = false
+                    // The destination, or the direction key as a cue when TfL gives no destination, so
+                    // cards TfL keeps distinct stay distinguishable (SPEC principle 1).
+                    val label = DepartureLabels.destinationLabel(group2.destination, row.directionKey)
+                        ?: stringResource(R.string.destination_unknown)
+                    RouteRow(
+                        row = row,
+                        isStarred = isStarred,
+                        starrable = starrable,
+                        onToggleStar = onToggleStar,
+                        onOpenDetail = onOpenDetail,
+                    ) {
+                        LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
+                        DestinationLabelContent(
+                            label = label,
+                            branch = group2.branch,
+                            modifier = Modifier.weight(1f).padding(start = 8.dp, end = 12.dp),
+                        )
+                        // A disrupted line shows an inline ⚠ just left of the countdown, announced
+                        // first (traversalIndex, in DisruptionWarningGlyph) so the warning precedes the
+                        // countdown it qualifies (SPEC D3 / principle 2). It replaces the old full-width
+                        // chip; the full status text stays reachable in the detail view.
+                        row.status?.let { status ->
+                            DisruptionWarningGlyph(status.description, Modifier.padding(end = 8.dp))
+                        }
+                        CountdownLabel(group2.times, stale, now)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A thin divider between the interior route rows of a group card, in the outline color. */
+@Composable
+private fun RouteDivider() {
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+}
+
+/**
+ * One interior route row of a group card: a [Row] whose [content] is the pill, destination, optional
+ * ⚠, and countdown. A TAP opens the detail view; a LONG-PRESS pins the route when [starrable]
+ * (starring available, not a stop closure, and it has upcoming departures). A [isStarred] route wears
+ * a 3dp gold leading-edge bar — all destination rows of one starred [DepartureRow] show it, since
+ * starring is keyed per line+direction ([StarredRow.of]).
+ *
+ * A `pointerInput` gesture plus a **non-merging** `semantics` block (NOT `combinedClickable`, which
+ * flattens the descendant traversal so the ⚠ could no longer precede its countdown): the block adds
+ * the labeled tap/long-press and marks the row its own traversal sub-group. Callbacks are read via
+ * `rememberUpdatedState` and the gesture is keyed on the stable [starrable] so the 10s clock's
+ * recomposition never drops an in-progress long-press (Codex).
+ */
+@Composable
+private fun RouteRow(
+    row: DepartureRow,
+    isStarred: Boolean,
+    starrable: Boolean,
+    onToggleStar: (DepartureRow) -> Unit,
+    onOpenDetail: (DepartureRow) -> Unit,
+    content: @Composable RowScope.() -> Unit,
+) {
     val starActionLabel = stringResource(if (isStarred) R.string.unstar else R.string.star)
     val detailActionLabel = stringResource(R.string.departure_details)
-    // Read the latest callbacks without re-keying the gesture: `DepartureList` rebuilds the per-row
-    // callbacks on every recomposition, and the 10s `tickingNow` clock recomposes the rows — so
-    // keying `pointerInput` on a callback would cancel an in-progress long-press each tick and drop
-    // its down event (Codex). Key on `Unit` (stable) and invoke the current callbacks via
-    // `rememberUpdatedState`.
+    val currentRow by rememberUpdatedState(row)
     val currentToggleStar by rememberUpdatedState(onToggleStar)
     val currentOpenDetail by rememberUpdatedState(onOpenDetail)
-    // Long-press pins, but only where the row is starrable; typed so the nullable handler is
-    // unambiguous (a status row keeps its tap-to-detail with no long-press).
     val onLongPress: ((Offset) -> Unit)? = if (starrable) {
-        { currentToggleStar() }
+        { currentToggleStar(currentRow) }
     } else {
         null
     }
-    val cardModifier = Modifier.fillMaxWidth().let { base ->
-        if (tappable) {
-            base
-                // Keyed on `starrable`, not `Unit`: at a cold start the persisted list can render
-                // before `starringAvailable` flips false→true, capturing onLongPress = null; keying
-                // on `starrable` restarts the gesture on that transition so long-press starts
-                // working (Codex). `starrable` is stable across the 10s tick — it flips only on that
-                // rare availability change, not per recomposition — so this doesn't re-key each tick
-                // and drop an in-progress long-press (the callbacks are still read via
-                // rememberUpdatedState to keep the per-tick callback churn from re-keying).
-                .pointerInput(starrable) {
-                    detectTapGestures(
-                        onTap = { currentOpenDetail() },
-                        onLongPress = onLongPress,
-                    )
-                }
-                .semantics {
-                    onClick(label = detailActionLabel) { currentOpenDetail(); true }
-                    if (starrable) onLongClick(label = starActionLabel) { currentToggleStar(); true }
-                }
-        } else {
-            base
-        }
-    }
-    // A starred card is marked by a gold border rather than any in-row element, so the pinned
-    // state costs no width (the border draws inside the card's bounds). The gold is the theme's
-    // resolved starred tone; an unstarred card keeps the default outline (SPEC D8).
-    val cardBorder =
-        if (isStarred) BorderStroke(2.dp, LocalStarredBorderColor.current)
-        else CardDefaults.outlinedCardBorder()
-    OutlinedCard(modifier = cardModifier, border = cardBorder) {
-        // A traversal group so a disrupted timed row can announce its status chip *before*
-        // the destination and countdown it qualifies (the chip is placed below but carries
-        // a lower traversalIndex) — a screen reader shouldn't voice a departure as
-        // actionable before its warning (SPEC principle 2).
-        Column(modifier = Modifier.padding(16.dp).semantics { isTraversalGroup = true }) {
-            if (row.stopDisruption != null) {
-                // A stop-level status row: the whole stop is disrupted (a closure). It titles
-                // itself by the interchange, else the stop when there's no hub name — always shown,
-                // so a bus "Bus Stop Closed" notice that never names its own stop still says which
-                // stop (SPEC *Disruptions*). The body collapses to its first line, expands on tap.
-                // The place name is stripped from the body here, at display — not upstream — so the
-                // near-me fold's identity stays member-independent (see cleanDisruptionBody).
-                StopClosureContent(
-                    cleanDisruptionBody(
-                        row.stopDisruption,
-                        stopName = row.stopName,
-                        hubName = row.hubName,
-                        aliases = row.placeAliases,
-                    ),
-                    title = row.hubName.ifBlank { row.stopName },
-                    onDismiss = onDismiss,
-                )
-                return@Column
-            }
-
-            if (row.upcoming.isEmpty()) {
-                // A status row: the line is disrupted (the chip says how) and returned no
-                // predictions (SPEC *Departures*). Pill + chip on the left, "No departures"
-                // where a countdown would sit on the right — the pill already names the
-                // line, so no destination text is repeated (it would read "Circle Circle").
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
-                    // The chip lives in the weighted slack so it absorbs the shrink (and
-                    // ellipsizes) when space is tight; "No departures" is unweighted, so the
-                    // Row measures it first and always reserves its width — the status can't
-                    // be squeezed to zero on a narrow screen or at a large font scale.
-                    Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                        row.status?.let { status -> DisruptionChip(status.description) }
-                    }
-                    val noDepartures = stringResource(R.string.status_no_departures_description)
-                    Text(
-                        text = stringResource(R.string.status_no_departures),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        // The visible glyph is a compact dash; a screen reader hears the
-                        // explicit "No departures" so a bare dash isn't heard as missing data.
-                        modifier = Modifier
-                            .padding(start = 12.dp)
-                            .semantics { contentDescription = noDepartures },
-                    )
-                }
-                return@Column
-            }
-
-            // The next few times, grouped by destination *and branch* and ordered
-            // soonest-first: the soonest group leads, and a branching direction (same line,
-            // same direction) keeps each destination — and each via-branch of one terminus —
-            // on its own line with its own merged countdown, so a countdown is never read
-            // under the wrong destination or the wrong branch (SPEC D8). The grouping is the
-            // shared `destinationLines` (the widget uses the same one, so the two surfaces
-            // can't drift); each line renders identically — the leading one is not styled as a
-            // bigger "headline" — so a multi-line card reads as a parallel set.
-            val destinationLines = DepartureRows.destinationLines(row, MAX_TIMES, LocalRouteTopology.current)
-
-            // The pill sits to the left of the destination line(s). A single-destination
-            // card centers the pill against its one line so pill and destination sit level
-            // (the common case); a branching card top-aligns it so the pill hugs the first
-            // destination rather than floating against the pair. The stop name is
-            // intentionally not shown on the card for now — the stop returns with multi-stop
-            // watching (Phase 2), see TODO.
-            val pillAlignment =
-                if (destinationLines.size > 1) Alignment.Top else Alignment.CenterVertically
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = pillAlignment) {
-                LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
-                Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                    destinationLines.forEachIndexed { index, group ->
-                        DestinationLine(
-                            // The destination, or the direction key (direction word, else
-                            // platform) as a cue when TfL gives no destination, so cards TfL
-                            // keeps distinct stay distinguishable (SPEC principle 1).
-                            label = DepartureLabels.destinationLabel(group.destination, row.directionKey)
-                                ?: stringResource(R.string.destination_unknown),
-                            times = group.times,
-                            stale = stale,
-                            now = now,
-                            // The branch is part of the group key, so every time in this group
-                            // shares it — the line's branch names this group, not just its
-                            // first departure.
-                            branch = group.branch,
-                            // Space the lines of a branching card apart; the first hugs the
-                            // pill's top.
-                            modifier = if (index == 0) Modifier else Modifier.padding(top = 8.dp),
-                        )
-                    }
-                }
-                // No trailing star element at all — the whole point is to reclaim the width the
-                // per-row button took on every card. A starred (pinned) service is marked by the
-                // card's gold border (see cardBorder above) and its position at the top of the
-                // list (SPEC D8); long-press the card to pin/unpin, or tap it for the detail view,
-                // where a visible, labeled star is the discoverable path ([RouteDetailScreen]).
-            }
-            // A disrupted line is flagged below the departures, left-aligned with the pill,
-            // but announced first (traversalIndex) so the warning precedes the countdowns it
-            // qualifies. The chip names TfL's status ("Severe Delays"), the line being the
-            // pill above (SPEC D3).
-            row.status?.let { status ->
-                DisruptionChip(
-                    status.description,
-                    Modifier.padding(top = 8.dp).semantics { traversalIndex = -1f },
+    val starColor = LocalStarredBorderColor.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(starrable) {
+                detectTapGestures(
+                    onTap = { currentOpenDetail(currentRow) },
+                    onLongPress = onLongPress,
                 )
             }
-        }
-    }
+            .semantics {
+                isTraversalGroup = true
+                onClick(label = detailActionLabel) { currentOpenDetail(currentRow); true }
+                if (starrable) onLongClick(label = starActionLabel) { currentToggleStar(currentRow); true }
+            }
+            .then(
+                if (isStarred) {
+                    Modifier.drawBehind {
+                        drawRect(color = starColor, size = size.copy(width = 3.dp.toPx()))
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content,
+    )
+}
+
+/**
+ * The inline disruption warning ⚠ on a route row (SPEC D3): a small glyph in the error color, sat
+ * just left of the countdown but announced first ([traversalIndex] = -1f) so a screen reader voices
+ * the warning — TfL's full status wording, its [description] — before the countdown it qualifies
+ * (SPEC principle 2). A glyph `Text`, not `Icons.Filled.Warning`, since that isn't in
+ * material-icons-core (like the outline star the app already vendors).
+ */
+@Composable
+private fun DisruptionWarningGlyph(description: String, modifier: Modifier = Modifier) {
+    Text(
+        text = "⚠",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.error,
+        modifier = modifier.semantics {
+            contentDescription = description
+            traversalIndex = -1f
+        },
+    )
 }
 
 /**
@@ -1347,128 +1337,136 @@ internal fun DestinationLine(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (branch == null) {
-            val style = MaterialTheme.typography.titleMedium
-            val abbreviated = remember(label) { DestinationAbbreviations.abbreviate(label) }
-            if (abbreviated == label) {
-                // Nothing to abbreviate — keep the cheap no-measuring path: the destination
-                // takes the space the countdown leaves and is hard-clipped (a clean cut, no
-                // ellipsis) if it must.
+        DestinationLabelContent(label, branch, Modifier.weight(1f).padding(end = 12.dp))
+        if (times.isNotEmpty()) {
+            CountdownLabel(times, stale, now)
+        }
+    }
+}
+
+/**
+ * The destination label of a route — the terminus, its abbreviation/branch rendering — laid into the
+ * [modifier] the caller provides (a weighted slot beside the countdown, or beside the pill on a group
+ * card). Extracted from [DestinationLine] so both the standalone destination line and the group
+ * card's route rows render the label identically. A branch-free name shortens common whole words
+ * ([DestinationAbbreviations]) then hard-clips (no ellipsis); a branching name shares the width with
+ * its "/branch" cue ([branchedLabel]), the branch outranking the terminus. The full name stays the
+ * screen-reader label when the visible text is shortened.
+ */
+@Composable
+private fun RowScope.DestinationLabelContent(label: String, branch: String?, modifier: Modifier) {
+    if (branch == null) {
+        val style = MaterialTheme.typography.titleMedium
+        val abbreviated = remember(label) { DestinationAbbreviations.abbreviate(label) }
+        if (abbreviated == label) {
+            // Nothing to abbreviate — keep the cheap no-measuring path: the destination takes the
+            // space the countdown leaves and is hard-clipped (a clean cut, no ellipsis) if it must.
+            Text(
+                text = label,
+                style = style,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                modifier = modifier,
+            )
+        } else {
+            // The name has a word we can shorten, so measure: show it in full when it fits, shrink to
+            // the abbreviated form when it wouldn't, and clip only if even that is too wide (SPEC
+            // destination-label — abbreviate before truncating).
+            BoxWithConstraints(modifier = modifier) {
+                val measurer = rememberTextMeasurer()
+                // Key the measurement on the font scale, not the label alone: a display-size /
+                // accessibility resize grows the text while the row's px width is unchanged, so a
+                // width cached on the label would stay stale and the abbreviation never fire.
+                val fontScale = LocalDensity.current.fontScale
+                val fullWidth = remember(label, style, fontScale) {
+                    measurer.measure(label, style, maxLines = 1).size.width
+                }
+                val display = if (fullWidth <= constraints.maxWidth) label else abbreviated
                 Text(
-                    text = label,
+                    text = display,
                     style = style,
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
-                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                    // Keep the full name for a screen reader when the visible text is shortened.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (display != label) Modifier.semantics { contentDescription = label }
+                            else Modifier,
+                        ),
                 )
-            } else {
-                // The name has a word we can shorten, so measure: show it in full when it
-                // fits, shrink to the abbreviated form when it wouldn't, and clip only if even
-                // that is too wide (SPEC destination-label — abbreviate before truncating).
-                BoxWithConstraints(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                    val measurer = rememberTextMeasurer()
-                    // Key the measurement on the font scale, not the label alone: a display-size /
-                    // accessibility resize grows the text while the row's px width is unchanged, so
-                    // a width cached on the label would stay stale and the abbreviation never fire.
-                    val fontScale = LocalDensity.current.fontScale
-                    val fullWidth = remember(label, style, fontScale) {
-                        measurer.measure(label, style, maxLines = 1).size.width
-                    }
-                    val display = if (fullWidth <= constraints.maxWidth) label else abbreviated
-                    Text(
-                        text = display,
-                        style = style,
-                        maxLines = 1,
-                        overflow = TextOverflow.Clip,
-                        // Keep the full name for a screen reader when the visible text is shortened.
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(
-                                if (display != label) Modifier.semantics { contentDescription = label }
-                                else Modifier,
-                            ),
-                    )
-                }
-            }
-        } else {
-            // The branch is the cue that tells a branching line's two trunks apart, so it
-            // outranks the terminus for space: the full branch is kept while an abbreviated
-            // terminus can sit beside it, and the terminus yields first — full name, then its
-            // abbreviated form, then a clean clip (SPEC destination-label). The branch's own
-            // label is already the board short form ("Charing X"), so [abbreviateBranch] is a
-            // no-op here; a fuller rider-readable form under width pressure is a follow-up (TODO).
-            BoxWithConstraints(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                val style = MaterialTheme.typography.titleMedium
-                val measurer = rememberTextMeasurer()
-                val abbreviatedLabel = remember(label) { DestinationAbbreviations.abbreviate(label) }
-                val shortBranch = remember(branch) { abbreviateBranch(branch) }
-                // Measure each candidate string, keyed on the font scale as well as the text, so a
-                // display-size / accessibility resize re-measures rather than reusing a width cached
-                // on the string alone (which would leave the abbreviation stuck). branchedLabel turns
-                // the widths into the terminus/branch strings so the rule (branch outranks terminus;
-                // branch-alone and bare when the terminus has no room at all) is unit-tested apart
-                // from the render.
-                val fontScale = LocalDensity.current.fontScale
-                fun widthOf(text: String) = measurer.measure(text, style, maxLines = 1).size.width
-                val resolved = branchedLabel(
-                    label = label,
-                    abbreviatedLabel = abbreviatedLabel,
-                    branch = branch,
-                    abbreviatedBranch = shortBranch,
-                    maxWidth = constraints.maxWidth,
-                    labelWidth = remember(label, style, fontScale) { widthOf(label) },
-                    abbrevLabelWidth = remember(abbreviatedLabel, style, fontScale) { widthOf(abbreviatedLabel) },
-                    fullBranchWidth = remember(branch, style, fontScale) { widthOf("/$branch") },
-                    abbrevBranchWidth = remember(shortBranch, style, fontScale) { widthOf("/$shortBranch") },
-                    firstGlyphWidth = remember(abbreviatedLabel, style, fontScale) { widthOf(abbreviatedLabel.take(1)) },
-                    branchFirstGlyphWidth = remember(shortBranch, style, fontScale) { widthOf("/${shortBranch.take(1)}") },
-                )
-                val density = LocalDensity.current
-                val terminusMaxWidth = with(density) { resolved.terminusMaxWidthPx.toDp() }
-                val branchMaxWidth = with(density) { resolved.branchMaxWidthPx.toDp() }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = resolved.terminus,
-                        style = style,
-                        maxLines = 1,
-                        // One line, no wrap: without this a two-word terminus ("Battersea Power")
-                        // wraps its second word onto a dropped line while the Text still fills its
-                        // slot, floating the branch off to the far edge — the slash ends up detached,
-                        // as in "Battersea        /Charing X". softWrap = false clips on one line so
-                        // the slash stays against the last visible glyph. Hard clip (a clean cut, no
-                        // ellipsis). The width budget from branchedLabel caps each side; under
-                        // pressure the two share the row in proportion so both clip by the same
-                        // fraction (equal truncation), and a budget wider than the natural text just
-                        // lets it sit at its own width with no gap before the branch.
-                        softWrap = false,
-                        overflow = TextOverflow.Clip,
-                        modifier = Modifier
-                            .widthIn(max = terminusMaxWidth)
-                            // Keep the full name for a screen reader when the visible text is shortened or hidden.
-                            .then(
-                                resolved.contentDescription?.let { full ->
-                                    Modifier.semantics { contentDescription = full }
-                                } ?: Modifier,
-                            ),
-                    )
-                    Text(
-                        text = resolved.branch,
-                        style = style,
-                        maxLines = 1,
-                        // Hard-clipped to its own budget too, so under pressure the branch cuts
-                        // cleanly at the same fraction as the terminus instead of pushing it off.
-                        softWrap = false,
-                        overflow = TextOverflow.Clip,
-                        modifier = Modifier.widthIn(max = branchMaxWidth),
-                    )
-                }
             }
         }
-        if (times.isNotEmpty()) {
-            CountdownLabel(times, stale, now)
+    } else {
+        // The branch is the cue that tells a branching line's two trunks apart, so it outranks the
+        // terminus for space: the full branch is kept while an abbreviated terminus can sit beside it,
+        // and the terminus yields first — full name, then its abbreviated form, then a clean clip
+        // (SPEC destination-label). The branch's own label is already the board short form ("Charing
+        // X"), so [abbreviateBranch] is a no-op here; a fuller rider-readable form is a follow-up (TODO).
+        BoxWithConstraints(modifier = modifier) {
+            val style = MaterialTheme.typography.titleMedium
+            val measurer = rememberTextMeasurer()
+            val abbreviatedLabel = remember(label) { DestinationAbbreviations.abbreviate(label) }
+            val shortBranch = remember(branch) { abbreviateBranch(branch) }
+            // Measure each candidate string, keyed on the font scale as well as the text, so a
+            // display-size / accessibility resize re-measures rather than reusing a width cached on
+            // the string alone. branchedLabel turns the widths into the terminus/branch strings so the
+            // rule (branch outranks terminus; branch-alone and bare when the terminus has no room at
+            // all) is unit-tested apart from the render.
+            val fontScale = LocalDensity.current.fontScale
+            fun widthOf(text: String) = measurer.measure(text, style, maxLines = 1).size.width
+            val resolved = branchedLabel(
+                label = label,
+                abbreviatedLabel = abbreviatedLabel,
+                branch = branch,
+                abbreviatedBranch = shortBranch,
+                maxWidth = constraints.maxWidth,
+                labelWidth = remember(label, style, fontScale) { widthOf(label) },
+                abbrevLabelWidth = remember(abbreviatedLabel, style, fontScale) { widthOf(abbreviatedLabel) },
+                fullBranchWidth = remember(branch, style, fontScale) { widthOf("/$branch") },
+                abbrevBranchWidth = remember(shortBranch, style, fontScale) { widthOf("/$shortBranch") },
+                firstGlyphWidth = remember(abbreviatedLabel, style, fontScale) { widthOf(abbreviatedLabel.take(1)) },
+                branchFirstGlyphWidth = remember(shortBranch, style, fontScale) { widthOf("/${shortBranch.take(1)}") },
+            )
+            val density = LocalDensity.current
+            val terminusMaxWidth = with(density) { resolved.terminusMaxWidthPx.toDp() }
+            val branchMaxWidth = with(density) { resolved.branchMaxWidthPx.toDp() }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = resolved.terminus,
+                    style = style,
+                    maxLines = 1,
+                    // One line, no wrap: without this a two-word terminus ("Battersea Power") wraps
+                    // its second word onto a dropped line while the Text still fills its slot, floating
+                    // the branch off to the far edge. softWrap = false clips on one line so the slash
+                    // stays against the last visible glyph. Hard clip (a clean cut, no ellipsis). The
+                    // width budget from branchedLabel caps each side; under pressure the two share the
+                    // row in proportion so both clip by the same fraction (equal truncation).
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier
+                        .widthIn(max = terminusMaxWidth)
+                        // Keep the full name for a screen reader when the visible text is shortened or hidden.
+                        .then(
+                            resolved.contentDescription?.let { full ->
+                                Modifier.semantics { contentDescription = full }
+                            } ?: Modifier,
+                        ),
+                )
+                Text(
+                    text = resolved.branch,
+                    style = style,
+                    maxLines = 1,
+                    // Hard-clipped to its own budget too, so under pressure the branch cuts cleanly at
+                    // the same fraction as the terminus instead of pushing it off.
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier.widthIn(max = branchMaxWidth),
+                )
+            }
         }
     }
 }
