@@ -397,11 +397,14 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         multi-row card (keep long-press-to-star and tap-to-detail per row).
   - [ ] **Tap a route row → all stops for that route** (maintainer, 2026-09-22). Extends the
         route-detail tap to show the route's full stop sequence, not just star + disruption text.
-  - [ ] **Try a compass word for the bus bearing header** (maintainer, 2026-09-22). The bearing
-        qualifier renders `Stop ->S` (TfL's own pole format) today; try normalizing it to a compass
-        word — `Southbound`/`Northbound` — so it reads like the rail compass qualifier (`Eastbound`)
-        and drops the arrow. `bearingSpoken` in `HeaderQualifier.kt` already has the letter→word map;
-        decide the intercardinal form (`Southwest-bound`?) and whether the shared terminus follows.
+  - [ ] **A unified, arrow-free appearance for the bus direction header** (maintainer, 2026-09-22).
+        The bus compass renders `Stop ->S` (TfL's own pole format) today, ASCII to avoid the misaligned
+        glyph. Maintainer leans toward dropping the arrow entirely and showing a plain compass **word**
+        — just `Southbound`/`Northbound` — so both direction cases (a `CompassPoint` bearing and an
+        arrow-in-`stopLetter`, now on one path) read the same and match the rail compass qualifier
+        (`Eastbound`). `bearingSpoken` in `HeaderQualifier.kt` already has the letter→word map; decide
+        the intercardinal form (`Southwest-bound`?) and whether the shared terminus follows. A
+        better-aligned arrow glyph would be an acceptable alternative to ASCII if the word doesn't fit.
   - [ ] **Split a mixed-platform row into a card per platform** (Codex P1, PR #119). A single
         (line, direction) row can carry departures from more than one platform (a terminus, a platform
         change), since `DepartureRows.forStop` merges a line's one direction into one card. The
