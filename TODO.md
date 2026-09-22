@@ -351,23 +351,29 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         qualifier build/measure generalized to compass-or-terminus (`headerQualifier` /
         `headerQualifierFit`), with a **name floor** so a long terminus at a large font can't crowd
         the stop name to zero (Codex P2, PR #78). JVM + logic screenshot tests.
-  - [ ] **Bus letter/bearing qualifier `(S)` / `(→S)` — needs the StopPoint-indicator capture**
-        (mocks 2026-09-21). The terminus form shipped (above); the letter/bearing is the other half
-        and is **pending the StopPoint-indicator capture below** — TfL's `stopLetter`/`indicator`
-        (`->S`) aren't fetched (the near-me search response carries them but `TflStopPointDto` drops
-        them; watched stops refresh from arrivals only, which lack them). Thread the captured
-        letter/bearing onto `DepartureRow` and into the qualifier chain (the header rendering already
-        generalizes to any qualifier). Its own PR.
+  - [x] **Bus letter/bearing split — the bus analog of the rail compass** (maintainer, 2026-09-22:
+        "make bus stop letters like rail station compass directions"). A bus place now **splits by
+        stop letter** — one header per pole, "King's Cross Station (D)" — the way rail splits by
+        compass, so a bus interchange isn't a wall of cards under one bare name. No letter → falls
+        back to the pole's **bearing** ("(→E)"); neither → the shared terminus (above); none → bare.
+        Precedence: letter → bearing → terminus → bare. `TflStopPointDto` now parses `stopLetter` +
+        the `CompassPoint` property, threaded `StopLocation → StopRef → Snapshot.mergeStop →
+        StopArrivals → DepartureRow` (the `clusterId` route). The group cue unified into a
+        `StopQualifier` sealed type (compass / bus-letter / bus-bearing / terminus); `StopGrouping`
+        splits on it; `headerQualifier` renders each. **Near-me only for now**: a watched bus stop
+        refreshes from arrivals (no letter) — captured/persisting the letter on the watched-stop add
+        flow is the remaining piece (below). JVM + logic screenshot tests.
   - [ ] **Revisit the header grain for a busy interchange** (maintainer, 2026-09-21). The rail
-        compass split (above) already breaks a hub into direction blocks. Still open: whether a
-        dense hub wants a *finer* grain still (per-line dividers within a direction), or whether the
-        compass blocks are enough — judge on a device; the alternatives are drawn in the mock.
-  - [ ] **Capture TfL's StopPoint indicator to light up `(S)` / `(→S)`.** The bus stop
-        letter and compass bearing TfL prints (`stopLetter` / `indicator`, e.g. "->S") aren't
-        fetched yet — the seed carries only `StopRef(id, name)` and arrivals give
-        `platformName`, not the letter. Add the indicator to the stop metadata (StopPoint
-        fetch → persist on the watched stop) and thread it into the qualifier's letter/bearing
-        forms. Lands with Phase 2's watched-stop add flow, where bus stops enter.
+        compass split and the bus letter split (above) already break a hub into per-direction/per-pole
+        blocks. Still open: whether a dense hub wants a *finer* grain still (per-line dividers within
+        a block), or whether the blocks are enough — judge on a device; the alternatives are in the mock.
+  - [ ] **Persist the bus letter/bearing onto a watched stop.** The near-me path now captures a
+        bus pole's `stopLetter`/`CompassPoint` and splits on it (above), but a **watched** bus stop
+        refreshes from the arrivals feed, which carries neither — so a watched bus stop still shows a
+        bare/terminus header, not its "(D)". Capture the letter on the Phase-2 watched-stop add flow
+        (the StopPoint fetch that resolves a watched stop's cluster) and persist it on the watched
+        stop / `PersistedStop`, so it survives restore like `clusterId` rather than being re-fetched
+        only on a near-me refresh.
   - [ ] **Make the stop header tappable** (maintainer, 2026-09-21). The **route card tap
         landed** — it opens the full-screen `RouteDetailScreen` (star + full disruption text; see the
         detail-view item under *Watched stops and settings*). Still outstanding: tapping the

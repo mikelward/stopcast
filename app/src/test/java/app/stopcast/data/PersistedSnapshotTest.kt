@@ -118,6 +118,31 @@ class PersistedSnapshotTest {
     }
 
     @Test
+    fun `the bus pole letter and bearing survive the round trip`() {
+        // They are grouping inputs like clusterId, so a restored snapshot must keep its per-pole
+        // "(D)"/"(→E)" headers instead of collapsing to bare/terminus until the refresh lands (Codex
+        // P2, PR #118).
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                StopArrivals(
+                    stopId = "490000129D",
+                    stopName = "King's Cross Station",
+                    departures = emptyList(),
+                    fetchedAt = now,
+                    lines = listOf(LineRef("17", "17", "bus")),
+                    stopLetter = "D",
+                    bearing = "E",
+                ),
+            ),
+            fetchedAt = now,
+        )
+        val restored = snapshot.toPersisted().toDomain()!!.stops.single()
+        assertEquals("D", restored.stopLetter)
+        assertEquals("E", restored.bearing)
+        assertEquals(snapshot, snapshot.toPersisted().toDomain())
+    }
+
+    @Test
     fun `restoring normalizes an older build's raw branch spelling`() {
         // A snapshot a previous build wrote can carry TfL's raw "Charing Cross" / "Bank Branch";
         // restore folds them to the canonical short label so a row never shows two spellings for

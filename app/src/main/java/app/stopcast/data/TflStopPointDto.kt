@@ -3,6 +3,7 @@ package app.stopcast.data
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.cleanStopName
+import java.util.Locale
 import kotlinx.serialization.Serializable
 
 /**
@@ -42,12 +43,31 @@ data class TflStopPointDto(
     // Pancras together. Blank for a stop in no hub. Used to fold an interchange's shared disruption
     // (SPEC *Disruptions*); a public id, never a coordinate.
     val hubNaptanCode: String = "",
+    // The bus stop's pole letter — the "D" a rider reads on the physical stop ("Stop D") — for the
+    // per-pole bus header (SPEC D8: "King's Cross Station (D)"). Blank for a stop with no letter (a
+    // station, or a bus stop TfL gives none). A public fact about the stop, never a coordinate.
+    val stopLetter: String = "",
+    // TfL's per-stop key/value extras. The one stopcast reads is the **CompassPoint** (the pole's
+    // bearing, "E"/"SW"), the fallback bus header cue when a stop has no letter ([compassBearing]).
+    val additionalProperties: List<TflAdditionalPropertyDto> = emptyList(),
     // The member stop points nested under this one — populated when TfL returns a hub tree from
     // `/StopPoint/{hubId}` (the interchange's stations and their platforms). Walked to collect every
     // member station's name for the disruption strip's alias set ([hubStationNames]); empty in the
     // flat nearby-search response.
     val children: List<TflStopPointDto> = emptyList(),
 )
+
+/** One TfL `additionalProperties` entry. stopcast reads only the `CompassPoint` [key]. */
+@Serializable
+data class TflAdditionalPropertyDto(
+    val category: String = "",
+    val key: String = "",
+    val value: String = "",
+)
+
+/** The pole's compass bearing ("E", "SW") from TfL's `CompassPoint` property, else blank. */
+fun TflStopPointDto.compassBearing(): String =
+    additionalProperties.firstOrNull { it.key.equals("CompassPoint", ignoreCase = true) }?.value.orEmpty()
 
 /**
  * Every distinct station-name spelling in this hub tree — this node's cleaned [commonName] plus all
@@ -104,5 +124,9 @@ fun TflStopPointDto.toStopLocationOrNull(): StopLocation? {
         // provides it is what keeps a station whose name it spells several ways together.
         clusterId = stationNaptan.ifBlank { stopName },
         hubId = hubNaptanCode,
+        // The pole's letter and bearing, for the per-pole bus header (SPEC D8). Both blank for a
+        // station or a bus stop TfL gives neither.
+        stopLetter = stopLetter.trim(),
+        bearing = compassBearing().trim().uppercase(Locale.ROOT),
     )
 }

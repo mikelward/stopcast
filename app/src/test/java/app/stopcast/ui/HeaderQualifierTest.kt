@@ -2,6 +2,7 @@ package app.stopcast.ui
 
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import app.stopcast.domain.StopQualifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -17,7 +18,7 @@ class HeaderQualifierTest {
 
     @Test
     fun `builds a compass qualifier with a single-letter fallback and no name floor`() {
-        val q = headerQualifier(directionLabel = "Eastbound", terminusLabel = null)!!
+        val q = headerQualifier(StopQualifier.Compass("Eastbound"))!!
         assertEquals(" – EASTBOUND", q.fullText)
         assertEquals(" – E", q.shortText)
         assertEquals("Eastbound", q.spoken)
@@ -25,8 +26,25 @@ class HeaderQualifierTest {
     }
 
     @Test
+    fun `builds a bus letter qualifier in parentheses with no fallback and no floor`() {
+        val q = headerQualifier(StopQualifier.BusLetter("d"))!!
+        assertEquals(" (D)", q.fullText)
+        assertEquals(" (D)", q.shortText) // short and unambiguous — no shorter form, no floor needed
+        assertEquals("Stop D", q.spoken)
+        assertEquals(0f, q.nameFloorFraction, 0f)
+    }
+
+    @Test
+    fun `builds a bus bearing qualifier with an arrow and a spoken direction`() {
+        val q = headerQualifier(StopQualifier.BusBearing("sw"))!!
+        assertEquals(" (→SW)", q.fullText)
+        assertEquals("Southwest-bound", q.spoken) // the "(→SW)" glyph reads as a direction
+        assertEquals(0f, q.nameFloorFraction, 0f)
+    }
+
+    @Test
     fun `builds a bus terminus qualifier with an arrow, word-abbreviated fallback, and a name floor`() {
-        val q = headerQualifier(directionLabel = null, terminusLabel = "Bank")!!
+        val q = headerQualifier(StopQualifier.Terminus("Bank"))!!
         assertEquals(" → BANK", q.fullText)
         assertEquals("to Bank", q.spoken)
         // The terminus keeps a name floor so a long place name can't be crowded to zero.
@@ -38,16 +56,14 @@ class HeaderQualifierTest {
         // The destination card renames "Battersea Power" → "Battersea" (DepartureLabels); the header
         // must use the same so it doesn't read "→ BATTERSEA POWER" above a "Battersea" card (Codex
         // P2, PR #116).
-        val q = headerQualifier(directionLabel = null, terminusLabel = "Battersea Power")!!
+        val q = headerQualifier(StopQualifier.Terminus("Battersea Power"))!!
         assertEquals(" → BATTERSEA", q.fullText)
         assertEquals("to Battersea", q.spoken)
     }
 
     @Test
-    fun `the compass wins when a group somehow carries both, and neither means no qualifier`() {
-        // Grouping never sets both, but the builder is explicit about precedence and the null case.
-        assertEquals(" – NORTHBOUND", headerQualifier("Northbound", "Bank")!!.fullText)
-        assertNull(headerQualifier(null, null))
+    fun `no qualifier means no header qualifier`() {
+        assertNull(headerQualifier(null))
     }
 
     @Test

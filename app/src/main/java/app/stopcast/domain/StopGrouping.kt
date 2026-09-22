@@ -15,10 +15,12 @@ package app.stopcast.domain
  * per direction — "King's Cross – Eastbound" — since a busy interchange under one bare name is a
  * wall of cards with direction living only in each destination. The compass, not TfL's
  * `inbound`/`outbound`, is the key: TfL's own direction is inconsistent across lines at one
- * platform (see [PlatformDirection]). A row with **no** compass (a bus pole, a bare "Platform 4")
- * takes a **bus terminus** qualifier instead — "→ Terminus" when the whole bus stop heads one way
- * ([sharedBusTerminus]) — else the bare per-place header. The bus letter/bearing (`->N`, in stop
- * metadata) is the remaining follow-up (TODO).
+ * platform (see [PlatformDirection]). A **bus** pole, which carries no compass in the arrivals feed,
+ * splits on its **stop letter** ("King's Cross Station (D)"), else its **compass bearing** ("(→E)")
+ * when TfL gives no letter — the bus analog of the rail compass, from the nearby lookup's
+ * [DepartureRow.stopLetter]/[DepartureRow.bearing]. A bus place with neither falls back to a **shared
+ * terminus** ("→ Bank") when the whole stop heads one way ([sharedBusTerminus]), else the bare
+ * per-place header. The group's [StopQualifier] carries whichever cue it split on.
  *
  * The cluster key is TfL's `stationNaptan` where it gives one, else the cleaned display name
  * ([clusterKeyOf]; resolved in the nearby lookup). Keying on TfL's own cluster is what keeps a
@@ -88,15 +90,15 @@ object StopGrouping {
             // the bare header until the blank prediction departs (Codex P2, PR #109).
             //
             // A no-prediction status row (a suspended line) has an empty [upcoming], so it resolves
-            // to null and stays directionless on its own — but the stop's LIVE timed rows still
+            // to no compass and stays directionless on its own — but the stop's LIVE timed rows still
             // parse their compass. Gating on `warnedStops` here instead would null every timed row's
             // direction at a stop where any one line is suspended, collapsing a whole interchange's
             // compass sections back into one bare group (Codex P2, PR #109). The place carve-out for
             // a warned stop stays (clusterKeyOf), so a "No departures" row is still not merged with a
             // same-named pole's live same-line departures.
-            val direction = row.upcoming.firstNotNullOfOrNull { PlatformDirection.of(it.platform) }
-            val key = "$place\u0001${direction.orEmpty()}"
-            infoOf.getOrPut(key) { GroupInfo(place, direction) }
+            val split = splitOf(row)
+            val key = "$place\u0001${split.keyPart}"
+            infoOf.getOrPut(key) { GroupInfo(place, split) }
             byGroup.getOrPut(key) { mutableListOf() }.add(row)
         }
         // Distinct **places** on the whole screen (direction-independent) = the grouped departure
@@ -141,25 +143,27 @@ object StopGrouping {
             )
             .map { (key, groupRows) ->
                 val info = infoOf.getValue(key)
-                // A **bus** place with no rail compass takes the shared terminus as its qualifier
-                // ("→ Terminus") when the whole stop heads one way — the bus analog of the compass,
-                // the cue a rider uses to pick the stop side. Rail keeps the compass; only a
-                // compass-less bus group resolves a terminus, and only when its routes agree (see
-                // [sharedBusTerminus]). The bus letter/bearing (`->N`, stop metadata) is a follow-up.
-                val terminusLabel = if (info.directionLabel == null) sharedBusTerminus(groupRows) else null
+                // The group's **qualifier** — the cue that tells two blocks of one place apart. A
+                // rail platform keys on its compass; a **bus** pole on its letter, else its bearing
+                // (the split above). A compass/letter/bearing-less bus place falls back to the shared
+                // terminus ("→ Bank") when its whole stop heads one way ([sharedBusTerminus]) — else
+                // it is the bare place name.
+                val qualifier = when (val s = info.split) {
+                    is RowSplit.Compass -> StopQualifier.Compass(s.label)
+                    is RowSplit.Letter -> StopQualifier.BusLetter(s.letter)
+                    is RowSplit.Bearing -> StopQualifier.BusBearing(s.bearing)
+                    RowSplit.None -> sharedBusTerminus(groupRows)?.let(StopQualifier::Terminus)
+                }
                 // A header is drawn where it tells the reader something: more than one place
-                // (counting closures), a place split into several directions, a direction worth
-                // naming, or a bus place's shared terminus.
+                // (counting closures), a place split into several groups, or a qualifier worth naming.
                 val showHeader =
-                    multiPlace || info.directionLabel != null || terminusLabel != null ||
-                        (groupsPerPlace[info.place] ?: 1) > 1
+                    multiPlace || qualifier != null || (groupsPerPlace[info.place] ?: 1) > 1
                 StopGroup(
                     stopName = placeName.getValue(info.place),
                     key = key,
                     showHeader = showHeader,
                     rows = groupRows,
-                    directionLabel = info.directionLabel,
-                    terminusLabel = terminusLabel,
+                    qualifier = qualifier,
                     placeKey = info.place,
                 )
             }
@@ -167,9 +171,9 @@ object StopGrouping {
 
     /**
      * The single terminus a **bus** place heads to, for the "→ Terminus" header qualifier, or null
-     * when it has none to stand behind. Bus-only: rail's direction is the compass (this is called
-     * only for a compass-less group), and other compass-less modes stay bare for now — the qualifier
-     * chain is mode-aware (TODO: the bus letter/bearing is the other half).
+     * when it has none to stand behind. Bus-only, and only for a place with no letter or bearing to
+     * split on (this is called only for a [RowSplit.None] group): the letter/bearing is the primary
+     * bus cue, the terminus its fallback; other compass-less modes stay bare.
      *
      * "Heads one way" is judged from **every timed prediction** in the group, not the row headline:
      * a single (line, direction) row can carry departures to more than one terminus (a short-working
@@ -216,9 +220,54 @@ object StopGrouping {
         if (row.stopId in warnedStops) "\u0000stop:${row.stopId}"
         else row.clusterId.ifBlank { "\u0000stop:${row.stopId}" }
 
-    /** A group's place (the cluster key) and the compass [directionLabel] it split on (null when
-     *  the rows carry no parseable compass — a bus pole, a bare platform, or a warned stop). */
-    private data class GroupInfo(val place: String, val directionLabel: String?)
+    /** A group's place (the cluster key) and the [RowSplit] its rows share — the discriminator that
+     *  keys the group within its place (a rail compass, a bus letter/bearing, or none). */
+    private data class GroupInfo(val place: String, val split: RowSplit)
+
+    /**
+     * What a row splits its place on — the per-place group discriminator, resolved per row so rows
+     * that share it land in one group. A **rail** platform splits on its [Compass] (parsed from
+     * `platformName`); a **bus** pole on its [Letter] ("D"), else its [Bearing] ("E") when it has no
+     * letter; anything else is [None] (a compass-less bus with no letter/bearing — which then falls
+     * back to the shared terminus — or a bare platform). The [keyPart] tags each kind so a bus letter
+     * "E" and a bearing "E" never collide in the group key.
+     */
+    private sealed interface RowSplit {
+        val keyPart: String
+
+        data class Compass(val label: String) : RowSplit {
+            override val keyPart get() = "c\u0001$label"
+        }
+
+        data class Letter(val letter: String) : RowSplit {
+            override val keyPart get() = "l\u0001$letter"
+        }
+
+        data class Bearing(val bearing: String) : RowSplit {
+            override val keyPart get() = "b\u0001$bearing"
+        }
+
+        data object None : RowSplit {
+            override val keyPart get() = ""
+        }
+    }
+
+    /**
+     * The [RowSplit] a row belongs to. Rail's **compass** (from ALL the row's predictions, not just
+     * the soonest — TfL can leave the platform blank on some, so a later one may carry it, Codex P2
+     * PR #109) wins where present. Else a **bus** row splits on its pole [DepartureRow.stopLetter],
+     * else its [DepartureRow.bearing]. A status row (empty `upcoming`) carries no letter, so a
+     * suspended bus line stays [None] on its own rather than claiming a pole.
+     */
+    private fun splitOf(row: DepartureRow): RowSplit {
+        row.upcoming.firstNotNullOfOrNull { PlatformDirection.of(it.platform) }
+            ?.let { return RowSplit.Compass(it) }
+        if (row.mode == "bus") {
+            row.stopLetter.trim().ifEmpty { null }?.let { return RowSplit.Letter(it) }
+            row.bearing.trim().ifEmpty { null }?.let { return RowSplit.Bearing(it) }
+        }
+        return RowSplit.None
+    }
 
     // Matches DepartureRows' row ordering: a stop-closure warning outranks a no-prediction
     // status row, which outranks a timed departure.
@@ -230,32 +279,43 @@ object StopGrouping {
 }
 
 /**
- * One (place, direction) group of departure [rows] the screen renders under a single header. A
- * place is a cluster of stops sharing [stopName] (a junction's poles, a station's platforms), so
- * [rows] may span several stop ids; [directionLabel] is the compass direction the place split on
- * ("Eastbound"), or null when the rows carry no parseable compass (a bus pole, a bare platform).
- * [terminusLabel] is the bus fallback: the single terminus a compass-less **bus** place heads to
- * ("Bank"), when the whole stop heads one way, else null (the two labels are mutually exclusive — a
- * group with a compass carries no terminus). With neither, the group is the whole place under its
- * bare name. The screen shows the header as "[stopName] – [directionLabel]" (compass), "[stopName] →
- * [terminusLabel]" (bus terminus), or the bare name.
+ * The cue a group header carries beside the place name — the one thing that tells two groups of one
+ * place apart (SPEC D8). Exactly one kind per group; null on [StopGroup.qualifier] is the bare name.
+ * The screen ([app.stopcast.ui]) owns how each renders ("– Eastbound", "(D)", "(→E)", "→ Bank").
+ */
+sealed interface StopQualifier {
+    /** A rail platform's compass direction ("Eastbound"), parsed from `platformName`. */
+    data class Compass(val label: String) : StopQualifier
+
+    /** A bus pole's letter ("D", TfL `stopLetter`) — the letter on the physical stop. */
+    data class BusLetter(val letter: String) : StopQualifier
+
+    /** A bus pole's compass bearing ("E", TfL `CompassPoint`), the fallback when it has no letter. */
+    data class BusBearing(val bearing: String) : StopQualifier
+
+    /** The single terminus a letter/bearing-less **bus** place heads to ("Bank"), the last fallback. */
+    data class Terminus(val terminus: String) : StopQualifier
+}
+
+/**
+ * One group of departure [rows] the screen renders under a single header. A place is a cluster of
+ * stops sharing [stopName] (a junction's poles, a station's platforms), so [rows] may span several
+ * stop ids. [qualifier] is the group's discriminator within its place — the rail compass, a bus
+ * pole's letter/bearing, or a bus place's shared terminus — or null when the group is the whole
+ * place under its bare name (see [StopQualifier]).
  * [showHeader] is whether to draw the header at all (see [StopGrouping.groupByStop]). [key] is
- * stable and unique per group for a LazyColumn — the place key plus the direction.
+ * stable and unique per group for a LazyColumn — the place key plus the split discriminator.
  */
 data class StopGroup(
     val stopName: String,
     val key: String,
     val showHeader: Boolean,
     val rows: List<DepartureRow>,
-    val directionLabel: String? = null,
-    // The single terminus a compass-less bus place heads to ("Bank"), rendered as "→ Terminus", or
-    // null when its routes diverge or it is not a bus place ([StopGrouping.sharedBusTerminus]).
-    // Mutually exclusive with [directionLabel].
-    val terminusLabel: String? = null,
-    // The place (cluster) identity this group belongs to, shared by every direction group of one
-    // physical place. The near-me screen resolves one **place-wide** header distance from it — the
-    // nearest of all the place's members — so a station's direction headers show one consistent
-    // distance rather than each its own direction's members' nearest (Codex P2, PR #109). Blank only
-    // for a default-constructed group.
+    val qualifier: StopQualifier? = null,
+    // The place (cluster) identity this group belongs to, shared by every group of one physical
+    // place. The near-me screen resolves one **place-wide** header distance from it — the nearest of
+    // all the place's members — so a station's split headers show one consistent distance rather than
+    // each its own group's members' nearest (Codex P2, PR #109). Blank only for a default-constructed
+    // group.
     val placeKey: String = "",
 )
