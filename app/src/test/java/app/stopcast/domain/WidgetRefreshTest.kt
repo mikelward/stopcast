@@ -1,6 +1,8 @@
 package app.stopcast.domain
 
 import java.time.Instant
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -74,5 +76,26 @@ class WidgetRefreshTest {
             listOf(departure("x"))
         }
         assertNull(refreshed)
+    }
+
+    @Test
+    fun `fetches every stop at once rather than one after another`() = runTest {
+        val prior = snapshot(stop("A", listOf(departure("Brixton"))), stop("B", listOf(departure("Walthamstow"))))
+        val gate = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val result = async {
+            WidgetRefresh.refreshedArrivals(prior, t1) { id ->
+                started += id
+                gate.await()
+                listOf(departure("Fresh $id"))
+            }
+        }
+        testScheduler.runCurrent()
+        // Both fetches are in flight before either answers; a sequential loop would have started one.
+        assertEquals(listOf("A", "B"), started)
+        gate.complete(Unit)
+        val refreshed = result.await()!!
+        assertEquals(listOf("A", "B"), refreshed.stops.map { it.stopId })
+        assertTrue(refreshed.stops.all { it.arrivalsFresh })
     }
 }

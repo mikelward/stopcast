@@ -8,6 +8,7 @@ import app.stopcast.domain.StopFinder
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.TflClient
 import app.stopcast.domain.TflRateLimiter
+import app.stopcast.domain.TflRequestPool
 import app.stopcast.domain.cleanStopName
 import app.stopcast.domain.TflException
 import io.ktor.client.HttpClient
@@ -25,6 +26,7 @@ import java.io.IOException
 import java.net.UnknownHostException
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
+import okhttp3.Dispatcher
 
 /**
  * The production [TflClient]: Ktor over the OkHttp engine, decoding TfL's JSON
@@ -51,6 +53,10 @@ class KtorTflClient(
     // limiter so a test (or an unwired client) runs unthrottled; production passes the shared buckets
     // ([SharedTflRateLimiter.rateLimiterFor]).
     private val rateLimiterFor: (String?) -> TflRateLimiter = { TflRateLimiter.UNLIMITED },
+    // The shared cap on in-flight requests, so a caller can fan a refresh out in parallel without
+    // opening one connection per stop. Unbounded by default (tests, an unwired client); production
+    // passes [SharedTflRequestPool.pool] so the app and widget share one cap.
+    private val requestPool: TflRequestPool = TflRequestPool.UNBOUNDED,
 ) : TflClient, StopFinder {
     override suspend fun arrivals(stopId: String): List<Departure> =
         tflRequest { key ->
@@ -129,8 +135,13 @@ class KtorTflClient(
      * [TflException] the caller reasons about (offline / rate-limited / unreachable),
      * so both endpoints share one error contract rather than repeating the mapping.
      * Sanitized throughout — a status code or class name, never a payload (SPEC *Privacy*).
+     * Runs inside a [requestPool] slot, taken before the rate token so a queued request holds no
+     * token while it waits for a slot.
      */
-    private suspend inline fun <T> tflRequest(block: (key: String?) -> T): T =
+    private suspend fun <T> tflRequest(block: suspend (key: String?) -> T): T =
+        requestPool.run { tflRequestInSlot(block) }
+
+    private suspend inline fun <T> tflRequestInSlot(block: suspend (key: String?) -> T): T =
         try {
             // One read of the active key per request, used for both the budget and the app_key so
             // they can't disagree (Codex). Throttle toward the budget before issuing the request
@@ -179,6 +190,18 @@ class KtorTflClient(
         /** The production HTTP client: OkHttp engine + lenient JSON, failing on non-2xx. */
         fun defaultHttpClient(): HttpClient =
             HttpClient(OkHttp) {
+                engine {
+                    config {
+                        // OkHttp's own per-host cap defaults to 5, below the request pool's; raise it
+                        // to match so the pool is the one limit that decides concurrency, not a
+                        // hidden second queue inside the engine.
+                        dispatcher(
+                            Dispatcher().apply {
+                                maxRequestsPerHost = SharedTflRequestPool.MAX_CONCURRENT
+                            },
+                        )
+                    }
+                }
                 expectSuccess = true
                 install(ContentNegotiation) {
                     json(Json { ignoreUnknownKeys = true })
