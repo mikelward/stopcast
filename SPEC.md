@@ -208,7 +208,10 @@ direction cue and disambiguates a rail direction with no platform number, which 
 splits on its **stop letter** — the "D" a rider reads on the physical stop: "**Stop D**". The letter,
 bearing, and "towards" come from the near-me `/StopPoint` lookup (`stopLetter`, `CompassPoint`,
 `Towards`), not the arrivals feed, so a **watched** bus stop (no near-me lookup yet) has none until
-that capture lands. With no letter, the pole falls back to its **compass bearing** ("Stop ->E"); with
+that capture lands. TfL is inconsistent about where it carries the compass — some poles use
+`CompassPoint`, others put an arrow in `stopLetter` (`->N`) in place of a real letter — so an
+arrow-in-`stopLetter` is normalized to the bearing, and a compass-only pole renders the one way
+whichever field TfL used. With no letter, the pole falls back to its **compass bearing** ("Stop ->E"); with
 neither, to the **shared terminus** ("**Stop -> Bank**") when the whole stop heads one way (every route
 names the same, non-blank terminus, principle 1); with none of the three, the **bare place name**.
 Precedence: letter → bearing → terminus → bare. The header is **one line** — "Place – Qualifier

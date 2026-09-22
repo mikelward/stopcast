@@ -118,6 +118,16 @@ fun TflStopPointDto.toStopLocationOrNull(): StopLocation? {
         }
     }
     val primaryMode = modes.firstOrNull().orEmpty()
+    // TfL is inconsistent about a bus pole's compass: some poles carry it in CompassPoint ("S"),
+    // others jam it into stopLetter as an arrow ("->N") in place of a real pole letter ("K"). An
+    // arrow-in-stopLetter is not a letter — drop it and take the compass as the bearing, so a
+    // compass-only pole renders the one way (the ASCII bearing path, "Stop ->N") whichever field TfL
+    // used, rather than a raw "Stop ->N" down the letter path beside a "Stop ->S" down the bearing
+    // path. A genuine pole letter ("K") is alphanumeric and stays on the letter path (SPEC D8).
+    val rawStopLetter = stopLetter.trim()
+    val isPoleLetter = rawStopLetter.isNotEmpty() && rawStopLetter.all { it.isLetterOrDigit() }
+    val poleBearing = compassBearing().trim().uppercase(Locale.ROOT)
+        .ifBlank { if (isPoleLetter) "" else rawStopLetter.filter { it.isLetter() }.uppercase(Locale.ROOT) }
     return StopLocation(
         id = stopId,
         name = stopName,
@@ -132,9 +142,9 @@ fun TflStopPointDto.toStopLocationOrNull(): StopLocation? {
         clusterId = stationNaptan.ifBlank { stopName },
         hubId = hubNaptanCode,
         // The pole's letter, bearing, and "towards" for the per-pole bus header (SPEC D8). All blank
-        // for a station or a bus stop TfL gives none.
-        stopLetter = stopLetter.trim(),
-        bearing = compassBearing().trim().uppercase(Locale.ROOT),
+        // for a station or a bus stop TfL gives none; an arrow-in-stopLetter drops to the bearing above.
+        stopLetter = if (isPoleLetter) rawStopLetter else "",
+        bearing = poleBearing,
         towards = towards().trim(),
     )
 }
