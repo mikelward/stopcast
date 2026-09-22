@@ -42,6 +42,19 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/stopcast_widget_info" />
         </receiver>
+
+        <!-- Serves the bug-report screenshot to the app the user picks in the share sheet.
+             Not exported: only the chooser target we grant a read to (per-Uri, per-share) can
+             read it; nothing else, and never the rest of the cache (see @xml/file_paths). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

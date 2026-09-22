@@ -1,6 +1,6 @@
 [versions]
 aboutlibraries = "12.2.4"
-androidlog = "2.0.60"
+androidlog = "2.1.68"
 agp = "9.4.0"
 activity = "1.13.0"
 composeBom = "2026.08.00"

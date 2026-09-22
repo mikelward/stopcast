@@ -40,8 +40,9 @@ class BugReportConsentDialogScreenshotTest {
         }
         composeRule.waitForIdle()
 
-        // The honesty point: the location is named, not hidden.
+        // The honesty point: the location and the screenshot are named, not hidden.
         composeRule.onNodeWithText("your exact location", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("a screenshot of this screen", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("Continue").assertIsDisplayed()
         composeRule.onNodeWithText("Cancel").assertIsDisplayed()
 

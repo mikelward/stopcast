@@ -38,8 +38,9 @@ data (your settings and its last-good departures snapshot) rides it, so a phone 
 setup. That is Android's channel, tied to your Google account — not something stopcast sends.
 The second is a **bug report you choose to send** (see *Sending a bug report* below): it hands
 the app you pick a diagnostic report that, unlike everything else here, **includes your exact
-location** — but only after a consent screen that says so, and then to your clipboard and the
-app you pick (the clipboard copy happens as soon as you confirm — detailed below).
+location and a screenshot of the screen you sent it from** — but only after a consent screen
+that says so, and then to your clipboard and the app you pick (the clipboard copy happens as
+soon as you confirm — detailed below).
 So the guarantee is precise rather than absolute: **the only user data stopcast itself sends
 off the device goes in its TfL requests** (the Play update check carries none); Android's backup
 carries your saved data under your control, and a bug report carries what you consent to share.
@@ -96,6 +97,9 @@ report carries:
 
 - the **diagnostic log** described above (in full, not redacted — the report already reveals
   more than the log's stop/line ids would),
+- a **screenshot of the screen you sent the report from** — the departures or error screen you
+  are reporting, so the report shows what you saw; it is the app's own window, so the consent
+  dialog itself is not in it,
 - your **exact location from the last nearby lookup** — the fix that found the stops you were
   looking at, which is where a routing bug happened; it is labeled that way in the report, since
   the departures screen can stay open while you move, so it is not necessarily where you are the
@@ -112,8 +116,5 @@ consent screen on later reports; it never sends anything on its own.
 
 This is an honest trade, not a location-safe one: a report useful for a *where did routing go
 wrong* bug has to say where you were, so this one says so plainly rather than stripping the
-context to look safe. For **Play Data Safety** it is a user-initiated share of app diagnostics
-and a coarse-or-precise location to an app you choose — disclosed here as such. (A **screenshot**
-of the screen you were on is a planned addition to this report, landing once the shared
-`mikelward/androidlog` library gains screenshot support — `TODO.md`; it will be named on the
-consent screen before it ships.)
+context to look safe. For **Play Data Safety** it is a user-initiated share of app diagnostics,
+a screenshot, and a coarse-or-precise location to an app you choose — disclosed here as such.
