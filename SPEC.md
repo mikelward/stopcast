@@ -814,6 +814,13 @@ surface.)
   Each departures refresh logs its request count and timing to the on-device debug log (the
   nearby-stop lookup before a near-me load is one more request), so a slow load is diagnosable
   from real numbers.
+- **A repeat nearby lookup close by is answered from memory.** A lookup's stop list is reused
+  for up to a day when a new fix is within 150 m of where it was made (the last four places),
+  saving a request and the round trip every near-me load otherwise waits on. The list is
+  re-ranked from the new fix, so distances and order are current. The entries (each lookup's
+  position and stops) are kept in the app's cache directory so a reopen after the process was
+  killed still benefits (maintainer, 2026-09-23); the OS never backs that directory up, and it
+  never reaches a log or leaves the device (`docs/PRIVACY.md`).
 
 ## One widget, many surfaces
 

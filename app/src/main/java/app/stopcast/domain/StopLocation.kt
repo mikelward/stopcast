@@ -5,8 +5,9 @@ package app.stopcast.domain
  * in-app "near me now" list (SPEC *Finding stops*) and then watch it. [lines] carries the
  * stop's served lines (a public fact about the stop, like its position) so a watched stop
  * can surface a disrupted line with no predictions as a status row (SPEC *Departures*),
- * without a second lookup. Coordinates are the user's business: they stay in memory for
- * the on-demand ranking and never reach a log or any artifact that leaves the device
+ * without a second lookup. Coordinates are the user's business: they're used for the on-demand
+ * ranking, kept on the device only in the never-backed-up nearby-lookup cache
+ * ([NearbyStopsCache]), and never reach a log or any artifact that leaves the device
  * (SPEC *Privacy*).
  */
 data class StopLocation(
