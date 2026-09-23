@@ -1875,6 +1875,37 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("Update available").assertDoesNotExist()
     }
 
+    @Test
+    fun `a low-confidence location shows the banner with a try-again over the list`() {
+        capture("main-location-approximate.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(stops(now.minusSeconds(30)), now.minusSeconds(30), lineStatuses = statuses()),
+                now,
+                {},
+                locationBanner = LocationBanner.APPROXIMATE,
+            )
+        }
+        composeRule.onNodeWithText("Showing your last-known area").assertExists()
+        composeRule.onNodeWithText("Try again").assertExists()
+    }
+
+    @Test
+    fun `no location banner when the fix is current`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(stops(now.minusSeconds(30)), now.minusSeconds(30)),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Showing your last-known area").assertDoesNotExist()
+    }
+
     private fun capture(name: String, dark: Boolean = false, content: @Composable () -> Unit) {
         composeRule.setContent {
             StopCastTheme(darkTheme = dark, dynamicColor = false) {

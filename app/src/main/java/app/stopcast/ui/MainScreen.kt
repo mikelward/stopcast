@@ -185,6 +185,10 @@ fun MainScreen(
     // Start the consent-gated bug report (from the overflow). Default no-op so an unwired
     // build/test renders the menu without one.
     onSendBugReport: () -> Unit = {},
+    // Non-null when the shown stops are backed by a low-confidence location (SPEC *Finding stops*):
+    // a top banner over the list says so and offers "Try again" (which runs [onRefresh], a re-locate).
+    // Null hides it. Default null so an unwired build/test renders without it.
+    locationBanner: LocationBanner? = null,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Overflow-menu and About-dialog visibility. Saved so an open dialog survives rotation.
@@ -531,6 +535,9 @@ fun MainScreen(
                             platformTitle = group.stopName
                         }
                     },
+                    // A platform/station drill-down shows one place's stops, not the near-me set, so
+                    // the "your location is low-confidence" banner doesn't apply there.
+                    locationBanner = if (platformRows != null) null else locationBanner,
                 )
 
             is DeparturesUiState.Error ->
@@ -622,6 +629,9 @@ private fun LoadedContent(
     onOpenPlatform: ((StopGroup) -> Unit)? = null,
     // Drill into the whole place of the tapped group, from a tap on the header's place name.
     onOpenStation: ((StopGroup) -> Unit)? = null,
+    // Non-null when the shown stops are backed by a low-confidence location: a top banner says so
+    // and offers "Try again" (runs [onRefresh], a re-locate). Null hides it.
+    locationBanner: LocationBanner? = null,
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -643,6 +653,21 @@ private fun LoadedContent(
     // Pull-to-refresh over the whole loaded surface (SPEC D6).
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = modifier) {
         Column(Modifier.fillMaxSize()) {
+            // The location behind these stops isn't current (SPEC *Finding stops*, principle 2):
+            // either a stale last-known fix (APPROXIMATE) or a re-locate that couldn't update
+            // (UPDATE_FAILED). Shown first — it frames every stop below — with a "Try again" that
+            // re-locates (onRefresh). It clears once a fresh fix resolves.
+            locationBanner?.let {
+                ActionBanner(
+                    text = stringResource(
+                        when (it) {
+                            LocationBanner.APPROXIMATE -> R.string.location_approximate
+                            LocationBanner.UPDATE_FAILED -> R.string.location_update_failed
+                        },
+                    ),
+                    onTryAgain = onRefresh,
+                )
+            }
             // Independent, not exclusive: a kept snapshot can be BOTH incomplete (a stop
             // was missing) and failed-to-refresh, and both facts have to stay visible —
             // collapsing them into one branch would drop the "stops missing" warning and
@@ -733,6 +758,33 @@ private fun Banner(text: String) {
             color = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
+    }
+}
+
+/**
+ * A [Banner] with a trailing "Try again" action — used for the low-confidence-location banner, where
+ * the honest state is also actionable (re-locate). The text takes the remaining width so the action
+ * stays a fixed trailing target; the button's own padding keeps the bar the same height as a plain
+ * [Banner].
+ */
+@Composable
+private fun ActionBanner(text: String, onTryAgain: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+            )
+            TextButton(onClick = onTryAgain) { Text(stringResource(R.string.try_again)) }
+        }
     }
 }
 

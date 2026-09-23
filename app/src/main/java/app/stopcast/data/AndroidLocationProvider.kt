@@ -10,6 +10,7 @@ import android.os.CancellationSignal
 import android.os.SystemClock
 import app.stopcast.domain.Coordinates
 import app.stopcast.domain.FixSelection
+import app.stopcast.domain.LocationFix
 import app.stopcast.domain.LocationProvider
 import app.stopcast.domain.raceFix
 import kotlin.coroutines.resume
@@ -36,7 +37,7 @@ class AndroidLocationProvider(
     private val context: Context,
     private val warn: (String) -> Unit = {},
 ) : LocationProvider {
-    override suspend fun current(forceFresh: Boolean): Coordinates? {
+    override suspend fun current(forceFresh: Boolean): LocationFix? {
         if (!hasLocationPermission()) {
             warn("location fix skipped: location permission not held")
             return null
@@ -51,7 +52,10 @@ class AndroidLocationProvider(
             return null
         }
         val cached = bestLastKnown(manager, providers)
-        return FixSelection.resolve(
+        // Set when resolve returns the bounded last-known fallback (fresh fix failed) rather than a
+        // fresh or recent-cache fix, so the caller can treat that fix as low-confidence.
+        var fromFallback = false
+        val coordinates = FixSelection.resolve(
             lastKnown = cached?.coordinates,
             lastKnownAgeMillis = cached?.ageMillis,
             // With precise granted, prefer an accurate fix: a recent *coarse* cached fix no
@@ -75,8 +79,10 @@ class AndroidLocationProvider(
             // the check above and here, and a revoked fresh fix returns null, so without this
             // a cached location would be sent to TfL after the user withdrew access.
             hasPermission = ::hasLocationPermission,
+            onFallbackUsed = { fromFallback = true },
             freshFix = { requestFreshFix(manager, providers) },
         )
+        return coordinates?.let { LocationFix(it, isFallback = fromFallback) }
     }
 
     /**

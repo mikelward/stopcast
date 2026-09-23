@@ -59,6 +59,7 @@ import app.stopcast.ui.FontSizeSetting
 import app.stopcast.ui.LocalRouteStops
 import app.stopcast.ui.LocalRouteTopology
 import app.stopcast.ui.LicensesScreen
+import app.stopcast.ui.LocationBanner
 import app.stopcast.ui.LocationGate
 import app.stopcast.ui.MainScreen
 import app.stopcast.ui.ARRIVALS_REUSE
@@ -365,6 +366,7 @@ class MainActivity : ComponentActivity() {
                                     ready = state,
                                     relocate = { onSameSet -> nearbyViewModel.relocate(onSameSet) },
                                     relocating = nearbyViewModel.relocating,
+                                    locationBanner = nearbyViewModel.locationBanner,
                                     onOpenLicenses = openLicenses,
                                     onOpenSettings = { settingsOpen = true },
                                     updateAvailable = updateAvailable.value,
@@ -582,6 +584,10 @@ class MainActivity : ComponentActivity() {
         // into the refresh indicator so pull-to-refresh doesn't retract the instant the fetch
         // is enqueued, leaving the fix to change the set under a screen that reads as settled.
         relocating: StateFlow<Boolean>,
+        // Why the shown nearby set's location is low-confidence, or null — drives the top banner
+        // over the list (SPEC *Finding stops*). From the gate's NearbyStopsViewModel, which owns
+        // the fix and its confidence.
+        locationBanner: StateFlow<LocationBanner?>,
         onOpenLicenses: () -> Unit,
         onOpenSettings: () -> Unit,
         // Play reports a newer version — the overflow gets its red dot and "Update available"
@@ -665,6 +671,7 @@ class MainActivity : ComponentActivity() {
             // fetch that follows a same-set confirmation.
             val relocatingNow by relocating.collectAsStateWithLifecycle()
             val refreshing = departuresRefreshing || relocatingNow
+            val locationBannerNow by locationBanner.collectAsStateWithLifecycle()
             val starred by viewModel.starred.collectAsStateWithLifecycle()
             val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
             val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
@@ -735,6 +742,7 @@ class MainActivity : ComponentActivity() {
                     // page the pre-fix set as current (matches the cancel-on-relocate discipline).
                     onReveal = { mode -> if (!relocatingNow) viewModel.reveal(mode) },
                     onSendBugReport = onSendBugReport,
+                    locationBanner = locationBannerNow,
                 )
             }
         }

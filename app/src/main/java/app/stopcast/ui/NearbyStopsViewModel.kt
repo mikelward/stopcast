@@ -3,6 +3,7 @@ package app.stopcast.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.stopcast.domain.Coordinates
+import app.stopcast.domain.LocationFix
 import app.stopcast.domain.LocationProvider
 import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.NearestStops
@@ -18,6 +19,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * Why the shown nearby set's location is low-confidence, for the departures view's banner
+ * (SPEC *Finding stops*, principle 2). [APPROXIMATE]: the set was resolved from a last-known
+ * fallback fix (a fresh fix failed), so it may be a previous position. [UPDATE_FAILED]: a
+ * re-locate couldn't get a fresh fix, so the set already shown was kept rather than jumping to a
+ * stale one. Both offer a "try again" (a re-locate); both clear once a fresh fix resolves.
+ */
+enum class LocationBanner { APPROXIMATE, UPDATE_FAILED }
 
 /**
  * The location gate in front of the departures view (SPEC *Finding stops*, D1): it turns
@@ -133,6 +143,15 @@ class NearbyStopsViewModel(
     private val _relocating = MutableStateFlow(false)
     val relocating: StateFlow<Boolean> = _relocating.asStateFlow()
 
+    // Whether the shown nearby set is backed by a low-confidence location, and why — for the
+    // departures view's banner (SPEC *Finding stops*, principle 2: don't present a stale/previous
+    // position as current). [LocationBanner.APPROXIMATE] when the set was resolved from a last-known
+    // fallback fix (a fresh fix failed — the Underground no-signal case); [LocationBanner.UPDATE_FAILED]
+    // when a re-locate couldn't get a fresh fix and kept the current set rather than jumping to a
+    // stale one. Null when the fix is fresh (or the gate is showing, which speaks for itself).
+    private val _locationBanner = MutableStateFlow<LocationBanner?>(null)
+    val locationBanner: StateFlow<LocationBanner?> = _locationBanner.asStateFlow()
+
     // The in-flight resolve, canceled before a new one starts so a superseded lookup can't
     // finish last and overwrite the newer result (e.g. a quick double-tap on Try again).
     private var locateJob: Job? = null
@@ -148,7 +167,20 @@ class NearbyStopsViewModel(
         // indicator (a relocate this supersedes must not leave it stuck on).
         _relocating.value = false
         _state.value = State.Locating
-        locateJob = viewModelScope.launch { _state.value = resolveNearby(forceFresh = false) }
+        locateJob = viewModelScope.launch {
+            val fix = currentFix(forceFresh = false)
+            if (fix == null) {
+                _state.value = State.NoLocation
+                _locationBanner.value = null
+                return@launch
+            }
+            val next = resolveFrom(fix.coordinates)
+            _state.value = next
+            // Label a set shown from a low-confidence (last-known fallback) fix as approximate;
+            // clear otherwise (a fresh fix, or a gate/error state that speaks for itself).
+            _locationBanner.value =
+                if (next is State.Ready && fix.isFallback) LocationBanner.APPROXIMATE else null
+        }
     }
 
     /**
@@ -167,6 +199,11 @@ class NearbyStopsViewModel(
      * - **a new set** (walked to the next station): emitted as [State.Ready]; the caller swaps
      *   in a fresh per-set ViewModel that fetches on its own init, so the old set is never
      *   re-fetched here.
+     * - **a low-confidence fix over a shown set** (the Underground case — a fresh fix failed):
+     *   don't jump to the stale position; keep the set already shown and flag it
+     *   [LocationBanner.UPDATE_FAILED]. This is the same-set path for [onSameSet] — the caller
+     *   canceled the retained set's fetch before re-locating, so it is restarted in place rather
+     *   than left hung on its spinner.
      * - **[State.Empty] / [State.NoLocation] / [State.Failed]**: propagated honestly (SPEC
      *   principles 1–2) — the gate replaces the list rather than leaving a stale set on screen
      *   (cards omit the stop name, so a stale set is indistinguishable from the real one).
@@ -177,24 +214,49 @@ class NearbyStopsViewModel(
         val job = viewModelScope.launch {
             // Force a fresh fix: the user may have walked since the last one, and a cached fix
             // would re-resolve for the previous position (see LocationProvider.current).
-            val next = resolveNearby(forceFresh = true)
-            // Always emit the fresh outcome. Even when the cluster set is unchanged, the fresh fix
-            // may have moved within it, so the per-stop distances differ — and the list uses
-            // distanceMeters to pick which adjacent stop represents each line and to order rows
-            // (SPEC *Finding stops → Near me now*), so the old distances would dedupe/sort by the
-            // previous position. Emitting a same-set Ready does not recreate the departures
-            // ViewModel (its store is keyed on the whole cluster set), so this is a plain
-            // recompose plus an in-place reconcile, not a rebuild.
-            _state.value = next
-            if (
-                next is State.Ready && current is State.Ready &&
-                next.clusterSetKey == current.clusterSetKey
-            ) {
-                // Same nearby set (both tiers, order-independent): reconcile the retained
-                // departures ViewModel in place — update its tiers, drop a revealed cluster the
-                // fresh fix no longer offers, and re-fetch — sequenced after the fix (never
-                // fetched in parallel with it), so a revealed expansion survives the relocation.
-                onSameSet(next)
+            val fix = currentFix(forceFresh = true)
+            when {
+                fix == null -> {
+                    _state.value = State.NoLocation
+                    _locationBanner.value = null
+                }
+                // Don't jump (SPEC *Finding stops*): a re-locate that could only get a low-confidence
+                // last-known fix keeps the set already shown rather than re-resolving to a stale/
+                // previous position (the Underground case, where the wrong-station stops would look
+                // current). The banner says the location didn't update; the set and its state are
+                // left as they were.
+                fix.isFallback && current is State.Ready -> {
+                    _locationBanner.value = LocationBanner.UPDATE_FAILED
+                    // A re-locate arrives with the retained set's in-flight fetch already canceled
+                    // (the caller cancels before re-locating, so a superseded fetch can't stamp the
+                    // old set's departures). We're keeping that set, so restart its fetch in place —
+                    // otherwise a fetch canceled mid-load never resumes and the departures screen
+                    // hangs on its spinner (which would also hide this banner, shown only once loaded).
+                    onSameSet(current)
+                }
+                else -> {
+                    val next = resolveFrom(fix.coordinates)
+                    // Always emit the fresh outcome. Even when the cluster set is unchanged, the fresh
+                    // fix may have moved within it, so the per-stop distances differ — and the list
+                    // uses distanceMeters to pick which adjacent stop represents each line and to
+                    // order rows (SPEC *Finding stops → Near me now*), so the old distances would
+                    // dedupe/sort by the previous position. Emitting a same-set Ready does not
+                    // recreate the departures ViewModel (its store is keyed on the whole cluster
+                    // set), so this is a plain recompose plus an in-place reconcile, not a rebuild.
+                    _state.value = next
+                    _locationBanner.value =
+                        if (next is State.Ready && fix.isFallback) LocationBanner.APPROXIMATE else null
+                    if (
+                        next is State.Ready && current is State.Ready &&
+                        next.clusterSetKey == current.clusterSetKey
+                    ) {
+                        // Same nearby set (both tiers, order-independent): reconcile the retained
+                        // departures ViewModel in place — update its tiers, drop a revealed cluster the
+                        // fresh fix no longer offers, and re-fetch — sequenced after the fix (never
+                        // fetched in parallel with it), so a revealed expansion survives the relocation.
+                        onSameSet(next)
+                    }
+                }
             }
         }
         locateJob = job
@@ -205,13 +267,13 @@ class NearbyStopsViewModel(
     }
 
     /**
-     * Resolve the device's position to the nearby set, as one of the terminal [State]s — the
-     * shared body of [locate] (which shows [State.Locating] first) and [relocate] (which does
-     * not). Every failure is a distinct honest state, never an empty list (SPEC principles
-     * 1–2), and [warn] carries only the coarse reason, never a coordinate (SPEC *Privacy*).
+     * The device fix (with its [LocationFix.isFallback] confidence), or `null` — the "couldn't get
+     * your location" outcome — with cancellation rethrown and any other failure logged coarsely
+     * (never a coordinate, SPEC *Privacy*). Shared by [locate] and [relocate], which then decide
+     * what a fallback fix means (label vs. don't-jump).
      */
-    private suspend fun resolveNearby(forceFresh: Boolean): State {
-        val fix = try {
+    private suspend fun currentFix(forceFresh: Boolean): LocationFix? =
+        try {
             withContext(io) { location.current(forceFresh) }
         } catch (e: CancellationException) {
             throw e
@@ -219,7 +281,14 @@ class NearbyStopsViewModel(
             // No coordinate in the log — only that a fix couldn't be obtained (SPEC Privacy).
             warn("location fix failed: ${e::class.simpleName}")
             null
-        } ?: return State.NoLocation
+        }
+
+    /**
+     * Resolve a known coordinate [fix] to the nearby set, as one of the terminal [State]s
+     * (Ready / Empty / Failed). Every failure is a distinct honest state, never an empty list
+     * (SPEC principles 1–2), and [warn] carries only the coarse reason, never a coordinate.
+     */
+    private suspend fun resolveFrom(fix: Coordinates): State {
         val found = try {
             withContext(io) { finder.nearbyStops(fix.latitude, fix.longitude, radiusMeters) }
         } catch (e: CancellationException) {
