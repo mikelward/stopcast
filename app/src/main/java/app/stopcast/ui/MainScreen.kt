@@ -102,6 +102,7 @@ import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopDistance
 import app.stopcast.domain.StopGroup
 import app.stopcast.domain.StopGrouping
+import app.stopcast.domain.stopPlaceKey
 import app.stopcast.domain.StopQualifier
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.domain.RouteFocus
@@ -219,6 +220,67 @@ fun MainScreen(
         )
     }
 
+    // The platform/pole the user drilled into by tapping its group header, or null for the full list
+    // (SPEC D8): its stop ids (comma-joined), its [StopGroup.splitKey], and its header text (the
+    // app-bar fallback while no group matches), as saveable strings so the view survives rotation.
+    // The filtered rows are rebuilt from the same snapshot on every recomposition, so the view stays
+    // live and never fetches on its own (SPEC D4).
+    var platformStopIds by rememberSaveable { mutableStateOf<String?>(null) }
+    var platformKey by rememberSaveable { mutableStateOf("") }
+    var platformTitle by rememberSaveable { mutableStateOf("") }
+    // Built from the platform's own stops WITHOUT the near-me fold: the fold keeps a line only at its
+    // nearest stop, which would drop services from a farther platform — the drill-down shows all of
+    // them. The stop ids alone aren't the platform: a station's platforms all come from one TfL stop,
+    // so the rows are regrouped and only the tapped group is kept, with any closure alert for its
+    // stops (Codex). It is matched on [StopGroup.splitKey] — the platform, pole letter, bearing or
+    // compass — not [StopGroup.key], whose place part switches to a per-stop key while the stop
+    // carries a line-status row (Codex). The saved stop ids already pin the place. Dismissals and
+    // stars still apply, as on the full list. The title is resolved from the matched group each time, since a letterless bus
+    // pole's qualifier (its shared terminus) can change with the departures (Codex).
+    val platformView = remember(loaded?.stops, loaded?.lineStatuses, now, platformStopIds, platformKey, starred, dismissed, rows) {
+        val ids = platformStopIds?.split(',')?.toSet() ?: return@remember null
+        val ld = loaded ?: return@remember emptyList<DepartureRow>() to null
+        val platformStops = ld.stops.filter { it.stopId in ids }
+        val stopRows = DepartureRows.pinStarred(
+            DepartureRows.withoutDismissed(
+                DepartureRows.across(platformStops, now, ld.lineStatuses),
+                dismissed,
+            ),
+            starred,
+        )
+        val groups = StopGrouping.groupByStop(stopRows)
+        // A header with no platform/pole to split on (a bare stop, or a directionless line-status
+        // group beside a station's platforms) opens the whole stop: matching only its blank split
+        // would show the warning without the stop's live departures (Codex).
+        val matched = if (platformKey.isEmpty()) groups else groups.filter { it.splitKey == platformKey }
+        // Plus the stops' directionless line-status rows (a suspended line with no predictions names
+        // no platform, so it groups apart): which platform it would run from is unknown, so every
+        // platform view of the stop shows it rather than hide a known suspension (SPEC principle 1).
+        val groupRows = (matched + groups.filter { it.splitKey.isEmpty() && it.rows.all { r -> r.upcoming.isEmpty() } })
+            .flatMapTo(HashSet()) { it.rows }
+        // A whole-stop view spanning several groups is titled by the bare place, never by whichever
+        // platform happens to come first (Codex); a single group keeps its full header text.
+        val title = matched.firstOrNull()?.let { g ->
+            if (matched.size > 1) g.stopName
+            else groupHeaderLabel(g.qualifier)?.let { "${g.stopName} – $it" } ?: g.stopName
+        }
+        // The place's closure cards are the full list's own — already folded and dismissal-filtered —
+        // so a card dismissed on either screen carries one identity and stays hidden on both (Codex).
+        val places = platformStops.mapTo(HashSet()) { stopPlaceKey(it) }
+        val closures = rows.filter { it.stopDisruption != null && stopPlaceKey(it) in places }
+        (closures + stopRows.filter { it.stopDisruption == null && it in groupRows }) to title
+    }
+    // Close the view when the snapshot no longer holds the tapped group: its stops weren't fetched
+    // (a near-me set re-resolved elsewhere), its last departure passed, or the feed dropped the
+    // platform number it was keyed on. An empty page would assert "no departures" for a platform
+    // that may still have trains (SPEC principle 1), so the full list shows instead — at once, not a
+    // frame later — and the saved view is cleared.
+    val platformGone = loaded != null && platformView != null && platformView.second == null
+    LaunchedEffect(platformGone) { if (platformGone) platformStopIds = null }
+    val platformRows = platformView?.first?.takeUnless { platformGone }
+    val shownRows = platformRows ?: rows
+    BackHandler(enabled = platformRows != null) { platformStopIds = null }
+
     // The route whose detail is open, held by its stable row identity rather than the row object: a
     // saveable String survives a configuration change (the page stays open on rotation) and resets on
     // process death, and it re-resolves against the current `rows` each recomposition so the page
@@ -230,7 +292,7 @@ fun MainScreen(
     // RouteFocus, so it survives rotation with no custom Saver; null destination = no focus.
     var detailDestination by rememberSaveable { mutableStateOf<String?>(null) }
     var detailBranch by rememberSaveable { mutableStateOf<String?>(null) }
-    val detailRow = detailKey?.let { key -> rows.firstOrNull { it.detailKey() == key } }
+    val detailRow = detailKey?.let { key -> shownRows.firstOrNull { it.detailKey() == key } }
     // When the open route's row leaves the list — its last departure passed on the 10s clock, or it
     // was pruned — clear the saved key so the vanished page stays closed rather than silently
     // reopening if a later refresh reproduced that same stop/line/direction identity (Codex). A live
@@ -291,38 +353,32 @@ fun MainScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.app_name)) },
+                title = {
+                    if (platformRows != null) {
+                        // Elided from the start, so a narrow bar (it shares the row with the
+                        // freshness stamp) keeps the platform — the part that tells platforms apart.
+                        Text(
+                            platformView?.second ?: platformTitle,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.StartEllipsis,
+                        )
+                    } else {
+                        Text(stringResource(R.string.app_name))
+                    }
+                },
                 navigationIcon = {
-                    // The app's route-lines mark on a themed tile — white in light, black in
-                    // dark — so it sits on the app bar without a fixed dark box. The arrow is a
-                    // separate, tintable layer flipped to contrast the tile (dark on white, white
-                    // on black); the colored lines stay put. The marks fill only the ~72/108
-                    // adaptive-icon safe zone, so requiredSize(48dp) draws them larger than the
-                    // 32dp box and the box clips back, rather than sitting tiny in the middle.
-                    // Decorative — the title already names the app, so no content description.
-                    // Follow the active Material theme (which may be dark from the system or an
-                    // explicit override), not the raw system setting, so the tile matches the
-                    // surface it sits on.
-                    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 8.dp)
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (darkTheme) Color.Black else Color.White),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Image(
-                            painter = painterResource(R.drawable.ic_appbar_route_lines),
-                            contentDescription = null,
-                            modifier = Modifier.requiredSize(48.dp),
-                        )
-                        Image(
-                            painter = painterResource(R.drawable.ic_appbar_route_arrow),
-                            contentDescription = null,
-                            modifier = Modifier.requiredSize(48.dp),
-                            colorFilter = ColorFilter.tint(if (darkTheme) Color.White else Color.Black),
-                        )
+                    // A drilled-into platform view is a destination of its own: back returns to the
+                    // full list (the system back does too — see the BackHandler above).
+                    if (platformRows != null) {
+                        IconButton(onClick = { platformStopIds = null }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back),
+                            )
+                        }
+                    } else {
+                        AppBarMark()
                     }
                 },
                 actions = {
@@ -421,8 +477,15 @@ fun MainScreen(
 
             is DeparturesUiState.Loaded ->
                 LoadedContent(
-                    state, now, onRefresh, refreshing, content, rows, stopDistanceMeters,
-                    starred, onToggleStar, starringAvailable, revealableModes, onReveal,
+                    state, now, onRefresh, refreshing, content, shownRows,
+                    // The platform view is one place: no distances (its header would only repeat the
+                    // title) and no "More" paging of farther clusters.
+                    stopDistanceMeters = if (platformRows != null) emptyMap() else stopDistanceMeters,
+                    starred = starred,
+                    onToggleStar = onToggleStar,
+                    starringAvailable = starringAvailable,
+                    revealableModes = if (platformRows != null) emptySet() else revealableModes,
+                    onReveal = onReveal,
                     onOpenDetail = { row, focus ->
                         detailKey = row.detailKey()
                         detailDestination = focus?.destination
@@ -430,6 +493,17 @@ fun MainScreen(
                     },
                     dismissed = dismissed,
                     onDismissAlert = onDismissAlert,
+                    // Only the full list drills down; inside a platform view the header (if any) is inert.
+                    onOpenPlatform = if (platformRows != null) {
+                        null
+                    } else {
+                        { group ->
+                            platformStopIds = group.rows.mapTo(LinkedHashSet()) { it.stopId }.joinToString(",")
+                            platformKey = group.splitKey
+                            platformTitle = groupHeaderLabel(group.qualifier)
+                                ?.let { "${group.stopName} – $it" } ?: group.stopName
+                        }
+                    },
                 )
 
             is DeparturesUiState.Error ->
@@ -457,6 +531,43 @@ fun MainScreen(
     }
 }
 
+
+/** The app's mark at the start of the departures app bar. */
+@Composable
+private fun AppBarMark() {
+    // The app's route-lines mark on a themed tile — white in light, black in
+    // dark — so it sits on the app bar without a fixed dark box. The arrow is a
+    // separate, tintable layer flipped to contrast the tile (dark on white, white
+    // on black); the colored lines stay put. The marks fill only the ~72/108
+    // adaptive-icon safe zone, so requiredSize(48dp) draws them larger than the
+    // 32dp box and the box clips back, rather than sitting tiny in the middle.
+    // Decorative — the title already names the app, so no content description.
+    // Follow the active Material theme (which may be dark from the system or an
+    // explicit override), not the raw system setting, so the tile matches the
+    // surface it sits on.
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    Box(
+        modifier = Modifier
+            .padding(start = 8.dp)
+            .size(32.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (darkTheme) Color.Black else Color.White),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_appbar_route_lines),
+            contentDescription = null,
+            modifier = Modifier.requiredSize(48.dp),
+        )
+        Image(
+            painter = painterResource(R.drawable.ic_appbar_route_arrow),
+            contentDescription = null,
+            modifier = Modifier.requiredSize(48.dp),
+            colorFilter = ColorFilter.tint(if (darkTheme) Color.White else Color.Black),
+        )
+    }
+}
+
 @Composable
 private fun LoadedContent(
     state: DeparturesUiState.Loaded,
@@ -477,6 +588,8 @@ private fun LoadedContent(
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit = { _, _ -> },
     dismissed: Set<DismissedAlert> = emptySet(),
     onDismissAlert: (DepartureRow) -> Unit = {},
+    // Drill into one group's platform/pole; null disables the tap.
+    onOpenPlatform: ((StopGroup) -> Unit)? = null,
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -541,6 +654,7 @@ private fun LoadedContent(
                     revealableModes, onReveal,
                     onOpenDetail = onOpenDetail,
                     onDismissAlert = onDismissAlert,
+                    onOpenPlatform = onOpenPlatform,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -601,6 +715,7 @@ private fun DepartureList(
     onReveal: (String) -> Unit,
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
     onDismissAlert: (DepartureRow) -> Unit = {},
+    onOpenPlatform: ((StopGroup) -> Unit)? = null,
     modifier: Modifier,
 ) {
     // Stop-closure alerts render as standalone cards at the top of the list — warnings lead (the
@@ -669,6 +784,7 @@ private fun DepartureList(
                         group.qualifier,
                         distanceLabel,
                         firstOnScreen = index == 0 && closureRows.isEmpty(),
+                        onClick = onOpenPlatform?.let { open -> { open(group) } },
                     )
                 }
             }
@@ -751,8 +867,11 @@ private fun StopGroupHeader(
     qualifier: StopQualifier?,
     distanceLabel: String?,
     firstOnScreen: Boolean,
+    // Opens this group's platform view; null leaves the header inert.
+    onClick: (() -> Unit)? = null,
 ) {
     val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+    val openLabel = stringResource(R.string.action_show_platform)
     val label = remember(qualifier) { groupHeaderLabel(qualifier) }
     // The full spoken label: the place name, the spoken qualifier (direction/towards kept), then the
     // distance — read as one, so a screen reader hears the whole header rather than three fragments.
@@ -766,6 +885,9 @@ private fun StopGroupHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // The tap target spans the full row including the group-break space above the text, so
+            // the header grows no taller for being tappable and the list keeps its spacing.
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = openLabel, onClick = onClick) else Modifier)
             .padding(start = 4.dp, end = 4.dp, top = if (firstOnScreen) 0.dp else 16.dp)
             .semantics(mergeDescendants = true) { contentDescription = spoken },
         verticalAlignment = Alignment.CenterVertically,

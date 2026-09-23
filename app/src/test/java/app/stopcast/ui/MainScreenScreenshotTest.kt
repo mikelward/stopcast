@@ -13,6 +13,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -347,6 +350,242 @@ class MainScreenScreenshotTest {
         // Both poles' cards render under that one header.
         composeRule.onNodeWithText("Palmers Green").assertExists()
         composeRule.onNodeWithText("London Bridge").assertExists()
+    }
+
+    @Test
+    fun `tapping a platform header shows just that platform, and back returns to the list`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(
+                            listOf(turnpikeLaneNorth(), turnpikeLaneSouth(), manorHouse()),
+                            now.minusSeconds(60),
+                        ),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Platform 2, Westbound", substring = true).performClick()
+        composeRule.waitForIdle()
+        captureSnapshot("main-platform-view.png")
+        // A back arrow replaces the app's mark, the app bar names the platform, and only its
+        // departures remain.
+        composeRule.onNodeWithContentDescription("Back").assertExists()
+        composeRule.onNodeWithText("Manor House – Platform 2").assertExists()
+        composeRule.onNodeWithText("Cockfosters").assertExists()
+        composeRule.onNodeWithText("Palmers Green").assertDoesNotExist()
+        composeRule.onNodeWithText("London Bridge").assertDoesNotExist()
+
+        composeRule.onNodeWithContentDescription("Back").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Palmers Green").assertExists()
+        composeRule.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a station's platform view shows that platform only, though all share one stop`() {
+        // King's Cross' platforms all come from one TfL stop id, so the drill-down must keep the
+        // tapped platform's group, not every row of the stop.
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(kingsCrossStPancras()), now.minusSeconds(60)),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Cockfosters").assertExists()
+
+        composeRule.onAllNodesWithContentDescription("Platform 1, Northbound", substring = true).onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Walthamstow Central").assertExists()
+        composeRule.onNodeWithText("Cockfosters").assertDoesNotExist()
+        composeRule.onNodeWithText("High Barnet").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a platform view holds its platform when a suspended line appears at the stop`() {
+        // A line-status row switches the stop's grouping place to a per-stop key; the drill-down
+        // matches on the platform itself, so it keeps showing Platform 1's departures.
+        // A real StopArea cluster, so the clear stop groups under it and the warned one under its own id.
+        val station = kingsCrossStPancras().copy(clusterId = "940GZZLUKSX")
+        val clear = DeparturesUiState.Loaded(listOf(station), now.minusSeconds(60))
+        val warned = DeparturesUiState.Loaded(
+            listOf(station.copy(lines = station.lines + LineRef("jubilee", "Jubilee", "tube"))),
+            now.minusSeconds(60),
+            lineStatuses = mapOf("jubilee" to LineStatus("jubilee", 2, "Suspended")),
+        )
+        var state by mutableStateOf<DeparturesUiState>(clear)
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithContentDescription("Platform 1, Northbound", substring = true).onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Walthamstow Central").assertExists()
+
+        state = warned
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Walthamstow Central").assertExists()
+        composeRule.onNodeWithText("Cockfosters").assertDoesNotExist()
+        // The suspension names no platform, so the platform view shows it rather than hide it.
+        composeRule.onAllNodesWithText("Suspended", substring = true).onFirst().assertExists()
+    }
+
+    @Test
+    fun `a platform view closes when the feed drops its platform number, rather than claim no departures`() {
+        val station = kingsCrossStPancras()
+        var state by mutableStateOf<DeparturesUiState>(DeparturesUiState.Loaded(listOf(station), now.minusSeconds(60)))
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithContentDescription("Platform 1, Northbound", substring = true).onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").assertExists()
+
+        // The same trains, but TfL now omits every platform number.
+        state = DeparturesUiState.Loaded(
+            listOf(station.copy(departures = station.departures.map { it.copy(platform = null) })),
+            now.minusSeconds(60),
+        )
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").assertDoesNotExist()
+        composeRule.onNodeWithText("Walthamstow Central").assertExists()
+    }
+
+    @Test
+    fun `a platform view shows its place's closure card, and a dismissal there hides it everywhere`() {
+        val dismissed = mutableStateOf(emptySet<DismissedAlert>())
+        val closed = manorHouse().copy(disruptions = listOf(StopDisruption("Station closed until further notice")))
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(turnpikeLaneNorth(), closed), now.minusSeconds(60)),
+                        now,
+                        {},
+                        dismissed = dismissed.value,
+                        onDismissAlert = { row -> dismissed.value = dismissed.value + DismissedAlert.ofStopClosure(row) },
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Platform 2, Westbound", substring = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Station closed", substring = true).assertExists()
+
+        composeRule.onNodeWithContentDescription("Dismiss alert").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Station closed", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Back").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Station closed", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `tapping a suspended line's header opens the whole stop, not just the warning`() {
+        val station = kingsCrossStPancras().let { it.copy(lines = it.lines + LineRef("jubilee", "Jubilee", "tube")) }
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(
+                            listOf(station),
+                            now.minusSeconds(60),
+                            lineStatuses = mapOf("jubilee" to LineStatus("jubilee", 2, "Suspended")),
+                        ),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // The suspension groups apart under the bare station header (no platform in its label).
+        composeRule.onNodeWithContentDescription("King's Cross St. Pancras").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").assertExists()
+        composeRule.onAllNodesWithText("Suspended", substring = true).onFirst().assertExists()
+        composeRule.onNodeWithText("Walthamstow Central").assertExists()
+        // The whole station is titled by its bare name, not by its first platform.
+        composeRule.onNodeWithText("King's Cross St. Pancras – Platform 1").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a platform view's title follows the pole's current terminus`() {
+        // A letterless, bearingless bus pole is headed by its shared terminus, which comes from the
+        // departures — so after a refresh changes it, the title must not keep claiming the old one.
+        fun pole(destination: String) = StopArrivals(
+            "490000001A",
+            "Example Road",
+            listOf(dep("141", "141", "outbound", destination, 120, "", mode = "bus")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        var state by mutableStateOf<DeparturesUiState>(
+            DeparturesUiState.Loaded(listOf(pole("Palmers Green")), now.minusSeconds(60)),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Example Road", substring = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").assertExists()
+
+        state = DeparturesUiState.Loaded(listOf(pole("Wood Green")), now.minusSeconds(60))
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Palmers Green", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a platform view shows services the near-me list folded to a nearer stop`() {
+        // Near me, a line shows once, from its nearest stop — so a farther stop's card drops the 141
+        // that a nearer pole also serves. Drilling into that farther stop shows everything it serves.
+        val nearer = turnpikeLaneNorth()
+        val farther = StopArrivals(
+            "490000001A",
+            "Example Road",
+            listOf(
+                dep("141", "141", "outbound", "Palmers Green", 300, "", mode = "bus"),
+                dep("29", "29", "outbound", "Wood Green", 360, "", mode = "bus"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(nearer, farther), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("490009TPL1" to 50.0, "490000001A" to 300.0),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Palmers Green").assertCountEquals(1)
+
+        composeRule.onNodeWithContentDescription("Example Road", substring = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Wood Green").assertExists()
+        composeRule.onNodeWithText("Palmers Green").assertExists()
     }
 
     @Test

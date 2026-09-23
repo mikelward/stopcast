@@ -450,10 +450,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
     - [ ] Tapping the **place name** (top level) → a view filtered to that hub/cluster (all its
           platforms/poles and routes).
     - [ ] Tapping a **route card** → a view filtered to that line **and direction**.
-    - [ ] Tapping a **platform/pole sub-header** → a view filtered to just that platform.
-      Decide the shared surface (likely the same full-screen treatment as the header/route tap
-      above), the back-stack behavior, and whether the three entry points converge on one filtered
-      screen with a filter descriptor or on distinct views.
+    - [x] Tapping a **platform/pole sub-header** → a view filtered to just that platform
+      (maintainer, 2026-09-23): the main screen filtered in place to the group's stops, back arrow
+      in the app bar, no near-me fold. Still open for the other two entry points: the shared
+      surface, and whether they converge on one filtered screen with a filter descriptor.
   - [x] **Dedupe a hub-wide alert; collapse the closure card** (maintainer, 2026-09-21).
         v122 showed the same interchange notice as three full-height cards (King's Cross St.
         Pancras + St Pancras International both carrying TfL's "no step-free access" text).
