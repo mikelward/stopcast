@@ -503,8 +503,10 @@ in the body, never mangles the notice.
 A stop-closure card carries a **dismiss (×)**: these notices are the "acknowledge and clear" kind
 (planned works, a moved stop, "Bus Stop Closed — use the next stop", a step-free-access outage),
 so once read the user can tap them away to declutter. A dismissal is keyed on `(place, notice
-text)` and **reappears the moment the content changes** — a reworded or replaced notice no longer
-matches, so a dismiss never buries a new or escalated closure (maintainer, 2026-09-22). It is
+text, TfL window)` and **reappears the moment the content changes** — a reworded or replaced notice no longer
+matches, so a dismiss never buries a new or escalated closure (maintainer, 2026-09-22). The window
+is part of that identity, so a dismiss lasts only until the stated end: when TfL extends or moves
+the window the card is back at once, not after the original end (maintainer, 2026-09-23). It is
 persisted (survives restart, rides Android backup like the rest of the config — SPEC *Privacy*),
 one entry per place so the set stays bounded, and **fails safe**: a stored set this build can't read
 reads back empty, so the worst case is a dismissed card returning, never a warning hidden. Only the

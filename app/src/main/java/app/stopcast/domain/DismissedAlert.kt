@@ -10,7 +10,9 @@ package app.stopcast.domain
  * fold collapses on, so the dismissal survives the nearest-member changing as the user moves and
  * doesn't leak to a same-text notice at another place. [contentSignature] is **what must stay
  * unchanged** to remain dismissed — the normalized (pre-name-strip) notice text; when TfL rewords
- * or replaces the notice the signature no longer matches and the card returns. (Line-status alerts
+ * or replaces the notice the signature no longer matches and the card returns. It also carries the
+ * notice's TfL window, so a dismiss lasts only until the stated end: an extended or moved window
+ * is a new notice and shows again at once (maintainer, 2026-09-23). (Line-status alerts
  * would fold their severity into the signature too — a `TODO.md` follow-up; today only stop
  * closures are dismissible.)
  *
@@ -29,7 +31,16 @@ data class DismissedAlert(
          * a caller filters to those first.
          */
         fun ofStopClosure(row: DepartureRow): DismissedAlert =
-            DismissedAlert(alertKey = stopPlaceKey(row), contentSignature = row.stopDisruption.orEmpty())
+            DismissedAlert(
+                alertKey = stopPlaceKey(row),
+                contentSignature = row.stopDisruption.orEmpty() +
+                    row.stopDisruptionWindows.takeIf { it.isNotEmpty() }?.let { "$WINDOW_SEPARATOR$it" }.orEmpty(),
+            )
+
+        // Appended only for a dated notice, so an undated one keeps its bare-text signature (and a
+        // dismissal stored before windows were keyed still matches). A unit separator never occurs
+        // in notice text.
+        private const val WINDOW_SEPARATOR = "\u001F"
     }
 }
 

@@ -1094,6 +1094,154 @@ class DepartureRowsTest {
     // --- withoutDismissed: hiding the stop-closure alerts the user tapped away ---
 
     @Test
+    fun `a dismissed closure shows again when TfL extends or moves its window`() {
+        fun rowsWith(vararg notices: StopDisruption) = DepartureRows.across(
+            listOf(
+                StopArrivals(
+                    "490000001A", "Example Road", departures = emptyList(), fetchedAt = now,
+                    disruptions = notices.toList(),
+                ),
+            ),
+            now,
+        )
+        val start = now.minusSeconds(3600)
+        val original = StopDisruption("Bus Stop Closed", validFrom = start, validTo = now.plusSeconds(3600))
+        val dismissed = setOf(DismissedAlert.ofStopClosure(rowsWith(original).single()))
+
+        // The same notice, same window: stays dismissed.
+        assertTrue(DepartureRows.withoutDismissed(rowsWith(original), dismissed).isEmpty())
+        // Same text, later end: a new notice, shown at once.
+        val extended = original.copy(validTo = now.plusSeconds(7200))
+        assertEquals(1, DepartureRows.withoutDismissed(rowsWith(extended), dismissed).size)
+        // Same text, moved start: shown too.
+        val moved = original.copy(validFrom = start.plusSeconds(60))
+        assertEquals(1, DepartureRows.withoutDismissed(rowsWith(moved), dismissed).size)
+    }
+
+    @Test
+    fun `a dismissal holds when one of two overlapping windows for the same notice ends`() {
+        val short = StopDisruption("Bus Stop Closed", validFrom = now.minusSeconds(60), validTo = now.plusSeconds(60))
+        val long = StopDisruption("Bus Stop Closed", validFrom = now.minusSeconds(60), validTo = now.plusSeconds(3600))
+        val stop = StopArrivals(
+            "490000001A", "Example Road", departures = emptyList(), fetchedAt = now,
+            disruptions = listOf(short, long),
+        )
+        val dismissed = setOf(DismissedAlert.ofStopClosure(DepartureRows.across(listOf(stop), now).single()))
+
+        // The short window has ended; the long one still keeps the card up — and it stays dismissed.
+        val later = DepartureRows.across(listOf(stop), now.plusSeconds(120))
+        assertEquals(1, later.size)
+        assertTrue(DepartureRows.withoutDismissed(later, dismissed).isEmpty())
+    }
+
+    @Test
+    fun `a dismissal holds when an overlapping later window for the same notice starts`() {
+        val now1 = StopDisruption("Bus Stop Closed", validFrom = now.minusSeconds(60), validTo = now.plusSeconds(600))
+        val next = StopDisruption("Bus Stop Closed", validFrom = now.plusSeconds(300), validTo = now.plusSeconds(3600))
+        val stop = StopArrivals(
+            "490000001A", "Example Road", departures = emptyList(), fetchedAt = now,
+            disruptions = listOf(now1, next),
+        )
+        val dismissed = setOf(DismissedAlert.ofStopClosure(DepartureRows.across(listOf(stop), now).single()))
+
+        // The later window starts, then the first ends; TfL's data is unchanged, so it stays dismissed.
+        for (t in listOf(now.plusSeconds(400), now.plusSeconds(1200))) {
+            val rows = DepartureRows.across(listOf(stop), t)
+            assertEquals(1, rows.size)
+            assertTrue(DepartureRows.withoutDismissed(rows, dismissed).isEmpty())
+        }
+    }
+
+    @Test
+    fun `a dismissal lapses when two notices at a stop swap windows`() {
+        fun rowWith(vararg notices: StopDisruption) = DepartureRows.across(
+            listOf(
+                StopArrivals(
+                    "490000001A", "Example Road", departures = emptyList(), fetchedAt = now,
+                    disruptions = notices.toList(),
+                ),
+            ),
+            now,
+        )
+        val w1 = now.minusSeconds(60) to now.plusSeconds(600)
+        val w2 = now.minusSeconds(120) to now.plusSeconds(1200)
+        fun notice(text: String, w: Pair<Instant, Instant>) = StopDisruption(text, validFrom = w.first, validTo = w.second)
+        val before = rowWith(notice("Bus Stop Closed", w1), notice("Lift out of service", w2))
+        val dismissed = setOf(DismissedAlert.ofStopClosure(before.single()))
+
+        // Same texts, windows swapped: a change, so the card is back.
+        val after = rowWith(notice("Bus Stop Closed", w2), notice("Lift out of service", w1))
+        assertEquals(1, DepartureRows.withoutDismissed(after, dismissed).size)
+    }
+
+    @Test
+    fun `a formatting-only change to a dated notice keeps its dismissal`() {
+        fun rowWith(text: String) = DepartureRows.across(
+            listOf(
+                StopArrivals(
+                    "490000001A", "Example Road", departures = emptyList(), fetchedAt = now,
+                    disruptions = listOf(
+                        StopDisruption(text, validFrom = now.minusSeconds(60), validTo = now.plusSeconds(600)),
+                    ),
+                ),
+            ),
+            now,
+        )
+        val dismissed = setOf(DismissedAlert.ofStopClosure(rowWith("Bus Stop Closed\\n    Use the next stop").single()))
+
+        // Escaped vs real line breaks: the same notice as shown, so it stays dismissed.
+        assertTrue(DepartureRows.withoutDismissed(rowWith("Bus Stop Closed\nUse the next stop"), dismissed).isEmpty())
+    }
+
+    @Test
+    fun `a folded closure's dismissal survives a different member becoming nearest`() {
+        // Two poles of one StopArea report one closure under slightly different windows.
+        fun pole(id: String, end: Long) = StopArrivals(
+            id, "Example Road", departures = emptyList(), fetchedAt = now, clusterId = "490G000EXAMPLE",
+            disruptions = listOf(
+                StopDisruption("Bus Stop Closed", validFrom = now.minusSeconds(60), validTo = now.plusSeconds(end)),
+            ),
+        )
+        val rows = DepartureRows.across(listOf(pole("490000001E", 600), pole("490000001W", 900)), now)
+        fun folded(eastM: Double, westM: Double) =
+            DepartureRows.nearbyDeduped(rows, mapOf("490000001E" to eastM, "490000001W" to westM)).single()
+
+        val dismissed = setOf(DismissedAlert.ofStopClosure(folded(40.0, 55.0)))
+
+        val afterMoving = folded(70.0, 30.0)
+        assertEquals("490000001W", afterMoving.stopId)
+        assertTrue(DepartureRows.withoutDismissed(listOf(afterMoving), dismissed).isEmpty())
+    }
+
+    @Test
+    fun `a folded closure's dismissal counts as live when reconciling the unfolded rows`() {
+        // Reconciliation sees the unfolded per-stop rows; the folded card's identity must still be
+        // live there, or the next refresh would prune its dismissal and bring the card back.
+        fun pole(id: String, end: Long) = StopArrivals(
+            id, "Example Road", departures = emptyList(), fetchedAt = now, clusterId = "490G000EXAMPLE",
+            disruptions = listOf(
+                StopDisruption("Bus Stop Closed", validFrom = now.minusSeconds(60), validTo = now.plusSeconds(end)),
+            ),
+        )
+        val rows = DepartureRows.across(listOf(pole("490000001E", 600), pole("490000001W", 900)), now)
+        val folded = DepartureRows.nearbyDeduped(rows, mapOf("490000001E" to 40.0, "490000001W" to 55.0)).single()
+        val dismissed = setOf(DismissedAlert.ofStopClosure(folded))
+
+        val live = DepartureRows.liveStopClosureAlerts(rows)
+        assertEquals(dismissed, Dismissed.reconcile(dismissed, live, setOf("490G000EXAMPLE")))
+    }
+
+    @Test
+    fun `an undated closure keeps its text-only dismissal identity`() {
+        val stop = StopArrivals(
+            "490000001A", "Example Road", departures = emptyList(), fetchedAt = now,
+            disruptions = listOf(StopDisruption("Bus Stop Closed")),
+        )
+        val row = DepartureRows.across(listOf(stop), now).single()
+        assertEquals(DismissedAlert("490000001A", "Bus Stop Closed"), DismissedAlert.ofStopClosure(row))
+    }
+
+    @Test
     fun `withoutDismissed drops a dismissed closure and keeps the rest`() {
         val kept = stopStatusRow("B", "Stop B", "Escalator out of service", clusterId = "490G000B")
         val dismissedRow = stopStatusRow("A", "Stop A", "Bus Stop Closed", clusterId = "490G000A")
