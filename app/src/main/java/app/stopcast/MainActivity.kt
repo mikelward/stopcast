@@ -61,6 +61,8 @@ import app.stopcast.ui.LocalRouteTopology
 import app.stopcast.ui.LicensesScreen
 import app.stopcast.ui.LocationGate
 import app.stopcast.ui.MainScreen
+import app.stopcast.ui.ARRIVALS_REUSE
+import app.stopcast.ui.DISRUPTION_REUSE
 import app.stopcast.ui.MainViewModel
 import app.stopcast.ui.NearbyStopsViewModel
 import app.stopcast.ui.SettingsScreen
@@ -648,6 +650,11 @@ class MainActivity : ComponentActivity() {
                             // D8) or after a refresh that didn't save, so its age/staleness stays
                             // current rather than frozen at the last save (SPEC D4).
                             redrawWidget = { StopCastWidget().updateAll(appContext) },
+                            // A quick retry after a rate-limited refresh refetches only the
+                            // stops still missing, and a stop's closure check is reused for a
+                            // few minutes — both spare TfL's keyless rate budget.
+                            arrivalsReuse = ARRIVALS_REUSE,
+                            disruptionReuse = DISRUPTION_REUSE,
                         )
                     }
                 },

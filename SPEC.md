@@ -751,6 +751,14 @@ surface.)
   promise; nothing depends on the order. The pool caps requests *at once*;
   the rate budget above still caps requests *per minute*, so a keyless fan-out larger than
   the burst is paced rather than fired at once.
+- **A refresh spends the budget only where it's needed.** A stop whose departures came back
+  less than 30 s ago (and whose closure check didn't fail) is carried over as it is rather than
+  refetched, keeping its own age, so a retry right after a rate-limited refresh fetches only the
+  stops still missing instead of hitting the limit again. The 60 s auto-refresh is past that
+  window, so it still refetches every stop. A stop's closure check (a closed or moved stop) is
+  reused for 5 minutes — closures change over hours, and the check is half of every stop's cost —
+  while line status, the fast-moving signal, is checked on every refresh. Both live in memory
+  only; a failed request is never reused.
 
 ## One widget, many surfaces
 
