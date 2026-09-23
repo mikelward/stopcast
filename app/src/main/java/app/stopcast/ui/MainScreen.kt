@@ -221,13 +221,16 @@ fun MainScreen(
     }
 
     // The platform/pole the user drilled into by tapping its group header, or null for the full list
-    // (SPEC D8): its stop ids (comma-joined), its [StopGroup.splitKey], and its header text (the
+    // (SPEC D8): its stop ids (comma-joined; for a whole-station view, its cluster keys instead), its [StopGroup.splitKey], and its header text (the
     // app-bar fallback while no group matches), as saveable strings so the view survives rotation.
     // The filtered rows are rebuilt from the same snapshot on every recomposition, so the view stays
     // live and never fetches on its own (SPEC D4).
     var platformStopIds by rememberSaveable { mutableStateOf<String?>(null) }
     var platformKey by rememberSaveable { mutableStateOf("") }
     var platformTitle by rememberSaveable { mutableStateOf("") }
+    // True when the view was opened from a place name: it is then the whole station, always titled
+    // by the bare place name, however many groups it currently holds.
+    var platformIsStation by rememberSaveable { mutableStateOf(false) }
     // Built from the platform's own stops WITHOUT the near-me fold: the fold keeps a line only at its
     // nearest stop, which would drop services from a farther platform — the drill-down shows all of
     // them. The stop ids alone aren't the platform: a station's platforms all come from one TfL stop,
@@ -237,10 +240,14 @@ fun MainScreen(
     // carries a line-status row (Codex). The saved stop ids already pin the place. Dismissals and
     // stars still apply, as on the full list. The title is resolved from the matched group each time, since a letterless bus
     // pole's qualifier (its shared terminus) can change with the departures (Codex).
-    val platformView = remember(loaded?.stops, loaded?.lineStatuses, now, platformStopIds, platformKey, starred, dismissed, rows) {
+    val platformView = remember(loaded?.stops, loaded?.lineStatuses, now, platformStopIds, platformKey, platformIsStation, starred, dismissed, rows) {
         val ids = platformStopIds?.split(',')?.toSet() ?: return@remember null
         val ld = loaded ?: return@remember emptyList<DepartureRow>() to null
-        val platformStops = ld.stops.filter { it.stopId in ids }
+        // A station view saved its clusters, not stop ids, so each snapshot re-resolves its members —
+        // a pole or platform that joins or leaves the cluster on a refresh is followed (Codex).
+        val platformStops =
+            if (platformIsStation) ld.stops.filter { stationClusterOf(it.clusterId, it.stopId) in ids }
+            else ld.stops.filter { it.stopId in ids }
         val stopRows = DepartureRows.pinStarred(
             DepartureRows.withoutDismissed(
                 DepartureRows.across(platformStops, now, ld.lineStatuses),
@@ -258,10 +265,14 @@ fun MainScreen(
         // platform view of the stop shows it rather than hide a known suspension (SPEC principle 1).
         val groupRows = (matched + groups.filter { it.splitKey.isEmpty() && it.rows.all { r -> r.upcoming.isEmpty() } })
             .flatMapTo(HashSet()) { it.rows }
-        // A whole-stop view spanning several groups is titled by the bare place, never by whichever
-        // platform happens to come first (Codex); a single group keeps its full header text.
+        // A whole-station view, or a whole-stop view spanning several groups, is titled by the bare
+        // place, never by whichever platform happens to come first (Codex); a single group opened
+        // from its own header keeps its full header text.
         val title = matched.firstOrNull()?.let { g ->
-            if (matched.size > 1) g.stopName
+            // A station view keeps the name that was tapped: the cluster's members can carry different
+            // cleaned names, and the first matched group depends on row order (Codex).
+            if (platformIsStation) platformTitle
+            else if (matched.size > 1) g.stopName
             else groupHeaderLabel(g.qualifier)?.let { "${g.stopName} – $it" } ?: g.stopName
         }
         // The place's closure cards are the full list's own — already folded and dismissal-filtered —
@@ -499,9 +510,25 @@ fun MainScreen(
                     } else {
                         { group ->
                             platformStopIds = group.rows.mapTo(LinkedHashSet()) { it.stopId }.joinToString(",")
+                            platformIsStation = false
                             platformKey = group.splitKey
                             platformTitle = groupHeaderLabel(group.qualifier)
                                 ?.let { "${group.stopName} – $it" } ?: group.stopName
+                        }
+                    },
+                    // The whole station: the tapped place's clusters, keyed blank so the view keeps all of
+                    // their stops' groups (see platformView). Membership is resolved from each snapshot's
+                    // stops, not the groups on screen: the near-me fold can leave a sibling platform with
+                    // no group, and a warned stop groups under a per-stop key (Codex).
+                    onOpenStation = if (platformRows != null) {
+                        null
+                    } else {
+                        { group ->
+                            platformStopIds = group.rows.mapTo(LinkedHashSet()) { stationClusterOf(it.clusterId, it.stopId) }
+                                .joinToString(",")
+                            platformIsStation = true
+                            platformKey = ""
+                            platformTitle = group.stopName
                         }
                     },
                 )
@@ -531,6 +558,9 @@ fun MainScreen(
     }
 }
 
+
+/** A stop's station identity for the whole-station view: its StopArea cluster, else the stop alone. */
+private fun stationClusterOf(clusterId: String, stopId: String): String = clusterId.ifBlank { "\u0000$stopId" }
 
 /** The app's mark at the start of the departures app bar. */
 @Composable
@@ -590,6 +620,8 @@ private fun LoadedContent(
     onDismissAlert: (DepartureRow) -> Unit = {},
     // Drill into one group's platform/pole; null disables the tap.
     onOpenPlatform: ((StopGroup) -> Unit)? = null,
+    // Drill into the whole place of the tapped group, from a tap on the header's place name.
+    onOpenStation: ((StopGroup) -> Unit)? = null,
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -655,6 +687,7 @@ private fun LoadedContent(
                     onOpenDetail = onOpenDetail,
                     onDismissAlert = onDismissAlert,
                     onOpenPlatform = onOpenPlatform,
+                    onOpenStation = onOpenStation,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -716,6 +749,7 @@ private fun DepartureList(
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
     onDismissAlert: (DepartureRow) -> Unit = {},
     onOpenPlatform: ((StopGroup) -> Unit)? = null,
+    onOpenStation: ((StopGroup) -> Unit)? = null,
     modifier: Modifier,
 ) {
     // Stop-closure alerts render as standalone cards at the top of the list — warnings lead (the
@@ -785,6 +819,7 @@ private fun DepartureList(
                         distanceLabel,
                         firstOnScreen = index == 0 && closureRows.isEmpty(),
                         onClick = onOpenPlatform?.let { open -> { open(group) } },
+                        onNameClick = onOpenStation?.let { open -> { open(group) } },
                     )
                 }
             }
@@ -869,9 +904,13 @@ private fun StopGroupHeader(
     firstOnScreen: Boolean,
     // Opens this group's platform view; null leaves the header inert.
     onClick: (() -> Unit)? = null,
+    // Opens the whole place from a tap on the name itself (the rest of the row opens the platform).
+    // Null leaves the name to the row.
+    onNameClick: (() -> Unit)? = null,
 ) {
     val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
     val openLabel = stringResource(R.string.action_show_platform)
+    val stationLabel = stringResource(R.string.action_show_station)
     val label = remember(qualifier) { groupHeaderLabel(qualifier) }
     // The full spoken label: the place name, the spoken qualifier (direction/towards kept), then the
     // distance — read as one, so a screen reader hears the whole header rather than three fragments.
@@ -904,7 +943,11 @@ private fun StopGroupHeader(
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier
+                .weight(1f, fill = false)
+                // The name is its own tap target (child first, so it wins over the row's platform tap)
+                // and its own screen-reader button, read as the place name with a "whole station" hint.
+                .then(if (onNameClick != null) Modifier.clickable(onClickLabel = stationLabel, onClick = onNameClick) else Modifier),
         )
         if (label != null) {
             Text(
