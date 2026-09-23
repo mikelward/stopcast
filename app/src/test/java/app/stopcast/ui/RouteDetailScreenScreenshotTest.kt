@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -133,8 +135,10 @@ class RouteDetailScreenScreenshotTest {
         composeRule.onNodeWithText("Severe Delays").assertIsDisplayed()
         // The discoverable star — an app-bar icon whose contentDescription labels the action.
         composeRule.onNodeWithContentDescription("Pin to top").assertIsDisplayed()
-        // The app bar names where the service is going.
+        // The app bar names where the service is going; with no stop list shown, the body names the
+        // boarding stop.
         composeRule.onNodeWithText("Walthamstow Central", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("From Victoria").assertIsDisplayed()
         // Collapsed: the alert shows its first line (clipped), the chevron marks it expandable.
         composeRule.onNodeWithText(reason, substring = true).assertIsDisplayed()
 
@@ -363,8 +367,12 @@ class RouteDetailScreenScreenshotTest {
         }
         composeRule.waitForIdle()
 
-        // The list is headed by the way the train runs, read off its platform.
+        // The list is headed by the way the train runs, read off its platform; it opens on the
+        // boarding stop, so no "From" label repeats it — and a screen reader hears it as "Your stop".
         composeRule.onNodeWithText("Northbound").assertIsDisplayed()
+        composeRule.onNodeWithText("From Victoria").assertDoesNotExist()
+        composeRule.onNode(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Your stop"))
+            .assertIsDisplayed()
         composeRule.onNodeWithText("Seven Sisters").assertIsDisplayed()
         // A connection chip beside its station: the Lioness line at Euston, named for a screen reader.
         composeRule.onNodeWithContentDescription("Lioness").assertIsDisplayed()
