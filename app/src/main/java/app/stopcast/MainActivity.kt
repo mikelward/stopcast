@@ -372,6 +372,10 @@ class MainActivity : ComponentActivity() {
                                 // TfL unreachable, nothing nearby), so it is reachable here too, not
                                 // only past the gate — with no location or stops (Codex P2 on #86).
                                 onSendBugReport = requestBugReport,
+                                // The gate is in front of the departures overflow (which carries the
+                                // update item), so surface an available update on the Locating spinner.
+                                updateAvailable = updateAvailable.value,
+                                onOpenAppListing = ::openPlayListing,
                             )
                         }
                     }
