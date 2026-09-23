@@ -607,6 +607,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         gap. Bigger than the card fix (no `TextMeasurer` in Glance, so it's size-bucket heuristics,
         not measured widths) and needs a widget screenshot test per size; recorded to weigh, not
         scheduled.
+        **Start landed:** the widget now uses `SizeMode.Responsive` with a compact (<220dp) and a
+        wide bucket; the compact one drops the stamp's "Updated" prefix. Labels can key off
+        the same buckets.
 - [ ] **Hide services terminating at the current stop by default** (maintainer, 2026-09-20).
       A train that terminates where you're standing isn't boardable onward, so listing it as
       an upcoming departure is misleading — filter it out by default (a departure whose
@@ -1349,7 +1352,8 @@ Builds on Phase 1's minimal line-status marking.
       `Bundle`) to assert the emitted layout nodes (no-data, no-rows, stale-empty, fresh-row,
       branching, via-branch, stale-withheld). `WidgetScreenshotTest` **pixel-captures** the widget
       by rendering it to RemoteViews with `GlanceRemoteViews.compose` and inflating them to a
-      `View` (fresh light/dark, stale, empty), so clipping/sizing/color regressions are caught —
+      `View` (fresh light/dark, stale, partial, no-departures, empty, and the 180x110dp minimum
+      size), so clipping/sizing/color regressions are caught —
       recorded via its own `--tests` allow-list step in the `screenshot-tests` job. An on-device
       eyeball of the real host rendering is still owed.
 - [x] **Widget parity: starred rows pinned, and per-(destination, branch) lines** (the A/B/C
@@ -1479,6 +1483,13 @@ and these carry the rest as their own PRs:
       (Glance vs. Compose primitives, the widget's no-width-measurement constraint, its pill
       fallbacks) through parameters. Reduces the two-surface drift the branch format, the
       Overground pill, and the abbreviation ladder each already pay for separately.
+      **Look the same, too** (maintainer, 2026-09-23): the widget should read as a compact main
+      view, not a separate design. Glance emits RemoteViews, so it can't call the Material
+      composables — share a pure per-row UI model (label, countdown text, pill fill/hollow,
+      status badge, stop header) computed once, with two thin renderers. Gaps vs. the main
+      view today: stop headers (the *stop grouping* item above), status badges (⚠ /
+      "Suspended", needs the persisted-status item), hollow Overground pills, the card
+      grouping, and the app icon in the header. The stamp already moved onto the title row.
 
 ## Phase 5 — Distribution and polish
 

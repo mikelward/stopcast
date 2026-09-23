@@ -138,16 +138,86 @@ class WidgetScreenshotTest {
         )
     }
 
-    private fun capture(name: String, model: WidgetModel, dark: Boolean = false) {
-        if (dark) RuntimeEnvironment.setQualifiers("+night") else RuntimeEnvironment.setQualifiers("notnight")
+    @Test
+    fun `partial refresh flags some stops out of date`() {
+        capture(
+            "widget-partial.png",
+            WidgetModel(
+                hasData = true,
+                stale = false,
+                uncertain = true,
+                stamp = "Updated just now",
+                rows = listOf(rowModel(row("victoria", "Victoria", "Brixton", 120))),
+            ),
+        )
+    }
+
+    @Test
+    fun `fresh snapshot with nothing due says so`() {
+        capture(
+            "widget-no-departures.png",
+            WidgetModel(hasData = true, stale = false, uncertain = false, stamp = "Updated just now", rows = emptyList()),
+        )
+    }
+
+    // The provider's minWidth x minHeight (180x110dp): the title and the longest ordinary stamp
+    // must share the header row without clipping, and the rows below get what's left.
+    @Test
+    fun `minimum size keeps the stamp beside the title`() {
+        capture(
+            "widget-min-size.png",
+            WidgetModel(
+                hasData = true,
+                stale = false,
+                uncertain = false,
+                stamp = "Updated 14 min ago",
+                rows = listOf(
+                    rowModel(row("victoria", "Victoria", "Brixton", 120)),
+                    rowModel(branchingRow()),
+                ),
+            ),
+            size = DpSize(180.dp, 110.dp),
+        )
+    }
+
+    // Minimum size at a large system font: the title gives way, the freshness stamp stays whole.
+    @Test
+    fun `minimum size at a large font keeps the stamp whole`() {
+        capture(
+            "widget-min-size-large-font.png",
+            WidgetModel(
+                hasData = true,
+                stale = false,
+                uncertain = false,
+                stamp = "Updated 14 min ago",
+                rows = listOf(rowModel(row("victoria", "Victoria", "Brixton", 120))),
+            ),
+            size = DpSize(180.dp, 110.dp),
+            fontScale = 1.3f,
+        )
+    }
+
+    private fun capture(
+        name: String,
+        model: WidgetModel,
+        dark: Boolean = false,
+        size: DpSize = DpSize(240.dp, 180.dp),
+        fontScale: Float = 1f,
+    ) {
+        if (dark) RuntimeEnvironment.setQualifiers("+night") else RuntimeEnvironment.setQualifiers("+notnight")
+        // Set after the qualifiers so they can't override it; the inflated widget reads its sp sizes
+        // from this context's configuration, as a real host does.
+        RuntimeEnvironment.setFontScale(fontScale)
         val context = ApplicationProvider.getApplicationContext<Context>()
         val result = runBlocking {
-            GlanceRemoteViews().compose(context, size = DpSize(240.dp, 180.dp)) {
+            GlanceRemoteViews().compose(context, size = size) {
                 WidgetContent(model, now)
             }
         }
         val view = result.remoteViews.apply(context, FrameLayout(context))
-        captureSnapshot(view, name)
+        // Capture at the widget's own size in px (420dpi), so a small size shows its real clipping.
+        val density = context.resources.displayMetrics.density
+        captureSnapshot(view, name, (size.width.value * density).toInt(), (size.height.value * density).toInt())
     }
 
     /**
@@ -155,7 +225,7 @@ class WidgetScreenshotTest {
      * views have no real surface, so an unmeasured view captures blank. Same shape as the sibling
      * screen screenshot tests; only recording/verifying actually writes a file.
      */
-    private fun captureSnapshot(view: View, name: String, widthPx: Int = 630, heightPx: Int = 472) {
+    private fun captureSnapshot(view: View, name: String, widthPx: Int, heightPx: Int) {
         val recording = System.getProperty("roborazzi.test.record") == "true"
         val verifying = System.getProperty("roborazzi.test.verify") == "true"
         if (!recording && !verifying) return

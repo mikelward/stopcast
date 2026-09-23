@@ -1,7 +1,10 @@
 package app.stopcast.widget
 
 import androidx.glance.appwidget.testing.unit.runGlanceAppWidgetUnitTest
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.glance.testing.unit.hasText
+import androidx.glance.testing.unit.hasTextEqualTo
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
@@ -102,6 +105,27 @@ class WidgetContentTest {
     }
 
     @Test
+    fun `a narrow widget drops the stamp's Updated prefix`() = runGlanceAppWidgetUnitTest {
+        setAppWidgetSize(DpSize(180.dp, 110.dp))
+        provideComposable { WidgetContent(stampOnly("Updated 14 min ago"), now) }
+        onNode(hasTextEqualTo("14 min ago")).assertExists()
+    }
+
+    @Test
+    fun `a wide widget keeps the full stamp`() = runGlanceAppWidgetUnitTest {
+        setAppWidgetSize(DpSize(WIDGET_COMPACT_WIDTH, 110.dp))
+        provideComposable { WidgetContent(stampOnly("Updated 14 min ago"), now) }
+        onNode(hasTextEqualTo("Updated 14 min ago")).assertExists()
+    }
+
+    private fun stampOnly(stamp: String) = WidgetModel(
+        hasData = true,
+        stale = false, uncertain = false,
+        stamp = stamp,
+        rows = listOf(rowModel(row("victoria", 120, now.minusSeconds(30)))),
+    )
+
+    @Test
     fun `a partial snapshot with rows flags the header as uncertain`() = runGlanceAppWidgetUnitTest {
         // Fresh overall (recent stamp) but uncertain — one stop carried arrivalsFresh=false and
         // is under the age threshold, so its row still shows a live countdown. The header must
@@ -117,7 +141,7 @@ class WidgetContentTest {
                 now,
             )
         }
-        onNode(hasText("some stops out of date")).assertExists()
+        onNode(hasText("Some stops out of date")).assertExists()
     }
 
     @Test
@@ -191,7 +215,7 @@ class WidgetContentTest {
             )
         }
         // The stamp invites a refresh, and the withheld countdown is "?" (never a live number).
-        onNode(hasText("tap to refresh")).assertExists()
+        onNode(hasText("Tap to refresh")).assertExists()
         onNode(hasText("?")).assertExists()
     }
 }
