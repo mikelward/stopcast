@@ -121,6 +121,46 @@ class WidgetContentTest {
         }
         onNode(hasTextEqualTo("Partly stale")).assertExists()
         onNode(hasTextEqualTo("StopDash")).assertDoesNotExist()
+        onNode(hasTextEqualTo(lineCode("victoria", "tube"))).assertExists()
+        onNode(hasText("Brixton")).assertExists()
+    }
+
+    @Test
+    fun `a stacked row keeps the line code, the destination and the countdown`() = runGlanceAppWidgetUnitTest {
+        provideComposable {
+            WidgetContent(
+                WidgetModel(
+                    hasData = true,
+                    stale = false, uncertain = false,
+                    stamp = "Updated just now",
+                    rows = listOf(rowModel(row("victoria", 120, now.minusSeconds(30)))),
+                    stacked = true,
+                ),
+                now,
+            )
+        }
+        onNode(hasTextEqualTo(lineCode("victoria", "tube"))).assertExists()
+        onNode(hasTextEqualTo("Brixton")).assertExists()
+        onNode(hasTextEqualTo("2 min")).assertExists()
+    }
+
+    @Test
+    fun `a widget too small for one departure asks to be made taller`() = runGlanceAppWidgetUnitTest {
+        provideComposable {
+            WidgetContent(
+                WidgetModel(
+                    hasData = true,
+                    stale = false, uncertain = false,
+                    stamp = "Updated just now",
+                    rows = emptyList(),
+                    compact = true,
+                    tooSmall = true,
+                ),
+                now,
+            )
+        }
+        onNode(hasTextEqualTo("Too small")).assertExists()
+        onNode(hasText("No upcoming departures")).assertDoesNotExist()
     }
 
     @Test
