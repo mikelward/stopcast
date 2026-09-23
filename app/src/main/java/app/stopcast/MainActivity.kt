@@ -225,6 +225,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // The retained latch for a pending foreground-return re-location, composed above the
+                // overlay switch by [NearbyArea] below and consumed inside the departures view. See
+                // [ForegroundReturnLatch] for why it's a ViewModel rather than a `remember`.
+                val returnLatch: ForegroundReturnLatch = viewModel()
+
                 // The licenses screen is hosted here, above the location gate — not inside the
                 // departures view — so the open-source attribution (and the app version) stay
                 // reachable in every state, including a permission-denied gate where departures
@@ -311,76 +316,98 @@ class MainActivity : ComponentActivity() {
                 // Licenses and Settings are activity-level overlays (like the licenses screen's
                 // existing hosting), reachable from every state and closed by their own Back, so
                 // opening either takes the departures view and its background refresh out of
-                // composition rather than polling TfL behind a static screen.
-                when {
-                    licensesOpen -> LicensesScreen(onBack = { licensesOpen = false })
-                    settingsOpen -> SettingsScreen(
-                        liveWidgetRefresh = liveWidgetRefresh == true,
-                        liveWidgetRefreshEnabled = liveWidgetRefresh != null,
-                        liveWidgetRefreshFailed = liveWidgetRefreshFailed,
-                        onLiveWidgetRefreshChange = { enabled ->
-                            settingsScope.launch {
-                                liveWidgetRefreshFailed =
-                                    applyLiveWidgetRefresh(applicationContext, settings, enabled) ==
-                                        LiveWidgetRefreshResult.FAILED
-                            }
-                        },
-                        onDismissLiveWidgetRefreshError = { liveWidgetRefreshFailed = false },
-                        // The paste field. Applied to memory at once (next refresh uses it) and
-                        // persisted in the background; a blank clears it back to keyless (SPEC D7).
-                        // Disabled until the stored key has actually been read, so the field can't be
-                        // edited over a value that hasn't loaded yet.
-                        userApiKey = userApiKeyValue.orEmpty(),
-                        userApiKeyLoaded = apiKeyLoaded,
-                        onUserApiKeyChange = { key -> UserApiKeySetting.set(key) },
-                        onBack = { settingsOpen = false },
-                    )
-                    else -> when (val state = nearby) {
-                        is NearbyStopsViewModel.State.Ready ->
-                            DeparturesForStops(
-                                ready = state,
-                                relocate = { onSameSet -> nearbyViewModel.relocate(onSameSet) },
-                                relocating = nearbyViewModel.relocating,
-                                onOpenLicenses = openLicenses,
-                                onOpenSettings = { settingsOpen = true },
-                                updateAvailable = updateAvailable.value,
-                                onOpenAppListing = ::openPlayListing,
-                                onSendBugReport = requestBugReport,
-                            )
-                        else -> {
-                            // While the gate is up (a failed/empty relocate, or a retry), drop
-                            // any departures store retained from the pre-gate set, so recovering
-                            // to the same stop IDs rebuilds the ViewModel and re-fetches instead
-                            // of showing the pre-gate departures until the next auto-refresh
-                            // (Codex). Ready never enters this branch, so a same-set relocate is
-                            // untouched. Runs once on gate entry (keyed Unit).
-                            val stores: NearbyDeparturesStores = viewModel()
-                            DisposableEffect(Unit) {
-                                stores.clearAll()
-                                onDispose {}
-                            }
-                            LocationGate(
-                                state = state,
-                                permanentlyDenied = permissionPermanentlyDenied,
-                                onAllow = { permissionLauncher.launch(locationPermissions) },
-                                onRetry = {
-                                    if (hasLocationPermission()) nearbyViewModel.locate()
-                                    else permissionLauncher.launch(locationPermissions)
+                // composition rather than polling TfL behind a static screen. [NearbyArea] hosts the
+                // switch and composes the foreground-return observer in its aboveOverlay slot — above
+                // the switch — so a return that lands while an overlay is open is still seen (#136).
+                NearbyArea(
+                    overlayOpen = licensesOpen || settingsOpen,
+                    aboveOverlay = {
+                        ForegroundReturnLatcher(
+                            isReady = { nearbyViewModel.state.value is NearbyStopsViewModel.State.Ready },
+                            isBusy = { nearbyViewModel.relocating.value },
+                            onReturn = { returnLatch.pending = true },
+                        )
+                    },
+                    overlayContent = {
+                        // Licenses wins if both are somehow set; each closes via its own Back.
+                        if (licensesOpen) {
+                            LicensesScreen(onBack = { licensesOpen = false })
+                        } else {
+                            SettingsScreen(
+                                liveWidgetRefresh = liveWidgetRefresh == true,
+                                liveWidgetRefreshEnabled = liveWidgetRefresh != null,
+                                liveWidgetRefreshFailed = liveWidgetRefreshFailed,
+                                onLiveWidgetRefreshChange = { enabled ->
+                                    settingsScope.launch {
+                                        liveWidgetRefreshFailed =
+                                            applyLiveWidgetRefresh(applicationContext, settings, enabled) ==
+                                                LiveWidgetRefreshResult.FAILED
+                                    }
                                 },
-                                onOpenSettings = ::openAppSettings,
-                                onOpenLicenses = openLicenses,
-                                // The report is most useful in exactly these stuck states (no fix,
-                                // TfL unreachable, nothing nearby), so it is reachable here too, not
-                                // only past the gate — with no location or stops (Codex P2 on #86).
-                                onSendBugReport = requestBugReport,
-                                // The gate is in front of the departures overflow (which carries the
-                                // update item), so surface an available update on the Locating spinner.
-                                updateAvailable = updateAvailable.value,
-                                onOpenAppListing = ::openPlayListing,
+                                onDismissLiveWidgetRefreshError = { liveWidgetRefreshFailed = false },
+                                // The paste field. Applied to memory at once (next refresh uses it) and
+                                // persisted in the background; a blank clears it back to keyless (SPEC D7).
+                                // Disabled until the stored key has actually been read, so the field can't be
+                                // edited over a value that hasn't loaded yet.
+                                userApiKey = userApiKeyValue.orEmpty(),
+                                userApiKeyLoaded = apiKeyLoaded,
+                                onUserApiKeyChange = { key -> UserApiKeySetting.set(key) },
+                                onBack = { settingsOpen = false },
                             )
                         }
-                    }
-                }
+                    },
+                    body = {
+                        when (val state = nearby) {
+                            is NearbyStopsViewModel.State.Ready ->
+                                DeparturesForStops(
+                                    ready = state,
+                                    relocate = { onSameSet -> nearbyViewModel.relocate(onSameSet) },
+                                    relocating = nearbyViewModel.relocating,
+                                    onOpenLicenses = openLicenses,
+                                    onOpenSettings = { settingsOpen = true },
+                                    updateAvailable = updateAvailable.value,
+                                    onOpenAppListing = ::openPlayListing,
+                                    onSendBugReport = requestBugReport,
+                                    // A foreground return that landed while an overlay was open is latched
+                                    // above; consume it here so re-entering departures relocates.
+                                    foregroundReturnPending = returnLatch.pending,
+                                    onForegroundReturnConsumed = { returnLatch.pending = false },
+                                )
+                            else -> {
+                                // While the gate is up (a failed/empty relocate, or a retry), drop
+                                // any departures store retained from the pre-gate set, so recovering
+                                // to the same stop IDs rebuilds the ViewModel and re-fetches instead
+                                // of showing the pre-gate departures until the next auto-refresh
+                                // (Codex). Ready never enters this branch, so a same-set relocate is
+                                // untouched. Runs once on gate entry (keyed Unit).
+                                val stores: NearbyDeparturesStores = viewModel()
+                                DisposableEffect(Unit) {
+                                    stores.clearAll()
+                                    onDispose {}
+                                }
+                                LocationGate(
+                                    state = state,
+                                    permanentlyDenied = permissionPermanentlyDenied,
+                                    onAllow = { permissionLauncher.launch(locationPermissions) },
+                                    onRetry = {
+                                        if (hasLocationPermission()) nearbyViewModel.locate()
+                                        else permissionLauncher.launch(locationPermissions)
+                                    },
+                                    onOpenSettings = ::openAppSettings,
+                                    onOpenLicenses = openLicenses,
+                                    // The report is most useful in exactly these stuck states (no fix,
+                                    // TfL unreachable, nothing nearby), so it is reachable here too, not
+                                    // only past the gate — with no location or stops (Codex P2 on #86).
+                                    onSendBugReport = requestBugReport,
+                                    // The gate is in front of the departures overflow (which carries the
+                                    // update item), so surface an available update on the Locating spinner.
+                                    updateAvailable = updateAvailable.value,
+                                    onOpenAppListing = ::openPlayListing,
+                                )
+                            }
+                        }
+                    },
+                )
 
                 // The consent gate overlays whatever is shown; requested from the Ready overflow or
                 // a stuck gate. Confirm builds the report from the current state and shares it
@@ -561,6 +588,11 @@ class MainActivity : ComponentActivity() {
         onOpenAppListing: () -> Unit,
         // Overflow "Send bug report": built at the Ready branch so it captures the fix + distances.
         onSendBugReport: () -> Unit,
+        // A background→foreground return, latched by the activity-level observer above the overlay
+        // switch (so a return while Settings/Licenses is open isn't lost). True means "re-locate on
+        // (re)entry"; [onForegroundReturnConsumed] clears it once acted on.
+        foregroundReturnPending: Boolean,
+        onForegroundReturnConsumed: () -> Unit,
     ) {
         // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
         // the set changes (the user moved and re-located) rather than left keyed in the
@@ -648,7 +680,15 @@ class MainActivity : ComponentActivity() {
                 relocate = relocate,
                 reconcile = { fresh -> viewModel.reconcile(fresh.eager, fresh.more) },
             )
-            RefreshOnForeground(viewModel, relocating, onRelocate)
+            // Consume a latched foreground return (set by the activity-level observer above the
+            // overlay switch). Because the latch lives above this view, it survives this view being
+            // out of composition (an overlay) until a re-entry consumes it here — the whole point.
+            ConsumeForegroundReturn(
+                pending = foregroundReturnPending,
+                isBusy = { relocating.value },
+                onConsumed = onForegroundReturnConsumed,
+                onRelocate = onRelocate,
+            )
             AutoRefresh(viewModel, relocating)
             // Provide the branch topology so the card groups a branching row the way the widget
             // does — equivalent trunks merged, the label kept only where the trunk is a choice
@@ -868,7 +908,7 @@ internal class NearbyDeparturesStores : androidx.lifecycle.ViewModel() {
      * Drop every retained per-set store, canceling any in-flight departures fetch. Called when
      * the departures view is replaced by the location gate (a failed/empty re-locate, or a
      * retry): otherwise a recovery to the same stop IDs would reuse the retained [MainViewModel],
-     * whose `init` doesn't re-run and whose [RefreshOnForeground] skips its first foreground, so
+     * whose `init` doesn't re-run (and a foreground return only re-locates when already Ready), so
      * the pre-gate departures would return without the re-fetch the user asked for, stale until
      * the next auto-refresh (Codex).
      */
@@ -931,40 +971,89 @@ internal fun StopCastAppRoot(content: @Composable () -> Unit) {
 }
 
 /**
- * Re-locate and refresh when the user returns to the foregrounded screen (SPEC D6: refresh on
- * open), so coming back after walking shows the stops near you *now* rather than where you were —
- * and never a return to withheld stale countdowns you'd have to refresh by hand (maintainer,
- * 2026-09-23). [onForeground] is the same re-locate action the refresh control runs (a fresh fix
- * that re-resolves the nearby set, then a re-fetch), so a genuine return moves the set; this is a
- * foreground, user-adjacent location fix bounded to app opens, not background polling (SPEC
- * *Privacy* / *Finding stops*). The ViewModel's `init` does the first load and survives
- * configuration change, so the **first** foreground per activity instance is skipped — only a
- * genuine return from the background acts, never a duplicate of the initial request nor a refetch
- * on rotation. (Lifecycle wiring: verified by inspection, wants a device check.)
- *
- * [relocating] joins the busy gate (as it does for [AutoRefresh]): a foreground return while a
- * re-locate's fix is already in flight must not kick a second one; the in-flight relocate's own
- * resolution refreshes the confirmed set, replaces a moved-to one, or shows the gate (Codex).
+ * The near-me area's overlay host. [aboveOverlay] composes **unconditionally** — regardless of
+ * whether a Settings/Licenses overlay is open — while [overlayContent] (the open overlay) and [body]
+ * (the location gate or the departures view) switch on [overlayOpen]. Production puts the
+ * foreground-return observer ([ForegroundReturnLatcher]) in [aboveOverlay] so a return that lands
+ * while an overlay is open is still observed and latched — the departures view that consumes the
+ * latch is out of composition then (#136). Extracted as the real host so [ForegroundReturnTest] can
+ * render it and pin that the above-overlay slot survives the overlay, rather than reconstructing the
+ * topology in the test.
  */
 @Composable
-private fun RefreshOnForeground(
-    viewModel: MainViewModel,
-    relocating: StateFlow<Boolean>,
-    onForeground: () -> Unit,
+internal fun NearbyArea(
+    overlayOpen: Boolean,
+    aboveOverlay: @Composable () -> Unit,
+    overlayContent: @Composable () -> Unit,
+    body: @Composable () -> Unit,
+) {
+    aboveOverlay()
+    if (overlayOpen) overlayContent() else body()
+}
+
+/**
+ * Holds the one bit "a background→foreground return is pending re-location," retained across a
+ * configuration change but reset on process recreation. A rotation while a Settings/Licenses overlay
+ * is still open must not drop a latched return — the recreated observer skips its first foreground,
+ * so the reopened departures view would show the pre-move set. A plain `remember` drops it on
+ * rotation; `rememberSaveable` would wrongly carry it through process death, where the ViewModel
+ * init's own reload already covers the return. A retained ViewModel is exactly "survive a config
+ * change, die with the process" (Codex).
+ */
+internal class ForegroundReturnLatch : androidx.lifecycle.ViewModel() {
+    var pending by mutableStateOf(false)
+}
+
+/**
+ * Observes the activity lifecycle for a genuine background→foreground return and, when the near-me
+ * set is already [isReady], calls [onReturn] to latch a pending re-location (SPEC *Finding stops* /
+ * D6). Hosted **above** the Settings/Licenses overlay switch so a return that lands while an overlay
+ * is open is still seen — the departures view that consumes the latch is out of composition then, so
+ * an observer hosted there would miss the return entirely. The first foreground per activity instance
+ * is skipped (the ViewModel init covers it, and a rotation restarts this with its own skip), and
+ * [isBusy] gates a return that lands mid-relocate. Extracted (with [ConsumeForegroundReturn]) so the
+ * observer/overlay/consume wiring is exercised by a test rather than restated — a regression that
+ * moved this back inside the departures view leaves the latch unset while an overlay is open.
+ */
+@Composable
+internal fun ForegroundReturnLatcher(
+    isReady: () -> Boolean,
+    isBusy: () -> Boolean,
+    onReturn: () -> Unit,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    // Read the latest action without re-keying the effect on it (a new lambda each recomposition
-    // would restart the effect and reset the first-foreground skip every frame).
-    val currentOnForeground = rememberUpdatedState(onForeground)
-    // Keyed on [viewModel], not just the lifecycle owner: a moved-to relocate swaps in a fresh
-    // per-set MainViewModel while this composable stays composed (DeparturesForStops recomposes
-    // in place — no key() wrapper), so an effect keyed on the lifecycle alone would keep acting on
-    // the cleared previous model while the new set never got a foreground refresh (Codex).
-    // Re-keying restarts the effect against the replacement model — and resets its first-foreground
-    // skip, which the new set's own init fetch (and the relocate that created it) stands in for.
-    LaunchedEffect(lifecycleOwner, viewModel) {
-        refreshOnForeground(lifecycleOwner.lifecycle, isBusy = { relocating.value }) {
-            currentOnForeground.value()
+    // Read the latest lambdas without re-keying the effect (a fresh lambda each recomposition would
+    // restart it and reset the first-foreground skip).
+    val currentIsReady = rememberUpdatedState(isReady)
+    val currentIsBusy = rememberUpdatedState(isBusy)
+    val currentOnReturn = rememberUpdatedState(onReturn)
+    LaunchedEffect(lifecycleOwner) {
+        refreshOnForeground(lifecycleOwner.lifecycle, isBusy = { currentIsBusy.value() }) {
+            if (currentIsReady.value()) currentOnReturn.value()
+        }
+    }
+}
+
+/**
+ * Consumes a latched foreground return: when [pending] flips true, re-locate via [onRelocate] (unless
+ * [isBusy] — an in-flight relocate already covers it) and clear the latch via [onConsumed]. Composed
+ * inside the departures view, so a latch set by [ForegroundReturnLatcher] while this view was out of
+ * composition (an overlay) fires the moment it re-enters. [onRelocate] is read latest so a moved-to
+ * set's fresh action is used.
+ */
+@Composable
+internal fun ConsumeForegroundReturn(
+    pending: Boolean,
+    isBusy: () -> Boolean,
+    onConsumed: () -> Unit,
+    onRelocate: () -> Unit,
+) {
+    val currentIsBusy = rememberUpdatedState(isBusy)
+    val currentOnRelocate = rememberUpdatedState(onRelocate)
+    LaunchedEffect(pending) {
+        if (pending) {
+            if (!currentIsBusy.value()) currentOnRelocate.value()
+            onConsumed()
         }
     }
 }
@@ -1054,9 +1143,9 @@ internal const val AUTO_REFRESH_MILLIS = 60_000L
 @Composable
 private fun AutoRefresh(viewModel: MainViewModel, relocating: StateFlow<Boolean>) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    // Keyed on [viewModel] too (see RefreshOnForeground): a moved-to relocate replaces the per-set
-    // model under this still-composed effect, and a lifecycle-only key would leave the timer
-    // ticking the cleared old model while the new set never auto-refreshed and went stale (Codex).
+    // Keyed on [viewModel] too: a moved-to relocate replaces the per-set model under this
+    // still-composed effect, and a lifecycle-only key would leave the timer ticking the cleared
+    // old model while the new set never auto-refreshed and went stale (Codex).
     LaunchedEffect(lifecycleOwner, viewModel) {
         autoRefresh(
             lifecycleOwner.lifecycle,
