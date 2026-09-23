@@ -1260,6 +1260,17 @@ Builds on Phase 1's minimal line-status marking.
       (`SPEC.md` *Disruptions*) — a screen-reader-only label or an optional tap doesn't satisfy
       sighted at-a-glance use, so icon-only is a **card** option; on the widget the compact
       icon accompanies the visible summary rather than replacing it.
+- [ ] **Service alerts on favorite routes, at the very top** (maintainer, 2026-09-23). Show the
+      line-status alerts affecting the user's starred routes (starred rows, and starred journeys
+      once they land) at the very top of the near-me list, even when that line isn't at a nearby
+      stop. Line status is one batched `/Line/{ids}/Status` request, so the extra cost is at most
+      the uncached starred lines joined into that request (or one more batched request) per
+      refresh, reusing the 90 s cache. **Depends on** the pin-vs-star decision above (*Reconsider
+      the detail star*): today's star is "pin to top", ranking only (SPEC), so treating it as a
+      favorite could alert on an old pin with no row left to unpin it — settle that model (or a
+      distinct favorite-route set) first. Open: how an alert here relates to the same line's alert
+      further down (dedupe or both), and whether a dismissal carries across. Touches SPEC
+      *Disruptions* and the near-me ordering.
 - [ ] **Commute disruption announcements, without being noisy** (requested 2026-09-19,
       on-device). Notify the user of a disruption to *their* commute — a watched line/stop on
       the routes they take — but only when it matters: scoped to their working-hours / trip
