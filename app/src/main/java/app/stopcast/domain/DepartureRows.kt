@@ -102,7 +102,7 @@ object DepartureRows {
                 } else {
                     emptyList()
                 }
-            stopStatusRow(stop) + timed + status
+            stopStatusRow(stop, now) + timed + status
         }.sortedWith(rowOrder)
 
     /**
@@ -404,8 +404,12 @@ object DepartureRows {
      * matches and strips, the other's does not — and split the shared notice into two cards (Codex).
      * The name is stripped later, per the shown row, by [cleanDisruptionBody] at display time.
      */
-    private fun stopStatusRow(stop: StopArrivals): List<DepartureRow> {
-        if (stop.disruptions.isEmpty()) return emptyList()
+    private fun stopStatusRow(stop: StopArrivals, now: Instant): List<DepartureRow> {
+        // Only notices in effect at [now]: TfL lists a scheduled closure hours before it starts,
+        // and one that isn't in force yet (or has ended) would contradict the live departures.
+        // Deduplicated by text, since one notice can be listed under several windows.
+        val active = stop.disruptions.filter { it.isActiveAt(now) }.distinctBy { it.description }
+        if (active.isEmpty()) return emptyList()
         return listOf(
             DepartureRow(
                 stopId = stop.stopId,
@@ -423,7 +427,7 @@ object DepartureRows {
                 upcoming = emptyList(),
                 fetchedAt = stop.fetchedAt,
                 status = null,
-                stopDisruption = stop.disruptions.joinToString("\n\n") {
+                stopDisruption = active.joinToString("\n\n") {
                     normalizeDisruptionText(it.description)
                 },
             ),

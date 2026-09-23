@@ -1,5 +1,7 @@
 package app.stopcast.domain
 
+import java.time.Instant
+
 /**
  * A disruption reported for a whole stop (TfL `/StopPoint/{id}/Disruption`) — a station
  * closure, a moved stop, a blocked entrance. Distinct from a [LineStatus]: a stop can be
@@ -11,10 +13,21 @@ package app.stopcast.domain
  * rather than trying to tell a full closure from a lift outage — TfL's closure fields are
  * coarse and the data is often absent, so surfacing what it does report beats hiding it;
  * classifying severity is left to the full disruptions work (Phase 3).
+ *
+ * [validFrom]/[validTo] are TfL's `fromDate`/`toDate`: TfL publishes a scheduled closure ahead of
+ * its window (a stop "closed" 10:00–15:00 is reported from the early morning), so only a notice
+ * [isActiveAt] the render clock is shown. A missing bound is open-ended — a notice TfL didn't
+ * date is surfaced rather than hidden (SPEC principle 1).
  */
 data class StopDisruption(
     val description: String,
-)
+    val validFrom: Instant? = null,
+    val validTo: Instant? = null,
+) {
+    /** Whether this notice's window covers [now]: started (inclusive) and not yet ended. */
+    fun isActiveAt(now: Instant): Boolean =
+        (validFrom == null || !now.isBefore(validFrom)) && (validTo == null || now.isBefore(validTo))
+}
 
 /**
  * Turns a raw TfL stop-disruption [rawDescription] into the **member-independent** form stored on

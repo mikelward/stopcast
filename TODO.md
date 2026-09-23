@@ -521,6 +521,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           a place not queried this cycle or whose disruption lookup failed keeps its dismissal. Fails safe — an unreadable
           set reads empty (card returns, never a hidden warning). Filtered in
           `DepartureRows.withoutDismissed`; the stop's departures still show. Follow-ups below.
+      - [x] **Show a stop notice only inside its TfL window** (maintainer, 2026-09-23). TfL lists a
+            scheduled closure hours ahead; `fromDate`/`toDate` are now kept and the stop-status row
+            filters on the render clock. Undated/unparseable counts as current. Departures untouched.
+      - [ ] **Key a dismissal on the notice's window too** (maintainer, 2026-09-23). Dismiss lasts only
+            until the stated end; an extended or moved window is a new notice and shows again at once.
       - [ ] **Extend dismiss to persistent line-status alerts** (maintainer, 2026-09-22). Only the
             whole-stop closure cards are dismissible today. The *acute* line statuses (severe delays,
             suspended) you'd never dismiss — keep them non-dismissible — but the persistent

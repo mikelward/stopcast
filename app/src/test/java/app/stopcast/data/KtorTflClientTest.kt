@@ -177,6 +177,58 @@ class KtorTflClientTest {
         }
         """.trimIndent()
 
+    // A recorded bus-stop closure (/StopPoint/{id}/Disruption, getFamily=true), trimmed to two of
+    // the StopArea's poles: TfL's real `fromDate`/`toDate` form and placement, on the DisruptedPoint
+    // alongside the description. A public, unrelated stop's notice (SPEC *Privacy*).
+    private val busClosureJson =
+        """
+        {
+          "${'$'}type": "Tfl.Api.Presentation.Entities.DisruptedPointFamily, Tfl.Api.Presentation.Entities",
+          "naptanId": "490G00003087",
+          "disruptions": [],
+          "children": [
+            {
+              "${'$'}type": "Tfl.Api.Presentation.Entities.DisruptedPointFamily, Tfl.Api.Presentation.Entities",
+              "naptanId": "490003087W1",
+              "disruptions": [
+                {
+                  "${'$'}type": "Tfl.Api.Presentation.Entities.DisruptedPoint, Tfl.Api.Presentation.Entities",
+                  "atcoCode": "490003087W1",
+                  "fromDate": "2026-09-14T08:00:00Z",
+                  "toDate": "2026-09-27T17:00:00Z",
+                  "description": "Bus Stop Closed\\n   see tfl.gov.uk/bus/status\\n     for more information\\n",
+                  "commonName": "Acton Street",
+                  "type": "Closure",
+                  "mode": "bus",
+                  "stationAtcoCode": "490G00003087",
+                  "appearance": "Information"
+                }
+              ],
+              "children": []
+            },
+            {
+              "${'$'}type": "Tfl.Api.Presentation.Entities.DisruptedPointFamily, Tfl.Api.Presentation.Entities",
+              "naptanId": "490012149N",
+              "disruptions": [
+                {
+                  "${'$'}type": "Tfl.Api.Presentation.Entities.DisruptedPoint, Tfl.Api.Presentation.Entities",
+                  "atcoCode": "490012149N",
+                  "fromDate": "2026-09-14T08:00:00Z",
+                  "toDate": "2026-09-27T17:00:00Z",
+                  "description": "Bus Stop Closed\\n   see tfl.gov.uk/bus/status\\n     for more information\\n",
+                  "commonName": "Acton Street",
+                  "type": "Closure",
+                  "mode": "bus",
+                  "stationAtcoCode": "490G00003087",
+                  "appearance": "Information"
+                }
+              ],
+              "children": []
+            }
+          ]
+        }
+        """.trimIndent()
+
     // A nearby-search fixture in the shape of a real /StopPoint response, trimmed to the
     // mapped fields. Public station names/ids only, and every coordinate is an
     // obviously-synthetic stand-in — never a real position (SPEC *Privacy*).
@@ -319,6 +371,7 @@ class KtorTflClientTest {
         status: HttpStatusCode = HttpStatusCode.OK,
         appKey: String? = null,
         capture: (HttpRequestData) -> Unit = {},
+        warn: (String) -> Unit = {},
     ): KtorTflClient {
         val engine = MockEngine { request ->
             capture(request)
@@ -332,7 +385,7 @@ class KtorTflClientTest {
             expectSuccess = true
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         }
-        return KtorTflClient(httpClient = http, baseUrl = "https://tfl.example", appKey = { appKey })
+        return KtorTflClient(httpClient = http, baseUrl = "https://tfl.example", appKey = { appKey }, warn = warn)
     }
 
     @Test
@@ -440,6 +493,43 @@ class KtorTflClientTest {
 
         assertEquals(1, disruptions.size)
         assertEquals("Station closed until further notice.", disruptions[0].description)
+    }
+
+    @Test
+    fun `maps a recorded bus closure's window`() = runTest {
+        val warnings = mutableListOf<String>()
+        val disruptions = client(busClosureJson, warn = { warnings += it }).stopDisruptions("490012149N")
+
+        // One closure reported on both poles folds to one, with TfL's own bounds parsed.
+        assertEquals(1, disruptions.size)
+        assertEquals(Instant.parse("2026-09-14T08:00:00Z"), disruptions[0].validFrom)
+        assertEquals(Instant.parse("2026-09-27T17:00:00Z"), disruptions[0].validTo)
+        assertTrue(warnings.isEmpty())
+    }
+
+    @Test
+    fun `maps a stop disruption's window, leaving a missing or unreadable bound open`() = runTest {
+        val json = """
+            {
+              "disruptions": [
+                { "description": "Bus Stop Closed", "fromDate": "2026-01-01T09:00:00Z", "toDate": "2026-01-01T14:00:00Z" },
+                { "description": "Stop moved", "fromDate": "not a date" }
+              ],
+              "children": []
+            }
+        """.trimIndent()
+
+        val warnings = mutableListOf<String>()
+        val disruptions = client(json, warn = { warnings += it }).stopDisruptions("490000001A")
+
+        assertEquals(Instant.parse("2026-01-01T09:00:00Z"), disruptions[0].validFrom)
+        assertEquals(Instant.parse("2026-01-01T14:00:00Z"), disruptions[0].validTo)
+        assertNull(disruptions[1].validFrom)
+        assertNull(disruptions[1].validTo)
+        // The fallback is logged, not silent — and the raw value is not echoed.
+        assertEquals(1, warnings.size)
+        assertTrue(warnings[0].contains("490000001A"))
+        assertFalse(warnings[0].contains("not a date"))
     }
 
     @Test

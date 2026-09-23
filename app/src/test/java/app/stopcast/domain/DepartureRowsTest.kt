@@ -419,6 +419,48 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `a stop closure outside its window is not shown, and departures still are`() {
+        // TfL lists a scheduled closure hours before it starts; a notice not yet in force (or
+        // already over) must not sit beside the live departures as if the stop were closed now.
+        val bus = departure("134", "134", "outbound", "Warren Street", 240)
+        fun stopWith(vararg notices: StopDisruption) = StopArrivals(
+            "490000001A", "Example Road", departures = listOf(bus), fetchedAt = now,
+            disruptions = notices.toList(),
+        )
+        val later = StopDisruption(
+            "Bus Stop Closed", validFrom = now.plusSeconds(3 * 3600), validTo = now.plusSeconds(8 * 3600),
+        )
+        val over = StopDisruption("Stop moved", validFrom = now.minusSeconds(7200), validTo = now.minusSeconds(60))
+
+        val rows = DepartureRows.across(listOf(stopWith(later, over)), now)
+
+        assertEquals(1, rows.size)
+        assertNull(rows[0].stopDisruption)
+        assertEquals("134", rows[0].lineId)
+
+        // Once the window opens the same notice shows, departures unchanged.
+        val during = DepartureRows.across(listOf(stopWith(later)), now.plusSeconds(3 * 3600))
+        assertEquals("Bus Stop Closed", during[0].stopDisruption)
+    }
+
+    @Test
+    fun `an undated or in-window stop disruption is shown`() {
+        val stop = StopArrivals(
+            "490000001A", "Example Road", departures = emptyList(), fetchedAt = now,
+            disruptions = listOf(
+                StopDisruption("Bus Stop Closed", validFrom = now.minusSeconds(60), validTo = now.plusSeconds(60)),
+                StopDisruption("Bus Stop Closed", validFrom = now.minusSeconds(3600), validTo = null),
+                StopDisruption("Lift out of service"),
+            ),
+        )
+
+        val rows = DepartureRows.across(listOf(stop), now)
+
+        // The same text under two windows shows once.
+        assertEquals("Bus Stop Closed\n\nLift out of service", rows.single().stopDisruption)
+    }
+
+    @Test
     fun `a stop disruption becomes a stop-status row, sorted above line and timed rows`() {
         val victoria = departure("victoria", "Victoria", "outbound", "Brixton", 120)
         val stop = StopArrivals(
