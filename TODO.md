@@ -419,13 +419,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         `Towards`) would match reality where `Northbound` (our derived compass) does not. Leaning
         toward preferring `Towards` (`-> Archway`) over the bare compass; handle TfL's two-way
         `Towards` (`"Farringdon Or Holborn Circus"` — already trimmed at `" Or "` for the spoken label).
-  - [ ] **Split a mixed-platform row into a card per platform** (Codex P1, PR #119). A single
-        (line, direction) row can carry departures from more than one platform (a terminus, a platform
-        change), since `DepartureRows.forStop` merges a line's one direction into one card. The
-        two-level header currently falls back to the shared **compass** for such a row rather than
-        claim a wrong platform (correct, but coarser). The fuller fix splits the row's predictions by
-        platform so each platform gets its own card + "Platform N" sub-header — a `DepartureRows`
-        change (the `RowKey`/`directionKey` is also the cross-stop fold key, so widen carefully).
+  - [x] **Split a mixed-platform row into a card per platform** (Codex P1, PR #119). A direction
+        that runs from several platforms (Camden Town southbound: Platform 2 or 4) now gets a card
+        per platform; platform-less predictions beside two platforms sit under the bare compass.
+  - [ ] **Show the platform on the widget.** The widget keeps one merged row per direction (it has
+        no platform headers); a platform cue on its rows would answer "which platform" there too.
   - [ ] **Revisit the header grain for a busy interchange** (maintainer, 2026-09-21). The rail
         platform split and the bus letter split (above) already break a hub into per-platform/per-pole
         blocks. Still open: whether a dense hub wants a *finer* grain still (per-line dividers within

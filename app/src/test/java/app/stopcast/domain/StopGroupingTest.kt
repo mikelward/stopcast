@@ -68,6 +68,36 @@ class StopGroupingTest {
     )
 
     @Test
+    fun `a direction served by two platforms heads each platform separately`() {
+        // Camden Town: one southbound TfL direction from Platforms 2 and 4, northbound from 1 and 3.
+        fun northern(direction: String, destination: String, platform: String, offset: Long) =
+            Departure("northern", "Northern", direction, destination, platform, now.plusSeconds(offset), "tube")
+        val stop = StopArrivals(
+            stopId = "940GZZLUCTN",
+            stopName = "Camden Town",
+            departures = listOf(
+                northern("inbound", "Morden", "Southbound - Platform 2", 60),
+                northern("inbound", "Morden", "Southbound - Platform 4", 90),
+                northern("outbound", "Edgware", "Northbound - Platform 1", 120),
+                northern("outbound", "High Barnet", "Northbound - Platform 3", 150),
+            ),
+            fetchedAt = now,
+        )
+
+        val groups = StopGrouping.groupByStop(DepartureRows.across(listOf(stop), now))
+
+        assertEquals(
+            setOf(
+                StopQualifier.Platform("1", "Northbound"),
+                StopQualifier.Platform("2", "Southbound"),
+                StopQualifier.Platform("3", "Northbound"),
+                StopQualifier.Platform("4", "Southbound"),
+            ),
+            groups.mapTo(HashSet()) { it.qualifier },
+        )
+    }
+
+    @Test
     fun `two stops group separately and both show a header`() {
         val rows = listOf(
             row("A", "Archway", destination = "Morden"),

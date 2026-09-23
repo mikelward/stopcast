@@ -201,7 +201,9 @@ internal fun widgetModel(
     // dropped. Warnings still lead (pinStarred keeps them above even a starred row). Distance
     // ordering (nearbyDeduped / byStopDistance) stays a deferred follow-up — moot once Phase 2's
     // watched stops replace the interim nearby source (TODO).
-    val ordered = DepartureRows.across(snapshot.stops, now)
+    // One row per direction, not per platform: the widget has no platform headers, so split rows
+    // would read as duplicates ("Morden 0" twice) and spend its line budget.
+    val ordered = DepartureRows.across(snapshot.stops, now, splitPlatforms = false)
         .sortedBy { if (Staleness.isStale(Duration.between(it.fetchedAt, now).toKotlinDuration())) 1 else 0 }
     // Bound the widget by total RENDERED lines, not outer rows: a branching (line, direction)
     // row expands to one line per destination/branch group, and the widget has a fixed height,

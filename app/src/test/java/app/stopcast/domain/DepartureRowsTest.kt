@@ -231,15 +231,74 @@ class DepartureRowsTest {
     }
 
     @Test
-    fun `two platforms of the same present direction still share one row`() {
-        // Direction is present, so platform is ignored: one northbound row, both platforms.
-        val p3 = departure("victoria", "Victoria", "inbound", "Walthamstow Central", 120, platform = "Platform 3")
-        val p4 = departure("victoria", "Victoria", "inbound", "Walthamstow Central", 300, platform = "Platform 4")
+    fun `a direction running from two platforms splits into a row per platform`() {
+        // Camden Town southbound: one TfL direction, trains from Platform 2 and Platform 4.
+        val p2a = departure("northern", "Northern", "inbound", "Morden", 60, platform = "Southbound - Platform 2")
+        val p4 = departure("northern", "Northern", "inbound", "Morden", 90, platform = "Southbound - Platform 4")
+        val p2b = departure("northern", "Northern", "inbound", "Kennington", 240, platform = "Southbound - Platform 2")
 
-        val rows = DepartureRows.forStop("940GZZLUVIC", "Victoria", listOf(p4, p3), now)
+        val rows = DepartureRows.forStop("940GZZLUCTN", "Camden Town", listOf(p4, p2b, p2a), now)
 
-        assertEquals(1, rows.size)
-        assertEquals(listOf(p3, p4), rows[0].upcoming)
+        assertEquals(listOf("2", "4"), rows.map { it.platform })
+        assertEquals(listOf(p2a, p2b), rows[0].upcoming)
+        assertEquals(listOf(p4), rows[1].upcoming)
+        // Both keep the direction's key; the platform is what tells them apart.
+        assertEquals(listOf("inbound", "inbound"), rows.map { it.directionKey })
+    }
+
+    @Test
+    fun `a single-platform direction stays one row, platform-less predictions included`() {
+        val p3 = departure("victoria", "Victoria", "inbound", "Walthamstow Central", 120, platform = "Northbound - Platform 3")
+        val blank = departure("victoria", "Victoria", "inbound", "Walthamstow Central", 300, platform = "")
+
+        val row = DepartureRows.forStop("940GZZLUVIC", "Victoria", listOf(blank, p3), now).single()
+
+        assertEquals("3", row.platform)
+        assertEquals(listOf(p3, blank), row.upcoming)
+    }
+
+    @Test
+    fun `a platform-less prediction beside two platforms gets its own unnumbered row`() {
+        // It can't be placed on either platform, so it isn't filed under one (SPEC principle 1).
+        val p1 = departure("northern", "Northern", "outbound", "Edgware", 60, platform = "Northbound - Platform 1")
+        val p3 = departure("northern", "Northern", "outbound", "High Barnet", 120, platform = "Northbound - Platform 3")
+        val blank = departure("northern", "Northern", "outbound", "Mill Hill East", 180, platform = "Northbound")
+
+        val rows = DepartureRows.forStop("940GZZLUCTN", "Camden Town", listOf(p1, p3, blank), now)
+
+        assertEquals(listOf("1", "3", ""), rows.map { it.platform })
+        assertEquals(listOf(blank), rows[2].upcoming)
+    }
+
+    @Test
+    fun `platforms stay merged when splitting is off`() {
+        val p2 = departure("northern", "Northern", "inbound", "Morden", 60, platform = "Southbound - Platform 2")
+        val p4 = departure("northern", "Northern", "inbound", "Morden", 90, platform = "Southbound - Platform 4")
+
+        val row = DepartureRows.forStop("940GZZLUCTN", "Camden Town", listOf(p2, p4), now, splitPlatforms = false).single()
+
+        assertEquals("", row.platform)
+        assertEquals(listOf(p2, p4), row.upcoming)
+    }
+
+    @Test
+    fun `a bus never splits on its stop-local platform`() {
+        val a = departure("55", "55", "outbound", "Oxford Circus", 60, platform = "Platform 1", mode = "bus")
+        val b = departure("55", "55", "outbound", "Oxford Circus", 90, platform = "Platform 2", mode = "bus")
+
+        val row = DepartureRows.forStop("490000000A", "Stop A", listOf(a, b), now).single()
+
+        assertEquals("", row.platform)
+    }
+
+    @Test
+    fun `a bus with its mode missing on the soonest prediction still doesn't split`() {
+        val a = departure("55", "55", "outbound", "Oxford Circus", 60, platform = "Platform 1", mode = "")
+        val b = departure("55", "55", "outbound", "Oxford Circus", 90, platform = "Platform 2", mode = "bus")
+
+        val row = DepartureRows.forStop("490000000A", "Stop A", listOf(a, b), now).single()
+
+        assertEquals("", row.platform)
     }
 
     @Test

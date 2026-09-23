@@ -236,7 +236,12 @@ one sub-surface platform but the Piccadilly on a different deep-tube platform �
 platform number keeps a header naming one physical platform. The compass is **not shown** on the
 one-line header (the destinations carry the direction a rider reads); it stays in the domain as the
 direction cue and disambiguates a rail direction with no platform number, which falls back to the
-**bare compass** ("Northbound"). A **bus** pole carries no platform in the arrivals feed, so it
+**bare compass** ("Northbound"). A line whose one direction leaves from **several platforms** — Camden
+Town's southbound Northern line runs from Platform 2 or 4 depending on the northern branch it came
+from, a terminus alternates platforms — splits into a card per platform, since which platform the
+next train is at is the point; a prediction in such a direction with no platform number can't be
+placed, so it sits under the bare compass rather than a platform it may not be at. The home-screen
+widget, which has no platform headers, keeps one merged row per direction. A **bus** pole carries no platform in the arrivals feed, so it
 splits on its **stop letter** — the "D" a rider reads on the physical stop: "**Stop D**". The letter,
 bearing, and "towards" come from the near-me `/StopPoint` lookup (`stopLetter`, `CompassPoint`,
 `Towards`), not the arrivals feed, so a **watched** bus stop (no near-me lookup yet) has none until
