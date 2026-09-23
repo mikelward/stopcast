@@ -93,6 +93,13 @@ internal val DISRUPTION_REUSE: Duration = Duration.ofMinutes(5)
 internal val LINE_STATUS_REUSE: Duration = Duration.ofSeconds(90)
 
 /**
+ * How long the auto-refresh carries over a stop past the walking reach (500 m): 90 s, so it's
+ * refetched every other minute rather than every minute. Its countdowns stay within about two
+ * minutes old, well inside the 5-minute staleness window, and it's refetched on any user refresh.
+ */
+internal val FAR_ARRIVALS_REUSE: Duration = Duration.ofSeconds(90)
+
+/**
  * Owns the departures snapshot the screen renders (SPEC staleness contract): the fetch
  * runs off the main thread in [viewModelScope]; the screen only ever reads [state].
  * A failed stop is logged and skipped so one bad stop doesn't blank the others; only
@@ -140,6 +147,13 @@ class MainViewModel(
     // How long a line's determined status is reused ([lineStatusCache]); zero (always ask) by
     // default for tests, [LINE_STATUS_REUSE] in the app.
     private val lineStatusReuse: Duration = Duration.ZERO,
+    // Each nearby stop's distance from the fix this set was resolved at (empty for a watched list),
+    // and how long an automatic refresh carries over a stop past the walking reach
+    // ([NearbySelection.EAGER_RADIUS_METERS]) — [FAR_ARRIVALS_REUSE] in the app, zero in tests.
+    // Updated by [reconcile] when a relocation keeps the set, so walking across the 500 m line moves
+    // a stop between the near and far bands.
+    stopDistanceMeters: Map<String, Double> = emptyMap(),
+    private val farArrivalsReuse: Duration = Duration.ZERO,
     // Monotonic milliseconds for timing a fetch, and the shared rate limiter's running total of
     // time spent waiting — both only feed the per-fetch debug-log line ([LoadStats]).
     private val elapsedMillis: () -> Long = { System.nanoTime() / 1_000_000 },
@@ -152,6 +166,7 @@ class MainViewModel(
     // the redesign this reveal is for). The eager tier is fetched and shown at once; a `more`
     // cluster's stops join the fetched set once its key is revealed.
     private var eagerStops: List<StopRef> = seedStops
+    private var stopDistanceMeters: Map<String, Double> = stopDistanceMeters
     private var more: List<NearbySelection.NearbyCluster> = initialMore
     private var revealedKeys: Set<String> = emptySet()
 
@@ -663,9 +678,13 @@ class MainViewModel(
      * whose closure check failed, is always refetched — those are what a quick retry is for — and so
      * is a stop restored from disk, which lacks the unpersisted closure check.
      */
-    private fun recentlyFetched(loaded: DeparturesUiState.Loaded, now: Instant): Set<String> =
+    private fun recentlyFetched(loaded: DeparturesUiState.Loaded, now: Instant, automatic: Boolean = false): Set<String> =
         loaded.stops
             .filter { stop ->
+                // On the timer, a stop past the walking reach is refreshed less often: its departures
+                // matter once the rider is closer, and the rate budget is better spent on the near ones.
+                val far = (stopDistanceMeters[stop.stopId] ?: 0.0) > NearbySelection.EAGER_RADIUS_METERS
+                val window = if (automatic && far) maxOf(arrivalsReuse, farArrivalsReuse) else arrivalsReuse
                 // The shown stop must BE that fetch (same stamp): a batch canceled after its
                 // arrivals came back but before it was published leaves a newer stamp here than the
                 // stop on screen, and carrying that older stop over would pass it off as just fetched.
@@ -677,7 +696,7 @@ class MainViewModel(
                 fetchedAt != null &&
                     fetchedAt == stop.fetchedAt &&
                     (closureAt == null || !closureAt.isAfter(fetchedAt)) &&
-                    isWithin(fetchedAt, now, arrivalsReuse) &&
+                    isWithin(fetchedAt, now, window) &&
                     stop.arrivalsFresh &&
                     stop.stopId !in loaded.stopsDisruptionUnknown
             }
@@ -703,8 +722,12 @@ class MainViewModel(
                         .any { it.isNotBlank() && it !in determinedLineIds }
             }
 
-    /** Re-fetch every fetched stop and swap in a fresh snapshot; safe to call repeatedly. */
-    fun refresh() {
+    /**
+     * Re-fetch every fetched stop and swap in a fresh snapshot; safe to call repeatedly. An
+     * [automatic] refresh (the on-screen timer, not the user) also carries over a far stop fetched
+     * within [farArrivalsReuse] — see [recentlyFetched].
+     */
+    fun refresh(automatic: Boolean = false) {
         fetchJob?.cancel()
         val previous = _state.value
         // Keep the last-good list on screen while refreshing; only show the spinner
@@ -762,7 +785,7 @@ class MainViewModel(
             // except stops fetched moments ago, carried over as they are. A retry soon after a
             // rate-limited refresh then spends the budget left only on the stops still missing,
             // rather than refetching every stop and hitting the limit again.
-            val reuse = if (priorLoaded != null) recentlyFetched(priorLoaded, now) else emptySet()
+            val reuse = if (priorLoaded != null) recentlyFetched(priorLoaded, now, automatic) else emptySet()
             val batch = fetchBatch(fetchedStops, prior, now, reuse)
             val merged = batch.merged
             val firstError = batch.firstError
@@ -1051,7 +1074,13 @@ class MainViewModel(
      * keeps it expanded; a member that crossed the radius is pruned here and its replacement
      * fetched by [refresh].
      */
-    fun reconcile(newEager: List<NearbySelection.NearbyCluster>, newMore: List<NearbySelection.NearbyCluster>) {
+    fun reconcile(
+        newEager: List<NearbySelection.NearbyCluster>,
+        newMore: List<NearbySelection.NearbyCluster>,
+        // Each stop's distance from the new fix (see [refresh]'s far-stop carry-over); null keeps the old.
+        newDistanceMeters: Map<String, Double>? = null,
+    ) {
+        newDistanceMeters?.let { stopDistanceMeters = it }
         val before = fetchedStops.mapTo(mutableSetOf()) { it.id }
         eagerStops = newEager.flatMap { cluster -> cluster.stops.map { it.toStopRef() } }
         more = newMore

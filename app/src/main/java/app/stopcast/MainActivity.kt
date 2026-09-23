@@ -69,6 +69,7 @@ import app.stopcast.ui.LocationGate
 import app.stopcast.ui.MainScreen
 import app.stopcast.ui.ARRIVALS_REUSE
 import app.stopcast.ui.DISRUPTION_REUSE
+import app.stopcast.ui.FAR_ARRIVALS_REUSE
 import app.stopcast.ui.LINE_STATUS_REUSE
 import app.stopcast.ui.MainViewModel
 import app.stopcast.ui.NearbyStopsViewModel
@@ -687,6 +688,9 @@ class MainActivity : ComponentActivity() {
                             arrivalsReuse = ARRIVALS_REUSE,
                             disruptionReuse = DISRUPTION_REUSE,
                             lineStatusReuse = LINE_STATUS_REUSE,
+                            // Stops past the walking reach refresh every other minute on the timer.
+                            stopDistanceMeters = ready.distanceMeters,
+                            farArrivalsReuse = FAR_ARRIVALS_REUSE,
                             // Feeds the per-fetch debug-log line: time spent rate-limited.
                             rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
                             logStats = ::logDepartureWarning,
@@ -721,7 +725,7 @@ class MainActivity : ComponentActivity() {
             val onRelocate: () -> Unit = relocateAction(
                 cancelFetch = viewModel::cancelFetch,
                 relocate = relocate,
-                reconcile = { fresh -> viewModel.reconcile(fresh.eager, fresh.more) },
+                reconcile = { fresh -> viewModel.reconcile(fresh.eager, fresh.more, fresh.distanceMeters) },
             )
             // Consume a latched foreground return (set by the activity-level observer above the
             // overlay switch). Because the latch lives above this view, it survives this view being
@@ -1205,7 +1209,7 @@ private fun AutoRefresh(viewModel: MainViewModel, relocating: StateFlow<Boolean>
         autoRefresh(
             lifecycleOwner.lifecycle,
             isRefreshing = { viewModel.refreshing.value || relocating.value },
-        ) { viewModel.refresh() }
+        ) { viewModel.refresh(automatic = true) }
     }
 }
 

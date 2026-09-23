@@ -2739,6 +2739,57 @@ class MainViewModelTest {
         }
 
     @Test
+    fun `the timer refreshes a far stop every other minute, a user refresh every time`() = runTest(dispatcher) {
+        var current = now
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(
+            client, seeds, clock = { current }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+            stopDistanceMeters = mapOf(oxcId to 100.0, ksxId to 900.0),
+            farArrivalsReuse = FAR_ARRIVALS_REUSE,
+        )
+        advanceUntilIdle()
+
+        // The minute timer: the near stop is refetched, the far one carried over.
+        current = now.plusSeconds(60)
+        vm.refresh(automatic = true)
+        advanceUntilIdle()
+        assertEquals(2, client.arrivalCalls[oxcId])
+        assertEquals(1, client.arrivalCalls[ksxId])
+
+        // A user refresh (past the 30 s quick-retry window) refetches both.
+        current = now.plusSeconds(100)
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(3, client.arrivalCalls[oxcId])
+        assertEquals(2, client.arrivalCalls[ksxId])
+    }
+
+    @Test
+    fun `walking closer moves a far stop back to every-minute refreshes`() = runTest(dispatcher) {
+        var current = now
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(
+            client, seeds, clock = { current }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+            stopDistanceMeters = mapOf(oxcId to 100.0, ksxId to 900.0),
+            farArrivalsReuse = FAR_ARRIVALS_REUSE,
+        )
+        advanceUntilIdle()
+
+        // A relocation that keeps the same set, now with the far stop within the walking reach.
+        val clusters = seeds.map { NearbySelection.NearbyCluster("c:${it.id}", listOf(StopLocation(it.id, it.name, 0.0, 0.0)), 0.0) }
+        vm.reconcile(clusters, emptyList(), mapOf(oxcId to 600.0, ksxId to 200.0))
+        advanceUntilIdle()
+        val ksxCalls = client.arrivalCalls.getValue(ksxId)
+
+        current = now.plusSeconds(60)
+        vm.refresh(automatic = true)
+        advanceUntilIdle()
+        assertEquals(ksxCalls + 1, client.arrivalCalls[ksxId])
+    }
+
+    @Test
     fun `line status is reused for a while, then asked for again`() = runTest(dispatcher) {
         var current = now
         val client = ReuseCountingClient().apply {
