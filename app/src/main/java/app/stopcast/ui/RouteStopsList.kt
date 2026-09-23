@@ -27,6 +27,8 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.stopcast.R
@@ -114,7 +116,7 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
 
 /**
  * The route detail's stop list: every station from the boarding stop to the train's
- * destination on a rail in the line's [railColor], the boarding stop and terminus solid and bold,
+ * destination on a rail in the line's [railColor] — the boarding stop a blue "you are here" dot, the terminus solid, both bold —
  * headed by the [direction] the train runs when known.
  */
 @Composable
@@ -179,6 +181,9 @@ internal fun RouteStopsSection(
 private fun StopOnRail(name: String, connections: List<LineRef>, railColor: Color, first: Boolean, last: Boolean) {
     val surface = MaterialTheme.colorScheme.surface
     val railStroke = Modifier.fillMaxSize()
+    // The blue dot is drawn, so it says nothing to a screen reader: the boarding stop is read as one
+    // node with "Your stop" as its state, so TalkBack users hear which stop is theirs too.
+    val currentStop = stringResource(R.string.route_stop_current)
     Layout(
         contents = listOf(
             // The rail: the segment above the dot, the segment below it, and the dot itself —
@@ -190,9 +195,14 @@ private fun StopOnRail(name: String, connections: List<LineRef>, railColor: Colo
                     railStroke.drawBehind {
                         val center = Offset(size.width / 2, size.height / 2)
                         val radius = 6.dp.toPx()
-                        // The boarding stop and terminus are solid; a calling point is hollow, like
-                        // a TfL line diagram's tick.
-                        if (first || last) {
+                        // The boarding stop — where the rider is — is a blue "you are here" dot,
+                        // ringed in the surface color so it stands off a blue rail (Victoria,
+                        // Piccadilly). The terminus is solid; a calling point is hollow, like a TfL
+                        // line diagram's tick.
+                        if (first) {
+                            drawCircle(surface, radius + 2.dp.toPx(), center)
+                            drawCircle(CurrentStopBlue, radius, center)
+                        } else if (last) {
                             drawCircle(railColor, radius, center)
                         } else {
                             drawCircle(surface, radius, center)
@@ -210,7 +220,9 @@ private fun StopOnRail(name: String, connections: List<LineRef>, railColor: Colo
             },
             { connections.forEach { line -> LinePill(lineName = line.name, lineId = line.id, mode = line.mode) } },
         ),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(
+            if (first) Modifier.semantics(mergeDescendants = true) { stateDescription = currentStop } else Modifier,
+        ),
     ) { (railParts, nameParts, pillParts), constraints ->
         val railWidth = 24.dp.roundToPx()
         val textStart = railWidth + 12.dp.roundToPx()
@@ -309,3 +321,6 @@ internal fun lineAccentColor(lineId: String, mode: String, lineName: String): Co
     lineFillColor(lineId, mode)
         ?: railOperatorColor(mode, lineName)
         ?: overgroundAccentColor(lineId)
+
+/** The boarding stop's "you are here" dot — the familiar map-location blue, the same in both themes. */
+private val CurrentStopBlue = Color(0xFF1A73E8)
