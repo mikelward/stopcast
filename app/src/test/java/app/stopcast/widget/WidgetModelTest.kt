@@ -1,5 +1,6 @@
 package app.stopcast.widget
 
+import androidx.compose.ui.unit.dp
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DeparturesSnapshot
@@ -201,5 +202,42 @@ class WidgetModelTest {
 
         assertEquals("only the one service, bounded", 1, model.rows.size)
         assertEquals("its lines are capped to the budget", 6, model.rows.first().groups.size)
+    }
+
+    @Test
+    fun `the line budget grows with the widget's height`() {
+        assertEquals("the minimum size still shows the next departure", 1, widgetLineBudget(110.dp))
+        assertEquals(4, widgetLineBudget(180.dp))
+        assertEquals(6, widgetLineBudget(250.dp))
+        assertEquals("no line fits under the full header", 0, widgetLineBudget(110.dp, fontScale = 2f))
+    }
+
+    @Test
+    fun `a zero budget switches to the compact layout with one departure`() {
+        val departures = (1..3).map { departure("line$it", it * 60L) }
+        val snapshot = DeparturesSnapshot(listOf(stop("490000001A", departures, now)), now)
+        val compact = widgetModel(snapshot, now, maxLines = 0)
+        assertTrue(compact.compact)
+        assertEquals(1, compact.rows.size)
+        assertFalse(widgetModel(snapshot, now, maxLines = 1).compact)
+    }
+
+    @Test
+    fun `a larger system font leaves room for fewer lines`() {
+        assertEquals(4, widgetLineBudget(180.dp, fontScale = 1f))
+        assertEquals(3, widgetLineBudget(180.dp, fontScale = 1.3f))
+        assertEquals(2, widgetLineBudget(180.dp, fontScale = 2f))
+    }
+
+    @Test
+    fun `the stale note takes a line from the budget`() {
+        assertEquals(3, widgetLineBudget(180.dp, withNote = true))
+        assertEquals(1, widgetLineBudget(110.dp, withNote = true))
+        // A stale snapshot spends the note's budget; a fresh one keeps the full budget.
+        val departures = (1..6).map { departure("line$it", it * 60L) }
+        val stale = DeparturesSnapshot(listOf(stop("490000001A", departures, now.minusSeconds(900))), now.minusSeconds(900))
+        val fresh = DeparturesSnapshot(listOf(stop("490000001A", departures, now)), now)
+        assertEquals(3, widgetModel(stale, now, maxLines = 4, maxLinesWithNote = 3).rows.size)
+        assertEquals(4, widgetModel(fresh, now, maxLines = 4, maxLinesWithNote = 3).rows.size)
     }
 }
