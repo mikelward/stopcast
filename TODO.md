@@ -1180,16 +1180,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         **favorite routes or destinations** feature (are they the same list, or is pin-to-top a
         lighter, per-session ordering distinct from a saved favorite?). Settle the metaphor and the
         data model together before a favorites feature hardens the current star into an API.
-- [ ] **Hand off to a navigation app** (requested 2026-09-19, on-device). From a stop (likely
-      the detail view above), let the user open the stop in Google Maps or their default nav
-      app — a geo/maps intent to the stop's coordinates or name. No new dependency (a plain
-      platform intent), but **it does cross a privacy boundary**: the receiving app is
-      user-chosen and usually cloud-backed, so the stop's coordinates/name reach that third
-      party — a **Play Data Safety** consideration (a new recipient of location-adjacent data),
-      at **$0** cost with the reliability/behavior of whatever app the user picked. Because
-      the user explicitly initiates the hand-off to an app of their choosing it's a
-      lighter-weight decision than a silent send, but the Data Safety consequence is named
-      here rather than assumed away. Decide the intent shape and entry point.
+- [x] **Hand off to a navigation app** (requested 2026-09-19, on-device). Landed 2026-09-23: tapping a
+      near-me header's **distance** opens that group's nearest stop in the user's default maps app,
+      via a `geo:0,0?q=lat,lng(Name)` intent (a labeled pin at TfL's published stop position, never
+      the user's fix). No new dependency and $0; with no maps app a toast says so. The stop's
+      position and name reach an app the user picked, only on their tap — user-initiated sharing,
+      not collection by StopCast, so no Play Data Safety change.
 
 ## Phase 3 — Full disruptions
 

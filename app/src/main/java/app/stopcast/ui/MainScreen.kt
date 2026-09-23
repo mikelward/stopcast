@@ -154,6 +154,9 @@ fun MainScreen(
     // From "near me now" (`stopId` → meters): collapse a line served by several adjacent
     // nearby stops to its nearest stop. Empty for a location-free list, shown unchanged.
     stopDistanceMeters: Map<String, Double> = emptyMap(),
+    // Shows a near-me stop (`stopId`, place name) in the maps app, from a tap on its header's
+    // distance; null leaves the distance inert.
+    onOpenStopMap: ((String, String) -> Unit)? = null,
     // The rows the user has starred (SPEC D8): pinned to the top, and their star filled.
     // Empty by default so an unwired build/test renders the plain soonest-first list.
     starred: Set<StarredRow> = emptySet(),
@@ -533,6 +536,7 @@ fun MainScreen(
                     // The platform view is one place: no distances (its header would only repeat the
                     // title) and no "More" paging of farther clusters.
                     stopDistanceMeters = if (platformRows != null) emptyMap() else stopDistanceMeters,
+                    onOpenStopMap = onOpenStopMap,
                     starred = starred,
                     onToggleStar = onToggleStar,
                     starringAvailable = starringAvailable,
@@ -662,6 +666,7 @@ private fun LoadedContent(
     // the same grouping/ordering (SPEC D4 / D8).
     rows: List<DepartureRow>,
     stopDistanceMeters: Map<String, Double> = emptyMap(),
+    onOpenStopMap: ((String, String) -> Unit)? = null,
     starred: Set<StarredRow> = emptySet(),
     onToggleStar: (DepartureRow) -> Unit = {},
     starringAvailable: Boolean = true,
@@ -759,6 +764,7 @@ private fun LoadedContent(
                     onDismissAlert = onDismissAlert,
                     onOpenPlatform = onOpenPlatform,
                     onOpenStation = onOpenStation,
+                    onOpenStopMap = onOpenStopMap,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -848,6 +854,7 @@ private fun DepartureList(
     onDismissAlert: (DepartureRow) -> Unit = {},
     onOpenPlatform: ((StopGroup) -> Unit)? = null,
     onOpenStation: ((StopGroup) -> Unit)? = null,
+    onOpenStopMap: ((String, String) -> Unit)? = null,
     modifier: Modifier,
 ) {
     // Stop-closure alerts render as standalone cards at the top of the list — warnings lead (the
@@ -918,6 +925,14 @@ private fun DepartureList(
                         firstOnScreen = index == 0 && closureRows.isEmpty(),
                         onClick = onOpenPlatform?.let { open -> { open(group) } },
                         onNameClick = onOpenStation?.let { open -> { open(group) } },
+                        // The distance opens the group's own nearest stop in the maps app — for a
+                        // bus place that's this pole, the one the rider walks to.
+                        onDistanceClick = onOpenStopMap?.let { open ->
+                            group.rows
+                                .mapNotNull { r -> stopDistanceMeters[r.stopId]?.let { r.stopId to it } }
+                                .minByOrNull { it.second }
+                                ?.let { (stopId, _) -> { open(stopId, group.stopName) } }
+                        },
                     )
                 }
             }
@@ -1005,10 +1020,13 @@ private fun StopGroupHeader(
     // Opens the whole place from a tap on the name itself (the rest of the row opens the platform).
     // Null leaves the name to the row.
     onNameClick: (() -> Unit)? = null,
+    // Shows the stop in the maps app from a tap on the distance. Null leaves the distance to the row.
+    onDistanceClick: (() -> Unit)? = null,
 ) {
     val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
     val openLabel = stringResource(R.string.action_show_platform)
     val stationLabel = stringResource(R.string.action_show_station)
+    val mapLabel = stringResource(R.string.action_show_on_map)
     val label = remember(qualifier) { groupHeaderLabel(qualifier) }
     // The full spoken label: the place name, the spoken qualifier (direction/towards kept), then the
     // distance — read as one, so a screen reader hears the whole header rather than three fragments.
@@ -1067,6 +1085,13 @@ private fun StopGroupHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
+                // Its own tap target (child first, so it wins over the row's platform tap) and its own
+                // screen-reader button, like the place name.
+                modifier = if (onDistanceClick != null) {
+                    Modifier.clickable(onClickLabel = mapLabel, onClick = onDistanceClick)
+                } else {
+                    Modifier
+                },
             )
         }
     }

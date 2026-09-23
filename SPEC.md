@@ -458,7 +458,10 @@ on trial). The rest of the header row still opens the one platform, and a screen
 name as its own "whole station" button. Inside the whole-station view a platform header narrows
 further to **that platform**, and back steps out one level at a time — platform, then station, then
 the full list (maintainer, 2026-09-23). A refresh that drops a platform opened this way closes it to
-its station, and on to the full list if the station is gone too.
+its station, and on to the full list if the station is gone too. Tapping the **distance** shows that
+group's nearest stop in the user's maps app — a pin at TfL's published stop position, labeled with
+the place name, never the rider's own fix (maintainer, 2026-09-23; like the name, an undecorated tap
+target). With no maps app installed it says so rather than doing nothing.
 
 TfL's endpoint is named "Arrivals"; for a bus stop these are departures *from* that
 stop, which is what a rider wants. StopCast calls them departures throughout the UI.
