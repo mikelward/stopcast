@@ -231,10 +231,38 @@ object DepartureRows {
             statusByPlaceNotice.getOrPut(stopPlaceKey(row) to text) { mutableListOf() }.add(row)
         }
         val keptStatus = statusByPlaceNotice.values.map { group ->
-            group.minWith(compareBy({ distanceOf(it.stopId) }, { it.stopId }))
+            val nearest = group.minWith(compareBy({ distanceOf(it.stopId) }, { it.stopId }))
+            // The folded card's dismissal windows are the whole group's, not the nearest member's:
+            // members can carry slightly different windows for one notice, and which member is
+            // nearest changes as the user moves — that alone must not undo a dismissal (Codex).
+            val windows = foldedWindows(group)
+            if (windows == nearest.stopDisruptionWindows) nearest else nearest.copy(stopDisruptionWindows = windows)
         }
         return (keptStatus + kept).sortedWith(rowOrder)
     }
+
+    /**
+     * The dismissal windows of one folded (place, notice) card: every member row's entries, distinct
+     * and sorted, so the card's identity doesn't depend on which member is nearest.
+     */
+    private fun foldedWindows(group: List<DepartureRow>): String =
+        group.flatMap { it.stopDisruptionWindows.split(WINDOW_ENTRY_SEPARATOR) }
+            .filter { it.isNotEmpty() }.distinct().sorted().joinToString(WINDOW_ENTRY_SEPARATOR)
+
+    /**
+     * Every dismissal identity a stop-closure card built from [rows] can carry: each row's own, plus
+     * each (place, notice) group's folded one ([nearbyDeduped]). Reconciliation keeps a dismissal
+     * that matches any of these, so a folded near-me card's dismissal isn't pruned for being
+     * absent from the unfolded rows (Codex). Extra identities only retain, never hide, a card.
+     */
+    fun liveStopClosureAlerts(rows: List<DepartureRow>): Set<DismissedAlert> =
+        rows.filter { it.stopDisruption != null }
+            .groupBy { stopPlaceKey(it) to it.stopDisruption }
+            .values
+            .flatMapTo(mutableSetOf()) { group ->
+                group.map { DismissedAlert.ofStopClosure(it) } +
+                    DismissedAlert.ofStopClosure(group.first().copy(stopDisruptionWindows = foldedWindows(group)))
+            }
 
     /**
      * Reorder the "near me now" rows **closest stop first** — the nearest stop's services at
@@ -407,8 +435,9 @@ object DepartureRows {
     private fun stopStatusRow(stop: StopArrivals, now: Instant): List<DepartureRow> {
         // Only notices in effect at [now]: TfL lists a scheduled closure hours before it starts,
         // and one that isn't in force yet (or has ended) would contradict the live departures.
-        // Deduplicated by text, since one notice can be listed under several windows.
-        val active = stop.disruptions.filter { it.isActiveAt(now) }.distinctBy { it.description }
+        // Deduplicated by normalized text, since one notice can be listed under several windows.
+        val inWindow = stop.disruptions.filter { it.isActiveAt(now) }
+        val active = inWindow.distinctBy { normalizeDisruptionText(it.description) }
         if (active.isEmpty()) return emptyList()
         return listOf(
             DepartureRow(
@@ -430,8 +459,54 @@ object DepartureRows {
                 stopDisruption = active.joinToString("\n\n") {
                     normalizeDisruptionText(it.description)
                 },
+                stopDisruptionWindows = stopDisruptionWindows(
+                    stop.disruptions, active.mapTo(HashSet()) { normalizeDisruptionText(it.description) }, now,
+                ),
             ),
         )
+    }
+
+    /**
+     * The dismissal-identity form of the shown notices' windows: per shown (normalized) notice text, the **span**
+     * of that text's windows overlapping the one in force at [now] — every window TfL lists for it,
+     * future ones included, merged where they overlap or touch — as `text@from..to` (an open bound
+     * blank). Bound to its text, so two notices swapping windows still reads as a change; sorted so
+     * fetch order can't change it; blank when none is dated, so an undated notice keeps a text-only
+     * identity. The span, not the window active right now, is what holds as time passes with TfL's
+     * data unchanged: a shorter overlapping window ending, or a later one starting, leaves it the
+     * same, while an extension or a move changes it (Codex).
+     */
+    private fun stopDisruptionWindows(all: List<StopDisruption>, shown: Set<String>, now: Instant): String =
+        // Keyed on the normalized text, the same form the card shows and dismisses on, so a
+        // formatting-only difference (escaped vs real line breaks) is not a new notice (Codex).
+        all.groupBy { normalizeDisruptionText(it.description) }
+            .filterKeys { it in shown }
+            .mapNotNull { (text, same) ->
+                if (same.all { it.validFrom == null && it.validTo == null }) return@mapNotNull null
+                val span = spanAt(same.map { (it.validFrom ?: Instant.MIN) to (it.validTo ?: Instant.MAX) }, now)
+                    ?: return@mapNotNull null
+                fun bound(i: Instant) = if (i == Instant.MIN || i == Instant.MAX) "" else i.toString()
+                "$text@${bound(span.first)}..${bound(span.second)}"
+            }
+            .sorted().joinToString(WINDOW_ENTRY_SEPARATOR)
+
+    // Between [DepartureRow.stopDisruptionWindows] entries: a record separator, since the notice text
+    // in each entry can itself hold line breaks.
+    private const val WINDOW_ENTRY_SEPARATOR = "\u001E"
+
+    /** The merged run of overlapping or touching [windows] that contains [now], or null if none does. */
+    private fun spanAt(windows: List<Pair<Instant, Instant>>, now: Instant): Pair<Instant, Instant>? {
+        var current: Pair<Instant, Instant>? = null
+        for (w in windows.sortedBy { it.first }) {
+            val c = current
+            current = when {
+                c == null -> w
+                !w.first.isAfter(c.second) -> c.first to maxOf(c.second, w.second)
+                !now.isBefore(c.first) && now.isBefore(c.second) -> return c
+                else -> w
+            }
+        }
+        return current?.takeIf { !now.isBefore(it.first) && now.isBefore(it.second) }
     }
 
     /**

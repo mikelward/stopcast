@@ -986,10 +986,8 @@ class MainViewModel(
         lineStatuses: Map<String, LineStatus>,
         stopsDisruptionUnknown: Set<String>,
     ) {
-        val live = DepartureRows.across(shownStops, clock(), lineStatuses)
-            .asSequence()
-            .filter { it.stopDisruption != null }
-            .mapTo(mutableSetOf()) { DismissedAlert.ofStopClosure(it) }
+        // Includes each near-me folded card's identity, so its dismissal isn't pruned as not-live.
+        val live = DepartureRows.liveStopClosureAlerts(DepartureRows.across(shownStops, clock(), lineStatuses))
         fun placeOf(stop: StopRef) = stopPlaceKey(stop.hubId, stop.clusterId, stop.name, stop.id)
         // A place with any member whose disruption lookup failed this cycle is not fully known, so it
         // is excluded from the checked set and its dismissals are retained.
