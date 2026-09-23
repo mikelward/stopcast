@@ -428,8 +428,14 @@ near-me fold: a line the full list showed only at a nearer stop still appears on
 platform that also serves it. It reads the same snapshot as the list and fetches nothing of its
 own. When a refresh no longer holds that platform — its stops weren't fetched, its last train has
 left, or the feed dropped the platform number — the view closes back to the full list rather than
-show an empty platform as "no departures". A route tapped inside it opens the route page, and back from there
-returns to the platform view.
+show an empty platform as "no departures". A route tapped inside it opens the route page, and back
+from there returns to the platform view.
+
+Tapping the **place name** within a header opens the same view for the **whole station** — every
+platform/pole group of that place — titled by the bare place name (maintainer, 2026-09-23, an
+experiment: the name is a narrow tap target and nothing marks it as one, so its discoverability is
+on trial). The rest of the header row still opens the one platform, and a screen reader offers the
+name as its own "whole station" button.
 
 TfL's endpoint is named "Arrivals"; for a bus stop these are departures *from* that
 stop, which is what a rider wants. StopCast calls them departures throughout the UI.

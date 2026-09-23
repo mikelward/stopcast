@@ -554,6 +554,91 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `tapping the station name shows the whole station, the rest of the header one platform`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(kingsCrossStPancras(), manorHouse()), now.minusSeconds(60)),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().performClick()
+        composeRule.waitForIdle()
+        // Every King's Cross platform, and nothing from Manor House.
+        composeRule.onNodeWithContentDescription("Back").assertExists()
+        composeRule.onNodeWithText("Walthamstow Central").assertExists()
+        composeRule.onNodeWithText("Cockfosters").assertExists()
+        composeRule.onAllNodesWithText("Manor House", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a whole-station view keeps a platform the near-me list folded away, titled by the station`() {
+        // Two poles of one cluster: the farther pole's only line is folded to the nearer pole, so it
+        // has no group on the near-me list — but it's still part of the station.
+        val north = turnpikeLaneNorth()
+        val farPole = StopArrivals(
+            "490009TPL3",
+            "Turnpike Lane",
+            listOf(dep("141", "141", "outbound", "Palmers Green", 400, "", mode = "bus")),
+            fetchedAt = now.minusSeconds(60),
+            clusterId = "490G0TPL",
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(north, farPole, manorHouse()), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("490009TPL1" to 50.0, "490009TPL3" to 90.0, "940GZZLUMRH" to 400.0),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onAllNodesWithText("Turnpike Lane").onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").assertExists()
+        // The folded pole's 141 is back, and the title is the bare station name.
+        composeRule.onAllNodesWithText("Palmers Green").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Turnpike Lane", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("Turnpike Lane –", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a whole-station view follows a pole that joins its cluster on a refresh`() {
+        val joining = StopArrivals(
+            "490009TPL4",
+            "Turnpike Lane",
+            listOf(dep("29", "29", "outbound", "Wood Green", 300, "", mode = "bus")),
+            fetchedAt = now.minusSeconds(60),
+            clusterId = "490G0TPL",
+        )
+        var state by mutableStateOf<DeparturesUiState>(
+            DeparturesUiState.Loaded(listOf(turnpikeLaneNorth(), manorHouse()), now.minusSeconds(60)),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Turnpike Lane").onFirst().performClick()
+        composeRule.waitForIdle()
+
+        state = DeparturesUiState.Loaded(listOf(turnpikeLaneNorth(), joining, manorHouse()), now.minusSeconds(60))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").assertExists()
+        composeRule.onNodeWithText("Wood Green").assertExists()
+    }
+
+    @Test
     fun `a platform view shows services the near-me list folded to a nearer stop`() {
         // Near me, a line shows once, from its nearest stop — so a farther stop's card drops the 141
         // that a nearer pole also serves. Drilling into that farther stop shows everything it serves.

@@ -447,8 +447,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [ ] **Tap-to-filter drill-down over the two-level header** (maintainer, 2026-09-22). With the
         place/platform hierarchy in place, each level's tap could open a filtered view — a three-level
         drill-down onto one boarding decision:
-    - [ ] Tapping the **place name** (top level) → a view filtered to that hub/cluster (all its
-          platforms/poles and routes).
+    - [x] Tapping the **place name** (top level) → a view filtered to that hub/cluster (all its
+          platforms/poles and routes). Landed as an experiment (maintainer, 2026-09-23): the name
+          within the header is the tap target — revisit if its discoverability or target size
+          doesn't hold up on a device.
     - [ ] Tapping a **route card** → a view filtered to that line **and direction**.
     - [x] Tapping a **platform/pole sub-header** → a view filtered to just that platform
       (maintainer, 2026-09-23): the main screen filtered in place to the group's stops, back arrow
