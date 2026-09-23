@@ -43,13 +43,21 @@ object FixSelection {
     const val FRESH_FIX_TIMEOUT_MILLIS = 10_000L
 
     /**
-     * How long to wait on any one provider before moving to the next in the accurate-first
-     * list (fused, GPS, network, passive). Without a per-provider bound a fused provider that
-     * accepts the request but never calls back would consume the whole [FRESH_FIX_TIMEOUT_MILLIS]
-     * and GPS — which may have a fix — would never be asked (Codex). Smaller than the overall
-     * timeout, which still caps the sum. Reversible — one constant.
+     * How long any one provider is waited on (all are asked at once, see [COARSE_GRACE_MILLIS]). A
+     * provider that accepts the request but never calls back stops there rather than holding the
+     * whole [FRESH_FIX_TIMEOUT_MILLIS] (Codex). Smaller than the overall timeout, which still caps
+     * the wait. Reversible — one constant.
      */
     const val FRESH_FIX_PER_PROVIDER_TIMEOUT_MILLIS = 4_000L
+
+    /**
+     * How long a coarse (network/passive) fresh fix is held for an accurate (fused/GPS) one to beat
+     * it, when all providers are asked at once. Outdoors GPS usually lands within this and wins;
+     * indoors it never does, and the coarse fix is used this long after it arrived rather than
+     * after every accurate provider has run out its bound (maintainer bug report, 2026-09-23).
+     * Reversible — one constant.
+     */
+    const val COARSE_GRACE_MILLIS = 2_000L
 
     /**
      * The oldest a cached fix may be to serve as a *fallback* when no fresh fix is

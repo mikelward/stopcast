@@ -11,10 +11,10 @@ import android.os.SystemClock
 import app.stopcast.domain.Coordinates
 import app.stopcast.domain.FixSelection
 import app.stopcast.domain.LocationProvider
+import app.stopcast.domain.raceFix
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The device's position via the framework [LocationManager] — no Play Services dependency,
@@ -80,19 +80,24 @@ class AndroidLocationProvider(
     }
 
     /**
-     * A fresh fix from the first provider that yields one, tried in [providers] order — which
-     * is accurate-first (fused, GPS, then the coarse network/passive), so with precise granted
-     * an accurate fix is preferred over a quick coarse one. Each provider gets its own
-     * [FixSelection.FRESH_FIX_PER_PROVIDER_TIMEOUT_MILLIS] bound: a fused provider that accepts
-     * the request but never calls back would otherwise consume the whole [FixSelection] budget
-     * and GPS — which may have a fix — would never be asked (Codex). A `null` (no fix, or the
-     * per-provider timeout) falls through to the next; the overall [FixSelection] timeout still
-     * caps the sum, and a coarse provider only answers once the accurate ones have not.
+     * A fresh fix from [providers], all asked at once ([raceFix]): an accurate (fused/GPS) fix wins
+     * as soon as it arrives, and a coarse (network/passive) one is used after a short grace when no
+     * accurate fix beats it — so indoors, where fused and GPS can't see the sky, the network fix is
+     * used in about a second instead of after both have run out their bounds. Each provider keeps its
+     * own [FixSelection.FRESH_FIX_PER_PROVIDER_TIMEOUT_MILLIS] bound, and the overall [FixSelection]
+     * timeout still caps the whole wait.
      */
     private suspend fun requestFreshFix(manager: LocationManager, providers: List<String>): Coordinates? =
-        firstFix(
+        raceFix(
             providers,
             FixSelection.FRESH_FIX_PER_PROVIDER_TIMEOUT_MILLIS,
+            FixSelection.COARSE_GRACE_MILLIS,
+            // Under a precise grant only fused/GPS count as accurate; under an approximate-only
+            // grant every fix is as good as it gets, so the first to arrive wins.
+            isAccurate = { provider ->
+                !hasFineLocationPermission() ||
+                    provider == LocationManager.FUSED_PROVIDER || provider == LocationManager.GPS_PROVIDER
+            },
             // Log a provider that hit its per-provider bound, so a hanging provider (fused, most
             // often) still leaves a diagnostic line even when a later provider's no-fix makes the
             // overall result null and `FixSelection` records "returned no fix" (Codex). The
@@ -208,35 +213,6 @@ class AndroidLocationProvider(
  *   fix on a device whose fused provider is weak.
  * - **Network** then **passive** are the coarse-safe providers, always tried.
  */
-/**
- * The first fix any of [providers] yields, tried in order, each attempt bounded by
- * [perProviderTimeoutMillis] via [fetch]. A provider that returns `null` (no fix) or exceeds its
- * bound falls through to the next — so a fused provider that accepts the request but never calls
- * back can't starve GPS behind it (Codex). Pure over [fetch] so the accurate-first waterfall (a
- * fused provider that never answers, then GPS) is unit-testable off a device with virtual time;
- * `AndroidLocationProvider` supplies the real `LocationManager`-backed fetch.
- */
-internal suspend fun firstFix(
-    providers: List<String>,
-    perProviderTimeoutMillis: Long,
-    onTimeout: (String) -> Unit = {},
-    fetch: suspend (String) -> Coordinates?,
-): Coordinates? {
-    for (provider in providers) {
-        var completed = false
-        val fix = withTimeoutOrNull(perProviderTimeoutMillis) {
-            fetch(provider).also { completed = true }
-        }
-        if (fix != null) return fix
-        // `withTimeoutOrNull` returns null both when the provider promptly answered "no fix"
-        // and when it exceeded its bound; `completed` is set only on the former, so an unset
-        // flag means this provider timed out — report it (a hanging provider is the diagnostic
-        // worth keeping) before moving to the next (Codex).
-        if (!completed) onTimeout(provider)
-    }
-    return null
-}
-
 internal fun locationProviderCandidates(fineGranted: Boolean, sdkInt: Int): List<String> =
     buildList {
         if (sdkInt >= Build.VERSION_CODES.S) add(LocationManager.FUSED_PROVIDER)
