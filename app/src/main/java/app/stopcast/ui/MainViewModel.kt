@@ -11,6 +11,7 @@ import app.stopcast.domain.DismissedAlertsStore
 import app.stopcast.domain.HubInfo
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
+import app.stopcast.domain.lineAlertKey
 import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.Snapshot
 import app.stopcast.domain.SnapshotStore
@@ -163,8 +164,8 @@ class MainViewModel(
     private val _starred = MutableStateFlow<Set<StarredRow>>(emptySet())
     val starred: StateFlow<Set<StarredRow>> = _starred.asStateFlow()
 
-    // The stop-closure alerts the user has dismissed (SPEC *Disruptions*): the screen drops a
-    // matching stop-status row. Collected from the store so a dismiss hides the card at once, and a
+    // The service alerts the user has dismissed (SPEC *Disruptions*): the screen drops a matching
+    // stop-status row and a matching line status. Collected from the store so a dismiss hides the card at once, and a
     // reworded notice (a new signature) is no longer matched and reappears. An unreadable set reads
     // empty — a dismissed card returns, never a warning hidden (fails safe).
     private val _dismissed = MutableStateFlow<Set<DismissedAlert>>(emptySet())
@@ -793,7 +794,7 @@ class MainViewModel(
             // set ([fetchedStops]); the reconcile is scoped per place to only the queried stops whose
             // disruption lookup succeeded (see reconcileDismissals), so it prunes a resolved notice
             // without touching a place that failed to refresh or belongs to a different nearby set.
-            reconcileDismissals(fetchedStops, merged, lineStatuses, stopsDisruptionUnknown)
+            reconcileDismissals(fetchedStops, merged, lineStatuses, determinedLineIds, stopsDisruptionUnknown)
         }
         fetchJob = job
         // Clear the in-flight flag only when this job settles — a job superseded by a
@@ -925,7 +926,7 @@ class MainViewModel(
             // and its stale signature must be pruned like on a full refresh. Provenance is [newStops]
             // (the queried set); the reconcile is scoped per place to the ones whose disruption lookup
             // succeeded, so it never touches the already-shown stops or a newly-fetched failure.
-            reconcileDismissals(newStops, mergedStops, newState.lineStatuses, stopsDisruptionUnknown)
+            reconcileDismissals(newStops, mergedStops, newState.lineStatuses, batch.determinedLineIds, stopsDisruptionUnknown)
         }
         fetchJob = job
         job.invokeOnCompletion { if (fetchJob === job) _refreshing.value = false }
@@ -1060,17 +1061,17 @@ class MainViewModel(
     }
 
     /**
-     * Dismiss [row]'s stop-closure alert (SPEC *Disruptions*) — hide the card until its notice text
-     * changes — and persist it. Off the main thread; the [dismissed] flow re-emits from the store,
-     * so the card disappears without this touching UI state directly. A no-op for a row that is not
-     * a stop-status row (nothing to dismiss). Best-effort: a write failure is logged and the card
-     * stays; the widget shows no alerts, so it needs no redraw.
+     * Dismiss [row]'s service alert (SPEC *Disruptions*) — its stop closure, else its line's status —
+     * hiding it until its content changes, and persist it. Off the main thread; the [dismissed] flow
+     * re-emits from the store, so the alert disappears without this touching UI state directly. A
+     * no-op for a row carrying no alert. Best-effort: a write failure is logged and the alert stays;
+     * the widget shows no alerts, so it needs no redraw.
      */
     fun dismissAlert(row: DepartureRow) {
-        if (row.stopDisruption == null) return
+        val alert = DismissedAlert.of(row) ?: return
         viewModelScope.launch {
             try {
-                withContext(io) { dismissedStore.dismiss(DismissedAlert.ofStopClosure(row)) }
+                withContext(io) { dismissedStore.dismiss(alert) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1090,7 +1091,9 @@ class MainViewModel(
      * UI set, which drops a stop whose arrivals failed with no prior even when its disruption came
      * back clear) and its disruption lookup succeeded (not in [stopsDisruptionUnknown]). A place not
      * queried this cycle (a different nearby set — the store is shared) or with any unknown member is
-     * left alone, so a still-valid dismissal never lapses because its place wasn't looked at.
+     * left alone, so a still-valid dismissal never lapses because its place wasn't looked at. Line
+     * dismissals are scoped the same way, to the lines whose status TfL returned this cycle
+     * ([checkedLineIds]): a line whose lookup failed or wasn't queried keeps its dismissal.
      *
      * The reconciled set is applied to the in-memory [_dismissed] **before** the persist, so it holds
      * even if the store write fails: an unverified stale signature can't suppress a recurrence this
@@ -1101,10 +1104,12 @@ class MainViewModel(
         queriedStops: List<StopRef>,
         shownStops: List<StopArrivals>,
         lineStatuses: Map<String, LineStatus>,
+        checkedLineIds: Set<String>,
         stopsDisruptionUnknown: Set<String>,
     ) {
         // Includes each near-me folded card's identity, so its dismissal isn't pruned as not-live.
-        val live = DepartureRows.liveStopClosureAlerts(DepartureRows.across(shownStops, clock(), lineStatuses))
+        val live = DepartureRows.liveStopClosureAlerts(DepartureRows.across(shownStops, clock(), lineStatuses)) +
+            DepartureRows.liveLineStatusAlerts(lineStatuses)
         fun placeOf(stop: StopRef) = stopPlaceKey(stop.hubId, stop.clusterId, stop.name, stop.id)
         // A place with any member whose disruption lookup failed this cycle is not fully known, so it
         // is excluded from the checked set and its dismissals are retained.
@@ -1113,7 +1118,8 @@ class MainViewModel(
             .mapTo(mutableSetOf()) { placeOf(it) }
         val checkedPlaces = queriedStops.asSequence()
             .map { placeOf(it) }
-            .filterTo(mutableSetOf()) { it !in unknownPlaces }
+            .filterTo(mutableSetOf()) { it !in unknownPlaces } +
+            checkedLineIds.map { lineAlertKey(it) }
         // Reconcile the in-memory set first — safe regardless of whether the persist below succeeds.
         val pruned = Dismissed.reconcile(_dismissed.value, live, checkedPlaces)
         if (pruned != _dismissed.value) _dismissed.value = pruned

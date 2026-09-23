@@ -127,12 +127,14 @@ class RouteDetailScreenScreenshotTest {
                     now = now,
                     onToggleStar = {},
                     onBack = {},
+                    onDismissAlert = {},
                 )
             }
         }
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("Severe Delays").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Dismiss alert").assertIsDisplayed()
         // The discoverable star — an app-bar icon whose contentDescription labels the action.
         composeRule.onNodeWithContentDescription("Pin to top").assertIsDisplayed()
         // The app bar names where the service is going; with no stop list shown, the body names the
@@ -143,6 +145,89 @@ class RouteDetailScreenScreenshotTest {
         composeRule.onNodeWithText(reason, substring = true).assertIsDisplayed()
 
         captureSnapshot("route-detail-disrupted.png")
+    }
+
+    @Test
+    fun tappingDismiss_reportsTheDismiss() {
+        var dismissed = 0
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = disruptedRow(),
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    onDismissAlert = { dismissed++ },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithContentDescription("Dismiss alert").performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(1, dismissed)
+    }
+
+    @Test
+    fun dismissedAlert_saysSoRatherThanClaimingACleanLine() {
+        // The user dismissed the line's status: the chip and prose are gone, but the line is still
+        // disrupted, so the page must not read "No disruptions reported" (SPEC principle 1).
+        val row = disruptedRow().copy(status = null, statusDismissed = true)
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loading,
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Service alert dismissed").assertIsDisplayed()
+        composeRule.onNodeWithText("No disruptions reported").assertDoesNotExist()
+        composeRule.onNodeWithText("Severe Delays").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Dismiss alert").assertDoesNotExist()
+
+        captureSnapshot("route-detail-alert-dismissed.png")
+    }
+
+    @Test
+    fun dismissedAlert_showsBesideAnUnknownStopCheck() {
+        // The stop's own disruption lookup failed but the line's was dismissed: two independent facts,
+        // so both notes show (SPEC principle 1).
+        val row = disruptedRow().copy(status = null, statusDismissed = true)
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = true,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loading,
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Service alert dismissed").assertIsDisplayed()
+        composeRule.onNodeWithText("Couldn't check for disruptions").assertIsDisplayed()
+        composeRule.onNodeWithText("No disruptions reported").assertDoesNotExist()
     }
 
     @Test

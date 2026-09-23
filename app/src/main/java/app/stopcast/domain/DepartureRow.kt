@@ -30,6 +30,9 @@ import java.time.Instant
  * non-null value marks the row (SPEC *Disruptions*: a delayed or suspended line's
  * countdowns are flagged rather than shown as if trustworthy). Null when the line has a
  * good service, or when its status was not looked up.
+ * [statusDismissed] is true when the line *is* disrupted but the user dismissed that alert, so
+ * [status] was cleared for display ([DepartureRows.withoutDismissed]); a surface then shows no
+ * warning yet never claims the line is clean.
  * [stopDisruption] marks a **stop-level status row** — a whole-stop disruption (a closure)
  * rather than a line one (SPEC *Disruptions*). When set, the row is *about the stop*: it
  * carries no line (blank [lineId]/[lineName]/[mode]), no [upcoming] and no [status], and
@@ -68,6 +71,7 @@ data class DepartureRow(
     val upcoming: List<Departure>,
     val fetchedAt: Instant,
     val status: LineStatus? = null,
+    val statusDismissed: Boolean = false,
     val stopDisruption: String? = null,
     // The TfL windows of the notices behind [stopDisruption] ("from..to", ISO instants, blank for an
     // open bound), sorted and joined; blank when none is dated. Part of the dismissal identity, so a

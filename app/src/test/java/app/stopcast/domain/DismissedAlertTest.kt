@@ -2,6 +2,8 @@ package app.stopcast.domain
 
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /** [DismissedAlert], [Dismissed], and [stopPlaceKey]: the dismissal identity and toggle rule. */
@@ -68,6 +70,35 @@ class DismissedAlertTest {
     fun `ofStopClosure keys on the place and the notice text`() {
         val row = closureRow("A", "Stop A", "Bus Stop Closed", clusterId = "490G000A")
         assertEquals(DismissedAlert("490G000A", "Bus Stop Closed"), DismissedAlert.ofStopClosure(row))
+    }
+
+    @Test
+    fun `ofLineStatus keys on the line and changes with severity or wording`() {
+        val minor = LineStatus("victoria", 9, "Minor Delays", "Victoria line: minor delays.")
+        val alert = DismissedAlert.ofLineStatus(minor)
+        assertEquals("line:victoria", alert.alertKey)
+        // An escalation, a relabel, or new prose is a different alert, so a dismiss never buries it.
+        assertNotEquals(alert, DismissedAlert.ofLineStatus(minor.copy(severity = 6)))
+        assertNotEquals(alert, DismissedAlert.ofLineStatus(minor.copy(description = "Severe Delays")))
+        assertNotEquals(alert, DismissedAlert.ofLineStatus(minor.copy(fullText = "Victoria line: minor delays due to a train fault.")))
+        assertEquals(alert, DismissedAlert.ofLineStatus(minor.copy()))
+    }
+
+    @Test
+    fun `of picks the stop closure, else the line status, else nothing`() {
+        val closure = closureRow("A", "Stop A", "Bus Stop Closed", clusterId = "490G000A")
+        assertEquals(DismissedAlert.ofStopClosure(closure), DismissedAlert.of(closure))
+        val status = LineStatus("victoria", 6, "Severe Delays")
+        val lineRow = closure.copy(stopDisruption = null, lineId = "victoria", status = status)
+        assertEquals(DismissedAlert.ofLineStatus(status), DismissedAlert.of(lineRow))
+        assertNull(DismissedAlert.of(lineRow.copy(status = null)))
+    }
+
+    @Test
+    fun `reconcile prunes a line dismissal only when that line was checked`() {
+        val stale = DismissedAlert.ofLineStatus(LineStatus("victoria", 6, "Severe Delays"))
+        assertEquals(emptySet<DismissedAlert>(), Dismissed.reconcile(setOf(stale), emptySet(), setOf(lineAlertKey("victoria"))))
+        assertEquals(setOf(stale), Dismissed.reconcile(setOf(stale), emptySet(), setOf(lineAlertKey("central"))))
     }
 
     @Test

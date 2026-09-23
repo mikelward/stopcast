@@ -954,6 +954,59 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `a line status dismissal persists and is pruned once the line recovers, kept while unchecked`() = runTest(dispatcher) {
+        // Line alerts share the dismissed set with closures (keyed per line). Dismissing records the
+        // line's (severity, label, prose); a refresh whose status lookup fails keeps it; once TfL
+        // reports a good service the stale dismissal is pruned so a later recurrence shows again.
+        val backing = MutableStateFlow<Set<DismissedAlert>>(emptySet())
+        val store = object : DismissedAlertsStore {
+            override fun dismissed() = backing
+            override suspend fun dismiss(alert: DismissedAlert) {
+                backing.value = Dismissed.dismiss(backing.value, alert)
+            }
+            override suspend fun reconcile(live: Set<DismissedAlert>, checkedPlaces: Set<String>) {
+                backing.value = Dismissed.reconcile(backing.value, live, checkedPlaces)
+            }
+        }
+        val severe = LineStatus("victoria", 6, "Severe Delays", "Victoria line: severe delays.")
+        var status = severe
+        var statusFails = false
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String) = listOf(departure("victoria", "Victoria", 120))
+            override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+                if (statusFails) throw TflException.Unreachable("boom", null)
+                return listOf(status)
+            }
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = MainViewModel(
+            client,
+            listOf(StopRef("940GZZLUVIC", "Victoria")),
+            clock = { now },
+            io = dispatcher,
+            dismissedStore = store,
+        )
+        advanceUntilIdle()
+        val loaded = vm.state.value as DeparturesUiState.Loaded
+        val row = DepartureRows.across(loaded.stops, now, loaded.lineStatuses).first { it.status != null }
+        vm.dismissAlert(row)
+        advanceUntilIdle()
+        assertEquals(setOf(DismissedAlert.ofLineStatus(severe)), backing.value)
+        assertEquals(setOf(DismissedAlert.ofLineStatus(severe)), vm.dismissed.value)
+
+        statusFails = true
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(setOf(DismissedAlert.ofLineStatus(severe)), backing.value)
+
+        statusFails = false
+        status = LineStatus("victoria", LineStatus.GOOD_SERVICE, "Good Service")
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(emptySet<DismissedAlert>(), backing.value)
+    }
+
+    @Test
     fun `a refresh whose disruption lookup failed keeps that place's dismissal`() = runTest(dispatcher) {
         // The disruption endpoint fails on the second pass: the closure drops from the feed (a
         // point-in-time notice isn't aged), but the place is flagged unknown, so its dismissal is

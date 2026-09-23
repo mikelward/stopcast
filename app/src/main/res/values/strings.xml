@@ -40,6 +40,7 @@
     <!-- Spoken on the boarding stop of the route page's stop list, which is marked by a blue dot. -->
     <string name="route_stop_current">Your stop</string>
     <string name="route_detail_no_disruption">No disruptions reported</string>
+    <string name="route_detail_alert_dismissed">Service alert dismissed</string>
     <!-- Shown in the route detail when its snapshot is stale: the disruption status is from old
          data, so the detail (which carries no freshness stamp of its own) says so rather than
          present stale status as current (SPEC D4). Not a "no disruptions" claim. -->

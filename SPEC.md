@@ -568,10 +568,18 @@ is part of that identity, so a dismiss lasts only until the stated end: when TfL
 the window the card is back at once, not after the original end (maintainer, 2026-09-23). It is
 persisted (survives restart, rides Android backup like the rest of the config — SPEC *Privacy*),
 one entry per place so the set stays bounded, and **fails safe**: a stored set this build can't read
-reads back empty, so the worst case is a dismissed card returning, never a warning hidden. Only the
-whole-stop closure cards are dismissible for now — the stop's departures still show, and the acute
-line-status alerts (severe delays, suspended) are not dismissible; extending dismiss to the
-persistent line statuses, and expiring a dismissal after a day, are `TODO.md` follow-ups.
+reads back empty, so the worst case is a dismissed card returning, never a warning hidden. The
+stop's departures still show.
+
+**Every service alert is dismissible**, line statuses included (maintainer, 2026-09-23) — acute ones
+too: the user has read "Severe Delays" and doesn't need it repeated on every glance. A line's alert
+is dismissed from the route detail (× beside the status chip) and is keyed on `(line, severity,
+label, TfL's reason)`: line-wide, so it clears at every stop the line serves, and back the moment the
+line escalates or TfL rewords it. A dismissed line drops its ⚠ but keeps its countdowns, and the
+detail says "Service alert dismissed" rather than claim a clean line (principle 1); a no-departures
+status row, which exists only to carry the alert, goes with it. A refresh
+prunes it only for a line whose status TfL actually returned, as for places. Expiring a dismissal
+after a day is a `TODO.md` follow-up.
 
 The order is **dedupe, then title, then strip** (maintainer, 2026-09-22): the near-me fold groups
 by place first, on the newline-normalized-but-**not-name-stripped** text, so it stays independent

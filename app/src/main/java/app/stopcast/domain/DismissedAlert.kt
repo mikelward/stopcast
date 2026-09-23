@@ -1,8 +1,8 @@
 package app.stopcast.domain
 
 /**
- * A **dismissed alert**: the user tapped "dismiss" on a stop-closure card and it should stay
- * hidden — but only until the alert's *content* changes, so a dismiss clears the notice you've
+ * A **dismissed alert**: the user tapped "dismiss" on a service alert — a stop-closure card or a
+ * line's status — and it should stay hidden — but only until the alert's *content* changes, so a dismiss clears the notice you've
  * read without ever burying a new or escalated one (maintainer, 2026-09-22).
  *
  * [alertKey] identifies **which** alert, stably across refreshes: the stop-status row's place
@@ -12,9 +12,12 @@ package app.stopcast.domain
  * unchanged** to remain dismissed — the normalized (pre-name-strip) notice text; when TfL rewords
  * or replaces the notice the signature no longer matches and the card returns. It also carries the
  * notice's TfL window, so a dismiss lasts only until the stated end: an extended or moved window
- * is a new notice and shows again at once (maintainer, 2026-09-23). (Line-status alerts
- * would fold their severity into the signature too — a `TODO.md` follow-up; today only stop
- * closures are dismissible.)
+ * is a new notice and shows again at once (maintainer, 2026-09-23).
+ *
+ * A **line-status** alert keys on the line instead ([lineAlertKey] — a line's status is line-wide, so
+ * dismissing it at one stop clears it at every stop the line serves) and its signature folds in TfL's
+ * **severity** alongside the label and prose, so a dismissed status re-surfaces the moment it
+ * escalates or TfL rewords it (maintainer, 2026-09-23: every service alert is dismissible).
  *
  * Persisted so a dismiss survives restart; it rides Android backup/transfer with the rest of the
  * user's config (SPEC *Privacy*), never an app-initiated send — the notice text is TfL's own public
@@ -36,6 +39,28 @@ data class DismissedAlert(
                 contentSignature = row.stopDisruption.orEmpty() +
                     row.stopDisruptionWindows.takeIf { it.isNotEmpty() }?.let { "$WINDOW_SEPARATOR$it" }.orEmpty(),
             )
+
+        /**
+         * The dismissal identity of a **line's status** — the line and its severity, label and prose.
+         * Any change to the three (an escalation from minor to severe delays, a new reason) is a new
+         * alert, so a dismiss never buries a worse one.
+         */
+        fun ofLineStatus(status: LineStatus): DismissedAlert =
+            DismissedAlert(
+                alertKey = lineAlertKey(status.lineId),
+                contentSignature = listOf(status.severity.toString(), status.description, status.fullText.orEmpty())
+                    .joinToString(WINDOW_SEPARATOR),
+            )
+
+        /**
+         * The dismissal identity of whatever alert [row] carries — its stop closure, else its line's
+         * status — or null when the row carries none (nothing to dismiss).
+         */
+        fun of(row: DepartureRow): DismissedAlert? = when {
+            row.stopDisruption != null -> ofStopClosure(row)
+            row.status != null -> ofLineStatus(row.status)
+            else -> null
+        }
 
         // Appended only for a dated notice, so an undated one keeps its bare-text signature (and a
         // dismissal stored before windows were keyed still matches). A unit separator never occurs
@@ -60,8 +85,9 @@ object Dismissed {
     /**
      * [current] pruned to the notices still shown, but **only for places actually checked this
      * cycle** ([checkedPlaces] — the place keys whose stops were all queried and whose disruption
-     * lookup succeeded). An entry for a checked place whose signature is no longer in [live] — its
-     * notice resolved or was replaced — is dropped; an entry for a place **not** checked (a different
+     * lookup succeeded, plus the [lineAlertKey]s of the lines whose status TfL returned). An entry
+     * for a checked place whose signature is no longer in [live] — its notice resolved or was
+     * replaced — is dropped; an entry for a place **not** checked (a different
      * nearby set not queried this cycle, or one whose disruption lookup failed) is **kept**, so a
      * still-valid dismissal never lapses just because its place wasn't looked at. This stops a
      * resolved incident's stale `(place, text)` from later suppressing a genuinely new same-text
@@ -75,6 +101,13 @@ object Dismissed {
     ): Set<DismissedAlert> =
         current.filterTo(mutableSetOf()) { it in live || it.alertKey !in checkedPlaces }
 }
+
+/**
+ * The dismissal key of a line-status alert: the line id under a `line:` prefix, which no stop place
+ * key (a hub, StopArea or stop id — naptan-style codes) ever carries, so a line and a place can't
+ * collide in the one dismissed set. Also what [Dismissed.reconcile] scopes a checked line by.
+ */
+fun lineAlertKey(lineId: String): String = "line:$lineId"
 
 /**
  * The stable place identity a stop-status row folds and dismisses on: the interchange
