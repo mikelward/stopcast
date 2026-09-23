@@ -17,6 +17,7 @@ import app.stopcast.domain.StopLocation
 import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.TflClient
 import app.stopcast.domain.TflException
+import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -2520,5 +2521,309 @@ class MainViewModelTest {
             gate.complete(Unit)
             advanceUntilIdle()
             assertEquals(listOf("NEW"), shownIds(vm))
+        }
+
+    // --- Reuse: a quick retry refetches only what's missing; a closure check is reused a while ---
+
+    /** A client counting each stop's requests; stops in [failingArrivals] / [failingDisruptions] fail. */
+    private inner class ReuseCountingClient : TflClient {
+        val arrivalCalls = mutableMapOf<String, Int>()
+        val disruptionCalls = mutableMapOf<String, Int>()
+        val failingArrivals = mutableSetOf<String>()
+        val failingDisruptions = mutableSetOf<String>()
+        // A stop's reported closures, returned by its closure check; none by default.
+        val closures = mutableMapOf<String, List<StopDisruption>>()
+
+        override suspend fun arrivals(stopId: String): List<Departure> {
+            arrivalCalls.merge(stopId, 1) { a, b -> a + b }
+            if (stopId in failingArrivals) throw TflException.RateLimited(null)
+            return listOf(departure("victoria", "Victoria", 300))
+        }
+
+        override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+        override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+            disruptionCalls.merge(stopId, 1) { a, b -> a + b }
+            if (stopId in failingDisruptions) throw TflException.RateLimited(null)
+            return closures[stopId].orEmpty()
+        }
+    }
+
+    private val oxcId = "940GZZLUOXC"
+    private val ksxId = "940GZZLUKSX"
+
+    @Test
+    fun `a quick retry after a rate-limited refresh refetches only the stops still missing`() =
+        runTest(dispatcher) {
+            var current = now
+            val client = ReuseCountingClient().apply { failingArrivals += oxcId }
+            val vm = MainViewModel(
+                client, seeds, clock = { current }, io = dispatcher,
+                arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+            )
+            advanceUntilIdle()
+            assertTrue((vm.state.value as DeparturesUiState.Loaded).partialRefresh)
+
+            // Ten seconds later the budget has room again, but not for everything.
+            client.failingArrivals.clear()
+            current = now.plusSeconds(10)
+            vm.refresh()
+            advanceUntilIdle()
+
+            assertEquals("the failed stop is retried", 2, client.arrivalCalls[oxcId])
+            assertEquals("the stop fetched moments ago isn't", 1, client.arrivalCalls[ksxId])
+            assertEquals(1, client.disruptionCalls[ksxId])
+            val state = vm.state.value as DeparturesUiState.Loaded
+            assertFalse("both stops now have fresh arrivals", state.partialRefresh)
+            val byId = state.stops.associateBy { it.stopId }
+            // The carried-over stop keeps its own age; the retried one is stamped now (SPEC D4).
+            assertEquals(now, byId.getValue(ksxId).fetchedAt)
+            assertTrue(byId.getValue(ksxId).arrivalsFresh)
+            assertEquals(now.plusSeconds(10), byId.getValue(oxcId).fetchedAt)
+        }
+
+    @Test
+    fun `a refresh once the reuse window has passed refetches every stop`() = runTest(dispatcher) {
+        var current = now
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(
+            client, seeds, clock = { current }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+
+        current = now.plus(ARRIVALS_REUSE)
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(2, client.arrivalCalls[oxcId])
+        assertEquals(2, client.arrivalCalls[ksxId])
+        assertEquals(now.plus(ARRIVALS_REUSE), (vm.state.value as DeparturesUiState.Loaded).fetchedAt)
+    }
+
+    @Test
+    fun `a stop whose closure check failed is refetched even when its arrivals are recent`() =
+        runTest(dispatcher) {
+            var current = now
+            val client = ReuseCountingClient().apply { failingDisruptions += ksxId }
+            val vm = MainViewModel(
+                client, seeds, clock = { current }, io = dispatcher,
+                arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+            )
+            advanceUntilIdle()
+            assertTrue(ksxId in (vm.state.value as DeparturesUiState.Loaded).stopsDisruptionUnknown)
+
+            client.failingDisruptions.clear()
+            current = now.plusSeconds(10)
+            vm.refresh()
+            advanceUntilIdle()
+
+            // The failed closure check is never cached, so it's asked again; the stop is re-fetched.
+            assertEquals(2, client.disruptionCalls[ksxId])
+            assertEquals(2, client.arrivalCalls[ksxId])
+            assertTrue((vm.state.value as DeparturesUiState.Loaded).stopsDisruptionUnknown.isEmpty())
+        }
+
+    @Test
+    fun `a stop's closure check is reused for a few minutes, then asked again`() = runTest(dispatcher) {
+        var current = now
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(
+            client, seeds, clock = { current }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+
+        // A scheduled refresh a minute on refetches arrivals but reuses the closure check.
+        current = now.plusSeconds(60)
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(2, client.arrivalCalls[oxcId])
+        assertEquals(1, client.disruptionCalls[oxcId])
+
+        current = now.plus(DISRUPTION_REUSE)
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(3, client.arrivalCalls[oxcId])
+        assertEquals(2, client.disruptionCalls[oxcId])
+    }
+
+    @Test
+    fun `with no reuse configured every refresh refetches everything`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, seeds, clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(2, client.arrivalCalls[oxcId])
+        assertEquals(2, client.disruptionCalls[oxcId])
+    }
+
+    @Test
+    fun `a stop restored from disk is refetched, never carried over`() = runTest(dispatcher) {
+        // The saved snapshot carries no closure check, so a stop from it can't stand in for a fetch,
+        // however recent its departures.
+        val restored = DeparturesSnapshot(
+            stops = seeds.map { StopArrivals(it.id, it.name, listOf(departure("victoria", "Victoria", 300)), now) },
+            fetchedAt = now,
+        )
+        val client = ReuseCountingClient()
+        MainViewModel(
+            client, seeds, clock = { now.plusSeconds(5) }, io = dispatcher, snapshotStore = FakeStore(restored),
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+
+        assertEquals(1, client.arrivalCalls[oxcId])
+        assertEquals(1, client.disruptionCalls[oxcId])
+    }
+
+    @Test
+    fun `a canceled refresh's unpublished arrivals don't make the shown stops look just fetched`() =
+        runTest(dispatcher) {
+            var current = now
+            var gate = CompletableDeferred<Unit>().apply { complete(Unit) }
+            val counting = ReuseCountingClient()
+            // Delegates to the counting client, but the line-status request waits on [gate], so a
+            // refresh can be canceled after its arrivals came back and before it's published.
+            val client = object : TflClient by counting {
+                override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+                    gate.await()
+                    return emptyList()
+                }
+            }
+            val vm = MainViewModel(
+                client, seeds, clock = { current }, io = dispatcher,
+                arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+            )
+            advanceUntilIdle()
+
+            // A refresh 40 s on gets its arrivals, then stalls on line status and is superseded.
+            gate = CompletableDeferred()
+            current = now.plusSeconds(40)
+            vm.refresh()
+            advanceUntilIdle()
+            gate.complete(Unit)
+            current = now.plusSeconds(45)
+            vm.refresh()
+            advanceUntilIdle()
+
+            // The screen still showed the first fetch's stops, so the third refresh refetches them.
+            assertEquals(3, counting.arrivalCalls[oxcId])
+            assertEquals(now.plusSeconds(45), (vm.state.value as DeparturesUiState.Loaded).fetchedAt)
+        }
+
+    @Test
+    fun `a cached closure check doesn't hide a refresh where every request failed`() = runTest(dispatcher) {
+        var current = now
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(
+            client, seeds, clock = { current }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+
+        // A minute on, every arrivals request is rate-limited; the closure checks come from cache.
+        client.failingArrivals += listOf(oxcId, ksxId)
+        current = now.plusSeconds(60)
+        vm.refresh()
+        advanceUntilIdle()
+
+        val state = vm.state.value as DeparturesUiState.Loaded
+        assertEquals("the real failure is shown", DeparturesUiState.Error.Kind.RATE_LIMITED, state.refreshFailure)
+        assertEquals(1, client.disruptionCalls[oxcId])
+    }
+
+    @Test
+    fun `a refresh that reuses every stop still saves when the previous save was canceled`() =
+        runTest(dispatcher) {
+            var current = now
+            val fake = FakeStore()
+            var saveGate = CompletableDeferred<Unit>()
+            // The first save stalls, so the next refresh cancels it mid-write.
+            val store = object : SnapshotStore by fake {
+                override suspend fun save(snapshot: DeparturesSnapshot) {
+                    saveGate.await()
+                    fake.save(snapshot)
+                }
+            }
+            val client = ReuseCountingClient()
+            val vm = MainViewModel(
+                client, seeds, clock = { current }, io = dispatcher, snapshotStore = store,
+                arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+            )
+            advanceUntilIdle()
+            assertTrue("the first save is still pending", fake.saves.isEmpty())
+
+            saveGate = CompletableDeferred<Unit>().apply { complete(Unit) }
+            current = now.plusSeconds(10)
+            vm.refresh()
+            advanceUntilIdle()
+
+            // Every stop was reused (no new requests), yet the published snapshot reaches disk.
+            assertEquals(1, client.arrivalCalls[oxcId])
+            assertEquals(1, fake.saves.size)
+            assertEquals(seeds.map { it.id }.toSet(), fake.saves.single().stops.map { it.stopId }.toSet())
+        }
+
+    @Test
+    fun `a clock moved backward never makes an old result look recent`() = runTest(dispatcher) {
+        var current = now
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(
+            client, seeds, clock = { current }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+
+        // The device clock jumps back an hour: the earlier fetch now reads as from the future.
+        current = now.minusSeconds(3600)
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals("arrivals refetched", 2, client.arrivalCalls[oxcId])
+        assertEquals("closure check refetched", 2, client.disruptionCalls[oxcId])
+    }
+
+    @Test
+    fun `a closure cached after the shown fetch stops that stop being carried over`() =
+        runTest(dispatcher) {
+            var current = now
+            var gate = CompletableDeferred<Unit>().apply { complete(Unit) }
+            val counting = ReuseCountingClient()
+            val client = object : TflClient by counting {
+                override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+                    gate.await()
+                    return emptyList()
+                }
+            }
+            // A short closure reuse, so the second refresh asks for the closure again.
+            val vm = MainViewModel(
+                client, seeds, clock = { current }, io = dispatcher,
+                arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = Duration.ofSeconds(10),
+            )
+            advanceUntilIdle()
+
+            // 35 s on, a refresh finds King's Cross newly closed but its arrivals fail, then stalls
+            // on line status and is superseded — its closure is cached but never shown.
+            gate = CompletableDeferred()
+            current = now.plusSeconds(35)
+            counting.failingArrivals += ksxId
+            counting.closures[ksxId] = listOf(StopDisruption("Bus Stop Closed"))
+            vm.refresh()
+            advanceUntilIdle()
+
+            // The clock is then set back, so the shown fetch reads as only 5 s old.
+            counting.failingArrivals.clear()
+            gate.complete(Unit)
+            current = now.plusSeconds(5)
+            vm.refresh()
+            advanceUntilIdle()
+
+            // The stop isn't carried over past the newer closure: it's refetched and shows it.
+            assertEquals(3, counting.arrivalCalls[ksxId])
+            val ksx = (vm.state.value as DeparturesUiState.Loaded).stops.single { it.stopId == ksxId }
+            assertTrue(ksx.disruptions.isNotEmpty())
         }
 }

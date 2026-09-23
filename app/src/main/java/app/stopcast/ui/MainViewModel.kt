@@ -18,12 +18,16 @@ import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StarredRowSet
 import app.stopcast.domain.StarredRowsStore
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.TflClient
 import app.stopcast.domain.stopPlaceKey
 import app.stopcast.domain.TflException
+import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -70,6 +74,14 @@ private const val DISMISSED_READ_RETRY_MS = 500L
  *  retried forever at a steady, quiet interval rather than giving up (storage can recover later). */
 private const val DISMISSED_READ_RETRY_MAX_MS = 30_000L
 
+/** How recently a stop's arrivals must have come back for a refresh to carry it over without a
+ *  request (see MainViewModel.recentlyFetched). Under the 60 s auto-refresh, so a scheduled refresh
+ *  still refetches everything; it only spares a quick retry after a rate-limited refresh. */
+internal val ARRIVALS_REUSE: Duration = Duration.ofSeconds(30)
+
+/** How long a stop's successful closure lookup is reused (see MainViewModel.disruptionCache). */
+internal val DISRUPTION_REUSE: Duration = Duration.ofMinutes(5)
+
 /**
  * Owns the departures snapshot the screen renders (SPEC staleness contract): the fetch
  * runs off the main thread in [viewModelScope]; the screen only ever reads [state].
@@ -109,6 +121,12 @@ class MainViewModel(
     // withhold stale countdowns (SPEC D4) rather than freezing at the last save's stamp. Doesn't
     // persist anything. No-op by default; MainActivity supplies the widget update.
     private val redrawWidget: suspend () -> Unit = {},
+    // How recently a stop must have been fetched for a refresh to carry it over without a request,
+    // and how long a stop's closure lookup is reused ([recentlyFetched], [disruptionCache]). Zero —
+    // always refetch — by default, so tests drive them explicitly; the app passes [ARRIVALS_REUSE]
+    // and [DISRUPTION_REUSE].
+    private val arrivalsReuse: Duration = Duration.ZERO,
+    private val disruptionReuse: Duration = Duration.ZERO,
 ) : ViewModel() {
     // The near-me tiers, updatable IN PLACE so a relocation that keeps the same nearby set can
     // reconcile them without rebuilding this ViewModel (which would drop a revealed expansion —
@@ -191,6 +209,20 @@ class MainViewModel(
     // failure is memoized separately (see `resolveHubInfo`), so a failing hub is not re-requested
     // once per member. In-memory only; hub names are public TfL place names, never persisted.
     private val hubInfoCache = mutableMapOf<String, HubInfo>()
+
+    // Each stop's last SUCCESSFUL stop-level disruption lookup (a closure, a moved stop) and when it
+    // was made, reused for [disruptionReuse] rather than re-requested every refresh: a closure
+    // changes over hours, and the lookup is half of every stop's request cost against TfL's rate
+    // budget. A failure is never cached, so it's retried next refresh. The line status — the fast-
+    // moving signal — is still checked every refresh. In-memory only; written and read on the main
+    // thread (viewModelScope), like [hubInfoCache].
+    private val disruptionCache = mutableMapOf<String, Pair<Instant, List<StopDisruption>>>()
+
+    // When each stop's arrivals last came back from a fetch by THIS ViewModel (the cycle's start
+    // stamp). What makes a stop eligible to be carried over ([recentlyFetched]): a stop restored from
+    // disk is never in it, since the snapshot doesn't persist the closure check a carried-over stop
+    // would need. In-memory only; main thread.
+    private val arrivalsFetchedAt = mutableMapOf<String, Instant>()
 
     // The init coroutine that loads the last-good snapshot and then calls refresh(). Tracked so
     // cancelFetch() can stop it too: during its load() the fetchJob isn't assigned yet, so
@@ -327,6 +359,10 @@ class MainViewModel(
         stops: List<StopRef>,
         prior: Map<String, StopArrivals>,
         now: Instant,
+        // Stops to carry over from [prior] unchanged, with no request at all — ones fetched moments
+        // ago (see [recentlyFetched]). Each keeps its own fetchedAt and arrivalsFresh, so its age and
+        // "No departures" claim stay honest (SPEC D4); only the line status is re-checked for it.
+        reuse: Set<String> = emptySet(),
     ): FetchBatch {
         val merged = mutableListOf<StopArrivals>()
         var firstError: Throwable? = null
@@ -351,9 +387,20 @@ class MainViewModel(
         // when requests queue — a best effort, not a guarantee: IO scheduling and the rate limiter
         // are free to reorder them, and nothing depends on the order (maintainer, PR #121). Each
         // request catches its own failure, so one stop failing never cancels its siblings.
+        // A reused stop costs no request; its results are never read (it's carried over below).
+        fun reused(stop: StopRef) = stop.id in reuse && prior[stop.id] != null
+        // Which stops' closure results came from [disruptionCache] rather than this batch's request:
+        // a cached result is knowledge but not NEWS, so it mustn't count toward [anyFreshData] — a
+        // cycle whose every request failed would otherwise pass for a partial refresh and hide the
+        // real failure (offline, rate-limited) behind the generic banner (SPEC principle 2).
+        val disruptionFromCache = BooleanArray(stops.size)
         val (arrivalResults, disruptionResults) = coroutineScope {
             val arrivals = stops.map { stop ->
-                async { runCatchingTfl { withContext(io) { client.arrivals(stop.id) } } }
+                if (reused(stop)) {
+                    null
+                } else {
+                    async { runCatchingTfl { withContext(io) { client.arrivals(stop.id) } } }
+                }
             }
             // Fetch each stop's disruption independently of its arrivals (a closure, a moved stop),
             // so a closed stop is flagged rather than shown with catchable-looking departures — and a
@@ -361,10 +408,23 @@ class MainViewModel(
             // out entirely (SPEC *Disruptions*). Per stop (the endpoint scopes to it), off the render
             // path. A lookup that fails falls back to the aged disruption and flags the state unknown
             // rather than passing the stop off as verified-clear.
-            val disruptions = stops.map { stop ->
-                async { runCatchingTfl { withContext(io) { client.stopDisruptions(stop.id) } } }
+            // A lookup that succeeded within [disruptionReuse] is reused rather than re-requested.
+            val disruptions: List<Deferred<Result<List<StopDisruption>>>?> = stops.mapIndexed { i, stop ->
+                val cached = disruptionCache[stop.id]
+                    ?.takeIf { (at, _) -> isWithin(at, now, disruptionReuse) }
+                when {
+                    reused(stop) -> null
+                    cached != null -> {
+                        disruptionFromCache[i] = true
+                        CompletableDeferred(Result.success(cached.second))
+                    }
+                    else -> async {
+                        runCatchingTfl { withContext(io) { client.stopDisruptions(stop.id) } }
+                            .onSuccess { disruptionCache[stop.id] = now to it }
+                    }
+                }
             }
-            arrivals.awaitAll() to disruptions.awaitAll()
+            arrivals.map { it?.await() } to disruptions.map { it?.await() }
         }
 
         // Resolve each interchange once, in parallel, only for a hub with a stop that has a fresh
@@ -373,7 +433,7 @@ class MainViewModel(
         // several disrupted stops costs one call even when it fails, and every member agrees. A stop
         // with no disruption, or no hub, costs no call and titles by its own name.
         val hubIds = stops.indices
-            .filter { i -> stops[i].hubId.isNotBlank() && !disruptionResults[i].getOrNull().isNullOrEmpty() }
+            .filter { i -> stops[i].hubId.isNotBlank() && !disruptionResults[i]?.getOrNull().isNullOrEmpty() }
             .mapTo(LinkedHashSet()) { i -> stops[i].hubId }
         val hubs: Map<String, HubInfo> = coroutineScope {
             hubIds.map { hubId -> async { hubId to resolveHubInfo(hubId) } }.awaitAll().toMap()
@@ -382,20 +442,30 @@ class MainViewModel(
         // Merge in stop order, so the first error, the logs and the merged list read the same as a
         // one-at-a-time fetch would, whatever order the responses came back in.
         stops.forEachIndexed { i, stop ->
-            val departures = arrivalResults[i].getOrElse { e ->
+            val arrivalResult = arrivalResults[i]
+            val disruptionResult = disruptionResults[i]
+            if (arrivalResult == null || disruptionResult == null) {
+                // Reused: carried over as it was, neither a fresh result nor a failure.
+                merged += prior.getValue(stop.id)
+                return@forEachIndexed
+            }
+            val departures = arrivalResult.getOrElse { e ->
                 if (firstError == null) firstError = e
                 anyArrivalsFailed = true
                 warn("arrivals fetch failed for stop ${stop.id}: ${reason(e)}")
                 null
             }
-            val disruptions = disruptionResults[i].getOrElse { e ->
+            val disruptions = disruptionResult.getOrElse { e ->
                 if (firstError == null) firstError = e
                 stopsDisruptionUnknown += stop.id
                 warn("stop disruption fetch failed for stop ${stop.id}: ${reason(e)}")
                 null
             }
-            if (departures != null) anyFreshArrivals = true
-            if (departures != null || disruptions != null) anyFreshData = true
+            if (departures != null) {
+                anyFreshArrivals = true
+                arrivalsFetchedAt[stop.id] = now
+            }
+            if (departures != null || (disruptions != null && !disruptionFromCache[i])) anyFreshData = true
             val hub =
                 if (stop.hubId.isNotBlank() && !disruptions.isNullOrEmpty()) {
                     hubs[stop.hubId] ?: HubInfo()
@@ -491,6 +561,44 @@ class MainViewModel(
     }
 
     /**
+     * Whether [at] is less than [window] before [now]. A negative age — the device clock moved back
+     * past [at] — is never within it: it would otherwise read as "just now" until wall time caught
+     * up, and keep reusing an old result the whole while.
+     */
+    private fun isWithin(at: Instant, now: Instant, window: Duration): Boolean {
+        val age = Duration.between(at, now)
+        return !age.isNegative && age < window
+    }
+
+    /**
+     * The stops in [loaded] a refresh at [now] can carry over without a request: this ViewModel
+     * fetched their arrivals less than [arrivalsReuse] ago ([arrivalsFetchedAt]), the stop shown is
+     * that fetch's result (not an older one a canceled batch left behind), and their own closure
+     * check didn't fail. A failed or carried-aged stop, or one
+     * whose closure check failed, is always refetched — those are what a quick retry is for — and so
+     * is a stop restored from disk, which lacks the unpersisted closure check.
+     */
+    private fun recentlyFetched(loaded: DeparturesUiState.Loaded, now: Instant): Set<String> =
+        loaded.stops
+            .filter { stop ->
+                // The shown stop must BE that fetch (same stamp): a batch canceled after its
+                // arrivals came back but before it was published leaves a newer stamp here than the
+                // stop on screen, and carrying that older stop over would pass it off as just fetched.
+                val fetchedAt = arrivalsFetchedAt[stop.stopId]
+                // Nor may a closure check newer than that fetch be skipped: a later, superseded batch
+                // whose arrivals failed can still have cached a new closure for the stop, and carrying
+                // the stop over would keep its departures up without it.
+                val closureAt = disruptionCache[stop.stopId]?.first
+                fetchedAt != null &&
+                    fetchedAt == stop.fetchedAt &&
+                    (closureAt == null || !closureAt.isAfter(fetchedAt)) &&
+                    isWithin(fetchedAt, now, arrivalsReuse) &&
+                    stop.arrivalsFresh &&
+                    stop.stopId !in loaded.stopsDisruptionUnknown
+            }
+            .mapTo(mutableSetOf()) { it.stopId }
+
+    /**
      * The screen-wide "some shown departures' disruption state is unverified" flag, derived from the
      * merged set and its provenance so [refresh] and an incremental reveal compute it identically and
      * a reveal can't leave it stuck: true when any shown stop's own closure check failed
@@ -565,8 +673,12 @@ class MainViewModel(
                 }
             }
             val prior = priorStops.associateBy { it.stopId }
-            // Fetch the whole set, merged into the prior at this cycle's stamp (see [fetchBatch]).
-            val batch = fetchBatch(fetchedStops, prior, now)
+            // Fetch the whole set, merged into the prior at this cycle's stamp (see [fetchBatch]) —
+            // except stops fetched moments ago, carried over as they are. A retry soon after a
+            // rate-limited refresh then spends the budget left only on the stops still missing,
+            // rather than refetching every stop and hitting the limit again.
+            val reuse = if (priorLoaded != null) recentlyFetched(priorLoaded, now) else emptySet()
+            val batch = fetchBatch(fetchedStops, prior, now, reuse)
             val merged = batch.merged
             val firstError = batch.firstError
             val anyArrivalsFailed = batch.anyArrivalsFailed
@@ -636,7 +748,12 @@ class MainViewModel(
             // departed stop from the widget snapshot is NOT done here — it happens at prune time
             // in [reconcile], independent of this save, so a failed/canceled refresh can't strand
             // it; see [pruneDepartedFromWidget].)
-            val authoritative = anyFreshArrivals || (merged.isEmpty() && firstError == null)
+            // A stop carried over as recently fetched ([recentlyFetched]) is durable content too — its
+            // arrivals came from a successful fetch moments ago — so a refresh that reuses every stop
+            // still saves. Otherwise a refresh that cancels the previous one's save and then reuses
+            // its stops would leave the widget and next launch on the older snapshot on disk.
+            val carriedFresh = merged.any { it.stopId in reuse && it.arrivalsFresh }
+            val authoritative = anyFreshArrivals || carriedFresh || (merged.isEmpty() && firstError == null)
             val toSave: DeparturesSnapshot? =
                 if (newState is DeparturesUiState.Loaded && authoritative) {
                     DeparturesSnapshot(newState.stops, newState.fetchedAt)

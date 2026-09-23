@@ -775,6 +775,21 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         requests. **Impact (est.):** caps worst-case requests per refresh to a fixed ceiling — bounds
         the tail at a dense multi-junction corner (two big junctions could otherwise be dozens of
         poles); average case unchanged.
+  - [x] **Don't auto-fetch route-less stops** (maintainer bug report, 2026-09-23). A stop TfL lists
+        no routes for counted as its own mode, so its nearest two were eager — at a big interchange
+        that fetched unserved stops a kilometer off. They now wait behind the generic "More stops".
+  - [x] **A quick retry refetches only the missing stops; closure checks are reused 5 min**
+        (maintainer, 2026-09-23). A stop fetched <30 s ago is carried over, so a retry after a
+        rate-limited refresh fits the budget left; a stop's closure check is reused 5 min (line
+        status still every refresh). In memory only.
+  - [ ] **Decide whether a sparse mode's far station stays eager** (maintainer, 2026-09-23). The
+        per-mode rule makes a mode's nearest station eager out to the 1 mile reach, so at a big
+        interchange an Overground station 1.3 km off is fetched up front. Option: auto-fetch only
+        within a nearer distance and leave farther stations behind "More". Pending the maintainer.
+  - [ ] **Location fix at a big station waits the full 10 s timeout** (maintainer bug report,
+        2026-09-23): indoors the fused and GPS providers both time out before the last-known
+        fallback, so the near-me list starts ~10 s late. Consider a shorter wait when a recent
+        last-known fix exists.
   - [x] **A "More" tap fetches only the newly revealed page, not the whole set** (landed). `reveal()`
         no longer calls `refresh()`; it fetches just the stops not already shown and merges them into
         the current `Loaded` via `fetchIncremental`, persisting the widened set only when the fetch
