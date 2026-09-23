@@ -515,6 +515,26 @@ line (a rail red near Central) can't be mistaken for it — the identity is text
 operator without a confirmed brand hex still falls back to a neutral pill rather than an invented
 shade — a cosmetic gap, not a correctness failure.
 
+### Journeys
+
+A rider can **star a journey** between two stations on one line (maintainer, 2026-09-23): on a
+route page, tapping a station on the stop list (after the boarding stop) stars the journey from the
+boarding stop to it — both directions — and marks the station with a star; tapping it again unstars
+it. Starred journeys lead the near-me list as cards, each headed by the direction shown ("Highgate →
+King's Cross St. Pancras") with only that line's trains from the origin that **call at the far end**
+(from the line's route; a train whose path can't be resolved is left out, not guessed). The origin
+is whichever end is **nearer the rider's fix**, from TfL's published station positions; a tap on the
+heading shows the other direction. The origin's departures are fetched alongside the near-me stops
+(one request, none when it's already near) and stay out of the near-me list and the widget; the
+line's route is the same lookup the route page makes. Until both are in, the card says it's checking
+rather than claim there are no trains.
+
+**Direct only, rail only, for now.** A journey that needs a change is routing — the eventual goal
+is starring home and work, which needs it, and it stays a non-goal until then. A bus journey is left
+out because its return leaves from a different pole across the road. The tap-a-station entry point
+is an MVP; it isn't discoverable, and a clearer one is a `TODO.md` follow-up. Starred journeys are
+kept on the device with the rest of the user's config and never logged (*Privacy*).
+
 ### Disruptions
 
 A departure time is worse than useless if the service is cancelled or the stop is
@@ -879,8 +899,8 @@ search endpoints. That is inherent to each feature and disclosed; precise locati
 Play Data Safety type the nearby action may collect (and so declares), not a claim that
 every fix sent is precise.
 
-All of stopcast's persisted config — watched stops, per-stop filters, row stars, any saved
-favorite destinations, the user's `app_key` — and the last-good snapshot travel through
+All of stopcast's persisted config — watched stops, per-stop filters, row stars, starred
+journeys, any saved favorite destinations, the user's `app_key` — and the last-good snapshot travel through
 **Android's own backup and device-to-device transfer** — stopcast allows
 both, deliberately, so a phone swap keeps the user's setup rather than losing it
 (maintainer, 2026-09-18; the fleet's "never lose the user's work" over a literal

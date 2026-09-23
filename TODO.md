@@ -943,6 +943,20 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         sandbox can't validate and a change to the maintainer-approved provider-name design.
         Preserve `Location.accuracy` through both paths and prefer the most accurate fix;
         settle the threshold and the latency trade on a device.
+- [x] **Star a journey** (maintainer, 2026-09-23). Two stations on one line, starred by tapping a
+      station on a route page's stop list; cards atop the near-me list show that line's trains from
+      the nearer end that call at the other, a tap on the heading flips direction. Direct and rail
+      only (SPEC *Journeys*).
+  - [ ] **A discoverable way to star a journey.** Tapping a station on the stop list is an unmarked
+        tap target; the maintainer accepted it for the MVP. Consider an explicit "Star journey…"
+        action on the route page that asks for the other end.
+  - [ ] **Bus journeys.** The return leaves from the pole across the road, so the origin must be
+        resolved per direction (the stop area's pole whose route calls at the far end).
+  - [ ] **Several lines between the same two stations** (King's Cross ↔ Euston Square on the
+        Circle, Hammersmith & City and Metropolitan): a journey is one line today.
+  - [ ] **Home and work, with routing** — the eventual goal: star two places, not two stations,
+        and show how to get between them. Needs journey planning, a SPEC non-goal today and a
+        separate product + privacy decision (it would send both places to TfL's Journey Planner).
 - [ ] Per-stop line/direction filters (D2).
 - [ ] **Filter or rank by a destination the user enters, and let them save favorite
       destinations** — the user names where they're going (or picks a saved favorite) and

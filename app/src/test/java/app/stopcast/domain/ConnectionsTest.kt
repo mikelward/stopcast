@@ -46,4 +46,14 @@ class ConnectionsTest {
         )
         assertEquals(emptyList<LineRef>(), Connections.of(lines, "rb2"))
     }
+
+    @Test
+    fun `rail is the same allowlist, known by line id when TfL gave no mode`() {
+        assertEquals(true, Connections.isRail("tube", "northern"))
+        assertEquals(true, Connections.isRail("", "victoria"))
+        assertEquals(false, Connections.isRail("bus", "24"))
+        assertEquals(false, Connections.isRail("coach", "a1"))
+        assertEquals(false, Connections.isRail("river-bus", "rb1"))
+        assertEquals(false, Connections.isRail("", "unknown-line"))
+    }
 }

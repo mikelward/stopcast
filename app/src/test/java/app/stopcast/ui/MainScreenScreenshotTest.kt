@@ -37,6 +37,7 @@ import androidx.compose.ui.test.performTouchInput
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.JourneyEnd
 import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
@@ -44,6 +45,12 @@ import app.stopcast.domain.RoutePattern
 import app.stopcast.domain.RouteTopology
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.TflException
+import app.stopcast.domain.StarredJourney
+import app.stopcast.domain.RouteStopsRepository
+import app.stopcast.domain.RouteSequenceSource
+import app.stopcast.domain.LineSequence
+import app.stopcast.domain.LineRoute
 import app.stopcast.domain.StopDisruption
 import app.stopcast.ui.theme.StopCastTheme
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -1051,6 +1058,324 @@ class MainScreenScreenshotTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("More bus stops").performClick()
         composeRule.runOnIdle { assertEquals("bus", revealed) }
+    }
+
+    @Test
+    fun `a starred journey shows only the trains that reach its far end, atop the near-me list`() {
+        // Victoria line from Victoria: northbound trains reach Warren Street, southbound ones don't.
+        // Public station ids/names as examples; the journey origin isn't one of the near-me stops.
+        val sequence = LineSequence(
+            routes = listOf(
+                LineRoute("Brixton ↔ Walthamstow Central", listOf("940GZZLUVIC", "940GZZLUWRR", "940GZZLUWWL")),
+                LineRoute("Walthamstow Central ↔ Brixton", listOf("940GZZLUWWL", "940GZZLUWRR", "940GZZLUVIC", "940GZZLUBXN")),
+            ),
+            stopNames = mapOf(
+                "940GZZLUVIC" to "Victoria",
+                "940GZZLUWRR" to "Warren Street",
+                "940GZZLUWWL" to "Walthamstow Central",
+                "940GZZLUBXN" to "Brixton",
+            ),
+        )
+        val repository = RouteStopsRepository(
+            object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String) = sequence
+            },
+        )
+        val victoria = StopArrivals(
+            "940GZZLUVIC",
+            "Victoria",
+            listOf(
+                dep("victoria", "Victoria", "northbound", "Walthamstow Central", 180, "Northbound - Platform 5"),
+                dep("victoria", "Victoria", "southbound", "Brixton", 60, "Southbound - Platform 4"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        val journey = StarredJourney(
+            JourneyEnd("940GZZLUVIC", "Victoria"), JourneyEnd("940GZZLUWRR", "Warren Street"), "victoria",
+        )
+        var flipped: StarredJourney? = null
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(LocalRouteStops provides repository) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse(), victoria), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(journey),
+                            onFlipJourney = { flipped = it },
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Victoria → Warren Street").assertExists()
+        composeRule.onNodeWithText("Walthamstow Central", substring = true).assertExists()
+        // The southbound train doesn't call at Warren Street, and the origin isn't a near-me stop.
+        composeRule.onAllNodesWithText("Brixton", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithText("Manor House", substring = true).assertExists()
+        captureSnapshot("main-journey-card.png")
+
+        composeRule.onNodeWithText("Victoria → Warren Street").performClick()
+        assertEquals(journey, flipped)
+    }
+
+    private val victoriaLine = LineSequence(
+        routes = listOf(LineRoute("Brixton ↔ Walthamstow Central", listOf("940GZZLUVIC", "940GZZLUWRR", "940GZZLUWWL"))),
+        stopNames = mapOf("940GZZLUVIC" to "Victoria", "940GZZLUWRR" to "Warren Street", "940GZZLUWWL" to "Walthamstow Central"),
+    )
+    private val victoriaToWarrenStreet = StarredJourney(
+        JourneyEnd("940GZZLUVIC", "Victoria"), JourneyEnd("940GZZLUWRR", "Warren Street"), "victoria",
+    )
+
+    private fun journeyScreen(origin: StopArrivals, source: RouteSequenceSource) {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(LocalRouteStops provides RouteStopsRepository(source)) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse(), origin), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(victoriaToWarrenStreet),
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+    }
+
+    @Test
+    fun `journey cards still show when nothing nearby has departures`() {
+        val origin = StopArrivals(
+            "940GZZLUVIC",
+            "Victoria",
+            listOf(dep("victoria", "Victoria", "northbound", "Walthamstow Central", 180, "Northbound - Platform 5")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(
+                        LocalRouteStops provides RouteStopsRepository(
+                            object : RouteSequenceSource {
+                                override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+                            },
+                        ),
+                    ) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(origin), now.minusSeconds(60)),
+                            now,
+                            {},
+                            // The nearby stop was fetched with nothing to show; the origin isn't nearby.
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(victoriaToWarrenStreet),
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Victoria → Warren Street").assertExists()
+        composeRule.onNodeWithText("Walthamstow Central", substring = true).assertExists()
+        composeRule.onNodeWithText("No departures nearby").assertExists()
+    }
+
+    @Test
+    fun `a dismissed line alert is gone from the journey card too`() {
+        val suspended = LineStatus("victoria", 2, "Suspended")
+        val origin = StopArrivals(
+            "940GZZLUVIC",
+            "Victoria",
+            emptyList(),
+            fetchedAt = now.minusSeconds(60),
+            lines = listOf(LineRef("victoria", "Victoria", "tube")),
+        )
+        var dismissed by mutableStateOf(emptySet<DismissedAlert>())
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(
+                        LocalRouteStops provides RouteStopsRepository(
+                            object : RouteSequenceSource {
+                                override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+                            },
+                        ),
+                    ) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(
+                                listOf(manorHouse(), origin),
+                                now.minusSeconds(60),
+                                lineStatuses = mapOf("victoria" to suspended),
+                            ),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(victoriaToWarrenStreet),
+                            dismissed = dismissed,
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // The suspension shows on the card while no trains are predicted.
+        composeRule.onAllNodesWithText("Suspended", substring = true).onFirst().assertExists()
+
+        dismissed = setOf(DismissedAlert.ofLineStatus(suspended))
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Suspended", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `tapping a journey card's train opens its route page`() {
+        val origin = StopArrivals(
+            "940GZZLUVIC",
+            "Victoria",
+            listOf(dep("victoria", "Victoria", "northbound", "Walthamstow Central", 180, "Northbound - Platform 5")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        journeyScreen(origin, object : RouteSequenceSource {
+            override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+        })
+        // The origin isn't a near-me stop, so the page must resolve from the journey card's rows.
+        composeRule.onNodeWithContentDescription("Pin to top").assertDoesNotExist()
+        composeRule.onNodeWithText("Walthamstow Central", substring = true).performTouchInput { click() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Pin to top").assertExists()
+    }
+
+    @Test
+    fun `a route page opened from a journey stays open when the journey is unstarred`() {
+        val origin = StopArrivals(
+            "940GZZLUVIC",
+            "Victoria",
+            listOf(dep("victoria", "Victoria", "northbound", "Walthamstow Central", 180, "Northbound - Platform 5")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        var journeys by mutableStateOf(listOf(victoriaToWarrenStreet))
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(
+                        LocalRouteStops provides RouteStopsRepository(
+                            object : RouteSequenceSource {
+                                override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+                            },
+                        ),
+                    ) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse(), origin), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = journeys,
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Walthamstow Central", substring = true).performTouchInput { click() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Pin to top").assertExists()
+
+        journeys = emptyList()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Pin to top").assertExists()
+    }
+
+    @Test
+    fun `a journey whose origin failed to refresh says it couldn't check, not that there are no trains`() {
+        // The origin's last refresh failed: kept aged, with nothing current left to show.
+        val aged = StopArrivals("940GZZLUVIC", "Victoria", emptyList(), fetchedAt = now.minusSeconds(600), arrivalsFresh = false)
+        journeyScreen(aged, object : RouteSequenceSource {
+            override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+        })
+        composeRule.onNodeWithText("Couldn't check trains").assertExists()
+        composeRule.onAllNodesWithText("No trains to", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a journey whose origin couldn't be fetched says so, not that it's checking`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(
+                            listOf(manorHouse()),
+                            now.minusSeconds(60),
+                            unavailableStopIds = setOf("940GZZLUVIC"),
+                        ),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                        journeys = listOf(victoriaToWarrenStreet),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Couldn't check trains").assertExists()
+        composeRule.onAllNodesWithText("Checking trains", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a journey whose route failed to load says so and offers a retry`() {
+        val origin = StopArrivals(
+            "940GZZLUVIC",
+            "Victoria",
+            listOf(dep("victoria", "Victoria", "northbound", "Walthamstow Central", 180, "Northbound - Platform 5")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        journeyScreen(origin, object : RouteSequenceSource {
+            override suspend fun routeSequence(lineId: String, direction: String): LineSequence =
+                throw TflException.Offline(null)
+        })
+        composeRule.onNodeWithText("Couldn't load the route").assertExists()
+        composeRule.onNodeWithText("Try again").assertExists()
+    }
+
+    @Test
+    fun `a journey's origin closure shows on its card`() {
+        val closed = StopArrivals(
+            "940GZZLUVIC",
+            "Victoria",
+            listOf(dep("victoria", "Victoria", "northbound", "Walthamstow Central", 180, "Northbound - Platform 5")),
+            fetchedAt = now.minusSeconds(60),
+            disruptions = listOf(StopDisruption("Station closed until further notice.")),
+        )
+        journeyScreen(closed, object : RouteSequenceSource {
+            override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+        })
+        composeRule.onNodeWithText("Station closed until further notice.", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a journey whose route isn't known yet says it's checking, not that there are no trains`() {
+        val journey = StarredJourney(
+            JourneyEnd("940GZZLUMRH", "Manor House"), JourneyEnd("940GZZLUKSX", "King's Cross St. Pancras"), "piccadilly",
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                        journeys = listOf(journey),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Checking trains…").assertExists()
     }
 
     @Test

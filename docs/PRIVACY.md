@@ -45,6 +45,11 @@ So the guarantee is precise rather than absolute: **the only user data stopcast 
 off the device goes in its TfL requests** (the Play update check carries none); Android's backup
 carries your saved data under your control, and a bug report carries what you consent to share.
 
+**Starred journeys** (two stations you travel between) are kept on the device with your other
+settings and stars, so they ride your own Android backup like the rest (above); they are never
+logged or sent anywhere. Showing a journey's trains fetches the departures at its nearer station
+from TfL, like any other stop.
+
 **Kept on the device, never backed up:** to skip a repeat stop lookup when you reopen the app
 near where you last used it, stopcast keeps the **positions of its last few nearby-stop lookups**
 (up to four places) and the stops found around each, for up to a day, in the app's cache

@@ -4,8 +4,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -16,9 +18,11 @@ import androidx.compose.ui.test.performTouchInput
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.JourneyEnd
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.RouteStop
+import app.stopcast.domain.StarredJourney
 import app.stopcast.domain.StopArrivals
 import app.stopcast.ui.theme.StopCastTheme
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -463,6 +467,88 @@ class RouteDetailScreenScreenshotTest {
         composeRule.onNodeWithContentDescription("Lioness").assertIsDisplayed()
 
         captureSnapshot("route-detail-stops.png")
+    }
+
+    @Test
+    fun tappingAStation_starsTheJourneyThere_andAStarredOneShowsAStar() {
+        val stops = listOf(
+            RouteStop("940GZZLUVIC", "Victoria"),
+            RouteStop("940GZZLUGPK", "Green Park"),
+            RouteStop("940GZZLUOXC", "Oxford Circus"),
+        )
+        // Synthetic positions: the journey keeps them to pick its nearer end.
+        val positions = mapOf("940GZZLUVIC" to (51.5 to -0.12), "940GZZLUOXC" to (51.51 to -0.12))
+        val starredToOxford = StarredJourney(
+            JourneyEnd("940GZZLUVIC", "Victoria"), JourneyEnd("940GZZLUOXC", "Oxford Circus"), "victoria",
+        )
+        val toggled = mutableListOf<StarredJourney>()
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = healthyRow(platform = "Northbound - Platform 5"),
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded(stops, positions),
+                    journeys = listOf(starredToOxford),
+                    onToggleJourney = { toggled += it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        // The starred journey's end carries a star, and a screen reader hears it.
+        composeRule.onNode(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Starred journey"))
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Oxford Circus", substring = true).assertIsDisplayed()
+
+        composeRule.onNodeWithText("Oxford Circus", substring = true).performClick()
+        composeRule.waitForIdle()
+        assertEquals(
+            StarredJourney(
+                JourneyEnd("940GZZLUVIC", "Victoria", 51.5, -0.12),
+                JourneyEnd("940GZZLUOXC", "Oxford Circus", 51.51, -0.12),
+                "victoria",
+                lineName = "Victoria",
+                mode = "tube",
+            ),
+            toggled.single(),
+        )
+
+        // The boarding stop itself isn't a journey end: it has no tap action.
+        composeRule.onNode(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Your stop"))
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick))
+    }
+
+    @Test
+    fun tappingAnUnnamedStation_savesTheIdItShows() {
+        val stops = listOf(RouteStop("940GZZLUVIC", "Victoria"), RouteStop("940GZZLUGPK", ""))
+        val toggled = mutableListOf<StarredJourney>()
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = healthyRow(platform = "Northbound - Platform 5"),
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded(stops, emptyMap()),
+                    journeys = emptyList(),
+                    onToggleJourney = { toggled += it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("940GZZLUGPK", substring = true).performClick()
+        composeRule.waitForIdle()
+        assertEquals("940GZZLUGPK", toggled.single().to.name)
     }
 
     @Test

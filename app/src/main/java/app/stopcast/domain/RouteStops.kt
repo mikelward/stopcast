@@ -20,9 +20,16 @@ data class LineSequence(
     val routes: List<LineRoute>,
     val stopNames: Map<String, String>,
     val stopLines: Map<String, List<LineRef>> = emptyMap(),
+    // Each stop's published (latitude, longitude), where TfL gave one — a starred journey's ends.
+    val stopPositions: Map<String, Pair<Double, Double>> = emptyMap(),
 ) {
     operator fun plus(other: LineSequence) =
-        LineSequence(routes + other.routes, stopNames + other.stopNames, stopLines + other.stopLines)
+        LineSequence(
+            routes + other.routes,
+            stopNames + other.stopNames,
+            stopLines + other.stopLines,
+            stopPositions + other.stopPositions,
+        )
 }
 
 /**

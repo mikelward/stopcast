@@ -104,6 +104,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.stopcast.R
 import app.stopcast.domain.cleanDisruptionBody
+import app.stopcast.domain.Connections
 import app.stopcast.domain.Countdown
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureLabels
@@ -114,9 +115,16 @@ import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
+import app.stopcast.domain.JourneyEnd
+import app.stopcast.domain.LineSequence
+import app.stopcast.domain.StarredJourney
+import app.stopcast.domain.Journeys
 import app.stopcast.domain.StopDistance
 import app.stopcast.domain.StopGroup
 import app.stopcast.domain.StopGrouping
+import app.stopcast.domain.TflException
+import kotlinx.coroutines.CancellationException
+import androidx.compose.runtime.produceState
 import app.stopcast.domain.stopPlaceKey
 import app.stopcast.domain.StopQualifier
 import app.stopcast.domain.abbreviateBranch
@@ -157,6 +165,16 @@ fun MainScreen(
     // Shows a near-me stop (`stopId`, place name) in the maps app, from a tap on its header's
     // distance; null leaves the distance inert.
     onOpenStopMap: ((String, String) -> Unit)? = null,
+    // The starred journeys (SPEC *Journeys*), each already turned so its origin is the end nearer the
+    // rider: shown as cards atop the near-me list, and starrable from a route page's stop list.
+    journeys: List<StarredJourney> = emptyList(),
+    onToggleJourney: ((StarredJourney) -> Unit)? = null,
+    // Shows the other direction of a journey card (a tap on its header).
+    onFlipJourney: (StarredJourney) -> Unit = {},
+    // True while a journey-star write has failed and not yet been surfaced: the same acknowledged
+    // snackbar seam as [starWriteFailed], cleared by [onJourneyWriteFailureShown].
+    journeyWriteFailed: Boolean = false,
+    onJourneyWriteFailureShown: () -> Unit = {},
     // The rows the user has starred (SPEC D8): pinned to the top, and their star filled.
     // Empty by default so an unwired build/test renders the plain soonest-first list.
     starred: Set<StarredRow> = emptySet(),
@@ -218,9 +236,81 @@ fun MainScreen(
     // both the list and the route-detail page below read the SAME rows. Empty for any non-Loaded
     // state. Cheap and pure; line statuses stamp each row so a disrupted line is marked (SPEC D3).
     val loaded = state as? DeparturesUiState.Loaded
+    // Each journey line's route (both directions), which says which trains call at the far end. From
+    // the process cache at once when this line was loaded already; otherwise fetched off the render
+    // path (the same lookup the route page makes, one or two requests per line per process). A failed
+    // load is kept as such, so the card says so and offers a retry rather than checking forever.
+    val routeStopsRepository = LocalRouteStops.current
+    val journeyLineIds = remember(journeys) { journeys.map { it.lineId }.distinct() }
+    var journeyRouteRetry by rememberSaveable { mutableIntStateOf(0) }
+    val journeySequences by produceState<Map<String, LineSequence?>>(
+        initialValue = journeyLineIds.mapNotNull { id -> routeStopsRepository?.cached(id, "")?.let { id to it } }.toMap(),
+        routeStopsRepository,
+        journeyLineIds,
+        journeyRouteRetry,
+    ) {
+        val repository = routeStopsRepository ?: return@produceState
+        for (lineId in journeyLineIds) {
+            if (value[lineId] != null) continue
+            value = value - lineId
+            value = value + (
+                lineId to try {
+                    repository.load(lineId, "")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: TflException) {
+                    // Logged (sanitized) by the repository; null marks the failure for the card.
+                    null
+                }
+                )
+        }
+    }
+    // The journey cards: the trains from each journey's origin that call at its far end, the origin's
+    // closure notice if it has one, or why the trains can't be shown yet (SPEC principle 1).
+    val journeyCards = remember(
+        loaded?.stops, loaded?.lineStatuses, loaded?.unavailableStopIds, now, journeys, journeySequences, dismissed,
+    ) {
+        val ld = loaded
+        // Dismissals apply here as on the list, so an alert dismissed anywhere is gone from the card.
+        val across = DepartureRows.withoutDismissed(
+            ld?.let { DepartureRows.across(it.stops, now, it.lineStatuses) }.orEmpty(),
+            dismissed,
+        )
+        journeys.map { journey ->
+            val origin = ld?.stops?.firstOrNull { it.stopId == journey.from.stopId }
+            val closure = across.firstOrNull { it.stopId == journey.from.stopId && it.stopDisruption != null }
+            val state = when {
+                // Asked for and not come back: the fetch failed with nothing earlier to show.
+                origin == null && journey.from.stopId in ld?.unavailableStopIds.orEmpty() -> JourneyCardState.NotChecked
+                origin == null -> JourneyCardState.Checking
+                journey.lineId !in journeySequences -> JourneyCardState.Checking
+                journeySequences[journey.lineId] == null -> JourneyCardState.RouteFailed
+                else -> {
+                    val sequence = journeySequences[journey.lineId]
+                    val shown = Journeys.rows(journey, across, sequence).orEmpty()
+                    // "No trains" is only a claim a fresh, current fetch can make: an origin whose last
+                    // refresh failed (kept aged) or has gone stale says it couldn't check instead —
+                    // and so does one with a train whose path the route couldn't resolve, since that
+                    // train may well call at the far end.
+                    val current = origin.arrivalsFresh &&
+                        !Staleness.isStale(Duration.between(origin.fetchedAt, now).toKotlinDuration())
+                    val unresolved = sequence != null && Journeys.anyUnresolved(journey, across, sequence)
+                    if (shown.isEmpty() && (!current || unresolved)) {
+                        JourneyCardState.NotChecked
+                    } else {
+                        JourneyCardState.Trains(shown)
+                    }
+                }
+            }
+            JourneyCard(journey, state, closure)
+        }
+    }
     val rows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, starred, dismissed) {
         val ld = loaded ?: return@remember emptyList()
-        val across = DepartureRows.across(ld.stops, now, ld.lineStatuses)
+        // A near-me list shows its nearby stops only: a journey's farther origin, fetched for its
+        // card above, isn't one of them (SPEC *Journeys*).
+        val shownStops = if (stopDistanceMeters.isEmpty()) ld.stops else ld.stops.filter { it.stopId in stopDistanceMeters }
+        val across = DepartureRows.across(shownStops, now, ld.lineStatuses)
         // A "near me now" list (distances present) shows a line once, from its nearest stop, then
         // orders closest-stop-first (soonest breaks a same-stop tie). A location-free list keeps
         // across's soonest-first order (D1).
@@ -347,7 +437,22 @@ fun MainScreen(
     // RouteFocus, so it survives rotation with no custom Saver; null destination = no focus.
     var detailDestination by rememberSaveable { mutableStateOf<String?>(null) }
     var detailBranch by rememberSaveable { mutableStateOf<String?>(null) }
-    val detailRow = detailKey?.let { key -> shownRows.firstOrNull { it.detailKey() == key } }
+    // A journey card's train opens too: its farther origin isn't in the near-me rows, so the key is
+    // also looked up among the journey cards' rows (shown only on the full list, as the cards are).
+    val journeyRows = if (platformRows != null) emptyList() else journeyCards.flatMap {
+        (it.state as? JourneyCardState.Trains)?.rows.orEmpty()
+    }
+    // And, last, among every loaded stop's rows: a page opened from a journey card stays open when
+    // that journey is unstarred from the page itself, while its origin's departures are still loaded.
+    val loadedRows = remember(loaded?.stops, loaded?.lineStatuses, now, dismissed) {
+        val ld = loaded ?: return@remember emptyList()
+        DepartureRows.withoutDismissed(DepartureRows.across(ld.stops, now, ld.lineStatuses), dismissed)
+    }
+    val detailRow = detailKey?.let { key ->
+        shownRows.firstOrNull { it.detailKey() == key }
+            ?: journeyRows.firstOrNull { it.detailKey() == key }
+            ?: loadedRows.takeIf { platformRows == null }?.firstOrNull { it.detailKey() == key }
+    }
     // When the open route's row leaves the list — its last departure passed on the 10s clock, or it
     // was pruned — clear the saved key so the vanished page stays closed rather than silently
     // reopening if a later refresh reproduced that same stop/line/direction identity (Codex). A live
@@ -363,6 +468,14 @@ fun MainScreen(
     LaunchedEffect(starWriteFailed, detailRow == null) {
         if (starWriteFailed && detailRow == null) {
             onStarWriteFailureShown()
+            snackbarHostState.showSnackbar(starWriteFailedMessage)
+        }
+    }
+    // A failed journey-star write, surfaced like a failed row star (and gated the same way, since
+    // the snackbar host lives in the departures Scaffold, not the route page the tap came from).
+    LaunchedEffect(journeyWriteFailed, detailRow == null) {
+        if (journeyWriteFailed && detailRow == null) {
+            onJourneyWriteFailureShown()
             snackbarHostState.showSnackbar(starWriteFailedMessage)
         }
     }
@@ -405,6 +518,8 @@ fun MainScreen(
             } else {
                 null
             },
+            journeys = journeys,
+            onToggleJourney = onToggleJourney,
         )
         return
     }
@@ -542,6 +657,10 @@ fun MainScreen(
                     // title) and no "More" paging of farther clusters.
                     stopDistanceMeters = if (platformRows != null) emptyMap() else stopDistanceMeters,
                     onOpenStopMap = onOpenStopMap,
+                    // Journey cards sit atop the near-me list only, not a platform or station view.
+                    journeyCards = if (platformRows != null) emptyList() else journeyCards,
+                    onFlipJourney = onFlipJourney,
+                    onRetryJourneyRoutes = { journeyRouteRetry++ },
                     starred = starred,
                     onToggleStar = onToggleStar,
                     starringAvailable = starringAvailable,
@@ -672,6 +791,9 @@ private fun LoadedContent(
     rows: List<DepartureRow>,
     stopDistanceMeters: Map<String, Double> = emptyMap(),
     onOpenStopMap: ((String, String) -> Unit)? = null,
+    journeyCards: List<JourneyCard> = emptyList(),
+    onFlipJourney: (StarredJourney) -> Unit = {},
+    onRetryJourneyRoutes: () -> Unit = {},
     starred: Set<StarredRow> = emptySet(),
     onToggleStar: (DepartureRow) -> Unit = {},
     starringAvailable: Boolean = true,
@@ -739,7 +861,9 @@ private fun LoadedContent(
             if (state.disruptionUnknown) {
                 Banner(stringResource(R.string.disruptions_unknown))
             }
-            if (rows.isEmpty()) {
+            // Starred journeys still show when nothing nearby has departures: their origins can be
+            // farther away, and hiding them behind "No departures" would drop live trains.
+            if (rows.isEmpty() && journeyCards.isEmpty()) {
                 // Scrollable even though it doesn't overflow: PullToRefreshBox reads the
                 // pull from a scrollable child's nested-scroll events, so a plain Column
                 // here would leave pull-to-refresh dead on the empty state (only the
@@ -770,6 +894,16 @@ private fun LoadedContent(
                     onOpenPlatform = onOpenPlatform,
                     onOpenStation = onOpenStation,
                     onOpenStopMap = onOpenStopMap,
+                    journeyCards = journeyCards,
+                    onFlipJourney = onFlipJourney,
+                    onRetryJourneyRoutes = onRetryJourneyRoutes,
+                    nearbyEmptyNote = if (rows.isEmpty()) {
+                        stringResource(
+                            if (emptyStateUncertain) R.string.departures_stale_empty else R.string.departures_empty_nearby,
+                        )
+                    } else {
+                        null
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -860,6 +994,11 @@ private fun DepartureList(
     onOpenPlatform: ((StopGroup) -> Unit)? = null,
     onOpenStation: ((StopGroup) -> Unit)? = null,
     onOpenStopMap: ((String, String) -> Unit)? = null,
+    journeyCards: List<JourneyCard> = emptyList(),
+    onFlipJourney: (StarredJourney) -> Unit = {},
+    onRetryJourneyRoutes: () -> Unit = {},
+    // Why the near-me part is empty, shown under the journey cards when there are no nearby rows.
+    nearbyEmptyNote: String? = null,
     modifier: Modifier,
 ) {
     // Stop-closure alerts render as standalone cards at the top of the list — warnings lead (the
@@ -902,6 +1041,52 @@ private fun DepartureList(
     ) {
         // A closure alert keys on its stop and hub so a recycled row can't carry another
         // alert's expanded state onto it.
+        // Starred journeys lead the list (SPEC *Journeys*): each a header naming the direction shown,
+        // tappable to show the other, over a card of just the trains that call at the far end.
+        journeyCards.forEachIndexed { index, card ->
+            item(key = "journey-header|${card.journey.key}") {
+                JourneyHeader(card.journey, firstOnScreen = index == 0, onFlip = { onFlipJourney(card.journey) })
+            }
+            // The origin's closure notice rides the journey card: a farther origin isn't on the near-me
+            // list, so without it the trains below would read as catchable at a closed station.
+            card.closure?.let { closure ->
+                item(key = "journey-closure|${card.journey.key}") {
+                    StopClosureCard(closure, onDismiss = { onDismissAlert(closure) })
+                }
+            }
+            when (val state = card.state) {
+                is JourneyCardState.Trains -> if (state.rows.isEmpty()) {
+                    item(key = "journey-note|${card.journey.key}") {
+                        JourneyNote(stringResource(R.string.journey_none, card.journey.to.name))
+                    }
+                } else {
+                    StopGrouping.groupByStop(state.rows, warningsLead = false).forEach { group ->
+                        item(key = "journey-card|${card.journey.key}|${group.key}") {
+                            StopGroupCard(
+                                group,
+                                now,
+                                starred = starred,
+                                onToggleStar = onToggleStar,
+                                starringAvailable = starringAvailable,
+                                onOpenDetail = onOpenDetail,
+                            )
+                        }
+                    }
+                }
+                JourneyCardState.Checking -> item(key = "journey-note|${card.journey.key}") {
+                    JourneyNote(stringResource(R.string.journey_checking))
+                }
+                JourneyCardState.NotChecked -> item(key = "journey-note|${card.journey.key}") {
+                    JourneyNote(stringResource(R.string.journey_not_checked))
+                }
+                JourneyCardState.RouteFailed -> item(key = "journey-note|${card.journey.key}") {
+                    JourneyNote(stringResource(R.string.journey_route_failed), onRetry = onRetryJourneyRoutes)
+                }
+            }
+        }
+        nearbyEmptyNote?.let { note ->
+            item(key = "nearby-empty") { JourneyNote(note) }
+        }
         items(closureRows, key = { "closure|${it.stopId}|${it.hubId}" }) { row ->
             StopClosureCard(row, onDismiss = { onDismissAlert(row) })
         }
@@ -927,7 +1112,7 @@ private fun DepartureList(
                         group.stopName,
                         group.qualifier,
                         distanceLabel,
-                        firstOnScreen = index == 0 && closureRows.isEmpty(),
+                        firstOnScreen = index == 0 && closureRows.isEmpty() && journeyCards.isEmpty(),
                         onClick = onOpenPlatform?.let { open -> { open(group) } },
                         onNameClick = onOpenStation?.let { open -> { open(group) } },
                         // The distance opens the group's own nearest stop in the maps app — for a
@@ -1140,6 +1325,68 @@ private fun StopClosureCard(row: DepartureRow, onDismiss: () -> Unit) {
  * pins (where starrable). Staleness is per row, from the row's own stop age, so a stale stop
  * withholds its countdowns ("?") while a fresh stop's card beside it stays live (SPEC D4).
  */
+/**
+ * A starred journey as shown on the near-me list: [journey] turned to the direction shown, and its
+ * [rows] — the trains from its origin that call at its destination ([Journeys.rows]). Null rows while
+ * the origin's departures or the line's route aren't in yet, so the card says it's checking rather
+ * than claim there are no trains (SPEC principle 1).
+ */
+internal data class JourneyCard(
+    val journey: StarredJourney,
+    val state: JourneyCardState,
+    // The origin's (undismissed) closure notice, shown on the card whatever the trains' state.
+    val closure: DepartureRow? = null,
+)
+
+/** What a journey card can say about its trains. */
+internal sealed interface JourneyCardState {
+    /** The origin's departures or the line's route aren't in yet. */
+    data object Checking : JourneyCardState
+
+    /** The line's route couldn't be loaded, so which trains call at the far end is unknown. */
+    data object RouteFailed : JourneyCardState
+
+    /** The origin's last refresh failed or has gone stale, and there's nothing current to show. */
+    data object NotChecked : JourneyCardState
+
+    /** The trains that call at the far end — empty only from a fresh, current fetch. */
+    data class Trains(val rows: List<DepartureRow>) : JourneyCardState
+}
+
+/** A journey card's one-line status in place of trains, with a retry when there's one to offer. */
+@Composable
+private fun JourneyNote(text: String, onRetry: (() -> Unit)? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (onRetry != null) TextButton(onClick = onRetry) { Text(stringResource(R.string.try_again)) }
+    }
+}
+
+/**
+ * A journey card's heading, "Highgate → King's Cross St. Pancras": the direction shown, which a tap
+ * flips. Styled like a stop group header (same weight and group-break space) so the list reads as one.
+ */
+@Composable
+private fun JourneyHeader(journey: StarredJourney, firstOnScreen: Boolean, onFlip: () -> Unit) {
+    val flipLabel = stringResource(R.string.action_flip_journey)
+    Text(
+        text = stringResource(R.string.journey_title, journey.from.name, journey.to.name),
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = flipLabel, onClick = onFlip)
+            .padding(start = 4.dp, end = 4.dp, top = if (firstOnScreen) 0.dp else 16.dp),
+    )
+}
+
 @Composable
 private fun StopGroupCard(
     group: StopGroup,
@@ -1542,6 +1789,11 @@ internal fun RouteDetailScreen(
     // Dismisses the line's status alert (SPEC *Disruptions*): hidden until TfL changes its severity
     // or wording. Null shows no dismiss control.
     onDismissAlert: (() -> Unit)? = null,
+    // The starred journeys (SPEC *Journeys*): a station on the stop list with one from this stop is
+    // starred, and tapping a station stars or unstars the journey there. Null (a bus, whose return
+    // leaves from another pole, or a caller without journeys) leaves the stations inert.
+    journeys: List<StarredJourney> = emptyList(),
+    onToggleJourney: ((StarredJourney) -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
     val followed = followedDeparture(row, focus, LocalRouteTopology.current)
@@ -1745,6 +1997,31 @@ internal fun RouteDetailScreen(
                 // Rail reads it off the followed train's platform ("Southbound - Platform 2"); a bus
                 // off its pole's compass bearing. Neither known, no heading rather than a guess.
                 direction = PlatformDirection.of(followed?.platform) ?: bearingDirection(row.bearing),
+                starredStopIds = journeys
+                    .filter { it.lineId == row.lineId }
+                    .mapNotNullTo(mutableSetOf()) { j ->
+                        when (row.stopId) {
+                            j.from.stopId -> j.to.stopId
+                            j.to.stopId -> j.from.stopId
+                            else -> null
+                        }
+                    },
+                onToggleJourneyTo = onToggleJourney
+                    ?.takeIf { row.lineId.isNotBlank() && Connections.isRail(row.mode, row.lineId) }
+                    ?.let { toggle ->
+                        { stop ->
+                            val positions = (stops as? RouteStopsUi.Loaded)?.positions.orEmpty()
+                            // The name as the list shows it: a stop TfL gave no name keeps its id,
+                            // so a saved journey's heading never has a blank end.
+                            fun end(id: String, name: String) =
+                                JourneyEnd(id, name.ifBlank { id }, positions[id]?.first, positions[id]?.second)
+                            toggle(
+                                StarredJourney(
+                                    end(row.stopId, row.stopName), end(stop.id, stop.name), row.lineId, row.lineName, row.mode,
+                                ),
+                            )
+                        }
+                    },
             )
         }
     }

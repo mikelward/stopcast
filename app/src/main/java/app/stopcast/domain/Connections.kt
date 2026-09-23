@@ -26,6 +26,12 @@ object Connections {
         return mode.takeIf { it in RAIL_MODES }
     }
 
+    /**
+     * Whether a line of [mode] (blank when TfL didn't say, then known by [lineId]) is rail-type — the
+     * same allowlist as a connection, so a bus, coach or river-bus route never is.
+     */
+    fun isRail(mode: String, lineId: String): Boolean = modeOf(LineRef(lineId, "", mode)) != null
+
     /** The modes that count as a connection — an allowlist, so a bus, coach or river-bus never does. */
     private val RAIL_MODES = setOf("tube", "overground", "dlr", "elizabeth-line", "tram", "trams", "national-rail")
 

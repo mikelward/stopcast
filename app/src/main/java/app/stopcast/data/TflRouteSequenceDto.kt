@@ -32,10 +32,17 @@ data class TflRouteSequenceDto(
             val hub = byId[stop.topMostParentId]?.takeIf { it.id != stop.id }
             lines[stop.id] = stop.lineRefs() + hub?.lineRefs().orEmpty()
         }
+        val positions = HashMap<String, Pair<Double, Double>>()
+        for (stop in stopPointSequences.flatMap { it.stopPoint } + stations) {
+            val lat = stop.lat ?: continue
+            val lon = stop.lon ?: continue
+            if (stop.id.isNotBlank()) positions.putIfAbsent(stop.id, lat to lon)
+        }
         return LineSequence(
             routes = orderedLineRoutes.filter { it.naptanIds.size >= 2 }.map { LineRoute(it.name, it.naptanIds) },
             stopNames = names,
             stopLines = lines,
+            stopPositions = positions,
         )
     }
 }
@@ -53,6 +60,9 @@ data class TflMatchedStopDto(
     val topMostParentId: String = "",
     val modes: List<String> = emptyList(),
     val lines: List<TflLineIdentifierDto> = emptyList(),
+    // The stop's published position — lets a starred journey pick its nearer end (SPEC *Journeys*).
+    val lat: Double? = null,
+    val lon: Double? = null,
 ) {
     fun lineRefs(): List<LineRef> {
         val mode = modes.singleOrNull().orEmpty()

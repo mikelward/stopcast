@@ -1,5 +1,10 @@
 package app.stopcast.ui
 
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -63,7 +68,8 @@ sealed interface RouteStopsUi {
     /** TfL answered, but no single path from here to this train's destination matched. */
     data class Unavailable(val reason: RouteStops.Resolution) : RouteStopsUi
     data class Failed(val kind: DeparturesUiState.Error.Kind) : RouteStopsUi
-    data class Loaded(val stops: List<RouteStop>) : RouteStopsUi
+    // [positions]: each listed stop's published (latitude, longitude), for starring a journey.
+    data class Loaded(val stops: List<RouteStop>, val positions: Map<String, Pair<Double, Double>> = emptyMap()) : RouteStopsUi
 }
 
 /**
@@ -80,7 +86,10 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
     val bus = row.mode.equals("bus", ignoreCase = true)
     fun resolve(sequence: LineSequence): RouteStopsUi =
         when (val resolution = RouteStops.resolve(sequence, row.stopId, destination, next.branch, row.lineId, bus)) {
-            is RouteStops.Resolution.Found -> RouteStopsUi.Loaded(resolution.stops)
+            is RouteStops.Resolution.Found -> RouteStopsUi.Loaded(
+                resolution.stops,
+                resolution.stops.mapNotNull { stop -> sequence.stopPositions[stop.id]?.let { stop.id to it } }.toMap(),
+            )
             else -> RouteStopsUi.Unavailable(resolution)
         }
     // Keyed by the followed train (and the mode, which changes the matching rule), so a change of
@@ -128,6 +137,11 @@ internal fun RouteStopsSection(
     modifier: Modifier = Modifier,
     // The way the train heads ("Southbound"), shown atop the list; null shows no heading.
     direction: String? = null,
+    // Stations (after the boarding stop) with a starred journey from here; each shows a star.
+    starredStopIds: Set<String> = emptySet(),
+    // Stars or unstars the journey from the boarding stop to a tapped station (SPEC *Journeys*);
+    // null leaves the stations inert.
+    onToggleJourneyTo: ((RouteStop) -> Unit)? = null,
 ) {
     val note = when (state) {
         RouteStopsUi.Hidden -> return
@@ -153,6 +167,8 @@ internal fun RouteStopsSection(
                     railColor = railColor,
                     first = index == 0,
                     last = index == state.stops.lastIndex,
+                    starred = index > 0 && stop.id in starredStopIds,
+                    onClick = if (index > 0) onToggleJourneyTo?.let { toggle -> { toggle(stop) } } else null,
                 )
             }
         } else if (note != null) {
@@ -179,8 +195,21 @@ internal fun RouteStopsSection(
  * rail's ends stop at the dot.
  */
 @Composable
-private fun StopOnRail(name: String, connections: List<LineRef>, railColor: Color, first: Boolean, last: Boolean) {
+private fun StopOnRail(
+    name: String,
+    connections: List<LineRef>,
+    railColor: Color,
+    first: Boolean,
+    last: Boolean,
+    // A starred journey ends here: the name carries a star, and the row says so to a screen reader.
+    starred: Boolean = false,
+    // Stars or unstars the journey to this station; null leaves the row inert.
+    onClick: (() -> Unit)? = null,
+) {
     val surface = MaterialTheme.colorScheme.surface
+    val starredLabel = stringResource(R.string.route_stop_journey_starred)
+    val toggleLabel = stringResource(if (starred) R.string.action_unstar_journey else R.string.action_star_journey)
+    val starColor = MaterialTheme.colorScheme.primary
     val railStroke = Modifier.fillMaxSize()
     // The blue dot is drawn, so it says nothing to a screen reader: the boarding stop is read as one
     // node with "Your stop" as its state, so TalkBack users hear which stop is theirs too.
@@ -213,16 +242,29 @@ private fun StopOnRail(name: String, connections: List<LineRef>, railColor: Colo
             },
             {
                 Text(
-                    text = name,
+                    text = if (starred) {
+                        buildAnnotatedString {
+                            append(name)
+                            withStyle(SpanStyle(color = starColor)) { append(" \u2605") }
+                        }
+                    } else {
+                        AnnotatedString(name)
+                    },
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (first || last) FontWeight.SemiBold else FontWeight.Normal,
                 )
             },
             { connections.forEach { line -> LinePill(lineName = line.name, lineId = line.id, mode = line.mode) } },
         ),
-        modifier = Modifier.fillMaxWidth().then(
-            if (first) Modifier.semantics(mergeDescendants = true) { stateDescription = currentStop } else Modifier,
-        ),
+        modifier = Modifier.fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = toggleLabel, onClick = onClick) else Modifier)
+            .then(
+                when {
+                    first -> Modifier.semantics(mergeDescendants = true) { stateDescription = currentStop }
+                    starred -> Modifier.semantics(mergeDescendants = true) { stateDescription = starredLabel }
+                    else -> Modifier
+                },
+            ),
     ) { (railParts, nameParts, pillParts), constraints ->
         val railWidth = 24.dp.roundToPx()
         val textStart = railWidth + 12.dp.roundToPx()

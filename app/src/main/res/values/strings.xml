@@ -13,6 +13,8 @@
     <!-- Departures list -->
     <string name="departures_loading">Loading departures…</string>
     <string name="departures_empty">No upcoming departures</string>
+    <!-- Under the starred-journey cards, when the nearby stops have nothing. -->
+    <string name="departures_empty_nearby">No departures nearby</string>
     <!-- Empty list from a stale snapshot: don't assert "none" from data too old to
          trust — say it may be out of date and prompt a refresh (SPEC D4). -->
     <string name="departures_stale_empty">Departures may be out of date</string>
@@ -166,6 +168,15 @@
     <!-- Screen-reader action on a stop/platform header: opens the view of the whole station. -->
     <string name="action_show_station">Show whole station</string>
     <string name="action_show_on_map">Show on map</string>
+    <string name="action_star_journey">Star journey</string>
+    <string name="action_flip_journey">Show the other direction</string>
+    <string name="journey_title">%1$s → %2$s</string>
+    <string name="journey_checking">Checking trains…</string>
+    <string name="journey_none">No trains to %1$s soon</string>
+    <string name="journey_not_checked">Couldn\'t check trains</string>
+    <string name="journey_route_failed">Couldn\'t load the route</string>
+    <string name="action_unstar_journey">Unstar journey</string>
+    <string name="route_stop_journey_starred">Starred journey</string>
     <string name="map_open_failed">No maps app to open</string>
     <string name="action_done">Done</string>
     <string name="action_close">Close</string>
