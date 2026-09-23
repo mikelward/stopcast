@@ -65,6 +65,7 @@ import app.stopcast.ui.LocationGate
 import app.stopcast.ui.MainScreen
 import app.stopcast.ui.ARRIVALS_REUSE
 import app.stopcast.ui.DISRUPTION_REUSE
+import app.stopcast.ui.LINE_STATUS_REUSE
 import app.stopcast.ui.MainViewModel
 import app.stopcast.ui.NearbyStopsViewModel
 import app.stopcast.ui.SettingsScreen
@@ -676,6 +677,7 @@ class MainActivity : ComponentActivity() {
                             // few minutes — both spare TfL's keyless rate budget.
                             arrivalsReuse = ARRIVALS_REUSE,
                             disruptionReuse = DISRUPTION_REUSE,
+                            lineStatusReuse = LINE_STATUS_REUSE,
                             // Feeds the per-fetch debug-log line: time spent rate-limited.
                             rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
                             logStats = ::logDepartureWarning,

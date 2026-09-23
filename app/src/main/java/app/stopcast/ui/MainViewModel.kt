@@ -86,6 +86,13 @@ internal val ARRIVALS_REUSE: Duration = Duration.ofSeconds(30)
 internal val DISRUPTION_REUSE: Duration = Duration.ofMinutes(5)
 
 /**
+ * How long a line's status is reused before it's asked for again: 90 s, so the 60 s auto-refresh
+ * re-checks line status every other cycle rather than every one. A suspension still shows within
+ * about two minutes, well inside the 5-minute staleness window (SPEC *Refresh*).
+ */
+internal val LINE_STATUS_REUSE: Duration = Duration.ofSeconds(90)
+
+/**
  * Owns the departures snapshot the screen renders (SPEC staleness contract): the fetch
  * runs off the main thread in [viewModelScope]; the screen only ever reads [state].
  * A failed stop is logged and skipped so one bad stop doesn't blank the others; only
@@ -130,6 +137,9 @@ class MainViewModel(
     // and [DISRUPTION_REUSE].
     private val arrivalsReuse: Duration = Duration.ZERO,
     private val disruptionReuse: Duration = Duration.ZERO,
+    // How long a line's determined status is reused ([lineStatusCache]); zero (always ask) by
+    // default for tests, [LINE_STATUS_REUSE] in the app.
+    private val lineStatusReuse: Duration = Duration.ZERO,
     // Monotonic milliseconds for timing a fetch, and the shared rate limiter's running total of
     // time spent waiting — both only feed the per-fetch debug-log line ([LoadStats]).
     private val elapsedMillis: () -> Long = { System.nanoTime() / 1_000_000 },
@@ -226,6 +236,11 @@ class MainViewModel(
     // moving signal — is still checked every refresh. In-memory only; written and read on the main
     // thread (viewModelScope), like [hubInfoCache].
     private val disruptionCache = mutableMapOf<String, Pair<Instant, List<StopDisruption>>>()
+
+    // Each line's last DETERMINED status (good or disrupted) and when it came back, reused for
+    // [lineStatusReuse] so a refresh a minute after the last one needn't re-ask about the same lines.
+    // A line TfL gave no status for, or a failed request, is never cached. In-memory, main thread.
+    private val lineStatusCache = mutableMapOf<String, Pair<Instant, LineStatus>>()
 
     // When each stop's arrivals last came back from a fetch by THIS ViewModel (the cycle's start
     // stamp). What makes a stop eligible to be carried over ([recentlyFetched]): a stop restored from
@@ -543,6 +558,7 @@ class MainViewModel(
         // a re-checked-but-now-omitted line drop out of the merged determined set (see [fetchIncremental]).
         var determinedLineIds = emptySet<String>()
         var attemptedLineIds = emptySet<String>()
+        var lineStatusRequests = 0
         if (merged.isNotEmpty()) {
             val predictedLineIds = merged.flatMap { it.departures }.map { it.lineId }
             val declaredLineIds = merged.flatMap { it.lines }.map { it.id }
@@ -560,9 +576,22 @@ class MainViewModel(
                 // disruptions" is diagnosable — a count of unidentifiable predictions, no user data.
                 warn("disruption status unknown: $blankLineIdCount prediction(s) had no line id to check")
             }
-            if (lineIds.isNotEmpty()) {
+            // Lines checked within [lineStatusReuse] keep that verdict; only the rest are asked for.
+            val cachedStatuses = lineIds.mapNotNull { id ->
+                lineStatusCache[id]?.takeIf { (at, _) -> isWithin(at, now, lineStatusReuse) }?.second
+            }
+            val toQuery = lineIds - cachedStatuses.mapTo(HashSet()) { it.lineId }
+            lineStatusRequests = if (toQuery.isNotEmpty()) 1 else 0
+            // With nothing left to ask, the cached verdicts stand on their own.
+            if (lineIds.isNotEmpty() && toQuery.isEmpty()) {
+                lineStatuses = cachedStatuses.filter { it.disrupted }.associateBy { it.lineId }
+                determinedLineIds = cachedStatuses.mapTo(mutableSetOf()) { it.lineId }
+            }
+            if (toQuery.isNotEmpty()) {
                 try {
-                    val statuses = withContext(io) { client.lineStatuses(lineIds) }
+                    val fetched = withContext(io) { client.lineStatuses(toQuery) }
+                    fetched.forEach { lineStatusCache[it.lineId] = now to it }
+                    val statuses = cachedStatuses + fetched
                     lineStatuses = statuses.filter { it.disrupted }.associateBy { it.lineId }
                     // A line TfL returned no determinable status for is unknown, not
                     // clean — flag it so those rows aren't shown as verified-clean
@@ -579,9 +608,11 @@ class MainViewModel(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // determinedLineIds stays empty, so every shown line reads undetermined — the
-                    // screen-wide flag the callers derive is set (nothing was verified this batch).
-                    warn("line status fetch failed for ${lineIds.joinToString(",")}: ${reason(e)}")
+                    // Only the cached verdicts are determined, so every line this request was for
+                    // reads undetermined — the flag the callers derive is set (SPEC principle 1).
+                    lineStatuses = cachedStatuses.filter { it.disrupted }.associateBy { it.lineId }
+                    determinedLineIds = cachedStatuses.mapTo(mutableSetOf()) { it.lineId }
+                    warn("line status fetch failed for ${toQuery.joinToString(",")}: ${reason(e)}")
                 }
             }
         }
@@ -594,7 +625,7 @@ class MainViewModel(
                         !reused(stops[i]) && !disruptionFromCache[i] && stops[i].id !in poleBatchIds
                     },
                     closureBatches = poleBatchCount,
-                    lineStatus = if (attemptedLineIds.isNotEmpty()) 1 else 0,
+                    lineStatus = lineStatusRequests,
                     hubs = hubRequests,
                 ),
                 elapsedMillis = elapsedMillis() - startedAt,

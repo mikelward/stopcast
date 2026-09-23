@@ -778,8 +778,13 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         that fetched unserved stops a kilometer off. They now wait behind the generic "More stops".
   - [x] **A quick retry refetches only the missing stops; closure checks are reused 5 min**
         (maintainer, 2026-09-23). A stop fetched <30 s ago is carried over, so a retry after a
-        rate-limited refresh fits the budget left; a stop's closure check is reused 5 min (line
-        status still every refresh). In memory only.
+        rate-limited refresh fits the budget left; a stop's closure check is reused 5 min. In
+        memory only.
+  - [x] **Cache more, fetch less** (maintainer, 2026-09-23). Line status is reused 90 s (checked
+        every other auto-refresh); a nearby lookup is reused for a day within 150 m (last four
+        places, kept in the never-backed-up cache dir); the timer refreshes stops past 500 m every
+        other minute; the widget skips a stop the app fetched <30 s ago. Running the nearby lookup,
+        line status and departures in parallel is the next lever, not yet done.
   - [x] **Auto-fetch only within walking reach** (maintainer, 2026-09-23). Eager is each mode's
         nearest two clusters within 500 m; a mode with none that close gets its single nearest out
         to the mile. At a big interchange a second Overground station 1.3 km off no longer loads.

@@ -2687,7 +2687,16 @@ class MainViewModelTest {
             return listOf(departure("victoria", "Victoria", 300))
         }
 
-        override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+        // Each line-status request's lines; [statuses] answers them, [failingStatus] fails them.
+        val statusCalls = mutableListOf<Set<String>>()
+        var statuses = emptyList<LineStatus>()
+        var failingStatus = false
+
+        override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+            statusCalls += lineIds.toSet()
+            if (failingStatus) throw TflException.RateLimited(null)
+            return statuses.filter { it.lineId in lineIds }
+        }
 
         override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
             disruptionCalls.merge(stopId, 1) { a, b -> a + b }
@@ -2728,6 +2737,53 @@ class MainViewModelTest {
             assertTrue(byId.getValue(ksxId).arrivalsFresh)
             assertEquals(now.plusSeconds(10), byId.getValue(oxcId).fetchedAt)
         }
+
+    @Test
+    fun `line status is reused for a while, then asked for again`() = runTest(dispatcher) {
+        var current = now
+        val client = ReuseCountingClient().apply {
+            statuses = listOf(status("victoria", LineStatus.GOOD_SERVICE, "Good Service"))
+        }
+        val vm = MainViewModel(
+            client, seeds, clock = { current }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE, lineStatusReuse = LINE_STATUS_REUSE,
+        )
+        advanceUntilIdle()
+        assertEquals(1, client.statusCalls.size)
+
+        // A minute later (the auto-refresh): arrivals refetched, the line's verdict reused.
+        current = now.plusSeconds(60)
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(1, client.statusCalls.size)
+        assertFalse((vm.state.value as DeparturesUiState.Loaded).disruptionUnknown)
+
+        // Past the reuse window it's asked for again.
+        current = now.plus(LINE_STATUS_REUSE)
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(2, client.statusCalls.size)
+    }
+
+    @Test
+    fun `a failed line status request keeps only the still-fresh verdicts`() = runTest(dispatcher) {
+        var current = now
+        val client = ReuseCountingClient().apply {
+            statuses = listOf(status("victoria", LineStatus.GOOD_SERVICE, "Good Service"))
+        }
+        val vm = MainViewModel(
+            client, seeds, clock = { current }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE, lineStatusReuse = LINE_STATUS_REUSE,
+        )
+        advanceUntilIdle()
+
+        // The cached verdict has expired and the fresh request fails: the line is unknown, not clean.
+        client.failingStatus = true
+        current = now.plus(LINE_STATUS_REUSE)
+        vm.refresh()
+        advanceUntilIdle()
+        assertTrue((vm.state.value as DeparturesUiState.Loaded).disruptionUnknown)
+    }
 
     @Test
     fun `a refresh once the reuse window has passed refetches every stop`() = runTest(dispatcher) {
