@@ -164,6 +164,8 @@
     <string name="action_show_platform">Show this stop only</string>
     <!-- Screen-reader action on a stop/platform header: opens the view of the whole station. -->
     <string name="action_show_station">Show whole station</string>
+    <string name="action_show_on_map">Show on map</string>
+    <string name="map_open_failed">No maps app to open</string>
     <string name="action_done">Done</string>
     <string name="action_close">Close</string>
     <!-- Toast when a device has no browser to open a license's full text online. -->

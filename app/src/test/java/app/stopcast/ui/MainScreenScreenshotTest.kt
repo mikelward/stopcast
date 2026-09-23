@@ -648,6 +648,29 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `tapping a header's distance shows that stop on a map, not the platform`() {
+        var opened: Pair<String, String>? = null
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUMRH" to 400.0),
+                        onOpenStopMap = { stopId, name -> opened = stopId to name },
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("(400 m)", substring = true, useUnmergedTree = true).onFirst().performClick()
+        composeRule.waitForIdle()
+        assertEquals("940GZZLUMRH" to "Manor House", opened)
+        composeRule.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
+
+    @Test
     fun `a whole-station view keeps a platform the near-me list folded away, titled by the station`() {
         // Two poles of one cluster: the farther pole's only line is folded to the nearer pole, so it
         // has no group on the near-me list — but it's still part of the station.

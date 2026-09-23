@@ -54,6 +54,7 @@ import app.stopcast.data.UserApiKeySetting
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.BugReport
 import app.stopcast.domain.Coordinates
+import app.stopcast.domain.StopMap
 import app.stopcast.ui.BugReportConsentDialog
 import app.stopcast.ui.FontSizeSetting
 import app.stopcast.ui.LocalRouteStops
@@ -475,6 +476,20 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Shows a stop in the user's maps app, a labeled pin at TfL's published stop position (never
+     * the user's fix). With no app to handle `geo:` the tap would otherwise do nothing, so it shows
+     * a toast and logs rather than failing silently (SPEC principle 2); the log carries no coordinate.
+     */
+    private fun openStopMap(latitude: Double, longitude: Double, name: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(StopMap.geoUri(latitude, longitude, name))))
+        } catch (e: android.content.ActivityNotFoundException) {
+            logLocationWarning("no maps app to show a stop: ${e.javaClass.simpleName}")
+            Toast.makeText(this, R.string.map_open_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
      * Assembles and shares the consent-gated bug report — the diagnostic log plus the **exact
      * location** and per-stop distances the [request] captured. Reached only after
      * [BugReportConsentDialog] (or the persisted "don't ask again"): this is the sanctioned
@@ -724,6 +739,17 @@ class MainActivity : ComponentActivity() {
                     // a revealed stop collapses like an eager one. Empty for a location-free list
                     // (a watched-stops view), which is shown as-is.
                     stopDistanceMeters = ready.distanceMeters,
+                    // A tap on a header's distance shows that stop in the maps app. The stop comes
+                    // from the same nearby set the distances span, so every distance can resolve.
+                    onOpenStopMap = { stopId, name ->
+                        val stop = (ready.eager + ready.more)
+                            .firstNotNullOfOrNull { c -> c.stops.firstOrNull { it.id == stopId } }
+                        if (stop != null) {
+                            openStopMap(stop.latitude, stop.longitude, name)
+                        } else {
+                            logLocationWarning("map tap for a stop not in the nearby set: $stopId")
+                        }
+                    },
                     starred = starred,
                     onToggleStar = viewModel::toggleStar,
                     starringAvailable = starringAvailable,
