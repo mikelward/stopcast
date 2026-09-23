@@ -11,7 +11,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  * arrives. A coarse one (network/passive) is held for up to [coarseGraceMillis] in case an
  * accurate fix follows, then returned. Each provider is bounded by [perProviderTimeoutMillis];
  * one that exceeds it is reported via [onTimeout], so a hanging provider stays diagnosable.
- * Returns `null` only when no provider yields a fix.
+ * Returns `null` only when no provider yields a fix. Generic in the fix type [T], so the caller
+ * can carry what the provider reported (its accuracy, age) alongside the position.
  *
  * Asking in parallel is the indoor fix (maintainer bug report, 2026-09-23): tried in turn, a
  * fused and a GPS provider that can't see the sky each ran out their bound (~8 s together)
@@ -20,15 +21,15 @@ import kotlinx.coroutines.withTimeoutOrNull
  * [fetch] so it's unit-testable off a device with virtual time;
  * `AndroidLocationProvider` supplies the real `LocationManager`-backed fetch and the provider ranking.
  */
-suspend fun raceFix(
+suspend fun <T : Any> raceFix(
     providers: List<String>,
     perProviderTimeoutMillis: Long,
     coarseGraceMillis: Long,
     isAccurate: (String) -> Boolean,
     onTimeout: (String) -> Unit = {},
-    fetch: suspend (String) -> Coordinates?,
-): Coordinates? = coroutineScope {
-    val results = Channel<Pair<String, Coordinates?>>(Channel.UNLIMITED)
+    fetch: suspend (String) -> T?,
+): T? = coroutineScope {
+    val results = Channel<Pair<String, T?>>(Channel.UNLIMITED)
     val jobs = providers.map { provider ->
         launch {
             var completed = false
@@ -43,7 +44,7 @@ suspend fun raceFix(
     }
     try {
         var remaining = providers.size
-        var coarse: Coordinates? = null
+        var coarse: T? = null
         while (remaining > 0 && coarse == null) {
             val (provider, fix) = results.receive()
             remaining--
@@ -54,7 +55,7 @@ suspend fun raceFix(
         if (coarse == null) return@coroutineScope null
         // A coarse fix is in hand: give the accurate providers a short grace to beat it.
         val accurate = withTimeoutOrNull(coarseGraceMillis) {
-            var found: Coordinates? = null
+            var found: T? = null
             while (remaining > 0 && found == null) {
                 val (provider, fix) = results.receive()
                 remaining--

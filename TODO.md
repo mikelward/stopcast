@@ -1725,6 +1725,10 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   uncertain) when accuracy is worse than a threshold, or reject an implausible jump — without
   regressing the above-ground "follows you" behavior. Tie-in: this is the reliability caveat behind
   the auto-relocate-on-reopen work (#134/#136).
+  **Shipped, diagnostic:** each fix the app uses is logged — source (fresh / recent cached /
+  last-known fallback), provider, accuracy radius (or "unknown" when the fix carries none) and age,
+  never the coordinate — so a bug report from the Tube shows what the fix reported. Next: gather
+  real cases, then pick the accuracy/age gate below.
   **Evidence (maintainer report, on the Tube):** the fresh fix's *fused* and *gps* providers both
   time out (10 s cap), so `FixSelection` falls back to the last-known fix and proceeds; the TfL
   nearby lookup then times out too (poor underground connectivity). So a provider-label check
