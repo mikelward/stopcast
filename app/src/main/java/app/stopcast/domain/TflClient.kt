@@ -34,6 +34,17 @@ interface TflClient {
     suspend fun stopDisruptions(stopId: String): List<StopDisruption>
 
     /**
+     * Disruptions for several **bus poles** ([StopDisruptionBatch.isPole]) in one request, keyed by
+     * stop id; a pole with none maps to empty. One request for a whole junction instead of one per
+     * pole — a busy corner's biggest cost against the keyless rate budget. Each pole gets only its
+     * own notices: a pole has no children to walk, and TfL's family view of a pole is its whole
+     * junction, which would pin a sibling's closure on an open pole. Throws like [arrivals]. The
+     * default asks per stop, so a fake that only implements [stopDisruptions] still answers.
+     */
+    suspend fun poleDisruptions(stopIds: List<String>): Map<String, List<StopDisruption>> =
+        stopIds.associateWith { stopDisruptions(it) }
+
+    /**
      * The interchange [hubId] (TfL `hubNaptanCode`) resolved from `/StopPoint/{hubId}`: its display
      * [HubInfo.name] — e.g. "King's Cross & St Pancras International" for `HUBKGX`, cleaned of its
      * type suffix like a stop name — plus [HubInfo.aliases], every member station's cleaned name.

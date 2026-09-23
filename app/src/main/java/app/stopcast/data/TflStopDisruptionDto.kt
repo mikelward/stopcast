@@ -13,6 +13,9 @@ import java.time.format.DateTimeParseException
  */
 @Serializable
 data class TflStopDisruptionDto(
+    // The stop the entry is recorded against: how a multi-stop response ([KtorTflClient.poleDisruptions])
+    // is attributed back to each requested pole. Blank in the family tree, where the node says.
+    val atcoCode: String = "",
     val description: String = "",
     val fromDate: String? = null,
     val toDate: String? = null,

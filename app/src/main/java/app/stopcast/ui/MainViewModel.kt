@@ -19,7 +19,9 @@ import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StarredRowSet
 import app.stopcast.domain.StarredRowsStore
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.LoadStats
 import app.stopcast.domain.StopDisruption
+import app.stopcast.domain.StopDisruptionBatch
 import app.stopcast.domain.TflClient
 import app.stopcast.domain.stopPlaceKey
 import app.stopcast.domain.TflException
@@ -128,6 +130,12 @@ class MainViewModel(
     // and [DISRUPTION_REUSE].
     private val arrivalsReuse: Duration = Duration.ZERO,
     private val disruptionReuse: Duration = Duration.ZERO,
+    // Monotonic milliseconds for timing a fetch, and the shared rate limiter's running total of
+    // time spent waiting — both only feed the per-fetch debug-log line ([LoadStats]).
+    private val elapsedMillis: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val rateWaitMillis: () -> Long = { 0L },
+    // Sink for the per-fetch stats line — kept apart from [warn], which carries only failures.
+    private val logStats: (String) -> Unit = {},
 ) : ViewModel() {
     // The near-me tiers, updatable IN PLACE so a relocation that keeps the same nearby set can
     // reconcile them without rebuilding this ViewModel (which would drop a revealed expansion —
@@ -365,6 +373,8 @@ class MainViewModel(
         // "No departures" claim stay honest (SPEC D4); only the line status is re-checked for it.
         reuse: Set<String> = emptySet(),
     ): FetchBatch {
+        val startedAt = elapsedMillis()
+        val waitedBefore = rateWaitMillis()
         val merged = mutableListOf<StopArrivals>()
         var firstError: Throwable? = null
         var anyArrivalsFailed = false
@@ -395,6 +405,10 @@ class MainViewModel(
         // cycle whose every request failed would otherwise pass for a partial refresh and hide the
         // real failure (offline, rate-limited) behind the generic banner (SPEC principle 2).
         val disruptionFromCache = BooleanArray(stops.size)
+        // The poles whose closure check went in a shared batch request, and how many batches — for
+        // the per-fetch log line.
+        val poleBatchIds = HashSet<String>()
+        var poleBatchCount = 0
         val (arrivalResults, disruptionResults) = coroutineScope {
             val arrivals = stops.map { stop ->
                 if (reused(stop)) {
@@ -406,15 +420,38 @@ class MainViewModel(
             // Fetch each stop's disruption independently of its arrivals (a closure, a moved stop),
             // so a closed stop is flagged rather than shown with catchable-looking departures — and a
             // stop whose *arrivals* failed still surfaces its available closure rather than dropping
-            // out entirely (SPEC *Disruptions*). Per stop (the endpoint scopes to it), off the render
-            // path. A lookup that fails falls back to the aged disruption and flags the state unknown
+            // out entirely (SPEC *Disruptions*). Per stop, or per batch of bus poles (below), off the
+            // render path. A lookup that fails falls back to the aged disruption and flags the state unknown
             // rather than passing the stop off as verified-clear.
             // A lookup that succeeded within [disruptionReuse] is reused rather than re-requested.
+            fun cachedDisruption(stop: StopRef) = disruptionCache[stop.id]
+                ?.takeIf { (at, _) -> isWithin(at, now, disruptionReuse) }
+            // Bus poles still to check share one request per [StopDisruptionBatch.MAX_PER_REQUEST]
+            // (a junction is often 4-8 poles, each otherwise its own request against the keyless
+            // budget); a failed batch fails each of its poles, as a failed single lookup would.
+            val poleBatches = HashMap<String, Deferred<Result<Map<String, List<StopDisruption>>>>>()
+            stops
+                .filter { !reused(it) && cachedDisruption(it) == null && StopDisruptionBatch.isPole(it.id) }
+                .map { it.id }
+                .distinct()
+                .chunked(StopDisruptionBatch.MAX_PER_REQUEST)
+                .forEach { ids ->
+                    val batch = async {
+                        runCatchingTfl { withContext(io) { client.poleDisruptions(ids) } }
+                            .onSuccess { found -> ids.forEach { id -> disruptionCache[id] = now to found[id].orEmpty() } }
+                    }
+                    ids.forEach { poleBatches[it] = batch }
+                    poleBatchIds += ids
+                    poleBatchCount++
+                }
             val disruptions: List<Deferred<Result<List<StopDisruption>>>?> = stops.mapIndexed { i, stop ->
-                val cached = disruptionCache[stop.id]
-                    ?.takeIf { (at, _) -> isWithin(at, now, disruptionReuse) }
+                val cached = cachedDisruption(stop)
+                val batch = poleBatches[stop.id]
                 when {
                     reused(stop) -> null
+                    // Ahead of the cache check: a batch that already finished has written this
+                    // pole's fresh result to the cache, which must not read as a cached (not new) one.
+                    batch != null -> async { batch.await().map { it[stop.id].orEmpty() } }
                     cached != null -> {
                         disruptionFromCache[i] = true
                         CompletableDeferred(Result.success(cached.second))
@@ -436,6 +473,7 @@ class MainViewModel(
         val hubIds = stops.indices
             .filter { i -> stops[i].hubId.isNotBlank() && !disruptionResults[i]?.getOrNull().isNullOrEmpty() }
             .mapTo(LinkedHashSet()) { i -> stops[i].hubId }
+        val hubRequests = hubIds.count { it !in hubInfoCache }
         val hubs: Map<String, HubInfo> = coroutineScope {
             hubIds.map { hubId -> async { hubId to resolveHubInfo(hubId) } }.awaitAll().toMap()
         }
@@ -548,6 +586,21 @@ class MainViewModel(
             }
         }
 
+        logStats(
+            LoadStats.describe(
+                LoadStats.Requests(
+                    departures = arrivalResults.count { it != null },
+                    closures = stops.indices.count { i ->
+                        !reused(stops[i]) && !disruptionFromCache[i] && stops[i].id !in poleBatchIds
+                    },
+                    closureBatches = poleBatchCount,
+                    lineStatus = if (attemptedLineIds.isNotEmpty()) 1 else 0,
+                    hubs = hubRequests,
+                ),
+                elapsedMillis = elapsedMillis() - startedAt,
+                rateWaitMillis = rateWaitMillis() - waitedBefore,
+            ),
+        )
         return FetchBatch(
             merged = merged,
             lineStatuses = lineStatuses,
