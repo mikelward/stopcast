@@ -348,7 +348,12 @@ route is marked by a **gold leading-edge bar** on its row (no in-row element, so
 plus its position at the top; the earlier per-row star button was removed because it consumed width
 on every card. (A card now holds several route rows — one per route — so the mark is a per-row bar
 rather than the whole-card border the one-service card used.) A **tap on a route row opens a
-full-screen route detail page** — its own app bar naming the route (line pill + destination) and
+full-screen route detail page** for **the route tapped** — a card shows one row per destination,
+and the page follows that row's trains (its destination, and its branch where the card splits the
+destination by branch), not whichever of the line's trains is soonest
+(once the tapped route has no trains left it falls back to the soonest, and the title follows, so the
+title and stop list always name the same train) — its own app bar naming the route (line pill +
+destination) and
 carrying the star (so the long-press is the shortcut, the page the discoverable path), the boarding
 stop in the body, and the line's **full disruption text**, which the row's inline **⚠** glyph stands
 in for: shown collapsed to its first line, tapped to expand (the same widget the stop-closure card

@@ -66,6 +66,34 @@ class RouteDetailTapTest {
     }
 
     @Test
+    fun `tapping a card's second route opens that route, not the soonest train`() {
+        val branching = StopArrivals(
+            stopId = "940GZZLUKNG",
+            stopName = "Kennington",
+            departures = listOf(
+                Departure("northern", "Northern", "northbound", "Edgware", null, now.plusSeconds(60), "tube"),
+                Departure("northern", "Northern", "northbound", "High Barnet", null, now.plusSeconds(240), "tube"),
+            ),
+            fetchedAt = now,
+        )
+        composeRule.setContent {
+            StopCastTheme {
+                MainScreen(
+                    state = DeparturesUiState.Loaded(stops = listOf(branching), fetchedAt = now),
+                    now = now,
+                    onRefresh = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("High Barnet").performTouchInput { click() }
+        // The page is open (its star is showing) and names only the tapped route.
+        composeRule.onNodeWithContentDescription("Pin to top").assertIsDisplayed()
+        composeRule.onNodeWithText("High Barnet").assertIsDisplayed()
+        composeRule.onNodeWithText("Edgware", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun `a checked good-service line shows no disruptions even when another line is unknown`() {
         // disruptionUnknown is set by some OTHER line, but this row's line was determined (good
         // service): its detail must not claim "couldn't check" — that's the per-line fix (Codex).
