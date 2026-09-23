@@ -30,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.stopcast.R
+import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineSequence
@@ -64,15 +65,14 @@ sealed interface RouteStopsUi {
 }
 
 /**
- * The stop list for [row]'s soonest departure: from the boarding stop through that train's
- * destination. Rendered at once from the in-memory cache when this line was already fetched this
- * process, else [RouteStopsUi.Loading] while it fetches off the render path (SPEC D8, route detail).
- * [retry] bumps to refetch after a failure.
+ * The stop list for the [next] departure on [row] (see [followedDeparture]): from the boarding stop
+ * through that train's destination. Rendered at once from the in-memory cache when this line was
+ * already fetched this process, else [RouteStopsUi.Loading] while it fetches off the render path
+ * (SPEC D8, route detail). [retry] bumps to refetch after a failure.
  */
 @Composable
-internal fun rememberRouteStops(row: DepartureRow, retry: Int): RouteStopsUi {
+internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int): RouteStopsUi {
     val repository = LocalRouteStops.current
-    val next = row.upcoming.firstOrNull()
     if (repository == null || next == null || row.lineId.isBlank()) return RouteStopsUi.Hidden
     val destination = next.destination
     val bus = row.mode.equals("bus", ignoreCase = true)

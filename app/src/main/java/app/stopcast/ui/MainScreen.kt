@@ -104,6 +104,8 @@ import app.stopcast.domain.StopGroup
 import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.StopQualifier
 import app.stopcast.domain.abbreviateBranch
+import app.stopcast.domain.RouteFocus
+import app.stopcast.domain.followedDeparture
 import app.stopcast.ui.theme.LocalStarredBorderColor
 import java.time.Duration
 import java.time.Instant
@@ -221,6 +223,11 @@ fun MainScreen(
     // reflects a refreshed row and closes itself if the row leaves the list — the coordinate it shows
     // is never persisted (mirrors the bug-report flow).
     var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
+    // Which of the row's routes was tapped (a card shows one route row per destination), so the page
+    // follows that route rather than whichever train is soonest. Two saveable strings, not a
+    // RouteFocus, so it survives rotation with no custom Saver; null destination = no focus.
+    var detailDestination by rememberSaveable { mutableStateOf<String?>(null) }
+    var detailBranch by rememberSaveable { mutableStateOf<String?>(null) }
     val detailRow = detailKey?.let { key -> rows.firstOrNull { it.detailKey() == key } }
     // When the open route's row leaves the list — its last departure passed on the 10s clock, or it
     // was pruned — clear the saved key so the vanished page stays closed rather than silently
@@ -272,6 +279,7 @@ fun MainScreen(
             stale = Staleness.isStale(Duration.between(detailRow.fetchedAt, now).toKotlinDuration()),
             onToggleStar = { onToggleStar(detailRow) },
             onBack = { detailKey = null },
+            focus = detailDestination?.let { RouteFocus(it, detailBranch) },
         )
         return
     }
@@ -409,7 +417,11 @@ fun MainScreen(
                 LoadedContent(
                     state, now, onRefresh, refreshing, content, rows, stopDistanceMeters,
                     starred, onToggleStar, starringAvailable, revealableModes, onReveal,
-                    onOpenDetail = { detailKey = it.detailKey() },
+                    onOpenDetail = { row, focus ->
+                        detailKey = row.detailKey()
+                        detailDestination = focus?.destination
+                        detailBranch = focus?.branch
+                    },
                     dismissed = dismissed,
                     onDismissAlert = onDismissAlert,
                 )
@@ -456,7 +468,7 @@ private fun LoadedContent(
     revealableModes: Set<String> = emptySet(),
     onReveal: (String) -> Unit = {},
     // Open the full-screen route detail for a tapped card; the caller holds the open-route state.
-    onOpenDetail: (DepartureRow) -> Unit = {},
+    onOpenDetail: (DepartureRow, RouteFocus?) -> Unit = { _, _ -> },
     dismissed: Set<DismissedAlert> = emptySet(),
     onDismissAlert: (DepartureRow) -> Unit = {},
 ) {
@@ -581,7 +593,7 @@ private fun DepartureList(
     stopDistanceMeters: Map<String, Double>,
     revealableModes: Set<String>,
     onReveal: (String) -> Unit,
-    onOpenDetail: (DepartureRow) -> Unit,
+    onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
     onDismissAlert: (DepartureRow) -> Unit = {},
     modifier: Modifier,
 ) {
@@ -836,7 +848,7 @@ private fun StopGroupCard(
     starred: Set<StarredRow>,
     onToggleStar: (DepartureRow) -> Unit,
     starringAvailable: Boolean,
-    onOpenDetail: (DepartureRow) -> Unit,
+    onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
 ) {
     // Cap the line pill at half the card's inner width, so a long name at a large font scale
     // ellipsizes rather than consuming the card and starving the countdown, which must stay one line
@@ -906,6 +918,8 @@ private fun StopGroupCard(
                         starrable = starrable,
                         onToggleStar = onToggleStar,
                         onOpenDetail = onOpenDetail,
+                        // The route row's own soonest train names the route the detail follows.
+                        focus = RouteFocus.of(group2),
                     ) {
                         LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
                         DestinationLabelContent(
@@ -953,7 +967,9 @@ private fun RouteRow(
     isStarred: Boolean,
     starrable: Boolean,
     onToggleStar: (DepartureRow) -> Unit,
-    onOpenDetail: (DepartureRow) -> Unit,
+    onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
+    // The route this row shows (null for a status row), handed to the detail so it opens on it.
+    focus: RouteFocus? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     val starActionLabel = stringResource(if (isStarred) R.string.unstar else R.string.star)
@@ -961,6 +977,7 @@ private fun RouteRow(
     val currentRow by rememberUpdatedState(row)
     val currentToggleStar by rememberUpdatedState(onToggleStar)
     val currentOpenDetail by rememberUpdatedState(onOpenDetail)
+    val currentFocus by rememberUpdatedState(focus)
     val onLongPress: ((Offset) -> Unit)? = if (starrable) {
         { currentToggleStar(currentRow) }
     } else {
@@ -972,13 +989,13 @@ private fun RouteRow(
             .fillMaxWidth()
             .pointerInput(starrable) {
                 detectTapGestures(
-                    onTap = { currentOpenDetail(currentRow) },
+                    onTap = { currentOpenDetail(currentRow, currentFocus) },
                     onLongPress = onLongPress,
                 )
             }
             .semantics {
                 isTraversalGroup = true
-                onClick(label = detailActionLabel) { currentOpenDetail(currentRow); true }
+                onClick(label = detailActionLabel) { currentOpenDetail(currentRow, currentFocus); true }
                 if (starrable) onLongClick(label = starActionLabel) { currentToggleStar(currentRow); true }
             }
             .then(
@@ -1178,8 +1195,12 @@ internal fun RouteDetailScreen(
     // The stop list for the soonest train. Null resolves it from [LocalRouteStops]; a screenshot
     // test passes a fixed state.
     routeStops: RouteStopsUi? = null,
+    // The route tapped on the card; null (a status row, or a caller with no route) follows the
+    // row's soonest train.
+    focus: RouteFocus? = null,
 ) {
     BackHandler(onBack = onBack)
+    val followed = followedDeparture(row, focus, LocalRouteTopology.current)
     var routeStopsRetry by rememberSaveable { mutableIntStateOf(0) }
     // A stale row's soonest prediction may not be the next train any more, so its stop list is
     // withheld rather than shown as current (SPEC D4); it returns as soon as a refresh lands.
@@ -1187,13 +1208,16 @@ internal fun RouteDetailScreen(
         // Only a row with a train to follow: a status row has no list to withhold.
         stale && row.upcoming.isNotEmpty() && row.lineId.isNotBlank() -> RouteStopsUi.Stale
         routeStops != null -> routeStops
-        else -> rememberRouteStops(row, routeStopsRetry)
+        else -> rememberRouteStops(row, followed, routeStopsRetry)
     }
     val place = row.hubName.ifBlank { row.stopName }
     // The terminus(es) this service runs to, from its own departures — empty for a status row
     // (no predictions), which then shows only the line and its disruption.
     val destinations = if (row.upcoming.isEmpty()) {
         emptyList()
+    } else if (focus != null && followed != null) {
+        // A tapped route names just that route, matching the stop list below it.
+        listOfNotNull(DepartureLabels.destinationLabel(followed.destination, row.directionKey))
     } else {
         DepartureRows.destinationLines(row, MAX_TIMES, LocalRouteTopology.current)
             .mapNotNull { DepartureLabels.destinationLabel(it.destination, row.directionKey) }
