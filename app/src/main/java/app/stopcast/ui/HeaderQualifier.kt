@@ -5,8 +5,8 @@ import app.stopcast.domain.StopQualifier
 
 /**
  * A group header's **qualifier segment** — the title-case cue that follows the place name on the one
- * line header ("Platform 1", "Stop E", "Southbound", "-> Archway"). "Stop" is reserved for a literal
- * pole letter; a compass reads as a bare direction word, a shared terminus as "-> destination". It
+ * line header ("Platform 1", "Stop E", "Southbound", "➔ Archway"). "Stop" is reserved for a literal
+ * pole letter; a compass reads as a bare direction word, a shared terminus as "➔ destination". It
  * joins the place name with " – "
  * ([app.stopcast.ui] owns that join and the styling); null when the group carries no qualifier, so
  * the header is the bare place name. Title case with no small-caps treatment, and it **drops the
@@ -22,14 +22,14 @@ internal fun groupHeaderLabel(qualifier: StopQualifier?): String? = when (qualif
     // supplied it.
     // "Stop" is reserved for a literal pole letter ("Stop E"). A compass bearing reads as a bare
     // direction word ("Southbound"), like the rail compass; the shared terminus reads as an arrow
-    // plus the destination ("-> Archway"), the arrow meaning "heading to".
+    // plus the destination ("➔ Archway"), the arrow meaning "heading to".
     is StopQualifier.BusStop -> "Stop ${qualifier.letter.uppercase()}"
     is StopQualifier.BusBearing -> bearingSpoken(qualifier.bearing.uppercase())
     is StopQualifier.Terminus ->
         // The same display rename the destination line uses ("Battersea Power" → "Battersea",
-        // DepartureLabels), so the header and the card read consistently. ASCII "->" for now — a
-        // nicer single-glyph arrow needs a font/metrics that aligns to the text baseline (TODO).
-        "-> ${DepartureLabels.destinationLabel(qualifier.terminus, "") ?: qualifier.terminus}"
+        // DepartureLabels), so the header and the card read consistently. U+2794 "➔" because it sits
+        // centered on the letters, where the font's own "→" sits low (maintainer, 2026-09-23).
+        "\u2794 ${DepartureLabels.destinationLabel(qualifier.terminus, "") ?: qualifier.terminus}"
 }
 
 /**

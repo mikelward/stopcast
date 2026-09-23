@@ -1368,7 +1368,7 @@ private fun JourneyNote(text: String, onRetry: (() -> Unit)? = null) {
 }
 
 /**
- * A journey card's heading, "Highgate → King's Cross St. Pancras": the direction shown, which a tap
+ * A journey card's heading, "Highgate ➔ King's Cross St. Pancras": the direction shown, which a tap
  * flips. Styled like a stop group header (same weight and group-break space) so the list reads as one.
  */
 @Composable
