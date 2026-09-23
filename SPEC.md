@@ -801,7 +801,8 @@ surface.)
   stops still missing instead of hitting the limit again. The 60 s auto-refresh is past that
   window, so it still refetches every stop. A stop's closure check (a closed or moved stop) is
   reused for 5 minutes — closures change over hours, and the check is half of every stop's cost —
-  while line status, the fast-moving signal, is checked on every refresh. Both live in memory
+  while line status, the fast-moving signal, is reused for 90 s — so the 60 s auto-refresh
+  re-checks it every other cycle and a new suspension still shows within about two minutes. Both live in memory
   only; a failed request is never reused. A junction's **bus poles share one closure request**
   (TfL takes several stop ids at once); each pole gets only its own notices, so an open pole
   never shows a sibling's closure. A station keeps its own request, since its closures live on
