@@ -11,9 +11,12 @@ import java.time.Instant
  * [direction] is TfL's `inbound`/`outbound` for display (or empty when TfL omits it) —
  * it is *not* a unique key, since a blank direction repeats across rows.
  * [directionKey] is the resolved grouping discriminator (TfL `direction` when present,
- * else the platform, else the destination), so **([stopId], [lineId], [directionKey])
- * uniquely identifies a row** — the stable identity a persisted star keys on, even when
- * TfL omits `direction` and two rows would otherwise share a blank one.
+ * else the platform, else the destination). [platform] is the rail platform number the row
+ * was split on ([DepartureRows.forStop]: one row per platform when a direction runs from
+ * several), blank when it has none. **([stopId], [lineId], [directionKey], [platform])
+ * uniquely identifies a row**; a persisted star keys on the first three only, so it pins
+ * every platform of its direction, even when TfL omits `direction` and two rows would
+ * otherwise share a blank one.
  * [destination] is the human-readable headline — the *soonest* upcoming departure's
  * destination; a branching line can run several destinations in one direction, so
  * later entries in [upcoming] may differ, but the headline names what leaves next.
@@ -44,7 +47,7 @@ import java.time.Instant
  * independently), so the screen withholds *this row's* countdowns when *its* stop is stale
  * — a stop that failed to refresh goes to "—" while a fresh stop beside it still shows live
  * numbers (SPEC D4). Rows from the same stop share one value; it is not part of a row's
- * identity (that is `(stopId, lineId, directionKey)`).
+ * identity (that is `(stopId, lineId, directionKey, platform)`).
  */
 data class DepartureRow(
     val stopId: String,
@@ -58,7 +61,8 @@ data class DepartureRow(
     // from the nearby lookup (see [StopArrivals]). A bus place splits into one header per pole by the
     // letter (else bearing) — "King's Cross Station (D) (towards Farringdon)" — the bus analog of a
     // rail platform (SPEC D8). All blank for a station, a letter-less bus stop, or a watched stop (no
-    // letter captured yet). Not part of a row's identity (that is `(stopId, lineId, directionKey)`).
+    // letter captured yet). Not part of a row's identity (that is
+    // `(stopId, lineId, directionKey, platform)`).
     val stopLetter: String = "",
     val bearing: String = "",
     val towards: String = "",
@@ -66,6 +70,7 @@ data class DepartureRow(
     val lineName: String,
     val direction: String,
     val directionKey: String,
+    val platform: String = "",
     val destination: String,
     val mode: String,
     val upcoming: List<Departure>,

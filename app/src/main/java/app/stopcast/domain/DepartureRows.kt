@@ -39,12 +39,19 @@ object DepartureRows {
         stopLetter: String = "",
         bearing: String = "",
         towards: String = "",
+        // Whether a rail (line, direction) splits into one row per platform ([byPlatform]). The
+        // in-app list does, so each platform gets its own header; the widget, which has no
+        // per-platform headers, keeps one merged row per direction.
+        splitPlatforms: Boolean = true,
     ): List<DepartureRow> {
         // upcoming() has already dropped departed services and sorted soonest-first;
         // groupBy preserves that encounter order within each group.
         val live = Countdown.upcoming(departures, now)
         return live.groupBy { RowKey(it.lineId, directionKeyOf(it)) }
-            .map { (key, group) ->
+            .flatMap { (key, directionGroup) ->
+                byPlatform(directionGroup, splitPlatforms).map { (platform, group) -> Triple(key, platform, group) }
+            }
+            .map { (key, platform, group) ->
                 val soonest = group.first()
                 DepartureRow(
                     stopId = stopId,
@@ -57,6 +64,7 @@ object DepartureRows {
                     lineName = soonest.lineName,
                     direction = soonest.direction,
                     directionKey = key.directionKey,
+                    platform = platform,
                     destination = soonest.destination,
                     mode = soonest.mode,
                     upcoming = group,
@@ -82,12 +90,13 @@ object DepartureRows {
         stops: List<StopArrivals>,
         now: Instant,
         lineStatuses: Map<String, LineStatus> = emptyMap(),
+        splitPlatforms: Boolean = true,
     ): List<DepartureRow> =
         stops.flatMap { stop ->
             val timed =
                 forStop(
                     stop.stopId, stop.stopName, stop.departures, now, lineStatuses, stop.fetchedAt,
-                    stop.clusterId, stop.stopLetter, stop.bearing, stop.towards,
+                    stop.clusterId, stop.stopLetter, stop.bearing, stop.towards, splitPlatforms,
                 )
             // A synthesized line-status row asserts "No departures", which is only true when
             // this stop's arrivals were actually fetched AND are still current: fetched (not
@@ -311,6 +320,7 @@ object DepartureRows {
                 .thenBy { it.lineName }
                 .thenBy { it.direction }
                 .thenBy { it.directionKey }
+                .thenBy { it.platform }
                 .thenBy { it.stopName },
         )
     }
@@ -581,6 +591,7 @@ object DepartureRows {
             .thenBy { it.lineName }
             .thenBy { it.direction }
             .thenBy { it.directionKey }
+            .thenBy { it.platform }
             .thenBy { it.stopName }
 
     /** 0 = stop-status row, 1 = line-status row (no countdown), 2 = timed row. */
@@ -605,6 +616,34 @@ object DepartureRows {
      * A present `direction` is used as-is, so two platforms of the same direction
      * still share one row.
      */
+    /**
+     * One (line, direction) group's departures split by **platform number** (SPEC D8), each paired
+     * with the number it was split on. A direction can run from more than one platform — Camden
+     * Town's southbound Northern line leaves from Platform 2 or 4 depending on which northern
+     * branch the train came from, a terminus alternates platforms — and a rider needs to know which
+     * platform the next train is at, so each platform gets its own row (and so its own
+     * "Platform N" header).
+     *
+     * A prediction with no platform number rides with the group's one numbered platform when there
+     * is exactly one (TfL blanks it on some predictions); when there are several it can't be placed,
+     * so it forms its own row with a blank number, which then heads under the bare compass rather
+     * than a platform it may not be at (SPEC principle 1). Groups keep soonest-first order.
+     *
+     * Buses never split here: a bus prediction's `platform` is stop-local and can read like a rail
+     * one ("Platform 1"), and a bus place splits on its pole instead ([StopGrouping]). With
+     * [split] off (the widget) the group stays whole, numbered only when it has one platform.
+     */
+    private fun byPlatform(group: List<Departure>, split: Boolean): List<Pair<String, List<Departure>>> {
+        // Any bus prediction marks the group as a bus: TfL can omit `modeName` on some predictions,
+        // so the soonest one alone could let a bus split on its stop-local platforms (Codex).
+        if (group.any { it.mode == "bus" }) return listOf("" to group)
+        val numberOf = group.associateWith { PlatformDirection.platformNumber(it.platform).orEmpty() }
+        val numbers = numberOf.values.filter(String::isNotEmpty).distinct()
+        if (numbers.size <= 1) return listOf(numbers.singleOrNull().orEmpty() to group)
+        if (!split) return listOf("" to group)
+        return group.groupBy { numberOf.getValue(it) }.toList()
+    }
+
     private fun directionKeyOf(d: Departure): String =
         d.direction.ifBlank { d.platform?.takeIf(String::isNotBlank) ?: d.destination }
 

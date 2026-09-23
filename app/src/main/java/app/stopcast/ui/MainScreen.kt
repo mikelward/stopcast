@@ -1494,7 +1494,7 @@ private fun CollapsibleStatus(
 
 /** The stable identity of the route a [DepartureRow] represents — its stop, line, and direction —
  *  used as the saveable key for the open route-detail page so it re-resolves against live rows. */
-private fun DepartureRow.detailKey(): String = "$stopId|$lineId|$directionKey"
+private fun DepartureRow.detailKey(): String = "$stopId|$lineId|$directionKey|$platform"
 
 /**
  * The tap-to-open route detail (SPEC D8 / *Disruptions*, `TODO.md`): a full-screen page — reached by

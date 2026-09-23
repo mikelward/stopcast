@@ -290,16 +290,15 @@ object StopGrouping {
      * 1") and would otherwise mislabel the pole (Codex P1, PR #119).
      *
      * A **rail** row splits on a platform **only when every numbered prediction agrees on one
-     * platform**. A single (line, direction) row can carry departures from more than one platform — a
-     * terminus, a platform change — since [DepartureRows] merges a line's one direction into one card
-     * ([forStop] keys on TfL's `direction`), and that card renders all its countdowns under one
-     * sub-header. Filing a Platform 2 train under a "Platform 1" header would show a departure at a
-     * platform it isn't at (SPEC principle 1 — never quietly wrong), so when the numbered platforms
-     * diverge the row drops to the [Compass] — but only when **every** prediction that names a
-     * direction agrees on one, else it stays [None] (a platform change across directions can't claim a
-     * shared compass either) (Codex P1, PR #119). Splitting such a row into a card per platform is the
-     * fuller fix (TODO.md). A platform-less rail direction (a bare "Northbound") also resolves through
-     * the [Compass] path. A status row (empty `upcoming`) carries nothing to parse, so a suspended
+     * platform**. [DepartureRows.forStop] already splits a direction that runs from several platforms
+     * into a row per platform, so a row normally carries one; the check still guards a row built
+     * without that split. Filing a Platform 2 train under a "Platform 1" header would show a departure
+     * at a platform it isn't at (SPEC principle 1 — never quietly wrong), so when the numbered
+     * platforms diverge the row drops to the [Compass] — but only when **every** prediction that names
+     * a direction agrees on one, else it stays [None] (a platform change across directions can't claim
+     * a shared compass either) (Codex P1, PR #119). A platform-less rail direction (a bare
+     * "Northbound", or the platform-less leftovers of a split direction) also resolves through the
+     * [Compass] path. A status row (empty `upcoming`) carries nothing to parse, so a suspended
      * line stays [None] on its own.
      */
     private fun splitOf(row: DepartureRow): RowSplit {
