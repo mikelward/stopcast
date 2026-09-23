@@ -116,7 +116,8 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
 
 /**
  * The route detail's stop list: every station from the boarding stop to the train's
- * destination on a rail in the line's [railColor] — the boarding stop a blue "you are here" dot, the terminus solid, both bold —
+ * destination on a rail in the line's [railColor] — the boarding stop a blue "you are here" dot, every other stop
+ * hollow, the boarding stop and terminus named in bold —
  * headed by the [direction] the train runs when known.
  */
 @Composable
@@ -197,13 +198,12 @@ private fun StopOnRail(name: String, connections: List<LineRef>, railColor: Colo
                         val radius = 6.dp.toPx()
                         // The boarding stop — where the rider is — is a blue "you are here" dot,
                         // ringed in the surface color so it stands off a blue rail (Victoria,
-                        // Piccadilly). The terminus is solid; a calling point is hollow, like a TfL
-                        // line diagram's tick.
+                        // Piccadilly). Every other stop, the terminus included, is hollow like a TfL
+                        // line diagram's tick, so the one filled dot is the rider's; the terminus is
+                        // marked by its bold name and the rail ending there.
                         if (first) {
                             drawCircle(surface, radius + 2.dp.toPx(), center)
                             drawCircle(CurrentStopBlue, radius, center)
-                        } else if (last) {
-                            drawCircle(railColor, radius, center)
                         } else {
                             drawCircle(surface, radius, center)
                             drawCircle(railColor, radius - 1.dp.toPx(), center, style = Stroke(2.dp.toPx()))
