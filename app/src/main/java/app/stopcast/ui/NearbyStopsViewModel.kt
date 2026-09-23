@@ -2,7 +2,6 @@ package app.stopcast.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.stopcast.domain.Coordinates
 import app.stopcast.domain.LocationFix
 import app.stopcast.domain.LocationProvider
 import app.stopcast.domain.NearbySelection
@@ -80,18 +79,19 @@ class NearbyStopsViewModel(
          * adjacent stops shows once, from its nearest). It stays in memory for that render and
          * never reaches a log or the persisted snapshot (SPEC *Privacy*).
          *
-         * [location] is the exact fix these stops and distances were resolved from, kept in
-         * memory alongside them so the **consent-gated bug report** can file the coordinate and
-         * the distances from one and the same fix (they would otherwise disagree if it re-fetched
-         * a fresh position at report time). Like [distanceMeters] it never reaches a log or the
-         * persisted snapshot; it leaves the device only inside a report the user has explicitly
-         * consented to share (SPEC *Privacy*).
+         * [location] is the exact fix these stops and distances were resolved from — with its
+         * confidence signals ([LocationFix.accuracyMeters]/[LocationFix.provider]/
+         * [LocationFix.ageMillis]) — kept in memory alongside them so the **consent-gated bug
+         * report** can file the coordinate, the distances, and *how the fix was obtained* from one
+         * and the same fix (they would otherwise disagree if it re-fetched at report time). Like
+         * [distanceMeters] the coordinate never reaches a log or the persisted snapshot; it leaves
+         * the device only inside a report the user has explicitly consented to share (SPEC *Privacy*).
          */
         data class Ready(
             val eager: List<NearbySelection.NearbyCluster>,
             val more: List<NearbySelection.NearbyCluster>,
             val distanceMeters: Map<String, Double>,
-            val location: Coordinates,
+            val location: LocationFix,
         ) : State {
             /** The eager tier flattened to the stops shown and fetched at once. */
             val eagerStops: List<StopRef> get() = eager.flatMap { c -> c.stops.map { it.toStopRef() } }
@@ -122,14 +122,14 @@ class NearbyStopsViewModel(
          * report sent from this gate can carry where the failure happened — the context a
          * "can't reach TfL" report needs (SPEC *Privacy*: consent-gated report only).
          */
-        data class Failed(val kind: DeparturesUiState.Error.Kind, val location: Coordinates) : State
+        data class Failed(val kind: DeparturesUiState.Error.Kind, val location: LocationFix) : State
 
         /**
          * Located successfully, but TfL returned no stops within [radiusMeters]. [location] is the
          * fix that found nothing nearby, retained (in memory) so a bug report from this gate can
          * carry where "no stops nearby" was reported (SPEC *Privacy*: consent-gated report only).
          */
-        data class Empty(val location: Coordinates) : State
+        data class Empty(val location: LocationFix) : State
     }
 
     private val _state = MutableStateFlow<State>(State.PermissionRequired)
@@ -174,7 +174,7 @@ class NearbyStopsViewModel(
                 _locationBanner.value = null
                 return@launch
             }
-            val next = resolveFrom(fix.coordinates)
+            val next = resolveFrom(fix)
             _state.value = next
             // Label a set shown from a low-confidence (last-known fallback) fix as approximate;
             // clear otherwise (a fresh fix, or a gate/error state that speaks for itself).
@@ -235,7 +235,7 @@ class NearbyStopsViewModel(
                     onSameSet(current)
                 }
                 else -> {
-                    val next = resolveFrom(fix.coordinates)
+                    val next = resolveFrom(fix)
                     // Always emit the fresh outcome. Even when the cluster set is unchanged, the fresh
                     // fix may have moved within it, so the per-stop distances differ — and the list
                     // uses distanceMeters to pick which adjacent stop represents each line and to
@@ -284,13 +284,16 @@ class NearbyStopsViewModel(
         }
 
     /**
-     * Resolve a known coordinate [fix] to the nearby set, as one of the terminal [State]s
-     * (Ready / Empty / Failed). Every failure is a distinct honest state, never an empty list
-     * (SPEC principles 1–2), and [warn] carries only the coarse reason, never a coordinate.
+     * Resolve a known [fix] (its coordinate, plus the confidence signals it carries) to the nearby
+     * set, as one of the terminal [State]s (Ready / Empty / Failed). The whole [fix] is retained in
+     * the resulting state so a bug report files the coordinate, the distances, and how the fix was
+     * obtained from one and the same fix. Every failure is a distinct honest state, never an empty
+     * list (SPEC principles 1–2), and [warn] carries only the coarse reason, never a coordinate.
      */
-    private suspend fun resolveFrom(fix: Coordinates): State {
+    private suspend fun resolveFrom(fix: LocationFix): State {
+        val coordinates = fix.coordinates
         val found = try {
-            withContext(io) { finder.nearbyStops(fix.latitude, fix.longitude, radiusMeters) }
+            withContext(io) { finder.nearbyStops(coordinates.latitude, coordinates.longitude, radiusMeters) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -300,7 +303,7 @@ class NearbyStopsViewModel(
             return State.Failed(kindOf(e), location = fix)
         }
         val result = NearbySelection.selectClusters(
-            found, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters,
+            found, coordinates.latitude, coordinates.longitude, outerRadiusMeters = radiusMeters,
         )
         // Eager empty means no stop with a route in range (each present mode contributes its
         // nearest; a route-less stop is never eager and has nothing to show) — nothing nearby runs.
@@ -310,7 +313,7 @@ class NearbyStopsViewModel(
         // (SPEC *Finding stops → Near me now*). Never logged or persisted (SPEC *Privacy*).
         val distances = (result.eager + result.more)
             .flatMap { it.stops }
-            .associate { it.id to NearestStops.distanceMeters(fix.latitude, fix.longitude, it.latitude, it.longitude) }
+            .associate { it.id to NearestStops.distanceMeters(coordinates.latitude, coordinates.longitude, it.latitude, it.longitude) }
         return State.Ready(
             eager = result.eager,
             more = result.more,

@@ -27,6 +27,11 @@ class NearbyStopsViewModelTest {
     // Obviously-synthetic coordinates around the origin — never a real position (SPEC Privacy).
     private val origin = Coordinates(0.0, 0.0)
 
+    // The fresh (non-fallback) fix the fakes hand back for `origin`, with no accuracy/provider/age
+    // supplied — what the state retains for a bug report. Matches FakeLocation/MutableLocation's
+    // default (isFallback = false, the rest null).
+    private val originFix = LocationFix(origin, isFallback = false)
+
     @Before fun setUp() = Dispatchers.setMain(dispatcher)
 
     @After fun tearDown() = Dispatchers.resetMain()
@@ -110,7 +115,7 @@ class NearbyStopsViewModelTest {
         assertEquals(0.0, finder.lastLatitude!!, 0.0)
         // The exact fix is retained alongside the distances (in memory) so the consent-gated bug
         // report files the coordinate and the distances from one and the same fix.
-        assertEquals(origin, ready.location)
+        assertEquals(originFix, ready.location)
     }
 
     @Test
@@ -195,7 +200,7 @@ class NearbyStopsViewModelTest {
         advanceUntilIdle()
 
         // Empty carries the fix it found nothing near, so a bug report from that gate can say where.
-        assertEquals(NearbyStopsViewModel.State.Empty(origin), model.state.value)
+        assertEquals(NearbyStopsViewModel.State.Empty(originFix), model.state.value)
     }
 
     @Test
@@ -207,7 +212,7 @@ class NearbyStopsViewModelTest {
 
         // Failed carries the fix the lookup was made with (for the bug report), alongside the kind.
         assertEquals(
-            NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.RATE_LIMITED, origin),
+            NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.RATE_LIMITED, originFix),
             model.state.value,
         )
     }
@@ -220,7 +225,7 @@ class NearbyStopsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(
-            NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.OFFLINE, origin),
+            NearbyStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.OFFLINE, originFix),
             model.state.value,
         )
     }
@@ -275,7 +280,26 @@ class NearbyStopsViewModelTest {
         model.relocate()
         advanceUntilIdle()
 
-        assertEquals(NearbyStopsViewModel.State.Empty(origin), model.state.value)
+        assertEquals(NearbyStopsViewModel.State.Empty(originFix), model.state.value)
+    }
+
+    @Test
+    fun `the resolved state retains the fix's confidence signals for a bug report`() = runTest {
+        // The plumbing this adds: provider/accuracy/age travel with the fix into the state, so the
+        // consent-gated bug report says how the on-screen fix was obtained (the input a future
+        // accuracy/age gate needs — TODO). The state carries the fix whole, not just its coordinate.
+        val fix = LocationFix(origin, isFallback = false, accuracyMeters = 42f, provider = "network", ageMillis = 0L)
+        val location = object : LocationProvider {
+            override suspend fun current(forceFresh: Boolean) = fix
+        }
+        val model = vm(location, FakeFinder { listOf(stop("a", 50.0, "bus")) })
+
+        model.locate()
+        advanceUntilIdle()
+
+        val ready = model.state.value as NearbyStopsViewModel.State.Ready
+        assertEquals(fix, ready.location)
+        assertEquals("network", ready.location.provider)
     }
 
     @Test

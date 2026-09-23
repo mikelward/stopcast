@@ -945,7 +945,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         counts as "insufficient", whether to wait for GPS and how long) is device-tuning the
         sandbox can't validate and a change to the maintainer-approved provider-name design.
         Preserve `Location.accuracy` through both paths and prefer the most accurate fix;
-        settle the threshold and the latency trade on a device.
+        settle the threshold and the latency trade on a device. (Partly unblocked: `Location.accuracy`
+        + provider now travel through the fix path to `LocationFix`/the bug report — see the
+        Underground item's "second increment" — so *selecting* on accuracy no longer needs new
+        plumbing, only the fast-path/waterfall preference logic and the threshold.)
 - [ ] Per-stop line/direction filters (D2).
 - [ ] **Filter or rank by a destination the user enters, and let them save favorite
       destinations** — the user names where they're going (or picks a saved favorite) and
@@ -1737,13 +1740,24 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   "this fix is a stale/last-known fallback (age) / low-accuracy" out of `FixSelection` → provider →
   `NearbyStopsViewModel` and show a visible, honest signal (a banner or stamp: "Couldn't get a
   current location — showing your last-known area"), consistent with the staleness contract (D4).
-  **Shipped, first increment:** the **fallback** signal is threaded (`FixSelection.onFallbackUsed`
+  **Shipped, first increment:** the **fallback** signal is threaded (`FixSelection`'s `onResolved`
   → `LocationFix.isFallback` → `NearbyStopsViewModel.locationBanner`), a re-locate onto a fallback
   fix **doesn't jump** (keeps the shown set), and a top **banner with Try again** appears —
   "Couldn't update your location" (re-locate failed) or "Showing your last-known area" (set resolved
-  from a fallback). **Still to do:** gate on **measured accuracy/age**, not just the fallback flag —
-  a *fresh* Wi-Fi/cell fused fix that's confidently wrong (the station-Wi-Fi case) still isn't
-  caught, since it's not a fallback; that needs the accuracy(+validity)/age plumbing above.
+  from a fallback).
+  **Shipped, second increment — the diagnostic plumbing (this is the "plumbing must be extended
+  first" step above):** the fix's **provider, measured accuracy (`Location.hasAccuracy()` →
+  nullable, unknown never 0), and age** are now carried from `AndroidLocationProvider` (a new
+  `FixSample` for the fresh path, extended `CachedFix` for the cached/fallback path) through
+  `FixSelection.resolve`'s `onResolved(source, ageMillis)` into `LocationFix`, then into
+  `NearbyStopsViewModel.State` and the **consent-gated bug report** (`BugReport.compose` prints a
+  `fix: provider … accuracy … age … [fallback]` line), plus a coarse **debug-log** line — with the
+  `docs/PRIVACY.md` disclosure. No behavior change: nothing gates or selects on accuracy yet.
+  **Still to do — the handling decision, now unblocked:** gate on **measured accuracy/age**, not
+  just the fallback flag — a *fresh* Wi-Fi/cell fused fix that's confidently wrong (the station-Wi-Fi
+  case) still isn't caught, since it's not a fallback. The threshold ("what radius is too coarse to
+  trust", whether to also reject an implausible jump) is **device-tuning to settle from the accuracy
+  numbers real bug reports now surface** — maintainer's call, deliberately not guessed here.
 - **Same-set re-locate discards updated stop metadata (Codex P2 on #70) — RESOLVED by the
   #87 reveal redesign (2026-09-21).** The old gap: `relocate()`'s same-set path kept the old
   `MainViewModel`, whose `seedStops` were fixed at init, so a refresh returning the *same* IDs

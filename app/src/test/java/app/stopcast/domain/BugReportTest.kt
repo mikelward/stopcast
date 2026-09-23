@@ -24,7 +24,13 @@ class BugReportTest {
     fun `it renders the header, exact location, distances, and this run's log`() {
         val report = BugReport.compose(
             header = header,
-            location = Coordinates(51.5, -0.12),
+            fix = LocationFix(
+                Coordinates(51.5, -0.12),
+                isFallback = false,
+                accuracyMeters = 42f,
+                provider = "network",
+                ageMillis = 12_000L,
+            ),
             stops = listOf(
                 BugReport.StopLine("Oxford Circus", "940GZZLUOXC", 118.7),
                 BugReport.StopLine("Bond Street", "940GZZLUBND", 337.2),
@@ -40,6 +46,7 @@ class BugReportTest {
             captured: 2026-09-21T14:30:00Z
 
             location (last nearby lookup): 51.500000, -0.120000
+              fix: provider network, accuracy ±42.0 m, age 12 s
             nearby stops (2):
               • Oxford Circus (940GZZLUOXC) — 120 m (118.7 m)
               • Bond Street (940GZZLUBND) — 340 m (337.2 m)
@@ -53,10 +60,30 @@ class BugReportTest {
     }
 
     @Test
+    fun `a low-confidence fallback fix reports its provider, unknown accuracy, and fallback`() {
+        // The confidently-wrong diagnostic: a coarse fix with no accuracy estimate, stood in as a
+        // last-known fallback. Unknown accuracy reads "unknown", never a fabricated 0 (principle 1).
+        val report = BugReport.compose(
+            header = header,
+            fix = LocationFix(
+                Coordinates(51.5, -0.12),
+                isFallback = true,
+                accuracyMeters = null,
+                provider = "network",
+                ageMillis = 300_000L,
+            ),
+            stops = emptyList(),
+            logLines = emptyList(),
+        )
+
+        assertTrue(report, report.contains("  fix: provider network, accuracy unknown, age 300 s, last-known fallback"))
+    }
+
+    @Test
     fun `an unavailable fix is stated, not faked`() {
         val report = BugReport.compose(
             header = header,
-            location = null,
+            fix = null,
             stops = emptyList(),
             logLines = emptyList(),
         )
@@ -70,7 +97,7 @@ class BugReportTest {
     fun `a stop with no known distance says so rather than showing zero`() {
         val report = BugReport.compose(
             header = header,
-            location = Coordinates(51.5, -0.12),
+            fix = LocationFix(Coordinates(51.5, -0.12), isFallback = false),
             stops = listOf(BugReport.StopLine("Bond Street", "940GZZLUBND", null)),
             logLines = emptyList(),
         )

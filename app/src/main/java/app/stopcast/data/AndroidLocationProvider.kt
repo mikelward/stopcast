@@ -9,11 +9,14 @@ import android.os.Build
 import android.os.CancellationSignal
 import android.os.SystemClock
 import app.stopcast.domain.Coordinates
+import app.stopcast.domain.FixSample
 import app.stopcast.domain.FixSelection
+import app.stopcast.domain.FixSource
 import app.stopcast.domain.LocationFix
 import app.stopcast.domain.LocationProvider
 import app.stopcast.domain.raceFix
 import kotlin.coroutines.resume
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -52,9 +55,12 @@ class AndroidLocationProvider(
             return null
         }
         val cached = bestLastKnown(manager, providers)
-        // Set when resolve returns the bounded last-known fallback (fresh fix failed) rather than a
-        // fresh or recent-cache fix, so the caller can treat that fix as low-confidence.
-        var fromFallback = false
+        // The winning fresh sample (with its accuracy/provider), captured so the resolved fix can
+        // carry the confidence signals of whichever candidate FixSelection actually chose, and the
+        // source/age it reports.
+        var freshSample: FixSample? = null
+        var source: FixSource? = null
+        var ageMillis: Long? = null
         val coordinates = FixSelection.resolve(
             lastKnown = cached?.coordinates,
             lastKnownAgeMillis = cached?.ageMillis,
@@ -79,10 +85,30 @@ class AndroidLocationProvider(
             // the check above and here, and a revoked fresh fix returns null, so without this
             // a cached location would be sent to TfL after the user withdrew access.
             hasPermission = ::hasLocationPermission,
-            onFallbackUsed = { fromFallback = true },
-            freshFix = { requestFreshFix(manager, providers) },
+            onResolved = { s, age -> source = s; ageMillis = age },
+            freshFix = { requestFreshFix(manager, providers)?.also { freshSample = it }?.coordinates },
         )
-        return coordinates?.let { LocationFix(it, isFallback = fromFallback) }
+        return coordinates?.let { coord ->
+            // Attach the confidence signals of the candidate FixSelection chose: a fresh fix carries
+            // its own; the recent-cache fast path and the fallback carry the cached fix's. These are
+            // coarse diagnostics (provider/accuracy/age) for the consent-gated bug report and the
+            // debug log — never a coordinate in the log (SPEC *Privacy*).
+            val fresh = source == FixSource.FRESH
+            val fix = LocationFix(
+                coordinates = coord,
+                isFallback = source == FixSource.FALLBACK,
+                accuracyMeters = if (fresh) freshSample?.accuracyMeters else cached?.accuracyMeters,
+                provider = if (fresh) freshSample?.provider else cached?.provider,
+                ageMillis = ageMillis,
+            )
+            warn(
+                "fix resolved: source=${source?.name?.lowercase() ?: "unknown"} " +
+                    "provider=${fix.provider ?: "unknown"} " +
+                    "accuracy=${fix.accuracyMeters?.let { "${it.roundToInt()}m" } ?: "unknown"} " +
+                    "age=${fix.ageMillis ?: 0L}ms",
+            )
+            fix
+        }
     }
 
     /**
@@ -93,7 +119,7 @@ class AndroidLocationProvider(
      * own [FixSelection.FRESH_FIX_PER_PROVIDER_TIMEOUT_MILLIS] bound, and the overall [FixSelection]
      * timeout still caps the whole wait.
      */
-    private suspend fun requestFreshFix(manager: LocationManager, providers: List<String>): Coordinates? =
+    private suspend fun requestFreshFix(manager: LocationManager, providers: List<String>): FixSample? =
         raceFix(
             providers,
             FixSelection.FRESH_FIX_PER_PROVIDER_TIMEOUT_MILLIS,
@@ -121,13 +147,13 @@ class AndroidLocationProvider(
      * timeout, or the screen going away). The minutes-scale cache a re-locate must bypass is
      * `getLastKnownLocation`, which [FixSelection]'s `forceFresh` already skips.
      */
-    private suspend fun requestFreshFixFrom(manager: LocationManager, provider: String): Coordinates? =
+    private suspend fun requestFreshFixFrom(manager: LocationManager, provider: String): FixSample? =
         try {
             suspendCancellableCoroutine { cont ->
                 val signal = CancellationSignal()
                 cont.invokeOnCancellation { signal.cancel() }
                 manager.getCurrentLocation(provider, signal, context.mainExecutor) { location ->
-                    cont.resume(location?.toCoordinates())
+                    cont.resume(location?.toSample())
                 }
             }
         } catch (e: CancellationException) {
@@ -143,9 +169,17 @@ class AndroidLocationProvider(
             null
         }
 
-    /** A cached last-known fix: its coordinates, age in ms, and whether it came from an
-     *  accurate (GPS/fused) provider — the last gates the precise fast path in [FixSelection]. */
-    private data class CachedFix(val coordinates: Coordinates, val ageMillis: Long, val accurate: Boolean)
+    /** A cached last-known fix: its coordinates, age in ms, whether it came from an accurate
+     *  (GPS/fused) provider — the last gates the precise fast path in [FixSelection] — and its
+     *  [provider] name and measured [accuracyMeters] (null = unknown), carried so a fix served from
+     *  the cache or as a fallback still reports its confidence signals (SPEC *Privacy*: coarse). */
+    private data class CachedFix(
+        val coordinates: Coordinates,
+        val ageMillis: Long,
+        val accurate: Boolean,
+        val accuracyMeters: Float?,
+        val provider: String?,
+    )
 
     /**
      * The newest last-known fix across the enabled providers — or `null` if none has one — with
@@ -164,6 +198,8 @@ class AndroidLocationProvider(
                     coordinates = loc.toCoordinates(),
                     ageMillis = (nowNanos - loc.elapsedRealtimeNanos).coerceAtLeast(0) / 1_000_000,
                     accurate = isAccurateProvider(provider),
+                    accuracyMeters = if (loc.hasAccuracy()) loc.accuracy else null,
+                    provider = provider,
                 )
             }
             .minByOrNull { it.ageMillis }
@@ -205,6 +241,15 @@ class AndroidLocationProvider(
             .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
 
     private fun Location.toCoordinates() = Coordinates(latitude, longitude)
+
+    /** A [FixSample] from a framework [Location]: its coordinate plus the confidence signals — the
+     *  measured accuracy (null when [Location.hasAccuracy] is false: unknown, not a spurious 0), and
+     *  the provider that produced it. */
+    private fun Location.toSample() = FixSample(
+        coordinates = toCoordinates(),
+        accuracyMeters = if (hasAccuracy()) accuracy else null,
+        provider = provider,
+    )
 }
 
 /**

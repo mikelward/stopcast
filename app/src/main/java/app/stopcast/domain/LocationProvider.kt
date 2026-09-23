@@ -9,6 +9,22 @@ package app.stopcast.domain
 data class Coordinates(val latitude: Double, val longitude: Double)
 
 /**
+ * A raw device fix plus the confidence signals a bug report and the debug log read — the coordinate
+ * with its [accuracyMeters] and [provider], the point being that a *fresh* fix can still be
+ * confidently wrong (a station's Wi-Fi mislocates the network provider to a different station), so
+ * the honest diagnostic carries how the fix was obtained, not just where. [accuracyMeters] is `null`
+ * when the platform reported no estimate (`Location.hasAccuracy()` false) — **unknown**, never `0f`,
+ * which would read as perfectly precise. [provider] is the framework provider name
+ * ("fused"/"gps"/"network"/"passive") or `null`. Coarse diagnostics only; the coordinate leaves the
+ * device solely inside a consent-gated bug report (SPEC *Privacy*).
+ */
+data class FixSample(
+    val coordinates: Coordinates,
+    val accuracyMeters: Float?,
+    val provider: String?,
+)
+
+/**
  * A resolved position plus how much to trust it. [isFallback] is true when the fresh-fix
  * attempt failed and a bounded last-known fix was used instead (the classic no-signal case, e.g.
  * the Underground): the coordinate is real but is the user's *previous* position, so a surface
@@ -16,8 +32,20 @@ data class Coordinates(val latitude: Double, val longitude: Double)
  * cached one the fast path returns — has [isFallback] false. The caller decides what a fallback
  * means (SPEC *Finding stops*): don't jump the set to it on a re-locate, and label a set shown
  * from one as "your last-known area."
+ *
+ * [accuracyMeters] (null = unknown, see [FixSample]), [provider], and [ageMillis] (of the fix that
+ * was actually selected — ~0 for a fresh fix, the cache age for the fast path or a fallback) are the
+ * confidence signals threaded through for the consent-gated bug report and the coarse debug log, so
+ * a "confidently wrong" fix is diagnosable and a future accuracy/age gate has the inputs it needs
+ * (`TODO.md`). They default absent for callers and tests that don't supply them.
  */
-data class LocationFix(val coordinates: Coordinates, val isFallback: Boolean)
+data class LocationFix(
+    val coordinates: Coordinates,
+    val isFallback: Boolean,
+    val accuracyMeters: Float? = null,
+    val provider: String? = null,
+    val ageMillis: Long? = null,
+)
 
 /**
  * Supplies the device's current position for the nearby-stops search. A domain seam so

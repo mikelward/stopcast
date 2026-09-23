@@ -12,6 +12,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.stopcast.domain.Coordinates
+import app.stopcast.domain.LocationFix
 import app.stopcast.ui.theme.StopCastTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -37,7 +38,7 @@ class LocationGateScreenshotTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     // Obviously-synthetic fix for the Empty/Failed states, never a real position (SPEC Privacy).
-    private val FIX = Coordinates(51.5, -0.12)
+    private val FIX = LocationFix(Coordinates(51.5, -0.12), isFallback = false)
 
     @Test
     fun `permission required, light`() {

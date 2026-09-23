@@ -33,13 +33,15 @@ object BugReport {
 
     /**
      * Compose the report's app section from the current context: the build [header], the exact
-     * [location] the report is being filed from (null when no fix is available), the [stops] the
-     * user is watching with their distances, and this run's diagnostic [logLines] (the shared
-     * `DebugLog` snapshot). Deterministic and side-effect-free.
+     * [fix] the report is being filed from — its coordinate plus how it was obtained (provider,
+     * accuracy, age, whether it was a last-known fallback), null when no fix is available — the
+     * [stops] the user is watching with their distances, and this run's diagnostic [logLines] (the
+     * shared `DebugLog` snapshot). The fix's confidence signals are what a "confidently wrong
+     * location" report is diagnosed from (`TODO.md`). Deterministic and side-effect-free.
      */
     fun compose(
         header: Header,
-        location: Coordinates?,
+        fix: LocationFix?,
         stops: List<StopLine>,
         logLines: List<String>,
     ): String = buildString {
@@ -54,13 +56,16 @@ object BugReport {
         // Labeled as the *last nearby lookup* fix, not the send-time position: the departures
         // screen can stay open while the user moves (auto-refresh doesn't re-locate), so the fix
         // may predate `captured` — the report says so rather than misattributing it to now.
-        appendLine(
-            if (location == null) {
-                "location: unavailable"
-            } else {
-                "location (last nearby lookup): ${format(location.latitude)}, ${format(location.longitude)}"
-            },
-        )
+        if (fix == null) {
+            appendLine("location: unavailable")
+        } else {
+            appendLine("location (last nearby lookup): ${format(fix.coordinates.latitude)}, ${format(fix.coordinates.longitude)}")
+            // How the fix was obtained — the "confidently wrong" diagnostic: a coarse network fix
+            // underground, an unknown accuracy, a stale fallback. Accuracy is null when the platform
+            // gave no estimate (shown "unknown", never a spurious 0), age is of the fix that was
+            // used (~0 for a fresh one), and the fallback flag marks a last-known fix stood in.
+            appendLine("  fix: ${fixConfidence(fix)}")
+        }
 
         appendLine("nearby stops (${stops.size}):")
         if (stops.isEmpty()) {
@@ -84,6 +89,16 @@ object BugReport {
     // diagnostic precision the UI rounds away. "distance unknown" rather than a fabricated 0.
     private fun distance(meters: Double?): String =
         if (meters == null) "distance unknown" else "${StopDistance.label(meters)} (${format1(meters)} m)"
+
+    // "provider network, accuracy ±42 m, age 12 s, last-known fallback" — coarse diagnostics that
+    // say how the fix was obtained. Accuracy/provider read "unknown" rather than a fabricated value
+    // when absent (SPEC principle 1), the fallback clause appears only for a fallback fix.
+    private fun fixConfidence(fix: LocationFix): String = buildString {
+        append("provider ${fix.provider ?: "unknown"}")
+        append(", accuracy ${fix.accuracyMeters?.let { "±${format1(it.toDouble())} m" } ?: "unknown"}")
+        append(", age ${fix.ageMillis?.let { "${it / 1000} s" } ?: "unknown"}")
+        if (fix.isFallback) append(", last-known fallback")
+    }
 
     private fun format(value: Double): String = String.format(Locale.US, "%.6f", value)
 

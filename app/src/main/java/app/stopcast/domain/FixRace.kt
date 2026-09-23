@@ -20,15 +20,15 @@ import kotlinx.coroutines.withTimeoutOrNull
  * [fetch] so it's unit-testable off a device with virtual time;
  * `AndroidLocationProvider` supplies the real `LocationManager`-backed fetch and the provider ranking.
  */
-suspend fun raceFix(
+suspend fun <T> raceFix(
     providers: List<String>,
     perProviderTimeoutMillis: Long,
     coarseGraceMillis: Long,
     isAccurate: (String) -> Boolean,
     onTimeout: (String) -> Unit = {},
-    fetch: suspend (String) -> Coordinates?,
-): Coordinates? = coroutineScope {
-    val results = Channel<Pair<String, Coordinates?>>(Channel.UNLIMITED)
+    fetch: suspend (String) -> T?,
+): T? = coroutineScope {
+    val results = Channel<Pair<String, T?>>(Channel.UNLIMITED)
     val jobs = providers.map { provider ->
         launch {
             var completed = false
@@ -43,7 +43,7 @@ suspend fun raceFix(
     }
     try {
         var remaining = providers.size
-        var coarse: Coordinates? = null
+        var coarse: T? = null
         while (remaining > 0 && coarse == null) {
             val (provider, fix) = results.receive()
             remaining--
@@ -54,7 +54,7 @@ suspend fun raceFix(
         if (coarse == null) return@coroutineScope null
         // A coarse fix is in hand: give the accurate providers a short grace to beat it.
         val accurate = withTimeoutOrNull(coarseGraceMillis) {
-            var found: Coordinates? = null
+            var found: T? = null
             while (remaining > 0 && found == null) {
                 val (provider, fix) = results.receive()
                 remaining--

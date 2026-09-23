@@ -53,7 +53,7 @@ import app.stopcast.data.SharedTflRequestPool
 import app.stopcast.data.UserApiKeySetting
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.BugReport
-import app.stopcast.domain.Coordinates
+import app.stopcast.domain.LocationFix
 import app.stopcast.ui.BugReportConsentDialog
 import app.stopcast.ui.FontSizeSetting
 import app.stopcast.ui.LocalRouteStops
@@ -522,7 +522,7 @@ class MainActivity : ComponentActivity() {
                 DebugReport.collect(StopcastDebugLog, sink) {
                     BugReport.compose(
                         header = bugReportHeader(),
-                        location = request.location,
+                        fix = request.location,
                         stops = request.stops.map {
                             BugReport.StopLine(it.name, it.id, request.distanceMeters[it.id])
                         },
@@ -823,14 +823,15 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * What a bug report is filed from: the [location] fix and the watched [stops] with their
- * [distanceMeters]. Built from the current nearby state by [bugReportRequestFor] at the moment the
- * user sends (so it survives a rotation mid-consent). [location] is the fix — from [Ready], or the
- * one [Empty]/[Failed] resolved against — and null only where none was obtained (no permission, no
- * fix yet); the report then states the location as unavailable. [stops] is empty off [Ready].
+ * What a bug report is filed from: the [location] fix (with its confidence signals — provider,
+ * accuracy, age) and the watched [stops] with their [distanceMeters]. Built from the current nearby
+ * state by [bugReportRequestFor] at the moment the user sends (so it survives a rotation
+ * mid-consent). [location] is the fix — from [Ready], or the one [Empty]/[Failed] resolved against —
+ * and null only where none was obtained (no permission, no fix yet); the report then states the
+ * location as unavailable. [stops] is empty off [Ready].
  */
 internal data class BugReportRequest(
-    val location: Coordinates?,
+    val location: LocationFix?,
     val stops: List<StopRef>,
     val distanceMeters: Map<String, Double>,
 )

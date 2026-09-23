@@ -25,6 +25,11 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Steps 3 and 4 log a sanitized reason (never a coordinate), so a location failure is
  * diagnosable from the debug log (SPEC principle 2 / *Privacy*).
  */
+/** Which candidate [FixSelection.resolve] actually returned, for the caller to attach the right
+ *  fix's confidence signals (a fresh fix's vs. the cached one's) and to know whether it's a
+ *  fallback. Only ever reported for a non-null result — a null (no usable fix) reports nothing. */
+enum class FixSource { RECENT_CACHE, FRESH, FALLBACK }
+
 object FixSelection {
     /**
      * A cached fix newer than this is used at once, without waiting for a fresh one — for
@@ -111,12 +116,13 @@ object FixSelection {
         // sent to TfL after the user revoked access (Codex P1). Default `{ true }` for the
         // pure tests; the provider passes its real permission check.
         hasPermission: () -> Boolean = { true },
-        // Invoked when the fresh fix failed and a bounded last-known fix is returned as the
-        // fallback (step 3) — never for the instant fast path (a recent cache), a fresh fix, or a
-        // null result. The caller uses it to flag the fix low-confidence (don't re-resolve the
-        // nearby set to it; label a set shown from it), so the Underground no-signal case isn't
-        // silently presented as a current position (SPEC *Finding stops*, principle 2).
-        onFallbackUsed: () -> Unit = {},
+        // Invoked once with the outcome when a non-null fix is returned: which candidate it was
+        // ([FixSource]) and that fix's age in ms (the cache age for [FixSource.RECENT_CACHE], ~0 for
+        // a [FixSource.FRESH] fix, the aged cache for [FixSource.FALLBACK]). Never called for a null
+        // result. The caller uses [FixSource.FALLBACK] to flag the fix low-confidence (don't
+        // re-resolve the nearby set to it; label a set shown from it, SPEC *Finding stops*), and the
+        // source + age to attach the right fix's confidence signals to a bug report / the debug log.
+        onResolved: (source: FixSource, ageMillis: Long?) -> Unit = { _, _ -> },
         freshFix: suspend () -> Coordinates?,
     ): Coordinates? {
         // The instant fast path returns a recent cached fix without waiting — but when the
@@ -128,6 +134,7 @@ object FixSelection {
             lastKnownAgeMillis <= freshEnoughMillis && (lastKnownIsAccurate || !preferAccurate)
         ) {
             if (!hasPermission()) return permissionRevoked(warn)
+            onResolved(FixSource.RECENT_CACHE, lastKnownAgeMillis)
             return lastKnown
         }
         val waitStart = elapsedMillis()
@@ -138,7 +145,11 @@ object FixSelection {
         // which a timeout (which cancels the block) never lets happen.
         var freshResolved = false
         val fresh = withTimeoutOrNull(timeoutMillis) { freshFix().also { freshResolved = true } }
-        if (fresh != null) return fresh
+        if (fresh != null) {
+            // A fresh fix is current, so its age is ~0 (it was just obtained).
+            onResolved(FixSource.FRESH, 0L)
+            return fresh
+        }
         // A revoke during the fresh-fix attempt surfaces as a null fix; never fall back to a
         // cached location the user has just withdrawn access to (Codex P1).
         if (!hasPermission()) return permissionRevoked(warn)
@@ -148,7 +159,7 @@ object FixSelection {
         val fallbackAgeMillis = lastKnownAgeMillis?.plus((elapsedMillis() - waitStart).coerceAtLeast(0))
         if (lastKnown != null && fallbackAgeMillis != null && fallbackAgeMillis <= maxFallbackAgeMillis) {
             warn("location fix: fresh fix $freshOutcome; using the last known one")
-            onFallbackUsed()
+            onResolved(FixSource.FALLBACK, fallbackAgeMillis)
             return lastKnown
         }
         if (lastKnown != null) {

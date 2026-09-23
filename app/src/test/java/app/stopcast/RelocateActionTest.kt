@@ -1,6 +1,7 @@
 package app.stopcast
 
 import app.stopcast.domain.Coordinates
+import app.stopcast.domain.LocationFix
 import app.stopcast.ui.NearbyStopsViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -21,7 +22,7 @@ class RelocateActionTest {
             eager = emptyList(),
             more = emptyList(),
             distanceMeters = emptyMap(),
-            location = Coordinates(51.5, -0.12),
+            location = LocationFix(Coordinates(51.5, -0.12), isFallback = false),
         )
         val action = relocateAction(
             cancelFetch = { events.add("cancel") },
