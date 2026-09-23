@@ -32,6 +32,9 @@ object Connections {
      */
     fun isRail(mode: String, lineId: String): Boolean = modeOf(LineRef(lineId, "", mode)) != null
 
+    /** A rail-type line's mode known from its id alone ("northern" → "tube"), else null. */
+    fun knownMode(lineId: String): String? = KNOWN_MODES[lineId]
+
     /** The modes that count as a connection — an allowlist, so a bus, coach or river-bus never does. */
     private val RAIL_MODES = setOf("tube", "overground", "dlr", "elizabeth-line", "tram", "trams", "national-rail")
 

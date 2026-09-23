@@ -48,4 +48,16 @@ class RouteSequenceBusTest {
             RouteStops.ahead(route24, victoria, "Belgrave Road", null, bus = true)?.last()?.name,
         )
     }
+
+    @Test
+    fun `a stop's stop area is kept for placing a bus journey's way back`() {
+        // Synthetic ids: two poles of one stop area, as TfL lists them under stopPointSequences.
+        val dto = Json { ignoreUnknownKeys = true }.decodeFromString<TflRouteSequenceDto>(
+            """{"orderedLineRoutes":[{"name":"A ↔ B","naptanIds":["490000001N","490000002N"]}],
+               "stopPointSequences":[{"stopPoint":[
+                 {"id":"490000001N","name":"Park","stationId":"490G1"},
+                 {"id":"490000002N","name":"Hill","stationId":""}]}]}""",
+        )
+        assertEquals(mapOf("490000001N" to "490G1"), dto.toLineSequence().stopAreas)
+    }
 }

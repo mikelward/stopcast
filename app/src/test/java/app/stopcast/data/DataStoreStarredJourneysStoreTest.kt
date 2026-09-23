@@ -73,6 +73,12 @@ class DataStoreStarredJourneysStoreTest {
     }
 
     @Test
+    fun `the same stations starred on two lines read as one journey`() = runTest {
+        val twice = listOf(journey, journey.copy(lineId = "other")).toPersisted()
+        assertEquals(listOf(journey), twice.toDomain())
+    }
+
+    @Test
     fun `journeys round-trip through JSON`() = runTest {
         val out = ByteArrayOutputStream()
         StarredJourneysSerializer.writeTo(listOf(journey).toPersisted(), out)

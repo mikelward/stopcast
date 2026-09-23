@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -22,6 +23,8 @@ import app.stopcast.domain.JourneyEnd
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.RouteStop
+import app.stopcast.domain.LineRoute
+import app.stopcast.domain.LineSequence
 import app.stopcast.domain.StarredJourney
 import app.stopcast.domain.StopArrivals
 import app.stopcast.ui.theme.StopCastTheme
@@ -506,18 +509,23 @@ class RouteDetailScreenScreenshotTest {
             .assertIsDisplayed()
         composeRule.onNodeWithText("Oxford Circus", substring = true).assertIsDisplayed()
 
-        composeRule.onNodeWithText("Oxford Circus", substring = true).performClick()
+        // An unstarred station stars a new journey from here, with the positions it has.
+        composeRule.onNodeWithText("Green Park", substring = true).performClick()
         composeRule.waitForIdle()
         assertEquals(
             StarredJourney(
                 JourneyEnd("940GZZLUVIC", "Victoria", 51.5, -0.12),
-                JourneyEnd("940GZZLUOXC", "Oxford Circus", 51.51, -0.12),
+                JourneyEnd("940GZZLUGPK", "Green Park"),
                 "victoria",
                 lineName = "Victoria",
                 mode = "tube",
             ),
             toggled.single(),
         )
+        // The starred one toggles the saved journey itself (off).
+        composeRule.onNodeWithText("Oxford Circus", substring = true).performClick()
+        composeRule.waitForIdle()
+        assertEquals(starredToOxford, toggled.last())
 
         // The boarding stop itself isn't a journey end: it has no tap action.
         composeRule.onNode(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Your stop"))
@@ -549,6 +557,188 @@ class RouteDetailScreenScreenshotTest {
         composeRule.onNodeWithText("940GZZLUGPK", substring = true).performClick()
         composeRule.waitForIdle()
         assertEquals("940GZZLUGPK", toggled.single().to.name)
+    }
+
+    @Test
+    fun aBusRoute_starsAJourneyToo() {
+        val stop = StopArrivals(
+            stopId = "490000001N",
+            stopName = "Park",
+            // TfL left the mode off the soonest bus; a later one says it's a bus.
+            departures = listOf(
+                Departure("b1", "B1", "outbound", "Hill", null, now.plusSeconds(120), ""),
+                Departure("b1", "B1", "outbound", "Hill", null, now.plusSeconds(600), "bus"),
+            ),
+            fetchedAt = now,
+        )
+        val row = DepartureRows.across(listOf(stop), now).first { it.upcoming.isNotEmpty() }
+        val toggled = mutableListOf<StarredJourney>()
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded(
+                        listOf(RouteStop("490000001N", "Park"), RouteStop("490000002N", "Hill")),
+                        emptyMap(),
+                    ),
+                    journeys = emptyList(),
+                    onToggleJourney = { toggled += it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        // The one station after the boarding stop, found by its "Star journey" tap action (its name
+        // is also the header's destination).
+        composeRule.onNode(
+            SemanticsMatcher("star journey action") {
+                it.config.getOrNull(SemanticsActions.OnClick)?.label == "Star journey"
+            },
+        ).performClick()
+        composeRule.waitForIdle()
+        assertEquals("490000002N", toggled.single().to.stopId)
+        assertEquals("bus", toggled.single().mode)
+    }
+
+    @Test
+    fun theWayBackPage_showsAndTogglesTheSameJourney() {
+        // Synthetic poles: each stop has one per direction in a shared stop area.
+        val sequence = LineSequence(
+            routes = listOf(
+                LineRoute("Park ↔ Hill", listOf("490000001N", "490000002N")),
+                LineRoute("Hill ↔ Park", listOf("490000002S", "490000001S")),
+            ),
+            stopNames = mapOf("490000001N" to "Park", "490000001S" to "Park", "490000002N" to "Hill", "490000002S" to "Hill"),
+            stopAreas = mapOf("490000001N" to "490G1", "490000001S" to "490G1", "490000002N" to "490G2", "490000002S" to "490G2"),
+        )
+        val stop = StopArrivals(
+            stopId = "490000002S",
+            stopName = "Hill",
+            departures = listOf(Departure("b1", "B1", "inbound", "Park", null, now.plusSeconds(120), "bus")),
+            fetchedAt = now,
+        )
+        val row = DepartureRows.across(listOf(stop), now).first { it.upcoming.isNotEmpty() }
+        val starredOutbound = StarredJourney(JourneyEnd("490000001N", "Park"), JourneyEnd("490000002N", "Hill"), "b1", "B1", "bus")
+        val toggled = mutableListOf<StarredJourney>()
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded(
+                        listOf(RouteStop("490000002S", "Hill"), RouteStop("490000001S", "Park")),
+                        emptyMap(),
+                        sequence,
+                    ),
+                    journeys = listOf(starredOutbound),
+                    onToggleJourney = { toggled += it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        val star = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Starred journey")
+        composeRule.onNode(star).assertIsDisplayed()
+        composeRule.onNode(star).performClick()
+        composeRule.waitForIdle()
+        // The saved journey itself is toggled off, not a second one starred under these poles.
+        assertEquals(starredOutbound.key, toggled.single().key)
+    }
+
+    @Test
+    fun theWayBackPage_findsTheJourneyWhenOnlyOneEndChangesPole() {
+        // Hill has one pole (both ways); Park has one per direction in a shared stop area.
+        val sequence = LineSequence(
+            routes = listOf(
+                LineRoute("Park ↔ Hill", listOf("490000001N", "490000002X")),
+                LineRoute("Hill ↔ Park", listOf("490000002X", "490000001S")),
+            ),
+            stopNames = mapOf("490000001N" to "Park", "490000001S" to "Park", "490000002X" to "Hill"),
+            stopAreas = mapOf("490000001N" to "490G1", "490000001S" to "490G1"),
+        )
+        val stop = StopArrivals(
+            stopId = "490000002X",
+            stopName = "Hill",
+            departures = listOf(Departure("b1", "B1", "inbound", "Park", null, now.plusSeconds(120), "bus")),
+            fetchedAt = now,
+        )
+        val row = DepartureRows.across(listOf(stop), now).first { it.upcoming.isNotEmpty() }
+        val saved = StarredJourney(JourneyEnd("490000001N", "Park"), JourneyEnd("490000002X", "Hill"), "b1", "B1", "bus")
+        val toggled = mutableListOf<StarredJourney>()
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded(
+                        listOf(RouteStop("490000002X", "Hill"), RouteStop("490000001S", "Park")),
+                        emptyMap(),
+                        sequence,
+                    ),
+                    journeys = listOf(saved),
+                    onToggleJourney = { toggled += it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        val star = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Starred journey")
+        composeRule.onNode(star).assertIsDisplayed()
+        composeRule.onNode(star).performClick()
+        composeRule.waitForIdle()
+        assertEquals(saved.key, toggled.single().key)
+    }
+
+    @Test
+    fun aSegmentStarredFromAnotherLine_showsStarredHereToo() {
+        val stop = StopArrivals(
+            stopId = "490000001N",
+            stopName = "Park",
+            departures = listOf(Departure("b2", "B2", "outbound", "Hill", null, now.plusSeconds(120), "bus")),
+            fetchedAt = now,
+        )
+        val row = DepartureRows.across(listOf(stop), now).first { it.upcoming.isNotEmpty() }
+        // Starred from the b1's page; this is the b2's.
+        val starredOnB1 = StarredJourney(JourneyEnd("490000001N", "Park"), JourneyEnd("490000002N", "Hill"), "b1", "B1", "bus")
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded(
+                        listOf(RouteStop("490000001N", "Park"), RouteStop("490000002N", "Hill")),
+                        emptyMap(),
+                    ),
+                    journeys = listOf(starredOnB1),
+                    onToggleJourney = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNode(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Starred journey"))
+            .assertIsDisplayed()
     }
 
     @Test

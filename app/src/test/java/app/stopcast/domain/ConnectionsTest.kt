@@ -56,4 +56,10 @@ class ConnectionsTest {
         assertEquals(false, Connections.isRail("river-bus", "rb1"))
         assertEquals(false, Connections.isRail("", "unknown-line"))
     }
+
+    @Test
+    fun `a rail line's mode is known by id when TfL gives none`() {
+        assertEquals("tube", Connections.knownMode("northern"))
+        assertEquals(null, Connections.knownMode("24"))
+    }
 }

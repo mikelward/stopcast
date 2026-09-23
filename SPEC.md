@@ -523,22 +523,28 @@ shade — a cosmetic gap, not a correctness failure.
 
 ### Journeys
 
-A rider can **star a journey** between two stations on one line (maintainer, 2026-09-23): on a
-route page, tapping a station on the stop list (after the boarding stop) stars the journey from the
-boarding stop to it — both directions — and marks the station with a star; tapping it again unstars
-it. Starred journeys lead the near-me list as cards, each headed by the direction shown ("Highgate ➔
-King's Cross St. Pancras") with only that line's trains from the origin that **call at the far end**
-(from the line's route; a train whose path can't be resolved is left out, not guessed). The origin
-is whichever end is **nearer the rider's fix**, from TfL's published station positions; a tap on the
-heading shows the other direction. The origin's departures are fetched alongside the near-me stops
-(one request, none when it's already near) and stay out of the near-me list and the widget; the
-line's route is the same lookup the route page makes. Until both are in, the card says it's checking
-rather than claim there are no trains.
+A rider can **star a journey** — a segment between two stops, rail or bus (maintainer, 2026-09-23):
+on a route page, tapping a stop on the stop list (after the boarding stop) stars the segment from the
+boarding stop to it — both directions — and marks the stop with a star; tapping it again unstars it.
+A journey is a **segment, not a line**: the same two stops starred from another line's page (the 43
+or the 134 between two shared stops) are the same journey. Starred journeys lead the near-me list as
+cards, each headed by the direction shown ("Highgate ➔ King's Cross St. Pancras") with the trains or
+buses **on any line** from the origin that **call at the far end** (from each line's route; one whose
+path can't be resolved is left out, not guessed). The origin is whichever end is **nearer the rider's
+fix**, from TfL's published stop positions; a tap on the heading shows the other direction.
 
-**Direct only, rail only, for now.** A journey that needs a change is routing — the eventual goal
-is starring home and work, which needs it, and it stays a non-goal until then. A bus journey is left
-out because its return leaves from a different pole across the road. The tap-a-station entry point
-is an MVP; it isn't discoverable, and a clearer one is a `TODO.md` follow-up. Starred journeys are
+A bus's way back leaves from the pole across the road, so each direction is **placed on the starred
+line's route**: an end matches its own stop, else a stop in the same TfL stop area, else one of the
+same name, else — for a stop served one way only — the route's nearest stop within a short walk
+(400 m). When the route can't place the origin as one stop, the card says it couldn't check rather
+than guess one. The origin's departures are fetched alongside the near-me stops (one request, none
+when it's already near) and stay out of the near-me list and the widget; each line's route is the
+same lookup the route page makes (one per line at the origin, per process). Until they are in, the
+card says it's checking rather than claim there are none.
+
+**Direct only, for now.** A journey that needs a change is routing — the eventual goal is starring
+home and work, which needs it, and it stays a non-goal until then. The tap-a-stop entry point is an
+MVP; it isn't discoverable, and a clearer one is a `TODO.md` follow-up. Starred journeys are
 kept on the device with the rest of the user's config and never logged (*Privacy*).
 
 ### Disruptions

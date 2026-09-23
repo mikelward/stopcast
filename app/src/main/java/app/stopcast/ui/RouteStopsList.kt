@@ -68,8 +68,14 @@ sealed interface RouteStopsUi {
     /** TfL answered, but no single path from here to this train's destination matched. */
     data class Unavailable(val reason: RouteStops.Resolution) : RouteStopsUi
     data class Failed(val kind: DeparturesUiState.Error.Kind) : RouteStopsUi
-    // [positions]: each listed stop's published (latitude, longitude), for starring a journey.
-    data class Loaded(val stops: List<RouteStop>, val positions: Map<String, Pair<Double, Double>> = emptyMap()) : RouteStopsUi
+    // [positions]: each listed stop's published (latitude, longitude), for starring a journey;
+    // [sequence]: the route they came from, which places a saved journey's stops on this page (a
+    // bus's way back uses the poles across the road).
+    data class Loaded(
+        val stops: List<RouteStop>,
+        val positions: Map<String, Pair<Double, Double>> = emptyMap(),
+        val sequence: LineSequence? = null,
+    ) : RouteStopsUi
 }
 
 /**
@@ -83,12 +89,16 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
     val repository = LocalRouteStops.current
     if (repository == null || next == null || row.lineId.isBlank()) return RouteStopsUi.Hidden
     val destination = next.destination
-    val bus = row.mode.equals("bus", ignoreCase = true)
+    // The mode from any departure when TfL left it off the soonest one, so a bus blind that names no
+    // stop still gets the bus rule (and a stop list to star from).
+    val mode = row.mode.ifBlank { row.upcoming.firstOrNull { it.mode.isNotBlank() }?.mode.orEmpty() }
+    val bus = mode.equals("bus", ignoreCase = true)
     fun resolve(sequence: LineSequence): RouteStopsUi =
         when (val resolution = RouteStops.resolve(sequence, row.stopId, destination, next.branch, row.lineId, bus)) {
             is RouteStops.Resolution.Found -> RouteStopsUi.Loaded(
                 resolution.stops,
                 resolution.stops.mapNotNull { stop -> sequence.stopPositions[stop.id]?.let { stop.id to it } }.toMap(),
+                sequence,
             )
             else -> RouteStopsUi.Unavailable(resolution)
         }

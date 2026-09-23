@@ -958,10 +958,14 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [ ] **A discoverable way to star a journey.** Tapping a station on the stop list is an unmarked
         tap target; the maintainer accepted it for the MVP. Consider an explicit "Star journey…"
         action on the route page that asks for the other end.
-  - [ ] **Bus journeys.** The return leaves from the pole across the road, so the origin must be
-        resolved per direction (the stop area's pole whose route calls at the far end).
-  - [ ] **Several lines between the same two stations** (King's Cross ↔ Euston Square on the
-        Circle, Hammersmith & City and Metropolitan): a journey is one line today.
+  - [x] **Bus journeys, and a journey as a segment on any line** (maintainer, 2026-09-23: "really
+        I'd like to star the segment", e.g. two stops shared by the 43 and the 134). A journey is two
+        stops, not a line; the card shows every line from the origin that calls at the far end. The
+        way back is placed on the starred line's route by stop id, then TfL stop area, then name,
+        then the nearest stop within 400 m (a stop served one way only).
+    - [x] **The way back's own page shows the same star.** A route page places each saved journey
+          on its route like the card does, so the return poles show (and toggle) the existing
+          journey rather than star a second one.
   - [ ] **Home and work, with routing** — the eventual goal: star two places, not two stations,
         and show how to get between them. Needs journey planning, a SPEC non-goal today and a
         separate product + privacy decision (it would send both places to TfL's Journey Planner).

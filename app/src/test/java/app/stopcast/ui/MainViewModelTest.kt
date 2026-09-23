@@ -2881,6 +2881,60 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `an origin that gains a declared line is fetched again, so its status is checked`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras", lines = listOf(LineRef("northern", "Northern", "tube")))))
+        advanceUntilIdle()
+        vm.setJourneyStops(
+            listOf(
+                StopRef(
+                    ksxId,
+                    "King's Cross St. Pancras",
+                    lines = listOf(LineRef("northern", "Northern", "tube"), LineRef("piccadilly", "Piccadilly", "tube")),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        assertTrue("piccadilly" in client.statusCalls.last())
+    }
+
+    @Test
+    fun `a nearby stop that becomes a journey origin is fetched again with the journey's lines`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        vm.setJourneyStops(listOf(StopRef(oxcId, "Oxford Circus", lines = listOf(LineRef("central", "Central", "tube")))))
+        advanceUntilIdle()
+        assertTrue("central" in client.statusCalls.last())
+    }
+
+    @Test
+    fun `a line gained by a just-fetched origin is status-checked without refetching its arrivals`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(
+            client, listOf(seeds.first()), clock = { now }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras", lines = listOf(LineRef("northern", "Northern", "tube")))))
+        advanceUntilIdle()
+        vm.setJourneyStops(
+            listOf(
+                StopRef(
+                    ksxId,
+                    "King's Cross St. Pancras",
+                    lines = listOf(LineRef("northern", "Northern", "tube"), LineRef("piccadilly", "Piccadilly", "tube")),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        assertEquals(1, client.arrivalCalls[ksxId])
+        assertTrue("piccadilly" in client.statusCalls.last())
+    }
+
+    @Test
     fun `flipping back while the other origin is fetching still fetches the first`() = runTest(dispatcher) {
         val client = ReuseCountingClient()
         val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
