@@ -391,7 +391,9 @@ the body, **every upcoming departure on that route** — not the card's first th
 line of countdowns in the card's format (times only; any that don't fit ellipsize off the end, and the
 line is withheld while stale, D4), and the line's **full disruption text**, which the row's inline **⚠** glyph stands
 in for: shown collapsed to its first line, tapped to expand (the same widget the stop-closure card
-uses). Below that it lists **every station from the boarding stop to where the soonest train
+uses). A **web link** in an alert — with or without `https://`, as TfL writes them ("visit
+tfl.gov.uk/status-updates") — is underlined and opens in the browser on tap; only http/https links
+are made, an email address isn't treated as one, and with no browser the tap says so. Below that it lists **every station from the boarding stop to where the soonest train
 terminates** (a short-working ends where it does, not at the line's end), on a rail in the line's
 color. The boarding stop is marked with a blue "you are here" dot (map-location blue, ringed to
 stand off a blue line's rail), announced to a screen reader as "Your stop"; every other stop, the terminus included, is hollow,

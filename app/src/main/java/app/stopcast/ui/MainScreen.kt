@@ -2,7 +2,22 @@
 
 package app.stopcast.ui
 
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
+import app.stopcast.domain.AlertLinks
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.core.net.toUri
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -1329,6 +1344,27 @@ private fun StopClosureContent(disruption: String, title: String, onDismiss: () 
  * no dismiss (a line disruption there isn't dismissible). The button has its own click target, so a
  * dismiss tap doesn't also toggle the expand/collapse.
  */
+/**
+ * [text] with each web link ([AlertLinks]) made a tappable, underlined link. Opening goes through
+ * Compose's [LinkAnnotation.Url], which hands the URL to the platform's browser — only `http`/`https`
+ * links are produced, so a tap can't open any other scheme. A link is also an accessibility action,
+ * so a screen reader can open it.
+ */
+private fun linkified(text: String, onOpen: LinkInteractionListener): AnnotatedString {
+    val links = AlertLinks.find(text)
+    if (links.isEmpty()) return AnnotatedString(text)
+    val style = TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))
+    return buildAnnotatedString {
+        var at = 0
+        for (link in links) {
+            append(text, at, link.range.first)
+            withLink(LinkAnnotation.Url(link.url, style, onOpen)) { append(text.substring(link.range)) }
+            at = link.range.last + 1
+        }
+        append(text, at, text.length)
+    }
+}
+
 @Composable
 private fun CollapsibleStatus(
     text: String,
@@ -1364,8 +1400,27 @@ private fun CollapsibleStatus(
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
+                // Web links in the notice (TfL often names a page for more detail) are underlined
+                // and open in the browser on tap; the rest of the card still toggles expand/collapse.
+                // Opened through a guarded listener rather than the default URI handler, which throws
+                // on a device with no browser: say so instead of crashing (as LicensesScreen does).
+                val context = LocalContext.current
+                val linkFailed = stringResource(R.string.link_open_failed)
+                val onOpenLink = remember(context, linkFailed) {
+                    LinkInteractionListener { annotation ->
+                        val url = (annotation as? LinkAnnotation.Url)?.url ?: return@LinkInteractionListener
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+                        } catch (e: ActivityNotFoundException) {
+                            // The URL is TfL's own alert text, not user data; the log still omits it.
+                            Log.w("Alerts", "No activity to open an alert link", e)
+                            Toast.makeText(context, linkFailed, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                val linked = remember(text, onOpenLink) { linkified(text, onOpenLink) }
                 Text(
-                    text = text,
+                    text = linked,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = if (expanded) Int.MAX_VALUE else 1,
                     overflow = TextOverflow.Ellipsis,
