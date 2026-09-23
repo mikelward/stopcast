@@ -1149,11 +1149,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
     - [ ] **National-rail connections at interchanges** — a hub lists operators and buses together
           with no per-line mode; identifying the operators (from the member rail station, one more
           lookup, or a known-operator list) would add them without guessing.
-  - [ ] **Open the route the user tapped, not the row's soonest train** (maintainer, 2026-09-22). A
-        card shows one route row per destination of a line+direction, but every one of them opens the
-        same detail, whose app bar and stop list follow the row's *soonest* departure — so tapping
-        "Edgware" can show the High Barnet stop list. The detail should follow the tapped
-        destination (and branch), or offer every route at that platform to pick from.
+  - [x] **Open the route the user tapped, not the row's soonest train** (maintainer, 2026-09-22). A
+        card shows one route row per destination of a line+direction, but every one of them opened the
+        same detail, whose app bar and stop list followed the row's *soonest* departure — so tapping
+        "Edgware" could show the High Barnet stop list. The detail now follows the tapped destination
+        and branch; offering every route at the platform to pick from stays an option if the
+        single-route page proves limiting.
   - [ ] **Reconsider the detail star: pin vs star, and its relation to favorite routes/destinations**
         (maintainer, 2026-09-22). The detail control is a star for now; decide whether it should be a
         **pin** (pushpin) instead — the user-facing copy and the list marker already use "pin"/"pin to
