@@ -233,8 +233,8 @@ class NearbyStopsViewModel(
         val result = NearbySelection.selectClusters(
             found, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters,
         )
-        // Eager empty means no clusters at all (each present mode contributes its nearest) —
-        // nothing in range.
+        // Eager empty means no stop with a route in range (each present mode contributes its
+        // nearest; a route-less stop is never eager and has nothing to show) — nothing nearby runs.
         if (result.eager.isEmpty()) return State.Empty(location = fix)
         // Distance per stop, over BOTH tiers (in memory only), so a revealed stop is collapsed and
         // ordered like an eager one — the departures list shows a line once, from its nearest stop

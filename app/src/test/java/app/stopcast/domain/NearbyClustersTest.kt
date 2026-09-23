@@ -151,24 +151,50 @@ class NearbyClustersTest {
     }
 
     @Test
-    fun `a stop with no declared mode is still selected, not dropped`() {
-        // A stop TfL lists no lines for has no mode; it must not fall out of every mode's top-N.
+    fun `a stop with no routes is never fetched eagerly, but stays reachable under More`() {
+        // A stop TfL lists no lines for (a disused or unserved stop) has nothing to show, so it isn't
+        // auto-fetched — however near — and doesn't spend the rate budget. It isn't dropped either: it
+        // waits in "more" with an empty modes set, which the UI surfaces under the generic "More stops".
         val noLines = StopLocation("s", "S", latitude = 100.0 / 111_320.0, longitude = 0.0)
         val result = select(listOf(noLines))
-        assertEquals(listOf(listOf("s")), result.eager.ids())
-        assertTrue(result.more.isEmpty())
+        assertTrue(result.eager.isEmpty())
+        assertEquals(listOf(listOf("s")), result.more.ids())
+        assertTrue("the overflow cluster has no declared mode", result.more.single().modes.isEmpty())
     }
 
     @Test
-    fun `modeless clusters beyond the cap go to more with no mode, for a generic More`() {
-        // Three stops with no declared mode: the sentinel bucket keeps the nearest two eager and
-        // sends the third to "more" — where it carries an empty modes set, so the UI must surface
-        // it under a generic "More" rather than dropping it (the caller buckets empty modes).
+    fun `stops with no routes don't take eager places from a mode that runs`() {
+        // Nearer route-less stops leave the bus cap to the poles that actually have buses.
         val noLines = { id: String, meters: Double -> StopLocation(id, id, meters / 111_320.0, 0.0) }
-        val result = select(listOf(noLines("a", 50.0), noLines("b", 120.0), noLines("c", 300.0)))
-        assertEquals(listOf(listOf("a"), listOf("b")), result.eager.ids())
-        assertEquals(listOf(listOf("c")), result.more.ids())
-        assertTrue("the overflow cluster has no declared mode", result.more.single().modes.isEmpty())
+        val result = select(
+            listOf(noLines("a", 50.0), noLines("b", 120.0), stop("b1", 300.0, "bus", "490G0B1")),
+        )
+        assertEquals(listOf(listOf("b1")), result.eager.ids())
+        assertEquals(listOf(listOf("a"), listOf("b")), result.more.ids())
+    }
+
+    @Test
+    fun `a route-less pole in a served junction isn't fetched with the junction`() {
+        // One junction (shared clusterId): a served bus pole and a disused one TfL lists no routes for.
+        // The junction is eager for its bus; the disused pole waits alone behind "More stops".
+        val served = stop("b1", 50.0, "bus", "490G0J")
+        val disused = StopLocation("b2", "b2", 60.0 / 111_320.0, 0.0, clusterId = "490G0J")
+        val result = select(listOf(served, disused))
+        assertEquals(listOf(listOf("b1")), result.eager.ids())
+        assertEquals(listOf(listOf("b2")), result.more.ids())
+        assertTrue(result.more.single().modes.isEmpty())
+    }
+
+    @Test
+    fun `a served stop whose routes carry no mode is still selected eagerly`() {
+        // TfL listed routes but no mode for them: the stop runs, so it isn't treated as route-less.
+        val thin = StopLocation(
+            "t", "t", 100.0 / 111_320.0, 0.0,
+            lines = listOf(LineRef("73", "73", "")),
+        )
+        val result = select(listOf(thin))
+        assertEquals(listOf(listOf("t")), result.eager.ids())
+        assertTrue(result.more.isEmpty())
     }
 
     @Test

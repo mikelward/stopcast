@@ -51,10 +51,10 @@ object NearbySelection {
      */
     const val MAX_REVEAL_PER_TAP = CLUSTERS_PER_MODE * 3
 
-    // Selection bucket for a cluster with no declared mode (a stop TfL listed no lines for), so
-    // it isn't dropped from every mode's top-N and made to vanish. Internal to selection — never
-    // a real mode, so it never surfaces as a "More" button.
-    private const val NO_MODE = "\u0000none"
+    // Selection bucket for a served cluster whose routes TfL gave no mode for, so it isn't dropped
+    // from every mode's top-N and made to vanish. Internal to selection — never a real mode, so it
+    // never surfaces as a "More" button.
+    private const val UNKNOWN_MODE = "\u0000unknown"
 
     /**
      * A cluster of nearby stops that share a [StopLocation.clusterId] — a station's platforms or
@@ -115,8 +115,14 @@ object NearbySelection {
                 if (meters <= outerRadiusMeters) stop to meters else null
             }
             // A blank clusterId groups the stop alone (a per-stop key), so two same-named stops
-            // TfL never clustered don't merge — the same keyless fallback StopGrouping uses.
-            .groupBy { (stop, _) -> stop.clusterId.ifBlank { "\u0000stop:${stop.id}" } }
+            // TfL never clustered don't merge — the same keyless fallback StopGrouping uses. A
+            // route-less stop is split from its cluster's served poles into a cluster of its own
+            // kind, so a junction with one disused pole doesn't pull that pole in when the junction
+            // is eager — route-less stops are never eager (below).
+            .groupBy { (stop, _) ->
+                val key = stop.clusterId.ifBlank { "\u0000stop:${stop.id}" }
+                if (stop.lines.isEmpty()) "$key\u0000no-routes" else key
+            }
             .map { (key, members) ->
                 val sorted = members.sortedWith(compareBy({ it.second }, { it.first.id }))
                 NearbyCluster(key = key, stops = sorted.map { it.first }, distanceMeters = sorted.first().second)
@@ -126,9 +132,18 @@ object NearbySelection {
 
         // Nearest [clustersPerMode] clusters of each mode are eager; their union is the eager
         // set. A cluster serving two modes is eager if it's in the top N of *either*, so the
-        // nearest station of a sparse mode is never crowded out by a denser one. A cluster with
-        // no mode buckets under [NO_MODE] so it's still selected rather than vanishing.
-        fun modesOf(cluster: NearbyCluster): Set<String> = cluster.modes.ifEmpty { setOf(NO_MODE) }
+        // nearest station of a sparse mode is never crowded out by a denser one. A cluster whose
+        // routes TfL gave no mode for buckets under [UNKNOWN_MODE], so a served stop with thin
+        // metadata is still selected rather than vanishing. A **route-less** cluster — TfL lists no
+        // routes at it, a disused or unserved stop — is never eager: it has no departures to show,
+        // so auto-fetching it only spends the rate budget (two requests a pole) the stops that do
+        // run need. It stays in *more*, behind the generic "More stops", so it's still reachable
+        // rather than silently dropped (SPEC principle 2).
+        fun modesOf(cluster: NearbyCluster): Set<String> = when {
+            cluster.modes.isNotEmpty() -> cluster.modes
+            cluster.stops.any { it.lines.isNotEmpty() } -> setOf(UNKNOWN_MODE)
+            else -> emptySet()
+        }
         val eagerKeys = HashSet<String>()
         for (mode in clusters.flatMapTo(sortedSetOf()) { modesOf(it) }) {
             clusters.asSequence()
