@@ -1,6 +1,8 @@
 package app.stopcast
 
 import android.Manifest
+import app.stopcast.data.FileNearbyStopsStore
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -53,6 +55,8 @@ import app.stopcast.data.SharedTflRequestPool
 import app.stopcast.data.UserApiKeySetting
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.BugReport
+import app.stopcast.domain.CachingStopFinder
+import app.stopcast.domain.NearbyStopsCache
 import app.stopcast.domain.Coordinates
 import app.stopcast.domain.StopMap
 import app.stopcast.ui.BugReportConsentDialog
@@ -131,11 +135,16 @@ class MainActivity : ComponentActivity() {
             initializer {
                 NearbyStopsViewModel(
                     location = AndroidLocationProvider(applicationContext, warn = ::logLocationWarning),
-                    finder = KtorTflClient(
-                        httpClient,
-                        appKey = { UserApiKeySetting.current },
-                        rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
-                        requestPool = SharedTflRequestPool.pool,
+                    // Reuses a recent lookup made close by (in memory, process-wide), so reopening
+                    // the app near where it was last used skips a request and a round trip.
+                    finder = CachingStopFinder(
+                        KtorTflClient(
+                            httpClient,
+                            appKey = { UserApiKeySetting.current },
+                            rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                            requestPool = SharedTflRequestPool.pool,
+                        ),
+                        nearbyStopsCache(applicationContext),
                     ),
                     warn = ::logLocationWarning,
                 )
@@ -1234,6 +1243,20 @@ private fun tickingNow(): Instant {
  * ViewModel store (Codex). A top-level function captures nothing.
  */
 private fun logLocationWarning(message: String) = StopcastDebugLog.warning("location: %s", message)
+
+/**
+ * The process-wide nearby-lookup cache: top-level so it outlives an Activity or ViewModel (a
+ * rotation, a relocation), backed by a file in the app's cache directory (never backed up) so it
+ * also survives the process. Built on first use; it reads the file lazily, on the IO lookup path.
+ */
+private val nearbyStopsCacheLock = Any()
+private var nearbyStopsCacheInstance: NearbyStopsCache? = null
+
+private fun nearbyStopsCache(context: Context): NearbyStopsCache = synchronized(nearbyStopsCacheLock) {
+    nearbyStopsCacheInstance ?: NearbyStopsCache(
+        FileNearbyStopsStore(File(context.applicationContext.cacheDir, "nearby-stops.json"), warn = ::logLocationWarning),
+    ).also { nearbyStopsCacheInstance = it }
+}
 
 /**
  * The production sink for the departures/disruption seam's warnings. Without it wired,

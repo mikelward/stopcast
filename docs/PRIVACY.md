@@ -45,6 +45,13 @@ So the guarantee is precise rather than absolute: **the only user data stopcast 
 off the device goes in its TfL requests** (the Play update check carries none); Android's backup
 carries your saved data under your control, and a bug report carries what you consent to share.
 
+**Kept on the device, never backed up:** to skip a repeat stop lookup when you reopen the app
+near where you last used it, stopcast keeps the **positions of its last few nearby-stop lookups**
+(up to four places) and the stops found around each, for up to a day, in the app's cache
+directory. Android never includes that directory in a backup or device transfer, it is never
+logged or sent anywhere, and clearing the app's cache removes it; an entry older than a day is
+deleted the next time the app looks up nearby stops.
+
 ## The on-device diagnostic log
 
 StopCast keeps a diagnostic log on the device so a misbehaving routing or departure
