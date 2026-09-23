@@ -1299,11 +1299,23 @@ internal fun RouteDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
+            // "From Victoria" names the boarding stop only while no stop list does: the list opens on
+            // it, so with the list shown the label is repeated noise, but a status row (no train to
+            // follow) or a loading, failed, or withheld list would otherwise leave the page not saying
+            // which stop it's about — ambiguous when one line is watched at two stops (Codex).
+            val place = row.hubName.ifBlank { row.stopName }
+            val showFrom = stops !is RouteStopsUi.Loaded && place.isNotBlank()
+            if (showFrom) {
+                Text(
+                    text = stringResource(R.string.route_detail_from, place),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             // The followed route's countdowns, leading the page — the card's one-line format, times
             // only, but across the page's full width so more fit; the ones that don't ellipsize off
-            // the end, keeping the soonest. No "From <stop>": the stop list below starts at the
-            // boarding stop. Left out while stale — the stale caveat below says why — so an old
-            // prediction is never shown as live (SPEC D4).
+            // the end, keeping the soonest. Left out while stale — the stale caveat below says why —
+            // so an old prediction is never shown as live (SPEC D4).
             if (departures.isNotEmpty() && !stale) {
                 Text(
                     text = Countdown.mergedLabel(departures, now),
@@ -1312,7 +1324,7 @@ internal fun RouteDetailScreen(
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = if (showFrom) 8.dp else 0.dp),
                 )
             }
             val status = row.status

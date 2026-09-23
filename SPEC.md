@@ -370,9 +370,11 @@ in for: shown collapsed to its first line, tapped to expand (the same widget the
 uses). Below that it lists **every station from the boarding stop to where the soonest train
 terminates** (a short-working ends where it does, not at the line's end), on a rail in the line's
 color. The boarding stop is marked with a blue "you are here" dot (map-location blue, ringed to
-stand off a blue line's rail); the terminus is solid and calling points hollow. The list is headed only by the **direction** the train runs ("Southbound") — read off its
+stand off a blue line's rail), announced to a screen reader as "Your stop"; the terminus is solid and calling points hollow. The list is headed only by the **direction** the train runs ("Southbound") — read off its
 rail platform, or a bus pole's compass bearing, and left off when neither names one — not by "From" or
-"Stops to": the list opens on the boarding stop and the app bar already names the destination. The list comes from TfL's Route/Sequence for the line, fetched **when the page opens** — never
+"Stops to": the list opens on the boarding stop and the app bar already names the destination. Only
+while no list is shown (a status row, or a list loading, failed, unavailable, or withheld) does the
+body name the boarding stop ("From Victoria"), so the page always says which stop it is about. The list comes from TfL's Route/Sequence for the line, fetched **when the page opens** — never
 on the refresh path — and held in memory for the process, so a reopened route shows at once; until
 it arrives the page says so, a failed fetch says why with a retry, and where TfL's data admits more
 than one path from here (a Northern train with no branch named) the page says the list is

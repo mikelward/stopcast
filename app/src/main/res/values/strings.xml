@@ -36,6 +36,7 @@
     <string name="departure_details">Show details</string>
     <!-- Boarding-stop line in the route detail body. %1$s is the stop/interchange name; the app
          bar already shows where the service is going, so this names where it departs from. -->
+    <string name="route_detail_from">From %1$s</string>
     <!-- Spoken on the boarding stop of the route page's stop list, which is marked by a blue dot. -->
     <string name="route_stop_current">Your stop</string>
     <string name="route_detail_no_disruption">No disruptions reported</string>
