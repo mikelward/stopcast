@@ -22,6 +22,8 @@ data class LineSequence(
     val stopLines: Map<String, List<LineRef>> = emptyMap(),
     // Each stop's published (latitude, longitude), where TfL gave one — a starred journey's ends.
     val stopPositions: Map<String, Pair<Double, Double>> = emptyMap(),
+    // Each stop's stop area (TfL `stationId`), where given: opposite bus stops often share one.
+    val stopAreas: Map<String, String> = emptyMap(),
 ) {
     operator fun plus(other: LineSequence) =
         LineSequence(
@@ -29,6 +31,7 @@ data class LineSequence(
             stopNames + other.stopNames,
             stopLines + other.stopLines,
             stopPositions + other.stopPositions,
+            stopAreas + other.stopAreas,
         )
 }
 

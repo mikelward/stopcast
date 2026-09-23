@@ -174,7 +174,13 @@
     <string name="journey_checking">Checking trains…</string>
     <string name="journey_none">No trains to %1$s soon</string>
     <string name="journey_not_checked">Couldn\'t check trains</string>
+    <!-- The same journey-card notes for a bus journey. -->
+    <string name="journey_checking_bus">Checking buses…</string>
+    <string name="journey_none_bus">No buses to %1$s soon</string>
+    <string name="journey_not_checked_bus">Couldn\'t check buses</string>
     <string name="journey_route_failed">Couldn\'t load the route</string>
+    <!-- Beneath a journey card's trains when some route or train couldn't be checked. -->
+    <string name="journey_incomplete">Some routes couldn\'t be checked</string>
     <string name="action_unstar_journey">Unstar journey</string>
     <string name="route_stop_journey_starred">Starred journey</string>
     <string name="map_open_failed">No maps app to open</string>

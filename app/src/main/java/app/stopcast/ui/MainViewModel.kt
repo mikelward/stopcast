@@ -188,7 +188,14 @@ class MainViewModel(
         get() {
             val near = nearStops
             val nearIds = near.mapTo(HashSet()) { it.id }
-            return near + journeyStops.filter { it.id !in nearIds }
+            // A nearby stop that is also a journey origin declares the journey's lines too, so their
+            // status is checked (a suspended one with no predictions still shows on the card).
+            val journeyLines = journeyStops.associate { it.id to it.lines }
+            val merged = near.map { stop ->
+                val extra = journeyLines[stop.id] ?: return@map stop
+                stop.copy(lines = (stop.lines + extra).distinctBy { it.id })
+            }
+            return merged + journeyStops.filter { it.id !in nearIds }
         }
 
     /**
@@ -214,9 +221,16 @@ class MainViewModel(
         val newIds = stops.mapTo(HashSet()) { it.id }
         val nearIds = nearStops.mapTo(HashSet()) { it.id }
         val dropped = journeyStops.any { it.id !in newIds && it.id !in nearIds }
+        // A fetched stop that now declares a line it didn't (an origin's route came in after its first
+        // fetch, or a nearby stop became an origin) is fetched again, so that line's status — a
+        // suspension with no predictions — is checked.
+        val declaredBefore = fetchedStops.associate { s -> s.id to s.lines.mapTo(HashSet()) { it.id } }
         journeyStops = stops
+        val linesAdded = fetchedStops.any { s ->
+            s.id in declaredBefore && !declaredBefore.getValue(s.id).containsAll(s.lines.map { it.id })
+        }
         val shown = (_state.value as? DeparturesUiState.Loaded)?.stops?.mapTo(HashSet()) { it.stopId }.orEmpty()
-        if (dropped || fetchJob?.isActive == true || stops.any { it.id !in shown }) refresh()
+        if (dropped || linesAdded || fetchJob?.isActive == true || stops.any { it.id !in shown }) refresh()
     }
 
     // The "More" buttons to offer: the modes (or the generic bucket) that still have an unrevealed
@@ -556,8 +570,9 @@ class MainViewModel(
             val arrivalResult = arrivalResults[i]
             val disruptionResult = disruptionResults[i]
             if (arrivalResult == null || disruptionResult == null) {
-                // Reused: carried over as it was, neither a fresh result nor a failure.
-                merged += prior.getValue(stop.id)
+                // Reused: carried over as it was, neither a fresh result nor a failure — but with the
+                // lines it declares now (a journey origin can gain one), so their status is checked.
+                merged += prior.getValue(stop.id).let { p -> if (p.lines == stop.lines) p else p.copy(lines = stop.lines) }
                 return@forEachIndexed
             }
             val departures = arrivalResult.getOrElse { e ->

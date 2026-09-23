@@ -724,15 +724,6 @@ class MainActivity : ComponentActivity() {
                     if (journey.key in flippedJourneys) oriented.reversed() else oriented
                 }
             }
-            LaunchedEffect(viewModel, shownJourneys) {
-                // Each origin declares its journeys' lines, so a line with no predictions (a
-                // suspension) still has its status checked and shown on the card.
-                viewModel.setJourneyStops(
-                    shownJourneys.groupBy { it.from.stopId }.map { (id, js) ->
-                        StopRef(id, js.first().from.name, lines = js.map { it.line }.distinctBy { it.id })
-                    },
-                )
-            }
             val journeyScope = rememberCoroutineScope()
             var journeyWriteFailed by rememberSaveable { mutableStateOf(false) }
             val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
@@ -787,6 +778,8 @@ class MainActivity : ComponentActivity() {
                     // (a watched-stops view), which is shown as-is.
                     stopDistanceMeters = ready.distanceMeters,
                     journeys = shownJourneys,
+                    // The journeys' origins (this way round) are fetched alongside the near-me stops.
+                    onJourneyOrigins = viewModel::setJourneyStops,
                     // Null (stations inert) while the saved journeys are a newer app version's file this
                     // build can't read: it's preserved untouched, so a toggle could only be ignored.
                     onToggleJourney = if (savedJourneys == null) {

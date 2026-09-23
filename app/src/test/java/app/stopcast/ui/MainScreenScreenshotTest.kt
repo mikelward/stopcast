@@ -1233,6 +1233,103 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `a bus journey shown the other way is fetched from the stop across the road`() {
+        // Synthetic poles: each stop has one per direction in a shared stop area.
+        val route = LineSequence(
+            routes = listOf(
+                LineRoute("Park ↔ Hill", listOf("490000001N", "490000002N")),
+                LineRoute("Hill ↔ Park", listOf("490000002S", "490000001S")),
+            ),
+            stopNames = mapOf(
+                "490000001N" to "Park", "490000001S" to "Park", "490000002N" to "Hill", "490000002S" to "Hill",
+            ),
+            stopAreas = mapOf(
+                "490000001N" to "490G1", "490000001S" to "490G1", "490000002N" to "490G2", "490000002S" to "490G2",
+            ),
+            // The way-back pole's routes: another bus, and an interchange line of no single mode.
+            stopLines = mapOf("490000002S" to listOf(LineRef("b2", "B2", "bus"), LineRef("hubline", "Hub", ""))),
+        )
+        val parkToHill = StarredJourney(
+            JourneyEnd("490000001N", "Park"), JourneyEnd("490000002N", "Hill"), "b1", "B1", "bus",
+        )
+        var origins: List<StopRef> = emptyList()
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(
+                        LocalRouteStops provides RouteStopsRepository(
+                            object : RouteSequenceSource {
+                                override suspend fun routeSequence(lineId: String, direction: String) = route
+                            },
+                        ),
+                    ) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(parkToHill.reversed()),
+                            onJourneyOrigins = { origins = it },
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        assertEquals(listOf("490000002S"), origins.map { it.id })
+        // The starred line and the other bus there; not the interchange's modeless line.
+        assertEquals(listOf("b1", "b2"), origins.single().lines.map { it.id })
+        // A bus journey's card talks about buses.
+        composeRule.onNodeWithText("Checking buses…").assertExists()
+    }
+
+    @Test
+    fun `a journey card says when one of its routes couldn't be checked`() {
+        val route = LineSequence(
+            routes = listOf(LineRoute("Park ↔ Hill", listOf("490000001N", "490000002N"))),
+            stopNames = mapOf("490000001N" to "Park", "490000002N" to "Hill"),
+        )
+        val origin = StopArrivals(
+            "490000001N",
+            "Park",
+            listOf(
+                Departure("b1", "B1", "outbound", "Hill", null, now.plusSeconds(120), "bus"),
+                Departure("b2", "B2", "outbound", "Hill", null, now.plusSeconds(240), "bus"),
+            ),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(
+                        LocalRouteStops provides RouteStopsRepository(
+                            object : RouteSequenceSource {
+                                override suspend fun routeSequence(lineId: String, direction: String): LineSequence =
+                                    if (lineId == "b2") throw TflException.Offline(null) else route
+                            },
+                        ),
+                    ) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse(), origin), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(
+                                StarredJourney(JourneyEnd("490000001N", "Park"), JourneyEnd("490000002N", "Hill"), "b1", "B1", "bus"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Park ➔ Hill").assertExists()
+        composeRule.onNodeWithText("Some routes couldn't be checked").assertExists()
+        // The failed route can be retried from the card.
+        composeRule.onNodeWithText("Try again").assertExists()
+    }
+
+    @Test
     fun `tapping a journey card's train opens its route page`() {
         val origin = StopArrivals(
             "940GZZLUVIC",

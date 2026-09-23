@@ -124,7 +124,7 @@ import app.stopcast.domain.StopGroup
 import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.TflException
 import kotlinx.coroutines.CancellationException
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateMapOf
 import app.stopcast.domain.stopPlaceKey
 import app.stopcast.domain.StopQualifier
 import app.stopcast.domain.abbreviateBranch
@@ -175,6 +175,9 @@ fun MainScreen(
     // snackbar seam as [starWriteFailed], cleared by [onJourneyWriteFailureShown].
     journeyWriteFailed: Boolean = false,
     onJourneyWriteFailureShown: () -> Unit = {},
+    // The stops to fetch for the journey cards (each journey's origin this way round), reported
+    // whenever they change; the ViewModel fetches them alongside the near-me stops.
+    onJourneyOrigins: (List<StopRef>) -> Unit = {},
     // The rows the user has starred (SPEC D8): pinned to the top, and their star filled.
     // Empty by default so an unwired build/test renders the plain soonest-first list.
     starred: Set<StarredRow> = emptySet(),
@@ -236,39 +239,77 @@ fun MainScreen(
     // both the list and the route-detail page below read the SAME rows. Empty for any non-Loaded
     // state. Cheap and pure; line statuses stamp each row so a disrupted line is marked (SPEC D3).
     val loaded = state as? DeparturesUiState.Loaded
-    // Each journey line's route (both directions), which says which trains call at the far end. From
-    // the process cache at once when this line was loaded already; otherwise fetched off the render
+    // The routes (both directions) of each journey's starred line and of every line at its origin,
+    // which say where the journey boards and alights and which trains or buses call at the far end.
+    // From the process cache at once when a line was loaded already; otherwise fetched off the render
     // path (the same lookup the route page makes, one or two requests per line per process). A failed
-    // load is kept as such, so the card says so and offers a retry rather than checking forever.
+    // load is kept as such (null), so the card says so and offers a retry rather than checking forever.
     val routeStopsRepository = LocalRouteStops.current
-    val journeyLineIds = remember(journeys) { journeys.map { it.lineId }.distinct() }
     var journeyRouteRetry by rememberSaveable { mutableIntStateOf(0) }
-    val journeySequences by produceState<Map<String, LineSequence?>>(
-        initialValue = journeyLineIds.mapNotNull { id -> routeStopsRepository?.cached(id, "")?.let { id to it } }.toMap(),
-        routeStopsRepository,
-        journeyLineIds,
-        journeyRouteRetry,
-    ) {
-        val repository = routeStopsRepository ?: return@produceState
-        for (lineId in journeyLineIds) {
-            if (value[lineId] != null) continue
-            value = value - lineId
-            value = value + (
-                lineId to try {
-                    repository.load(lineId, "")
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: TflException) {
-                    // Logged (sanitized) by the repository; null marks the failure for the card.
-                    null
-                }
-                )
+    val loadedSequences = remember { mutableStateMapOf<String, LineSequence?>() }
+    fun sequencesFor(lineIds: Collection<String>): Map<String, LineSequence?> = buildMap {
+        for (id in lineIds) {
+            if (id in loadedSequences) put(id, loadedSequences[id]) else routeStopsRepository?.cached(id, "")?.let { put(id, it) }
         }
     }
-    // The journey cards: the trains from each journey's origin that call at its far end, the origin's
-    // closure notice if it has one, or why the trains can't be shown yet (SPEC principle 1).
+    val journeyStarLines = remember(journeys) { journeys.map { it.lineId }.filter { it.isNotBlank() }.distinct() }
+    val starSequences = sequencesFor(journeyStarLines)
+    // Where each journey boards and alights this way round: a bus's way back uses other poles.
+    val journeySegments = remember(journeys, starSequences) {
+        journeys.associate { j -> j.key to starSequences[j.lineId]?.let { Journeys.segment(j, it) } }
+    }
+    // The stop each journey is fetched from: its resolved origin, or, before its route is in, a
+    // station's own id (the same both ways) — a bus waits, since its way-back pole isn't known yet.
+    val journeyOrigins = remember(journeys, journeySegments, starSequences) {
+        journeys.mapNotNull { j ->
+            val id = journeySegments[j.key]?.originId ?: j.from.stopId.takeUnless { j.bus } ?: return@mapNotNull null
+            // The starred line, plus every line of its mode the route data lists at the origin (the
+            // 134 beside the 43), so one with no predictions still has its route loaded and its
+            // status checked — a suspended route shows its warning, not "no buses".
+            // Only lines of a known, matching mode: an interchange's lines come in with a blank mode
+            // when it mixes modes (King's Cross's buses beside its tube), and loading every one
+            // would spend the request budget on routes that don't serve this stop.
+            // A journey saved with no mode (TfL left it off) takes its line's known one.
+            val mode = j.mode.ifBlank { Connections.knownMode(j.lineId).orEmpty() }
+            val served = starSequences[j.lineId]?.stopLines?.get(id).orEmpty()
+                .filter { it.mode.isNotBlank() && it.mode.equals(mode, ignoreCase = true) }
+            StopRef(id, j.from.name, lines = listOf(j.line) + served)
+        }.groupBy { it.id }.map { (id, refs) ->
+            StopRef(id, refs.first().name, lines = refs.flatMap { it.lines }.distinctBy { it.id })
+        }
+    }
+    val reportJourneyOrigins by rememberUpdatedState(onJourneyOrigins)
+    LaunchedEffect(journeyOrigins) { reportJourneyOrigins(journeyOrigins) }
+    val originLines = remember(loaded?.stops, journeyOrigins) {
+        val ids = journeyOrigins.mapTo(HashSet()) { it.id }
+        loaded?.stops.orEmpty().filter { it.stopId in ids }
+            .flatMap { stop -> stop.departures.map { it.lineId } + stop.lines.map { it.id } }
+    }
+    val journeyLineIds = remember(journeyStarLines, originLines) {
+        (journeyStarLines + originLines).filter { it.isNotBlank() }.distinct()
+    }
+    LaunchedEffect(routeStopsRepository, journeyLineIds, journeyRouteRetry) {
+        val repository = routeStopsRepository ?: return@LaunchedEffect
+        for (lineId in journeyLineIds) {
+            if (loadedSequences[lineId] != null) continue
+            loadedSequences.remove(lineId)
+            loadedSequences[lineId] = try {
+                repository.load(lineId, "")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: TflException) {
+                // Logged (sanitized) by the repository; null marks the failure for the card.
+                null
+            }
+        }
+    }
+    val journeySequences = sequencesFor(journeyLineIds)
+    // The journey cards: the trains or buses from each journey's origin that call at its far end, on
+    // any line, the origin's closure notice if it has one, or why they can't be shown yet (SPEC
+    // principle 1).
     val journeyCards = remember(
-        loaded?.stops, loaded?.lineStatuses, loaded?.unavailableStopIds, now, journeys, journeySequences, dismissed,
+        loaded?.stops, loaded?.lineStatuses, loaded?.unavailableStopIds, now, journeys, journeySegments,
+        journeySequences, dismissed,
     ) {
         val ld = loaded
         // Dismissals apply here as on the list, so an alert dismissed anywhere is gone from the card.
@@ -277,28 +318,40 @@ fun MainScreen(
             dismissed,
         )
         journeys.map { journey ->
-            val origin = ld?.stops?.firstOrNull { it.stopId == journey.from.stopId }
-            val closure = across.firstOrNull { it.stopId == journey.from.stopId && it.stopDisruption != null }
+            val segment = journeySegments[journey.key]
+            val originId = segment?.originId ?: journey.from.stopId
+            val origin = ld?.stops?.firstOrNull { it.stopId == originId }
+            val closure = across.firstOrNull { it.stopId == originId && it.stopDisruption != null }
+            // The stop being fetched: known before the route is in for a station (see journeyOrigins).
+            val fetchedId = segment?.originId ?: journey.from.stopId.takeUnless { journey.bus }
             val state = when {
                 // Asked for and not come back: the fetch failed with nothing earlier to show.
-                origin == null && journey.from.stopId in ld?.unavailableStopIds.orEmpty() -> JourneyCardState.NotChecked
-                origin == null -> JourneyCardState.Checking
+                origin == null && fetchedId != null && fetchedId in ld?.unavailableStopIds.orEmpty() ->
+                    JourneyCardState.NotChecked
                 journey.lineId !in journeySequences -> JourneyCardState.Checking
                 journeySequences[journey.lineId] == null -> JourneyCardState.RouteFailed
+                // The route can't place the stops this way round (no single way-back stop).
+                segment == null -> JourneyCardState.NotChecked
+                origin == null -> JourneyCardState.Checking
                 else -> {
-                    val sequence = journeySequences[journey.lineId]
-                    val shown = Journeys.rows(journey, across, sequence).orEmpty()
+                    val trains = Journeys.trains(segment, across, journeySequences, journey)
                     // "No trains" is only a claim a fresh, current fetch can make: an origin whose last
                     // refresh failed (kept aged) or has gone stale says it couldn't check instead —
-                    // and so does one with a train whose path the route couldn't resolve, since that
-                    // train may well call at the far end.
+                    // and so does one with a departure whose path couldn't be resolved, since it may
+                    // well call at the far end. A line whose route is still loading says checking.
                     val current = origin.arrivalsFresh &&
                         !Staleness.isStale(Duration.between(origin.fetchedAt, now).toKotlinDuration())
-                    val unresolved = sequence != null && Journeys.anyUnresolved(journey, across, sequence)
-                    if (shown.isEmpty() && (!current || unresolved)) {
-                        JourneyCardState.NotChecked
-                    } else {
-                        JourneyCardState.Trains(shown)
+                    // A line still loading holds the whole card at "checking", so a first line's trains
+                    // aren't shown as if they were all; one that couldn't be checked is said so beneath
+                    // the rest.
+                    when {
+                        trains.pending -> JourneyCardState.Checking
+                        trains.rows.isNotEmpty() ->
+                            JourneyCardState.Trains(trains.rows, incomplete = trains.unresolved, retry = trains.routeFailed)
+                        // A route that failed to load is the one gap a retry can close.
+                        trains.routeFailed -> JourneyCardState.RouteFailed
+                        !current || trains.unresolved -> JourneyCardState.NotChecked
+                        else -> JourneyCardState.Trains(emptyList())
                     }
                 }
             }
@@ -1056,7 +1109,12 @@ private fun DepartureList(
             when (val state = card.state) {
                 is JourneyCardState.Trains -> if (state.rows.isEmpty()) {
                     item(key = "journey-note|${card.journey.key}") {
-                        JourneyNote(stringResource(R.string.journey_none, card.journey.to.name))
+                        JourneyNote(
+                            stringResource(
+                                if (card.journey.bus) R.string.journey_none_bus else R.string.journey_none,
+                                card.journey.to.name,
+                            ),
+                        )
                     }
                 } else {
                     StopGrouping.groupByStop(state.rows, warningsLead = false).forEach { group ->
@@ -1071,12 +1129,24 @@ private fun DepartureList(
                             )
                         }
                     }
+                    if (state.incomplete) {
+                        item(key = "journey-note|${card.journey.key}") {
+                            JourneyNote(
+                                stringResource(R.string.journey_incomplete),
+                                onRetry = onRetryJourneyRoutes.takeIf { state.retry },
+                            )
+                        }
+                    }
                 }
                 JourneyCardState.Checking -> item(key = "journey-note|${card.journey.key}") {
-                    JourneyNote(stringResource(R.string.journey_checking))
+                    JourneyNote(
+                        stringResource(if (card.journey.bus) R.string.journey_checking_bus else R.string.journey_checking),
+                    )
                 }
                 JourneyCardState.NotChecked -> item(key = "journey-note|${card.journey.key}") {
-                    JourneyNote(stringResource(R.string.journey_not_checked))
+                    JourneyNote(
+                        stringResource(if (card.journey.bus) R.string.journey_not_checked_bus else R.string.journey_not_checked),
+                    )
                 }
                 JourneyCardState.RouteFailed -> item(key = "journey-note|${card.journey.key}") {
                     JourneyNote(stringResource(R.string.journey_route_failed), onRetry = onRetryJourneyRoutes)
@@ -1348,8 +1418,16 @@ internal sealed interface JourneyCardState {
     /** The origin's last refresh failed or has gone stale, and there's nothing current to show. */
     data object NotChecked : JourneyCardState
 
-    /** The trains that call at the far end — empty only from a fresh, current fetch. */
-    data class Trains(val rows: List<DepartureRow>) : JourneyCardState
+    /**
+     * The trains that call at the far end — empty only from a fresh, current fetch. [incomplete]
+     * when some departure or line couldn't be checked, so the list may be missing one.
+     */
+    data class Trains(
+        val rows: List<DepartureRow>,
+        val incomplete: Boolean = false,
+        // [incomplete] because some line's route failed to load: offer a retry.
+        val retry: Boolean = false,
+    ) : JourneyCardState
 }
 
 /** A journey card's one-line status in place of trains, with a retry when there's one to offer. */
@@ -1987,6 +2065,30 @@ internal fun RouteDetailScreen(
                     modifier = Modifier.padding(top = 12.dp),
                 )
             }
+            // Each saved journey that boards here on this page, with the stops on this page it ends at:
+            // by id, or placed on this page's route the way the journey card places it (a bus's way
+            // back boards across the road).
+            // The row's mode, from any of its departures when TfL left it off the soonest one.
+            val rowMode = row.mode.ifBlank { row.upcoming.firstOrNull { it.mode.isNotBlank() }?.mode.orEmpty() }
+            val pageSequence = (stops as? RouteStopsUi.Loaded)?.sequence
+            val pageStopIds = (stops as? RouteStopsUi.Loaded)?.stops?.mapTo(HashSet()) { it.id }.orEmpty()
+            val journeysHere = remember(journeys, pageSequence, pageStopIds, row.stopId, row.lineId) {
+                journeys.mapNotNull { j ->
+                    // The saved ids only when the other end is itself on this page's list; a bus's
+                    // way back may board at a saved pole but alight across the road.
+                    val byId = when (row.stopId) {
+                        j.from.stopId -> setOf(j.to.stopId)
+                        j.to.stopId -> setOf(j.from.stopId)
+                        else -> null
+                    }?.takeIf { pageSequence == null || it.any { id -> id in pageStopIds } }
+                    val placed = byId ?: pageSequence?.let { seq ->
+                        listOf(j, j.reversed()).firstNotNullOfOrNull { cand ->
+                            Journeys.segment(cand, seq, row.lineId)?.takeIf { it.originId == row.stopId }?.destinationIds
+                        }
+                    }
+                    placed?.let { j to it }
+                }.toMap()
+            }
             // Every station from here to where the soonest train terminates (SPEC *Route detail*).
             RouteStopsSection(
                 state = stops,
@@ -1996,17 +2098,12 @@ internal fun RouteDetailScreen(
                 // Rail reads it off the followed train's platform ("Southbound - Platform 2"); a bus
                 // off its pole's compass bearing. Neither known, no heading rather than a guess.
                 direction = PlatformDirection.of(followed?.platform) ?: bearingDirection(row.bearing),
-                starredStopIds = journeys
-                    .filter { it.lineId == row.lineId }
-                    .mapNotNullTo(mutableSetOf()) { j ->
-                        when (row.stopId) {
-                            j.from.stopId -> j.to.stopId
-                            j.to.stopId -> j.from.stopId
-                            else -> null
-                        }
-                    },
+                // By segment, whatever line or direction it was starred from: the 43 and the 134
+                // between two shared stops are one journey, and so is its way back from the poles
+                // across the road — so any of those pages shows (and toggles) the same star.
+                starredStopIds = journeysHere.values.flatMapTo(mutableSetOf()) { it },
                 onToggleJourneyTo = onToggleJourney
-                    ?.takeIf { row.lineId.isNotBlank() && Connections.isRail(row.mode, row.lineId) }
+                    ?.takeIf { row.lineId.isNotBlank() && (Connections.isRail(rowMode, row.lineId) || rowMode.equals("bus", ignoreCase = true)) }
                     ?.let { toggle ->
                         { stop ->
                             val positions = (stops as? RouteStopsUi.Loaded)?.positions.orEmpty()
@@ -2014,9 +2111,12 @@ internal fun RouteDetailScreen(
                             // so a saved journey's heading never has a blank end.
                             fun end(id: String, name: String) =
                                 JourneyEnd(id, name.ifBlank { id }, positions[id]?.first, positions[id]?.second)
+                            // A saved journey this stop already ends on this page is toggled (off) as
+                            // itself, rather than starred again under this direction's pole ids.
+                            val existing = journeysHere.entries.firstOrNull { stop.id in it.value }?.key
                             toggle(
-                                StarredJourney(
-                                    end(row.stopId, row.stopName), end(stop.id, stop.name), row.lineId, row.lineName, row.mode,
+                                existing ?: StarredJourney(
+                                    end(row.stopId, row.stopName), end(stop.id, stop.name), row.lineId, row.lineName, rowMode,
                                 ),
                             )
                         }

@@ -114,7 +114,10 @@ internal fun List<StarredJourney>.toPersisted(): PersistedStarredJourneys =
 
 internal fun PersistedStarredJourneys.toDomain(): List<StarredJourney>? {
     if (version != PersistedStarredJourneys.CURRENT_VERSION) return null
+    // One journey per segment: a file from before journeys were line-free may hold the same two
+    // stations starred on two lines; the first stands for both.
     return journeys.map { StarredJourney(it.from.toDomain(), it.to.toDomain(), it.lineId, it.lineName, it.mode) }
+        .distinctBy { it.key }
 }
 
 /** JSON (de)serialization; a corrupt file throws [CorruptionException] so the handler replaces it. */
