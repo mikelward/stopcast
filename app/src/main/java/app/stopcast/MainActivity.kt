@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -635,7 +636,19 @@ class MainActivity : ComponentActivity() {
             // These background refreshes are composed only while the departures view is shown:
             // the licenses screen is hosted above this subtree (see onCreate), so opening it
             // removes DeparturesForStops from composition and stops the polling (Codex).
-            RefreshOnForeground(viewModel, relocating)
+            // Refresh = re-locate (a fresh fix, re-resolving the nearby set) then re-fetch the
+            // confirmed same set; a moved-to set's new ViewModel fetches on its own init. Used by
+            // the refresh control AND by a return to the foreground below, so walking away and back
+            // moves the nearby set to where you are now (maintainer, 2026-09-23) — the auto-refresh
+            // timer stays departures-only, it doesn't relocate. The cancel-then-relocate-then-
+            // reconcile composition is factored into [relocateAction] so a regression back to a
+            // departures-only refresh is caught by a unit test.
+            val onRelocate: () -> Unit = relocateAction(
+                cancelFetch = viewModel::cancelFetch,
+                relocate = relocate,
+                reconcile = { fresh -> viewModel.reconcile(fresh.eager, fresh.more) },
+            )
+            RefreshOnForeground(viewModel, relocating, onRelocate)
             AutoRefresh(viewModel, relocating)
             // Provide the branch topology so the card groups a branching row the way the widget
             // does — equivalent trunks merged, the label kept only where the trunk is a choice
@@ -647,16 +660,10 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     state = state,
                     now = tickingNow(),
-                    // Refresh re-locates first; the departures re-fetch is sequenced inside
-                    // relocate and runs only for the confirmed same set (a moved-to set's new
-                    // ViewModel fetches on its own init), so we never fetch the old set in
-                    // parallel with the fix. Cancel any fetch already in flight (initial,
-                    // foreground, or timed) before the fix starts, so it can't finish first and
-                    // save a fresh snapshot for the old set during the fix window (Codex).
-                    onRefresh = {
-                        viewModel.cancelFetch()
-                        relocate { fresh -> viewModel.reconcile(fresh.eager, fresh.more) }
-                    },
+                    // Re-locates then re-fetches (see onRelocate above) — the same action a return
+                    // to the foreground runs, so the refresh control and reopening the app both move
+                    // the nearby set to the current position.
+                    onRefresh = onRelocate,
                     refreshing = refreshing,
                     // From "near me now": collapse a line served by several adjacent nearby stops
                     // to its nearest stop (SPEC *Finding stops → Near me now*). Spans both tiers, so
@@ -924,30 +931,59 @@ internal fun StopCastAppRoot(content: @Composable () -> Unit) {
 }
 
 /**
- * Refresh when the user returns to the foregrounded screen (SPEC D6: refresh on open),
- * so they don't come back from Recents to withheld stale countdowns and have to refresh
- * by hand. The ViewModel's `init` does the first load and survives configuration change,
- * so the **first** foreground per activity instance is skipped — only a genuine return
- * from the background triggers a re-fetch, never a duplicate of the initial request nor
- * a refetch on rotation. (Lifecycle wiring: verified by inspection, wants a device check.)
+ * Re-locate and refresh when the user returns to the foregrounded screen (SPEC D6: refresh on
+ * open), so coming back after walking shows the stops near you *now* rather than where you were —
+ * and never a return to withheld stale countdowns you'd have to refresh by hand (maintainer,
+ * 2026-09-23). [onForeground] is the same re-locate action the refresh control runs (a fresh fix
+ * that re-resolves the nearby set, then a re-fetch), so a genuine return moves the set; this is a
+ * foreground, user-adjacent location fix bounded to app opens, not background polling (SPEC
+ * *Privacy* / *Finding stops*). The ViewModel's `init` does the first load and survives
+ * configuration change, so the **first** foreground per activity instance is skipped — only a
+ * genuine return from the background acts, never a duplicate of the initial request nor a refetch
+ * on rotation. (Lifecycle wiring: verified by inspection, wants a device check.)
  *
  * [relocating] joins the busy gate (as it does for [AutoRefresh]): a foreground return while a
- * manual re-locate's fix is in flight must not refresh the current (soon-to-be-previous) set and
- * save it as a fresh snapshot before the fix resolves — the relocate's own resolution refreshes
- * the confirmed set, replaces a moved-to one, or shows the gate (Codex).
+ * re-locate's fix is already in flight must not kick a second one; the in-flight relocate's own
+ * resolution refreshes the confirmed set, replaces a moved-to one, or shows the gate (Codex).
  */
 @Composable
-private fun RefreshOnForeground(viewModel: MainViewModel, relocating: StateFlow<Boolean>) {
+private fun RefreshOnForeground(
+    viewModel: MainViewModel,
+    relocating: StateFlow<Boolean>,
+    onForeground: () -> Unit,
+) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    // Read the latest action without re-keying the effect on it (a new lambda each recomposition
+    // would restart the effect and reset the first-foreground skip every frame).
+    val currentOnForeground = rememberUpdatedState(onForeground)
     // Keyed on [viewModel], not just the lifecycle owner: a moved-to relocate swaps in a fresh
     // per-set MainViewModel while this composable stays composed (DeparturesForStops recomposes
-    // in place — no key() wrapper), so an effect keyed on the lifecycle alone would keep calling
-    // refresh() on the cleared previous model while the new set never got a foreground refresh
-    // (Codex). Re-keying restarts the effect against the replacement model — and resets its
-    // first-foreground skip, which the new set's own init fetch stands in for.
+    // in place — no key() wrapper), so an effect keyed on the lifecycle alone would keep acting on
+    // the cleared previous model while the new set never got a foreground refresh (Codex).
+    // Re-keying restarts the effect against the replacement model — and resets its first-foreground
+    // skip, which the new set's own init fetch (and the relocate that created it) stands in for.
     LaunchedEffect(lifecycleOwner, viewModel) {
-        refreshOnForeground(lifecycleOwner.lifecycle, isBusy = { relocating.value }) { viewModel.refresh() }
+        refreshOnForeground(lifecycleOwner.lifecycle, isBusy = { relocating.value }) {
+            currentOnForeground.value()
+        }
     }
+}
+
+/**
+ * The re-locate action shared by the refresh control and the foreground return (SPEC *Finding
+ * stops*): cancel any in-flight departures fetch first — so it can't finish and re-stamp the old
+ * set as fresh during the fix window (Codex) — then force a fresh fix that re-resolves the nearby
+ * set and [reconcile]s the confirmed same set in place. Extracted so the wiring that a refresh and
+ * a reopen **re-locate** — rather than a departures-only [MainViewModel.refresh] — is pinned by a
+ * unit test: a regression back to a location-free refresh would neither cancel first nor re-resolve.
+ */
+internal fun relocateAction(
+    cancelFetch: () -> Unit,
+    relocate: (onSameSet: (NearbyStopsViewModel.State.Ready) -> Unit) -> Unit,
+    reconcile: (NearbyStopsViewModel.State.Ready) -> Unit,
+): () -> Unit = {
+    cancelFetch()
+    relocate(reconcile)
 }
 
 /**

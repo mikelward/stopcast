@@ -742,7 +742,8 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       **removed**, and **refresh + pull-to-refresh now re-locate** (force a fresh fix, then
       re-resolve the nearby set) as well as re-fetching departures. D1 was updated to match —
       location stays off the *background/widget* refreshes but a *manual near-me* refresh takes
-      an on-demand foreground fix. The force-fresh requirement this item raised is met
+      an on-demand foreground fix (later extended to a foreground return too — see the
+      foreground-relocate item below). The force-fresh requirement this item raised is met
       (`relocate()` → `current(forceFresh = true)` → `FixSelection.resolve(forceFresh = true)`,
       which bypasses the instant fast path entirely, cache only a bounded fallback). Cost/battery note stands: each re-location is one more
       on-demand coordinate to TfL (same recipient/category, £0, negligible on a user tap).
@@ -1649,6 +1650,14 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   auto-locate work), which frees one slot. Remaining if the bar is still tight: drop the
   refresh button too (pull-to-refresh covers it), moving anything left to the overflow menu.
   Reversible — layout-only, no data path.
+- [x] **Re-locate on a return to the foreground (between C and A)** — shipped (PR #134). Reopening
+      the app after it was backgrounded now runs the same re-locate as the refresh control (a fresh
+      fix, re-resolve, re-fetch), so walking away and back moves the nearby set without a manual
+      pull — the "I have to manually refresh sometimes" case. Stays foreground and user-adjacent
+      (bounded to app opens and refreshes, no background poll); the on-screen auto-refresh tick
+      stays departures-only. **D1 extended** from "manual near-me refresh" to include the
+      foreground return; the shared action is `relocateAction` (pinned by `RelocateActionTest`).
+      The *automatic* distance-triggered version below remains the follow-up.
 - **Automatic distance-triggered re-locate (milestone A, after C) — try-it, revisit
   (maintainer, 2026-09-20).** Milestone C makes refresh re-locate; the user pulls to refresh
   when walking past a station, and if that's fast enough (the re-locate forces a fresh fix —

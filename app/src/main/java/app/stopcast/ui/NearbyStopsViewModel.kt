@@ -28,12 +28,13 @@ import kotlinx.coroutines.withContext
  * (mirrors the [StopFinder]/[app.stopcast.domain.TflClient] split).
  *
  * Location is taken only on an explicit find: [locate] on screen open (and after a grant or a
- * retry), and [relocate] on a **user-initiated** departures refresh, since the user may have
- * walked since the last fix (SPEC *Finding stops* — a refresh re-locates). The departures
- * state machine's own refreshes — the automatic tick and the foreground-return refresh — are
- * location-free, reusing the nearby set this class last resolved. This keeps location
- * on-demand (SPEC D1); the cancel-on-relocate invariant then stops a location-free refresh
- * from fetching (and persisting) the previous set's departures while a re-locate is in flight.
+ * retry), and [relocate] on a **user-adjacent** departures refresh — the refresh control, a
+ * pull-to-refresh, or a return to the foreground — since the user may have walked since the last
+ * fix (SPEC *Finding stops*, D1). Only the automatic on-screen tick is **location-free**, reusing
+ * the nearby set this class last resolved so an always-open surface keeps countdowns live without
+ * a timed location send. This keeps location on-demand and foreground; the cancel-on-relocate
+ * invariant then stops a location-free refresh from fetching (and persisting) the previous set's
+ * departures while a re-locate is in flight.
  *
  * Every non-happy outcome is a distinct, honest state rather than an empty list (SPEC
  * principles 1–2): the permission isn't held ([State.PermissionRequired]), there's no fix
