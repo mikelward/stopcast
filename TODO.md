@@ -1659,6 +1659,19 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
       stays departures-only. **D1 extended** from "manual near-me refresh" to include the
       foreground return; the shared action is `relocateAction` (pinned by `RelocateActionTest`).
       The *automatic* distance-triggered version below remains the follow-up.
+  - [x] **Foreground return relocates even from behind an overlay** (Codex P2 on #134, PR #136).
+        The return observer sat inside the departures view, which the Settings/Licenses overlays
+        remove from composition — so a background→foreground with an overlay open was never seen,
+        and closing the overlay showed the pre-move set until a manual refresh. Moved the observer
+        **above** the overlay switch (`ForegroundReturnLatcher`, a top-level `repeatOnLifecycle`),
+        latching a pending return the departures view consumes on (re)entry (`ConsumeForegroundReturn`).
+        The latch is a retained `ForegroundReturnLatch` ViewModel (survives a rotation while the
+        overlay is open, resets on process death where the init reload covers it). Latches only while
+        the set is **Ready** (a not-yet-resolved return is the gate's `locate()`, and a permission
+        grant via Settings resolves through `locate()`, not a re-locate — so no double-fetch), skips
+        the first foreground, and `relocating` gates a mid-relocate return — so grant-return/rotation/
+        moved-to-set don't relocate spuriously. Wiring pinned by `ForegroundReturnTest` (drives the
+        real latcher/overlay/consume topology).
 - **Automatic distance-triggered re-locate (milestone A, after C) — try-it, revisit
   (maintainer, 2026-09-20).** Milestone C makes refresh re-locate; the user pulls to refresh
   when walking past a station, and if that's fast enough (the re-locate forces a fresh fix —
