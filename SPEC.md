@@ -799,7 +799,8 @@ surface.)
   less than 30 s ago (and whose closure check didn't fail) is carried over as it is rather than
   refetched, keeping its own age, so a retry right after a rate-limited refresh fetches only the
   stops still missing instead of hitting the limit again. The 60 s auto-refresh is past that
-  window, so it still refetches every stop. A stop's closure check (a closed or moved stop) is
+  window, so it refetches every stop within the walking reach (a far stop every other minute —
+  below). A stop's closure check (a closed or moved stop) is
   reused for 5 minutes — closures change over hours, and the check is half of every stop's cost —
   while line status, the fast-moving signal, is reused for 90 s — so the 60 s auto-refresh
   re-checks it every other cycle and a new suspension still shows within about two minutes. Both live in memory
@@ -814,6 +815,10 @@ surface.)
   Each departures refresh logs its request count and timing to the on-device debug log (the
   nearby-stop lookup before a near-me load is one more request), so a slow load is diagnosable
   from real numbers.
+- **Far stops refresh less often on the timer.** The 60 s auto-refresh carries over a stop more
+  than 500 m away (past the walking reach) that was fetched within the last 90 s, so it's
+  refetched every other minute; its countdowns stay under about two minutes old, and any user
+  refresh fetches it again.
 - **A repeat nearby lookup close by is answered from memory.** A lookup's stop list is reused
   for up to a day when a new fix is within 150 m of where it was made (the last four places),
   saving a request and the round trip every near-me load otherwise waits on. The list is
