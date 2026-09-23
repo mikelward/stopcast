@@ -402,9 +402,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         as an arrow plus the destination (`-> Bank`). Both direction cases (a `CompassPoint` bearing
         and an arrow-in-`stopLetter`) share the one word path. Intercardinals use `bearingSpoken`'s
         hyphenated `-bound` form.
-  - [ ] **Find a better arrow glyph for the "-> destination" header** (maintainer, 2026-09-22). The
-        terminus arrow is ASCII `->` for now — the only thing that aligns to the text baseline
-        reliably. Preview single-glyph options (the maintainer thought `➔` U+2794 looked ok; also
+  - [ ] **Find a better arrow glyph for the "-> destination" header, and the journey heading**
+        (maintainer, 2026-09-22; journey heading added 2026-09-23). The terminus arrow is ASCII `->`
+        for now — the only thing that aligns to the text baseline reliably. The starred-journey card
+        heading ("Victoria → Warren Street") has the same problem once starred journeys land (#151,
+        the card heading's `journey_title` string): its `→` sits off vertical center against the
+        station names. Fix both with the same choice. Preview single-glyph options (the maintainer thought `➔` U+2794 looked ok; also
         `→`, `⟶`, `➜`, `»`) rendered in the app font to judge vertical alignment, and/or a centered
         inline vector `ArrowRightAlt` icon (pixel-perfect, but the header can no longer be one plain
         string — `InlineTextContent` in `StopGroupHeader`). Pick one and swap it in for the ASCII `->`.
