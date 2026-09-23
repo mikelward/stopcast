@@ -1687,6 +1687,40 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   `TYPE_SIGNIFICANT_MOTION` trigger) is the mitigation if that proves costly. Throttle the
   TfL re-resolve to **≤ ~once/min** regardless of how often the distance filter fires
   (maintainer's rate goal). No new dependency (framework `FUSED_PROVIDER`, already used).
+- **Underground / station-Wi-Fi fixes are confidently wrong — investigate what the fix carries
+  (maintainer, 2026-09-23).** On the Tube there's no GPS, so the network provider places the user by
+  the *station's* Wi-Fi — often a different station than they're at — and a re-locate then re-resolves
+  the nearby set to the wrong stops (not merely stale). **First step is diagnostic:** capture what the
+  fix actually reports in this case — the **provider** (fused/network/gps/passive), the **accuracy
+  radius** *and whether one is present* (`Location.hasAccuracy()` — a missing estimate must be carried
+  as unknown/null, not the default `0f`, or it would read as maximally accurate), the fix's **age**
+  (`FixSelection`'s `fallbackAgeMillis` — a recent-but-inaccurate fix and a stale one near the ~30-min
+  fallback limit need telling apart to know whether accuracy or staleness is the lever), and the
+  coordinate. The consent-gated bug report already sends the exact fix (SPEC *Privacy*), so it's the
+  channel to gather real cases — **but the plumbing must be extended first:** `AndroidLocationProvider`
+  collapses each `Location` to lat/long-only `Coordinates` and `BugReportRequest` receives only that,
+  so today none of provider / accuracy(+validity) / age reaches the report; carry those through (they
+  are coarse diagnostics, so the debug log may carry them too, with the `docs/PRIVACY.md` disclosure —
+  never the coordinate outside the consent-gated report — *Privacy*). **Then decide handling**, e.g.:
+  gate a re-locate on the fix's **measured accuracy** (nullable `Location.accuracy`, treating unknown
+  as untrusted) and/or age, not its provider label — a
+  *fused* fix can itself be Wi-Fi/cell-derived (TODO *fused fixes can be coarse*), so "prefer
+  GPS/fused" would still accept the bad underground fix; keep the current set (and say the fix is
+  uncertain) when accuracy is worse than a threshold, or reject an implausible jump — without
+  regressing the above-ground "follows you" behavior. Tie-in: this is the reliability caveat behind
+  the auto-relocate-on-reopen work (#134/#136).
+  **Evidence (maintainer report, on the Tube):** the fresh fix's *fused* and *gps* providers both
+  time out (10 s cap), so `FixSelection` falls back to the last-known fix and proceeds; the TfL
+  nearby lookup then times out too (poor underground connectivity). So a provider-label check
+  wouldn't help — accuracy/staleness is the lever.
+  **Near-term deliverable — surface the failure to the user (maintainer, 2026-09-23; SPEC principle
+  2, don't fail silently):** today `NoLocation` ("couldn't get your location") and `Failed` ("can't
+  reach TfL") are shown honestly, but the **silent-fallback** case isn't — when a fresh fix times
+  out and a recent last-known exists, `FixSelection.resolve` returns that last-known and the app
+  shows stops for it with no warning (so the Tube shows a wrong/stale area as current). Thread
+  "this fix is a stale/last-known fallback (age) / low-accuracy" out of `FixSelection` → provider →
+  `NearbyStopsViewModel` and show a visible, honest signal (a banner or stamp: "Couldn't get a
+  current location — showing your last-known area"), consistent with the staleness contract (D4).
 - **Same-set re-locate discards updated stop metadata (Codex P2 on #70) — RESOLVED by the
   #87 reveal redesign (2026-09-21).** The old gap: `relocate()`'s same-set path kept the old
   `MainViewModel`, whose `seedStops` were fixed at init, so a refresh returning the *same* IDs
