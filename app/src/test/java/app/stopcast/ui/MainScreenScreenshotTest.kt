@@ -577,6 +577,72 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `a platform tapped in a station view shows just that platform, and back returns to the station`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(kingsCrossStPancras(), manorHouse()), now.minusSeconds(60)),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Cockfosters").assertExists()
+
+        // In the station view, a platform header narrows to that platform.
+        composeRule.onAllNodesWithContentDescription("Platform 1, Northbound", substring = true).onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Walthamstow Central").assertExists()
+        composeRule.onNodeWithText("Cockfosters").assertDoesNotExist()
+
+        // Back steps out to the whole station, not past it to the full list.
+        composeRule.onNodeWithContentDescription("Back").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Cockfosters").assertExists()
+        composeRule.onAllNodesWithText("Manor House", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithContentDescription("Back").assertExists()
+
+        // And back again returns to the full list (Manor House sits below King's Cross's rows, off
+        // the lazy list's first screen, so the missing back arrow is what marks the full list).
+        composeRule.onNodeWithContentDescription("Back").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").assertDoesNotExist()
+        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().assertExists()
+    }
+
+    @Test
+    fun `a refresh dropping a platform and its station closes to the full list and stays there`() {
+        val both = DeparturesUiState.Loaded(listOf(kingsCrossStPancras(), manorHouse()), now.minusSeconds(60))
+        var state by mutableStateOf<DeparturesUiState>(both)
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithContentDescription("Platform 1, Northbound", substring = true).onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Walthamstow Central").assertExists()
+
+        // Both the platform and its station leave the snapshot: close past the station too.
+        state = DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").assertDoesNotExist()
+
+        // The station coming back doesn't reopen a view the user was already taken out of.
+        state = both
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
+
+    @Test
     fun `a whole-station view keeps a platform the near-me list folded away, titled by the station`() {
         // Two poles of one cluster: the farther pole's only line is folded to the nearer pole, so it
         // has no group on the near-me list — but it's still part of the station.
