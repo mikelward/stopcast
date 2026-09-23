@@ -110,9 +110,13 @@ The app finds stops two ways:
 
   The selection is **two-tier** (maintainer, 2026-09-21): stops group into **clusters** (a
   station's platforms, a bus junction's poles — keyed on TfL's `stationNaptan`, D8), and the
-  **nearest two clusters of each mode** are *eager* — fetched and shown at once. Per-mode
-  selection guarantees the nearest station of a sparse mode (a Tube up to the ~1 mile reach) is
-  always eager, without a separate reserve rule. A stop TfL lists **no routes** for (a disused or
+  **nearest two clusters of each mode within 500 m** are *eager* — their departures fetched and
+  shown at once. A mode with nothing that close contributes just its **single nearest** cluster, out
+  to the ~1 mile reach, so the nearest station of a sparse mode (a Tube up to a mile off) is always
+  eager without the eager set reaching a mile out for every mode (maintainer, 2026-09-23: "the
+  nearest two of each mode" fetched a second Overground station 1.3 km from a big interchange). The
+  stop lookup itself still covers the mile — one request for every stop's name and routes, no
+  departures — so the fallback and "More" have the whole reach to draw on. A stop TfL lists **no routes** for (a disused or
   unserved stop) is **never eager**: it has no departures to show, and auto-fetching it spent two
   requests a pole of the rate budget the running stops need (a big interchange pulled in route-less
   stops a kilometer off); it waits behind the generic "More stops" instead. The cap is two rather than more because

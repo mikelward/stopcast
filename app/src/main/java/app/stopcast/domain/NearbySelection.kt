@@ -42,6 +42,16 @@ object NearbySelection {
     const val CLUSTERS_PER_MODE = 2
 
     /**
+     * The walking reach of the eager tier (maintainer, 2026-09-23): a mode's clusters are fetched
+     * up front only within this distance, up to [CLUSTERS_PER_MODE] of them. A mode with nothing
+     * this close still gets its single nearest cluster out to [OUTER_RADIUS_METERS], so a sparse
+     * mode keeps a representative; everything else waits behind "More". Without it, "the nearest two
+     * of each mode" reached a mile out at a big interchange — a second Overground station 1.3 km off
+     * — and spent the keyless rate budget on stops nobody would walk to.
+     */
+    const val EAGER_RADIUS_METERS = 500
+
+    /**
      * Hard cap on how many clusters a single "More" tap reveals (see [nextReveal]). Reaching through
      * a redundant run to the next new route must stay bounded: each fetched pole is its own arrivals
      * + disruption request, so an unbounded per-tap reveal could exceed TfL's keyless ~50 req/min
@@ -108,6 +118,7 @@ object NearbySelection {
         longitude: Double,
         clustersPerMode: Int = CLUSTERS_PER_MODE,
         outerRadiusMeters: Int = OUTER_RADIUS_METERS,
+        eagerRadiusMeters: Int = EAGER_RADIUS_METERS,
     ): Result {
         val clusters = stops
             .mapNotNull { stop ->
@@ -130,9 +141,11 @@ object NearbySelection {
             .sortedWith(compareBy({ it.distanceMeters }, { it.stops.first().id }))
         if (clusters.isEmpty()) return Result(emptyList(), emptyList())
 
-        // Nearest [clustersPerMode] clusters of each mode are eager; their union is the eager
-        // set. A cluster serving two modes is eager if it's in the top N of *either*, so the
-        // nearest station of a sparse mode is never crowded out by a denser one. A cluster whose
+        // Each mode's nearest [clustersPerMode] clusters within [eagerRadiusMeters] are eager; a mode
+        // with none that close contributes just its single nearest cluster (out to the outer radius),
+        // so a sparse mode keeps a representative without the eager set reaching a mile out. Their
+        // union is the eager set. A cluster serving two modes is eager if either mode picks it, so
+        // the nearest station of a sparse mode is never crowded out by a denser one. A cluster whose
         // routes TfL gave no mode for buckets under [UNKNOWN_MODE], so a served stop with thin
         // metadata is still selected rather than vanishing. A **route-less** cluster — TfL lists no
         // routes at it, a disused or unserved stop — is never eager: it has no departures to show,
@@ -146,10 +159,9 @@ object NearbySelection {
         }
         val eagerKeys = HashSet<String>()
         for (mode in clusters.flatMapTo(sortedSetOf()) { modesOf(it) }) {
-            clusters.asSequence()
-                .filter { mode in modesOf(it) }
-                .take(clustersPerMode)
-                .forEach { eagerKeys += it.key }
+            val ofMode = clusters.filter { mode in modesOf(it) }
+            val walkable = ofMode.filter { it.distanceMeters <= eagerRadiusMeters }.take(clustersPerMode)
+            (walkable.ifEmpty { ofMode.take(1) }).forEach { eagerKeys += it.key }
         }
         // Both tiers keep the global nearest-first order.
         return Result(
