@@ -362,12 +362,15 @@ destination by branch), not whichever of the line's trains is soonest
 (once the tapped route has no trains left it falls back to the soonest, and the title follows, so the
 title and stop list always name the same train) — its own app bar naming the route (line pill +
 destination) and
-carrying the star (so the long-press is the shortcut, the page the discoverable path), the boarding
-stop in the body, then **every upcoming departure on that route** — not the card's first three — on one full-width line of countdowns in the card's format (times only; any that don't fit ellipsize off the end, and the line is withheld while stale, D4), and the line's **full disruption text**, which the row's inline **⚠** glyph stands
+carrying the star (so the long-press is the shortcut, the page the discoverable path), then, leading
+the body, **every upcoming departure on that route** — not the card's first three — on one full-width
+line of countdowns in the card's format (times only; any that don't fit ellipsize off the end, and the
+line is withheld while stale, D4), and the line's **full disruption text**, which the row's inline **⚠** glyph stands
 in for: shown collapsed to its first line, tapped to expand (the same widget the stop-closure card
 uses). Below that it lists **every station from the boarding stop to where the soonest train
 terminates** (a short-working ends where it does, not at the line's end), on a rail in the line's
-color. The list comes from TfL's Route/Sequence for the line, fetched **when the page opens** — never
+color. Neither the list nor the page carries a "From" or "Stops to" heading: the list opens
+on the boarding stop and the app bar already names the destination. The list comes from TfL's Route/Sequence for the line, fetched **when the page opens** — never
 on the refresh path — and held in memory for the process, so a reopened route shows at once; until
 it arrives the page says so, a failed fetch says why with a retry, and where TfL's data admits more
 than one path from here (a Northern train with no branch named) the page says the list is
