@@ -55,6 +55,9 @@ import app.stopcast.data.SharedTflRequestPool
 import app.stopcast.data.UserApiKeySetting
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.BugReport
+import java.io.IOException
+import app.stopcast.domain.Journeys
+import app.stopcast.data.DataStoreStarredJourneysStore
 import app.stopcast.domain.CachingStopFinder
 import app.stopcast.domain.NearbyStopsCache
 import app.stopcast.domain.Coordinates
@@ -706,6 +709,32 @@ class MainActivity : ComponentActivity() {
             val refreshing = departuresRefreshing || relocatingNow
             val locationBannerNow by locationBanner.collectAsStateWithLifecycle()
             val starred by viewModel.starred.collectAsStateWithLifecycle()
+            // Starred journeys (SPEC *Journeys*): read from the device, each turned so its origin is
+            // the end nearer this fix, or flipped by a tap on its card. The shown origins are fetched
+            // alongside the near-me stops.
+            val journeyStore = remember { DataStoreStarredJourneysStore.from(appContext, warn = ::logStarWarning) }
+            // Null until the first read arrives (and when unreadable), so journey starring stays off
+            // rather than showing a saved journey as unstarred and letting a tap remove it.
+            val savedJourneys by remember(journeyStore) { journeyStore.journeys() }
+                .collectAsStateWithLifecycle(initialValue = null)
+            var flippedJourneys by rememberSaveable { mutableStateOf(emptyList<String>()) }
+            val shownJourneys = remember(savedJourneys, ready.location, flippedJourneys) {
+                savedJourneys.orEmpty().map { journey ->
+                    val oriented = Journeys.oriented(journey, ready.location.latitude, ready.location.longitude)
+                    if (journey.key in flippedJourneys) oriented.reversed() else oriented
+                }
+            }
+            LaunchedEffect(viewModel, shownJourneys) {
+                // Each origin declares its journeys' lines, so a line with no predictions (a
+                // suspension) still has its status checked and shown on the card.
+                viewModel.setJourneyStops(
+                    shownJourneys.groupBy { it.from.stopId }.map { (id, js) ->
+                        StopRef(id, js.first().from.name, lines = js.map { it.line }.distinctBy { it.id })
+                    },
+                )
+            }
+            val journeyScope = rememberCoroutineScope()
+            var journeyWriteFailed by rememberSaveable { mutableStateOf(false) }
             val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
             val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
             val dismissed by viewModel.dismissed.collectAsStateWithLifecycle()
@@ -757,6 +786,30 @@ class MainActivity : ComponentActivity() {
                     // a revealed stop collapses like an eager one. Empty for a location-free list
                     // (a watched-stops view), which is shown as-is.
                     stopDistanceMeters = ready.distanceMeters,
+                    journeys = shownJourneys,
+                    // Null (stations inert) while the saved journeys are a newer app version's file this
+                    // build can't read: it's preserved untouched, so a toggle could only be ignored.
+                    onToggleJourney = if (savedJourneys == null) {
+                        null
+                    } else {
+                        { journey ->
+                            journeyScope.launch {
+                                try {
+                                    journeyStore.toggle(journey)
+                                } catch (e: IOException) {
+                                    // Logged without the stations, and surfaced so the tap isn't
+                                    // silently lost (SPEC principle 2).
+                                    logStarWarning("journey star not saved: ${e::class.simpleName}")
+                                    journeyWriteFailed = true
+                                }
+                            }
+                        }
+                    },
+                    journeyWriteFailed = journeyWriteFailed,
+                    onJourneyWriteFailureShown = { journeyWriteFailed = false },
+                    onFlipJourney = { journey ->
+                        flippedJourneys = if (journey.key in flippedJourneys) flippedJourneys - journey.key else flippedJourneys + journey.key
+                    },
                     // A tap on a header's distance shows that stop in the maps app. The stop comes
                     // from the same nearby set the distances span, so every distance can resolve.
                     onOpenStopMap = { stopId, name ->

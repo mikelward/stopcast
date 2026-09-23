@@ -173,11 +173,51 @@ class MainViewModel(
     // The set actually fetched and shown: the eager tier plus every revealed `more` cluster's
     // stops. DERIVED — so a cluster dropped on a relocation leaves the fetched set automatically,
     // with no parallel list to fall out of sync (the single-owner reveal design).
-    private val fetchedStops: List<StopRef>
+    private val nearStops: List<StopRef>
         get() = eagerStops + more.asSequence()
             .filter { it.key in revealedKeys }
             .flatMap { cluster -> cluster.stops.asSequence().map { it.toStopRef() } }
             .toList()
+
+    // The origins of the starred journeys (SPEC *Journeys*), fetched alongside the near-me stops so a
+    // journey card has its departures. One not already near is fetched but never saved to the widget
+    // snapshot, which shows only the nearby set ([journeyOnly]).
+    private var journeyStops: List<StopRef> = emptyList()
+
+    private val fetchedStops: List<StopRef>
+        get() {
+            val near = nearStops
+            val nearIds = near.mapTo(HashSet()) { it.id }
+            return near + journeyStops.filter { it.id !in nearIds }
+        }
+
+    /**
+     * [snapshot] as the widget may show it: only the nearby stops [nearIds] (captured when the fetch
+     * began), never a journey's farther origin. Kept positively rather than by excluding the current
+     * journey origins, so an origin a flip has since dropped can't slip through a fetch in flight.
+     */
+    private fun forWidget(snapshot: DeparturesSnapshot, nearIds: Set<String>): DeparturesSnapshot {
+        // Its "updated" stamp is the freshest stop it keeps, never a dropped origin's.
+        val kept = snapshot.stops.filter { it.stopId in nearIds }
+        return DeparturesSnapshot(kept, kept.maxOfOrNull { it.fetchedAt } ?: snapshot.fetchedAt)
+    }
+
+    /**
+     * The journey origins to fetch alongside the near-me stops (SPEC *Journeys*). A new origin not
+     * yet fetched starts a refresh; the same set again, or one already on hand, doesn't. A fetch in
+     * flight is for the old set and would replace the state without these origins (a quick flip
+     * and flip back), so it is superseded too. So is a dropped origin (an unstar): the refresh
+     * prunes it, and with it any "couldn't refresh" warning only that stop caused.
+     */
+    fun setJourneyStops(stops: List<StopRef>) {
+        if (stops.toSet() == journeyStops.toSet()) return
+        val newIds = stops.mapTo(HashSet()) { it.id }
+        val nearIds = nearStops.mapTo(HashSet()) { it.id }
+        val dropped = journeyStops.any { it.id !in newIds && it.id !in nearIds }
+        journeyStops = stops
+        val shown = (_state.value as? DeparturesUiState.Loaded)?.stops?.mapTo(HashSet()) { it.stopId }.orEmpty()
+        if (dropped || fetchJob?.isActive == true || stops.any { it.id !in shown }) refresh()
+    }
 
     // The "More" buttons to offer: the modes (or the generic bucket) that still have an unrevealed
     // `more` cluster (SPEC *Finding stops → Near me now*). Empty when nothing is left to page.
@@ -384,7 +424,9 @@ class MainViewModel(
         val stopsDisruptionUnknown: Set<String>,
         val anyArrivalsFailed: Boolean,
         val anyFreshData: Boolean,
-        val anyFreshArrivals: Boolean,
+        // The stops whose arrivals came back this batch — so the widget's save can ask whether a
+        // stop it actually shows is fresh, not just any stop (a journey origin isn't on it).
+        val freshArrivalStopIds: Set<String>,
         val firstError: Throwable?,
     )
 
@@ -412,11 +454,11 @@ class MainViewModel(
         // the difference between a partial refresh (keep the fresh, age the rest) and a
         // total failure (nothing new — keep the whole aged snapshot and say so).
         var anyFreshData = false
-        // True once any stop's ARRIVALS returned (fresh durable content). Distinct from
+        // The stops whose ARRIVALS returned (fresh durable content). Distinct from
         // anyFreshData because disruptions aren't persisted: a cycle where every arrivals
         // request failed but a disruption returned has nothing durable to save, so it must
         // not overwrite a complete saved snapshot with carried arrivalsFresh=false rows.
-        var anyFreshArrivals = false
+        val freshArrivalStopIds = mutableSetOf<String>()
         // Stop ids whose OWN stop-level disruption request failed this batch (a closure/move was
         // never checked) — an axis independent of line status, carried out so a per-stop surface
         // says "couldn't check" for it even when its line was determined (SPEC principle 1).
@@ -531,7 +573,7 @@ class MainViewModel(
                 null
             }
             if (departures != null) {
-                anyFreshArrivals = true
+                freshArrivalStopIds += stop.id
                 arrivalsFetchedAt[stop.id] = now
             }
             if (departures != null || (disruptions != null && !disruptionFromCache[i])) anyFreshData = true
@@ -655,7 +697,7 @@ class MainViewModel(
             stopsDisruptionUnknown = stopsDisruptionUnknown,
             anyArrivalsFailed = anyArrivalsFailed,
             anyFreshData = anyFreshData,
-            anyFreshArrivals = anyFreshArrivals,
+            freshArrivalStopIds = freshArrivalStopIds,
             firstError = firstError,
         )
     }
@@ -786,12 +828,14 @@ class MainViewModel(
             // rate-limited refresh then spends the budget left only on the stops still missing,
             // rather than refetching every stop and hitting the limit again.
             val reuse = if (priorLoaded != null) recentlyFetched(priorLoaded, now, automatic) else emptySet()
-            val batch = fetchBatch(fetchedStops, prior, now, reuse)
+            // The nearby stops this fetch is for: the only ones the widget may be given below.
+            val nearIds = nearStops.mapTo(HashSet()) { it.id }
+            val toFetch = fetchedStops
+            val batch = fetchBatch(toFetch, prior, now, reuse)
             val merged = batch.merged
             val firstError = batch.firstError
             val anyArrivalsFailed = batch.anyArrivalsFailed
             val anyFreshData = batch.anyFreshData
-            val anyFreshArrivals = batch.anyFreshArrivals
             val lineStatuses = batch.lineStatuses
             val determinedLineIds = batch.determinedLineIds
             val stopsDisruptionUnknown = batch.stopsDisruptionUnknown
@@ -832,6 +876,7 @@ class MainViewModel(
                         disruptionUnknown = disruptionUnknown,
                         determinedLineIds = determinedLineIds,
                         stopsDisruptionUnknown = stopsDisruptionUnknown,
+                        unavailableStopIds = toFetch.mapTo(HashSet()) { it.id } - merged.mapTo(HashSet()) { it.stopId },
                     )
                 // Nothing came back and nothing failed → there were no stops to fetch
                 // (no watched stops yet, or the seed is empty). That's an empty list, not
@@ -860,14 +905,15 @@ class MainViewModel(
             // arrivals came from a successful fetch moments ago — so a refresh that reuses every stop
             // still saves. Otherwise a refresh that cancels the previous one's save and then reuses
             // its stops would leave the widget and next launch on the older snapshot on disk.
-            val carriedFresh = merged.any { it.stopId in reuse && it.arrivalsFresh }
-            val authoritative = anyFreshArrivals || carriedFresh || (merged.isEmpty() && firstError == null)
-            val toSave: DeparturesSnapshot? =
-                if (newState is DeparturesUiState.Loaded && authoritative) {
-                    DeparturesSnapshot(newState.stops, newState.fetchedAt)
-                } else {
-                    null
-                }
+            // Judged on the stops the widget keeps ([forWidget]): a journey origin's fresh arrivals
+            // must not make a save that rewrites the nearby stops as failed and stamps them "just now".
+            val widgetSnapshot = (newState as? DeparturesUiState.Loaded)
+                ?.let { forWidget(DeparturesSnapshot(it.stops, it.fetchedAt), nearIds) }
+            val widgetStops = widgetSnapshot?.stops.orEmpty()
+            val carriedFresh = widgetStops.any { it.stopId in reuse && it.arrivalsFresh }
+            val freshNear = widgetStops.any { it.stopId in batch.freshArrivalStopIds }
+            val authoritative = freshNear || carriedFresh || (widgetStops.isEmpty() && firstError == null)
+            val toSave: DeparturesSnapshot? = widgetSnapshot?.takeIf { authoritative }
             if (toSave != null) {
                 try {
                     // Deliberately CANCELLABLE: cancelFetch() is the relocation guard — it cancels this
@@ -953,6 +999,7 @@ class MainViewModel(
      */
     private fun fetchIncremental(current: DeparturesUiState.Loaded, newStops: List<StopRef>) {
         fetchJob?.cancel()
+        val nearIds = nearStops.mapTo(HashSet()) { it.id }
         _refreshing.value = true
         val job = viewModelScope.launch {
             val now = clock()
@@ -1003,6 +1050,7 @@ class MainViewModel(
                 // and gets anything fresh — matching Loaded's contract that the flag clears on the
                 // next fetch that gets anything; a reveal that got nothing keeps the prior state.
                 refreshFailure = if (batch.anyFreshData) null else current.refreshFailure,
+                unavailableStopIds = (current.unavailableStopIds + newStops.map { it.id }) - mergedIds,
             )
             _state.value = newState
             // Persist when the MERGED set carries fresh arrivals — not only when THIS batch did —
@@ -1013,9 +1061,11 @@ class MainViewModel(
             // is never stranded (Codex, PR #104). A reveal whose merged set is all aged (nothing
             // fresh anywhere) saves nothing and just redraws, as before — the merged stops keep their
             // own arrivalsFresh, so this never rewrites a complete snapshot to stale.
-            if (mergedStops.any { it.arrivalsFresh }) {
+            // Judged on the stops the widget keeps, as in refresh().
+            val widgetSnapshot = forWidget(DeparturesSnapshot(newState.stops, newState.fetchedAt), nearIds)
+            if (widgetSnapshot.stops.any { it.arrivalsFresh }) {
                 try {
-                    withContext(io) { snapshotStore.save(DeparturesSnapshot(newState.stops, newState.fetchedAt)) }
+                    withContext(io) { snapshotStore.save(widgetSnapshot) }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {

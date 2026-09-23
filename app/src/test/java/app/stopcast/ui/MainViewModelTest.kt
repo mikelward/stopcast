@@ -2681,8 +2681,12 @@ class MainViewModelTest {
         // A stop's reported closures, returned by its closure check; none by default.
         val closures = mutableMapOf<String, List<StopDisruption>>()
 
+        // Held open while set, so a test can act with a fetch in flight.
+        var arrivalsGate: CompletableDeferred<Unit>? = null
+
         override suspend fun arrivals(stopId: String): List<Departure> {
             arrivalCalls.merge(stopId, 1) { a, b -> a + b }
+            arrivalsGate?.await()
             if (stopId in failingArrivals) throw TflException.RateLimited(null)
             return listOf(departure("victoria", "Victoria", 300))
         }
@@ -2787,6 +2791,114 @@ class MainViewModelTest {
         vm.refresh(automatic = true)
         advanceUntilIdle()
         assertEquals(ksxCalls + 1, client.arrivalCalls[ksxId])
+    }
+
+    @Test
+    fun `a journey origin is fetched but kept out of the widget snapshot`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
+        advanceUntilIdle()
+
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+
+        assertEquals(1, client.arrivalCalls[ksxId])
+        val shown = (vm.state.value as DeparturesUiState.Loaded).stops.map { it.stopId }
+        assertTrue(ksxId in shown)
+        assertEquals(listOf(oxcId), store.saves.last().stops.map { it.stopId })
+    }
+
+    @Test
+    fun `a fresh journey origin doesn't save the widget when its nearby stops failed`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
+        advanceUntilIdle()
+        val saves = store.saves.size
+
+        // The nearby stop fails; only the journey origin comes back.
+        client.failingArrivals += oxcId
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+
+        assertEquals(saves, store.saves.size)
+    }
+
+    @Test
+    fun `a journey origin whose first fetch failed is marked unavailable, not loading`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        client.failingArrivals += ksxId
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+
+        val loaded = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(ksxId !in loaded.stops.map { it.stopId })
+        assertEquals(setOf(ksxId), loaded.unavailableStopIds)
+    }
+
+    @Test
+    fun `unstarring a failed journey origin clears the warning it caused`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        client.failingArrivals += ksxId
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+        assertTrue(ksxId in (vm.state.value as DeparturesUiState.Loaded).unavailableStopIds)
+
+        vm.setJourneyStops(emptyList())
+        advanceUntilIdle()
+        val loaded = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(loaded.unavailableStopIds.isEmpty())
+        assertFalse(loaded.partialRefresh)
+    }
+
+    @Test
+    fun `setting the same journey origins again doesn't refetch`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+        assertEquals(1, client.arrivalCalls[ksxId])
+    }
+
+    @Test
+    fun `a journey origin's line has its status checked even with no trains predicted`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        vm.setJourneyStops(
+            listOf(StopRef(ksxId, "King's Cross St. Pancras", lines = listOf(LineRef("northern", "Northern", "tube")))),
+        )
+        advanceUntilIdle()
+        assertTrue("northern" in client.statusCalls.last())
+    }
+
+    @Test
+    fun `flipping back while the other origin is fetching still fetches the first`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+
+        // Flip to the other end; its fetch is still in flight when the flip back comes.
+        val gate = CompletableDeferred<Unit>()
+        client.arrivalsGate = gate
+        vm.setJourneyStops(listOf(StopRef("940GZZLUHGT", "Highgate")))
+        runCurrent()
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        val shown = (vm.state.value as DeparturesUiState.Loaded).stops.map { it.stopId }
+        assertTrue(ksxId in shown)
     }
 
     @Test
