@@ -46,6 +46,7 @@ import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.DestinationGroup
+import app.stopcast.domain.JourneyCall
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.RouteTopology
 import app.stopcast.domain.Staleness
@@ -254,7 +255,15 @@ internal fun widgetModel(
     // so an overall-fresh snapshot can still be uncertain if one stop lagged (SPEC D4 /
     // principle 1). Mirrors MainScreen's emptyStateUncertain; drives the empty-state message,
     // not the stamp.
-    val uncertain = stale || snapshot.stops.any {
+    // Judged on the stops it shows: a journey-only stop counts once its journey is worked out.
+    val origins = snapshot.journeys.mapTo(HashSet()) { it.originId }
+    val shownStops = snapshot.stops.filter { it.stopId !in snapshot.journeyOnlyStopIds || it.stopId in origins }
+    // Nothing it can show yet (only journey origins whose journeys aren't worked out): no data, not
+    // a trustworthy "no departures".
+    if (shownStops.isEmpty()) {
+        return WidgetModel(hasData = false, stale = false, uncertain = false, stamp = null, rows = emptyList())
+    }
+    val uncertain = stale || shownStops.any {
         !it.arrivalsFresh || Staleness.isStale(Duration.between(it.fetchedAt, now).toKotlinDuration())
     }
     // Order for the cap, matching the in-app list: rank fresh rows ahead of stale ones (so a
@@ -275,7 +284,16 @@ internal fun widgetModel(
     // its groups as still fit, and once the budget is spent no more rows are added. This bounds
     // an oversized *first* row too (it shows at most `maxLines` groups) rather than exempting
     // it. Groups within a row keep destinationLines' soonest-first order and per-line time cap.
-    val pinned = DepartureRows.pinStarred(ordered, starred)
+    val journeyRows = pinJourneys(ordered, snapshot, now)
+    val pinned = journeyRows + DepartureRows.pinStarred(withoutJourneys(ordered, snapshot), starred)
+    // The journeys stay a band of their own at the top: grouping by place runs within each band, so
+    // another row at a journey's origin can't pull ahead of a later journey.
+    val journeyBand = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<DepartureRow, Boolean>())
+        .apply { addAll(journeyRows) }
+    fun grouped(rows: List<DepartureRow>): List<StopGroup> {
+        val (band, rest) = rows.partition { it in journeyBand }
+        return StopGrouping.groupByStop(band, warningsLead = false) + StopGrouping.groupByStop(rest, warningsLead = false)
+    }
     // The same condition WidgetContent draws the note under (a stamp is always set here).
     val fullBudget = if (stale || uncertain) maxLinesWithNote else maxLines
     // No room for a line under the full header: the compact layout (no title row) makes more room;
@@ -308,7 +326,7 @@ internal fun widgetModel(
     val fullGroups = StopGrouping.groupByStop(candidates, warningsLead = false).associateBy { it.key }
     fun context(group: StopGroup): StopGroup = fullGroups[group.key] ?: group
     fun headed(group: StopGroup): Boolean = headersOn && context(group).showHeader
-    fun cost(rows: List<DepartureRow>): Int = StopGrouping.groupByStop(rows, warningsLead = false).sumOf { group ->
+    fun cost(rows: List<DepartureRow>): Int = grouped(rows).sumOf { group ->
         (if (headed(group)) 1 else 0) + group.rows.sumOf { shownLines.getValue(it).size }
     }
     for ((row, lines) in pinned.zip(allLines)) {
@@ -329,7 +347,7 @@ internal fun widgetModel(
         }
     }
     val rows = buildList {
-        for (group in StopGrouping.groupByStop(selected, warningsLead = false)) {
+        for (group in grouped(selected)) {
             val header = if (headed(group)) {
                 val full = context(group)
                 WidgetHeader(
@@ -354,6 +372,43 @@ internal fun widgetModel(
         stacked = stacked,
         tooSmall = tooSmall,
     )
+}
+
+/**
+ * The starred journeys' departures at the top of the widget (SPEC *Journeys*): at each journey
+ * origin, a row keeps only the departures the app found to call at the far end (by line,
+ * destination and branch), fresh rows ahead of stale ones (as the rest of the list) and soonest
+ * first within each. The widget can't load route data, so a destination the app hasn't seen yet
+ * is left out until the app next works the journey out.
+ */
+internal fun pinJourneys(ordered: List<DepartureRow>, snapshot: DeparturesSnapshot, now: Instant): List<DepartureRow> {
+    if (snapshot.journeys.isEmpty()) return emptyList()
+    val calls = snapshot.journeys.groupBy({ it.originId }, { it.calls }).mapValues { (_, c) -> c.flatten().toSet() }
+    return ordered.mapNotNull { row ->
+        val at = calls[row.stopId] ?: return@mapNotNull null
+        val calling = row.upcoming.filter { JourneyCall.of(it) in at }
+        if (calling.isEmpty()) null else row.copy(upcoming = calling, destination = calling.first().destination)
+    }.sortedWith(
+        compareBy(
+            { if (Staleness.isStale(Duration.between(it.fetchedAt, now).toKotlinDuration())) 1 else 0 },
+            { it.upcoming.first().expectedArrival },
+        ),
+    )
+}
+
+/**
+ * [ordered] without what [pinJourneys] lifted out: a journey-only stop (not nearby) shows nothing
+ * else, and at a nearby journey origin the journey's departures aren't shown twice.
+ */
+internal fun withoutJourneys(ordered: List<DepartureRow>, snapshot: DeparturesSnapshot): List<DepartureRow> {
+    val calls = snapshot.journeys.groupBy({ it.originId }, { it.calls }).mapValues { (_, c) -> c.flatten().toSet() }
+    return ordered.mapNotNull { row ->
+        if (row.stopId in snapshot.journeyOnlyStopIds) return@mapNotNull null
+        val at = calls[row.stopId] ?: return@mapNotNull row
+        if (row.upcoming.isEmpty()) return@mapNotNull row
+        val rest = row.upcoming.filterNot { JourneyCall.of(it) in at }
+        if (rest.isEmpty()) null else row.copy(upcoming = rest, destination = rest.first().destination)
+    }
 }
 
 @androidx.compose.runtime.Composable

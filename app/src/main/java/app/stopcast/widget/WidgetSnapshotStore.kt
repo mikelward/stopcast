@@ -5,6 +5,8 @@ import androidx.glance.appwidget.updateAll
 import app.stopcast.data.DataStoreSnapshotStore
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.SnapshotStore
+import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.WidgetJourney
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -25,6 +27,30 @@ class WidgetSnapshotStore(context: Context) : SnapshotStore {
     private val delegate = DataStoreSnapshotStore.from(appContext, warn = ::logWidgetSnapshotWarning)
 
     override suspend fun load(): DeparturesSnapshot? = null
+
+    // The journeys aren't location-derived stops: restoring them keeps the widget's pins through a
+    // restart until the app has worked the journeys out again.
+    override suspend fun loadForWidget(): DeparturesSnapshot? = delegate.load()
+
+    override suspend fun saveKeepingJourneys(snapshot: DeparturesSnapshot) {
+        delegate.saveKeepingJourneys(snapshot)
+        pokeWidget()
+    }
+
+    override suspend fun saveKeepingFresher(snapshot: DeparturesSnapshot) {
+        delegate.saveKeepingFresher(snapshot)
+        pokeWidget()
+    }
+
+    override suspend fun replaceWidgetJourneys(journeys: List<WidgetJourney>, origins: List<StopArrivals>) {
+        delegate.replaceWidgetJourneys(journeys, origins)
+        pokeWidget()
+    }
+
+    override suspend fun retainWidgetJourneys(keys: Set<String>, origins: Map<String, String>) {
+        delegate.retainWidgetJourneys(keys, origins)
+        pokeWidget()
+    }
 
     override suspend fun save(snapshot: DeparturesSnapshot) {
         // The primary operation: persist the last-good snapshot. Its failure propagates to the

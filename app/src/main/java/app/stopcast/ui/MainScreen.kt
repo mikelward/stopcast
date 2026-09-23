@@ -115,7 +115,9 @@ import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
+import app.stopcast.domain.JourneyCall
 import app.stopcast.domain.JourneyEnd
+import app.stopcast.domain.WidgetJourneyCheck
 import app.stopcast.domain.LineSequence
 import app.stopcast.domain.StarredJourney
 import app.stopcast.domain.Journeys
@@ -178,6 +180,13 @@ fun MainScreen(
     // The stops to fetch for the journey cards (each journey's origin this way round), reported
     // whenever they change; the ViewModel fetches them alongside the near-me stops.
     onJourneyOrigins: (List<StopRef>) -> Unit = {},
+    // The starred journeys' keys and each placed journey's latest check (the departures found to call
+    // at its far end), for the widget to pin (it can't load route data itself); reported whenever
+    // they change. The ViewModel keeps what they add up to.
+    onWidgetJourneys: (Set<String>, List<WidgetJourneyCheck>, Map<String, String>) -> Unit = { _, _, _ -> },
+    // Whether [journeys] is the saved list yet: until it is, nothing is reported for the widget, so
+    // a list still loading isn't taken for "no journeys" and unpins them.
+    journeysKnown: Boolean = true,
     // The rows the user has starred (SPEC D8): pinned to the top, and their star filled.
     // Empty by default so an unwired build/test renders the plain soonest-first list.
     starred: Set<StarredRow> = emptySet(),
@@ -355,8 +364,36 @@ fun MainScreen(
                     }
                 }
             }
-            JourneyCard(journey, state, closure)
+            // A complete check judged every departure at the origin: the widget drops any it now rejects.
+            val checked =
+                if (state is JourneyCardState.Trains && !state.incomplete && segment != null) {
+                    across.filter { it.stopId == segment.originId && it.lineId.isNotBlank() }
+                        .flatMapTo(HashSet()) { row -> row.upcoming.map(JourneyCall::of) }
+                } else {
+                    emptySet()
+                }
+            JourneyCard(journey, state, closure, checked)
         }
+    }
+    // What each placed journey's card found for the widget (it can't load routes itself): the
+    // origin's departures that call at the far end, by line, destination and branch, and — from a
+    // complete check — every departure it judged. The ViewModel merges these into what it pins.
+    val journeyKeys = remember(journeys) { journeys.mapTo(HashSet()) { it.key } }
+    // The direction each journey is shown in, so a flip reaches the widget even before its route
+    // can place the new origin.
+    val journeyShownFrom = remember(journeys) { journeys.associate { it.key to it.from.stopId } }
+    val widgetJourneyChecks = remember(journeyCards, journeySegments) {
+        journeyCards.mapNotNull { card ->
+            val originId = journeySegments[card.journey.key]?.originId ?: return@mapNotNull null
+            val confirmed = (card.state as? JourneyCardState.Trains)?.rows
+                ?.flatMapTo(HashSet()) { row -> row.upcoming.map(JourneyCall::of) }
+                .orEmpty()
+            WidgetJourneyCheck(card.journey.key, originId, confirmed, card.checked, card.journey.from.stopId)
+        }
+    }
+    val reportWidgetJourneys by rememberUpdatedState(onWidgetJourneys)
+    LaunchedEffect(journeysKnown, journeyKeys, widgetJourneyChecks, journeyShownFrom) {
+        if (journeysKnown) reportWidgetJourneys(journeyKeys, widgetJourneyChecks, journeyShownFrom)
     }
     val rows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, starred, dismissed) {
         val ld = loaded ?: return@remember emptyList()
@@ -1405,6 +1442,8 @@ internal data class JourneyCard(
     val state: JourneyCardState,
     // The origin's (undismissed) closure notice, shown on the card whatever the trains' state.
     val closure: DepartureRow? = null,
+    // Every departure at the origin a complete check judged (empty otherwise), for the widget.
+    val checked: Set<JourneyCall> = emptySet(),
 )
 
 /** What a journey card can say about its trains. */

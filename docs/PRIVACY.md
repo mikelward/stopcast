@@ -47,7 +47,8 @@ carries your saved data under your control, and a bug report carries what you co
 
 **Starred journeys** (two stops you travel between) are kept on the device with your other
 settings and stars, so they ride your own Android backup like the rest (above); they are never
-logged or sent anywhere. Showing a journey's trains fetches the departures at its nearer stop
+logged or sent anywhere. For the widget, the departures at a journey's nearer stop, and which of
+them reach the other end, are saved with the widget's other departures on the device. Showing a journey's trains fetches the departures at its nearer stop
 from TfL, like any other stop.
 
 **Kept on the device, never backed up:** to skip a repeat stop lookup when you reopen the app

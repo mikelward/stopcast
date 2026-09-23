@@ -9,6 +9,8 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStoreFile
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.SnapshotStore
+import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.WidgetJourney
 import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.flow.first
@@ -48,10 +50,17 @@ class DataStoreSnapshotStore internal constructor(
         // from (a newer write changed it), discarding the caller's now-stale result. The block
         // stays a pure function of `current` (no captured mutable state), since DataStore may
         // re-run it on a write conflict.
+        // The widget's journeys are the app's to change, never this caller's: a match keeps the
+        // stored ones, so a slow worker can't restore a pin the app has since dropped or changed.
         val written = dataStore.updateData { current ->
-            if (current.matchesStops(expectedStopIds)) desired else current
+            if (current != null && current.matchesStops(expectedStopIds)) {
+                desired.copy(journeys = current.journeys, journeyOnlyStopIds = current.journeyOnlyStopIds)
+            } else {
+                current
+            }
         }
-        return written == desired
+        return written != null &&
+            written == desired.copy(journeys = written.journeys, journeyOnlyStopIds = written.journeyOnlyStopIds)
     }
 
     override suspend fun pruneStops(departedStopIds: Collection<String>) {
@@ -63,15 +72,120 @@ class DataStoreSnapshotStore internal constructor(
         // under the write lock, so a concurrent save can't be lost through a reload→save window.
         dataStore.updateData { current ->
             if (current == null) return@updateData null
-            val kept = current.stops.filterNot { it.stopId in departed }
-            if (kept.size == current.stops.size) {
+            // A departed stop a pinned journey starts from stays, as a journey-only stop: the widget
+            // shows (and refreshes) just its journey there.
+            val origins = current.journeys.mapTo(HashSet()) { it.originId }
+            val kept = current.stops.filterNot { it.stopId in departed && it.stopId !in origins }
+            val demoted = current.stops.map { it.stopId }.filter { it in departed && it in origins }
+            if (kept.size == current.stops.size && demoted.all { it in current.journeyOnlyStopIds }) {
                 current
             } else {
                 current.copy(
+                    // Journey-only stops are a version-2 field: an older reader mustn't take them.
+                    version = PersistedSnapshot.CURRENT_VERSION,
                     stops = kept,
                     fetchedAtMillis = kept.maxOfOrNull { it.fetchedAtMillis } ?: current.fetchedAtMillis,
+                    journeyOnlyStopIds = (current.journeyOnlyStopIds + demoted).distinct(),
                 )
             }
+        }
+    }
+
+    override suspend fun saveKeepingFresher(snapshot: DeparturesSnapshot) {
+        val desired = snapshot.toPersisted()
+        // Pure function of `current`, atomic with the read under the write lock (see pruneStops).
+        dataStore.updateData { current -> keepingFresher(current, desired) }
+    }
+
+    override suspend fun saveKeepingJourneys(snapshot: DeparturesSnapshot) {
+        val desired = snapshot.toPersisted()
+        // As saveKeepingFresher, but the journeys (and the journey-only stops they start from) stay
+        // as stored: the caller couldn't read them, so it has none to write.
+        dataStore.updateData { current ->
+            val merged = keepingFresher(current, desired)
+            if (current == null) return@updateData merged.copy(journeys = emptyList(), journeyOnlyStopIds = emptyList())
+            val ids = merged.stops.mapTo(HashSet()) { it.stopId }
+            // Every stored journey's origin stays, whatever it was classed as when saved: one the
+            // caller doesn't hold now is journey-only; one it holds keeps the caller's class.
+            val origins = current.journeys.mapTo(HashSet()) { it.originId }
+            val carried = current.stops.filter { it.stopId in origins && it.stopId !in ids }
+            val stops = merged.stops + carried
+            merged.copy(
+                stops = stops,
+                // The stamp counts the carried origins too (the worker may have refreshed one since).
+                fetchedAtMillis = maxOf(merged.fetchedAtMillis, stops.maxOfOrNull { it.fetchedAtMillis } ?: 0L),
+                journeys = current.journeys,
+                journeyOnlyStopIds = (desired.journeyOnlyStopIds + carried.map { it.stopId }).distinct(),
+            )
+        }
+    }
+
+    private fun keepingFresher(current: PersistedSnapshot?, desired: PersistedSnapshot): PersistedSnapshot {
+        val stored = current?.stops.orEmpty().associateBy { it.stopId }
+        val stops = desired.stops.map { stop ->
+            // Newer wins; at the same age the stored copy wins if it marks a failed refresh, so
+            // aged arrivals are never re-marked live.
+            stored[stop.stopId]?.takeIf {
+                it.fetchedAtMillis > stop.fetchedAtMillis ||
+                    (it.fetchedAtMillis == stop.fetchedAtMillis && !it.arrivalsFresh)
+            } ?: stop
+        }
+        return desired.copy(
+            stops = stops,
+            fetchedAtMillis = maxOf(desired.fetchedAtMillis, stops.maxOfOrNull { it.fetchedAtMillis } ?: 0L),
+        )
+    }
+
+    override suspend fun replaceWidgetJourneys(journeys: List<WidgetJourney>, origins: List<StopArrivals>) {
+        val wanted = journeys.map { it.toPersisted() }
+        val supplied = origins.map { it.toPersisted() }
+        // Pure function of `current`, atomic with the read under the write lock (see pruneStops).
+        dataStore.updateData { stored ->
+            // Nothing stored yet (no save has landed): the pins start a snapshot of their own.
+            val current = stored ?: PersistedSnapshot()
+            val ids = current.stops.mapTo(HashSet()) { it.stopId }
+            // A journey whose origin isn't stored joins with the origin the caller supplied, as a
+            // journey-only stop; one with neither can't be shown, so isn't kept.
+            val added = supplied.filter { s -> s.stopId !in ids && wanted.any { it.originId == s.stopId } }
+                .distinctBy { it.stopId }
+            val available = ids + added.map { it.stopId }
+            val kept = wanted.filter { it.originId in available }
+            val keptOrigins = kept.mapTo(HashSet()) { it.originId }
+            val dropped = current.journeyOnlyStopIds.filterTo(HashSet()) { it !in keptOrigins }
+            // A stored origin the caller holds newer arrivals for takes them (its class unchanged):
+            // the journeys' calls were worked out from those, and the widget matches against them.
+            val newer = supplied.filter { it.stopId in keptOrigins }.associateBy { it.stopId }
+            val stops = current.stops.filterNot { it.stopId in dropped }.map { stop ->
+                newer[stop.stopId]?.takeIf { it.fetchedAtMillis > stop.fetchedAtMillis } ?: stop
+            } + added
+            if (stored == null && stops.isEmpty()) return@updateData null
+            current.copy(
+                // Journeys are a version-2 field: an older reader mustn't take them.
+                version = PersistedSnapshot.CURRENT_VERSION,
+                stops = stops,
+                fetchedAtMillis = stops.maxOfOrNull { it.fetchedAtMillis } ?: current.fetchedAtMillis,
+                journeys = kept,
+                journeyOnlyStopIds = current.journeyOnlyStopIds.filterNot { it in dropped } + added.map { it.stopId },
+            )
+        }
+    }
+
+    override suspend fun retainWidgetJourneys(keys: Set<String>, origins: Map<String, String>) {
+        // Pure function of `current`, atomic with the read under the write lock (see pruneStops).
+        dataStore.updateData { current ->
+            if (current == null) return@updateData null
+            val journeys = current.journeys.filter { it.key in keys && (origins[it.key] ?: it.originId) == it.originId }
+            if (journeys.size == current.journeys.size) return@updateData current
+            val origins = journeys.mapTo(HashSet()) { it.originId }
+            val dropped = current.journeyOnlyStopIds.filterTo(HashSet()) { it !in origins }
+            val stops = current.stops.filterNot { it.stopId in dropped }
+            current.copy(
+                version = PersistedSnapshot.CURRENT_VERSION,
+                stops = stops,
+                fetchedAtMillis = stops.maxOfOrNull { it.fetchedAtMillis } ?: current.fetchedAtMillis,
+                journeys = journeys,
+                journeyOnlyStopIds = current.journeyOnlyStopIds.filterNot { it in dropped },
+            )
         }
     }
 

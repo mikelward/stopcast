@@ -4,8 +4,10 @@ import androidx.compose.ui.unit.dp
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DeparturesSnapshot
+import app.stopcast.domain.JourneyCall
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.WidgetJourney
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -411,5 +413,101 @@ class WidgetModelTest {
         val model = widgetModel(DeparturesSnapshot(listOf(a, b), now), now, maxLines = 4)
         assertEquals(listOf("73", "victoria"), model.rows.map { it.row.lineId })
         assertEquals(listOf("Stop A", "Stop B"), model.rows.map { it.header?.text })
+    }
+
+    private fun toward(lineId: String, destination: String, offsetSeconds: Long) =
+        departure(lineId, offsetSeconds).copy(destination = destination)
+
+    @Test
+    fun `a starred journey's departures lead the widget, and only those from a journey-only stop`() {
+        // 490000001A is nearby; 490000009Z is only a journey origin, where the b1 to Hill is the journey.
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("490000001A", listOf(departure("victoria", 60)), now.minusSeconds(30)),
+                stop(
+                    "490000009Z",
+                    listOf(toward("b1", "Hill", 300), toward("b1", "Dale", 120), toward("b2", "Hill", 240)),
+                    now.minusSeconds(30),
+                ),
+            ),
+            fetchedAt = now.minusSeconds(30),
+            journeys = listOf(
+                WidgetJourney("490000009Z", setOf(JourneyCall("b1", "Hill", null), JourneyCall("b2", "Hill", null))),
+            ),
+            journeyOnlyStopIds = setOf("490000009Z"),
+        )
+        val rows = widgetModel(snapshot, now).rows.map { it.row }
+        // The journey's buses first (soonest first), then the nearby stop; the Dale bus isn't shown.
+        assertEquals(listOf("b2", "b1", "victoria"), rows.map { it.lineId })
+        assertTrue(rows.flatMap { it.upcoming }.none { it.destination == "Dale" })
+    }
+
+    @Test
+    fun `a journey-only stop shows nothing until its journey is worked out`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("490000001A", listOf(departure("victoria", 60)), now.minusSeconds(30)),
+                stop("490000009Z", listOf(toward("b1", "Hill", 300)), now.minusSeconds(30)),
+            ),
+            fetchedAt = now.minusSeconds(30),
+            journeyOnlyStopIds = setOf("490000009Z"),
+        )
+        assertEquals(listOf("victoria"), widgetModel(snapshot, now).rows.map { it.row.lineId })
+    }
+
+    @Test
+    fun `every journey leads, even past another row at an earlier journey's stop`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("490000001A", listOf(toward("b1", "Hill", 60), departure("victoria", 90)), now.minusSeconds(30), name = "Stop A"),
+                stop("490000002B", listOf(toward("b2", "Hill", 120)), now.minusSeconds(30), name = "Stop B"),
+            ),
+            fetchedAt = now.minusSeconds(30),
+            journeys = listOf(
+                WidgetJourney("490000001A", setOf(JourneyCall("b1", "Hill", null))),
+                WidgetJourney("490000002B", setOf(JourneyCall("b2", "Hill", null))),
+            ),
+        )
+        assertEquals(listOf("b1", "b2", "victoria"), widgetModel(snapshot, now).rows.map { it.row.lineId })
+    }
+
+    @Test
+    fun `a fresh journey row leads a sooner stale one`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("490000001A", listOf(toward("b1", "Hill", 60)), now.minusSeconds(900)),
+                stop("490000002B", listOf(toward("b2", "Hill", 300)), now.minusSeconds(30)),
+            ),
+            fetchedAt = now.minusSeconds(30),
+            journeys = listOf(
+                WidgetJourney("490000001A", setOf(JourneyCall("b1", "Hill", null))),
+                WidgetJourney("490000002B", setOf(JourneyCall("b2", "Hill", null))),
+            ),
+            journeyOnlyStopIds = setOf("490000001A", "490000002B"),
+        )
+        assertEquals("b2", widgetModel(snapshot, now, maxLines = 1).rows.first().row.lineId)
+    }
+
+    @Test
+    fun `only an unworked-out journey stop is no data, not "no departures"`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(stop("490000009Z", listOf(toward("b1", "Hill", 300)), now.minusSeconds(30))),
+            fetchedAt = now.minusSeconds(30),
+            journeyOnlyStopIds = setOf("490000009Z"),
+        )
+        assertFalse(widgetModel(snapshot, now).hasData)
+    }
+
+    @Test
+    fun `at a nearby journey origin the journey's departures aren't shown twice`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("490000001A", listOf(toward("b1", "Hill", 300), toward("b1", "Dale", 120)), now.minusSeconds(30)),
+            ),
+            fetchedAt = now.minusSeconds(30),
+            journeys = listOf(WidgetJourney("490000001A", setOf(JourneyCall("b1", "Hill", null)))),
+        )
+        val rows = widgetModel(snapshot, now).rows.map { it.row }
+        assertEquals(listOf(listOf("Hill"), listOf("Dale")), rows.map { r -> r.upcoming.map { it.destination } })
     }
 }

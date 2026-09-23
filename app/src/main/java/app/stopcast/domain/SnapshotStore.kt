@@ -15,6 +15,41 @@ interface SnapshotStore {
     /** The stored snapshot, or null when nothing is saved yet or it couldn't be read. */
     suspend fun load(): DeparturesSnapshot?
 
+    /**
+     * The snapshot last saved for the widget — read even where [load] declines to restore the stops
+     * in-app, so the app keeps the widget's journey pins (and their origins) while it works the
+     * journeys out again.
+     */
+    suspend fun loadForWidget(): DeparturesSnapshot? = load()
+
+    /**
+     * Drop from the stored snapshot the widget journeys not among the starred [keys], or whose
+     * origin differs from the one [origins] now gives for their key (the journey flipped), with a
+     * journey-only stop no remaining journey starts from — an unstar or a flip reaches the widget
+     * even when no refresh has saved since. A no-op when nothing changes.
+     */
+    suspend fun retainWidgetJourneys(keys: Set<String>, origins: Map<String, String> = emptyMap()) {}
+
+    /**
+     * Replace the stored snapshot's widget journeys with [journeys] (those whose origin it holds),
+     * leaving its stops as they are — for a journeys change that must land even though no fetch
+     * will save after it (a relocation canceled the one it waited on).
+     */
+    suspend fun replaceWidgetJourneys(journeys: List<WidgetJourney>, origins: List<StopArrivals> = emptyList()) {}
+
+    /**
+     * Persist [snapshot] like [save], except that a stop stored with newer arrivals (the widget's
+     * live refresh ran since [snapshot] was fetched) keeps them — for re-saving the app's last
+     * snapshot with changed journeys without rolling back fresher data.
+     */
+    suspend fun saveKeepingFresher(snapshot: DeparturesSnapshot) = save(snapshot)
+
+    /**
+     * [saveKeepingFresher], but leaving the stored widget journeys (and the journey-only stops they
+     * start from) as they are — for a save made while the caller couldn't read them back.
+     */
+    suspend fun saveKeepingJourneys(snapshot: DeparturesSnapshot) = saveKeepingFresher(snapshot)
+
     /** Persist [snapshot] as the new last-good, replacing any previous one. */
     suspend fun save(snapshot: DeparturesSnapshot)
 

@@ -60,6 +60,7 @@ object WidgetRefresh {
         }
         if (!anyFresh) return null
         // The whole-screen stamp is the freshest stop's age (matches DeparturesSnapshot).
-        return DeparturesSnapshot(stops = stops, fetchedAt = stops.maxOf { it.fetchedAt })
+        // The journeys the app last worked out ride along unchanged (route data isn't refetched here).
+        return prior.copy(stops = stops, fetchedAt = stops.maxOf { it.fetchedAt })
     }
 }
