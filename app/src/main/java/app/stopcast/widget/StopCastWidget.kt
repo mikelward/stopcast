@@ -241,7 +241,7 @@ internal fun WidgetContent(model: WidgetModel, now: Instant) {
                 .clickable(actionStartActivity<MainActivity>()),
         ) {
             Text(
-                text = "StopCast",
+                text = "StopDash",
                 style = TextStyle(
                     color = GlanceTheme.colors.onBackground,
                     fontWeight = FontWeight.Bold,
@@ -268,7 +268,7 @@ internal fun WidgetContent(model: WidgetModel, now: Instant) {
             Spacer(GlanceModifier.height(8.dp))
             when {
                 !model.hasData ->
-                    WidgetMessage("Open StopCast to load departures")
+                    WidgetMessage("Open StopDash to load departures")
                 // Has a snapshot but no rows to show — every service has departed or the
                 // stops returned none. Distinguish a trustworthy "none" from data too old to
                 // assert that (SPEC D4), rather than leaving the widget blank below the header.
