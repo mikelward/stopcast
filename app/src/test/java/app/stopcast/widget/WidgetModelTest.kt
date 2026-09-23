@@ -31,12 +31,16 @@ class WidgetModelTest {
         mode = "tube",
     )
 
-    private fun stop(id: String, departures: List<Departure>, fetchedAt: Instant) = StopArrivals(
+    // One shared place by default, so a multi-stop fixture is one place and draws no stop header —
+    // the budget tests below count departure lines only. A place is its cluster (a blank cluster is
+    // a place of its own), so the cluster follows the name: the header tests pass distinct [name]s.
+    private fun stop(id: String, departures: List<Departure>, fetchedAt: Instant, name: String = "Example Stop") = StopArrivals(
         id,
-        "Example Stop $id",
+        name,
         departures,
         fetchedAt,
         disruptions = emptyList(),
+        clusterId = name,
     )
 
     @Test
@@ -267,5 +271,145 @@ class WidgetModelTest {
         val fresh = DeparturesSnapshot(listOf(stop("490000001A", departures, now)), now)
         assertEquals(3, widgetModel(stale, now, maxLines = 4, maxLinesWithNote = 3).rows.size)
         assertEquals(4, widgetModel(fresh, now, maxLines = 4, maxLinesWithNote = 3).rows.size)
+    }
+
+    @Test
+    fun `a single place draws no stop header`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("490000001A", listOf(departure("victoria", 120)), now),
+                stop("490000002B", listOf(departure("central", 180)), now),
+            ),
+            fetchedAt = now,
+        )
+        val model = widgetModel(snapshot, now)
+        assertTrue("one place, no qualifier: the place is implied", model.rows.all { it.header == null })
+    }
+
+    @Test
+    fun `each place gets a header above its first row`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("490000001A", listOf(departure("victoria", 120), departure("central", 300)), now, name = "Stop One"),
+                stop("490000002B", listOf(departure("jubilee", 180)), now, name = "Stop Two"),
+            ),
+            fetchedAt = now,
+        )
+        val model = widgetModel(snapshot, now)
+        // A place's rows stay together under its header, places in the order their first row came.
+        assertEquals(listOf("victoria", "central", "jubilee"), model.rows.map { it.row.lineId })
+        assertEquals(listOf("Stop One", null, "Stop Two"), model.rows.map { it.header?.text })
+    }
+
+    @Test
+    fun `a header costs a line of the budget and is never left orphaned`() {
+        // Budget 3: "Stop One" header + its row (2 lines), then "Stop Two" would need its header plus
+        // a row (2 more) but only 1 line is left — so it's dropped whole rather than drawing a header
+        // with nothing under it.
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("490000001A", listOf(departure("victoria", 120)), now, name = "Stop One"),
+                stop("490000002B", listOf(departure("jubilee", 180)), now, name = "Stop Two"),
+            ),
+            fetchedAt = now,
+        )
+        val model = widgetModel(snapshot, now, maxLines = 3)
+        assertEquals(listOf("victoria"), model.rows.map { it.row.lineId })
+        assertEquals("the surviving place still names itself", "Stop One", model.rows.single().header?.text)
+        val used = model.rows.sumOf { it.groups.size + (if (it.header != null) 1 else 0) }
+        assertTrue("headers and lines together stay within the budget", used <= 3)
+    }
+
+    @Test
+    fun `a rail platform names itself in the header`() {
+        fun onPlatform(lineId: String, offset: Long) = departure(lineId, offset).copy(platform = "Southbound - Platform 1")
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(stop("490000001A", listOf(onPlatform("victoria", 120)), now)),
+            fetchedAt = now,
+        )
+        val header = widgetModel(snapshot, now).rows.first().header
+        assertEquals("Example Stop – Platform 1", header?.text)
+        assertEquals("the spoken label keeps the direction", "Example Stop, Platform 1, Southbound", header?.spoken)
+    }
+
+    @Test
+    fun `a one-line budget drops headers rather than show no departures`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("490000001A", listOf(departure("victoria", 120)), now, name = "Stop One"),
+                stop("490000002B", listOf(departure("jubilee", 180)), now, name = "Stop Two"),
+            ),
+            fetchedAt = now,
+        )
+        val model = widgetModel(snapshot, now, maxLines = 1)
+        assertEquals(listOf("victoria"), model.rows.map { it.row.lineId })
+        assertNull(model.rows.single().header)
+    }
+
+    @Test
+    fun `a lower-priority sibling can't take a fresher row's line at another place`() {
+        // Fresh A, fresh B, then a stale row at A (a second, unrefreshed stop of the same place).
+        // Grouping before the cap would put A's stale row next to its fresh one and spend B's lines
+        // on it; choosing by priority first keeps both fresh rows and drops the stale one.
+        val freshA = stop("490000001A", listOf(departure("aline", 60)), now, name = "Stop A")
+        val freshB = stop("490000002B", listOf(departure("bline", 120)), now, name = "Stop B")
+        val staleA = stop("490000003C", listOf(departure("staleline", 30)), now.minusSeconds(600), name = "Stop A")
+        val snapshot = DeparturesSnapshot(listOf(freshA, freshB, staleA), now)
+        // Two headers and two lines fill a budget of 4.
+        val model = widgetModel(snapshot, now, maxLines = 4)
+        assertEquals(listOf("aline", "bline"), model.rows.map { it.row.lineId })
+        assertEquals(listOf("Stop A", "Stop B"), model.rows.map { it.header?.text })
+    }
+
+    @Test
+    fun `a row that can't afford its place's header doesn't stop a later row that fits`() {
+        // Budget 3: A's header and first row fit (2). B's would need its own header and a line (4),
+        // so it's skipped — but A's second row still fits under A's header (3).
+        val a1 = stop("490000001A", listOf(departure("aline", 60)), now, name = "Stop A")
+        val b = stop("490000002B", listOf(departure("bline", 120)), now, name = "Stop B")
+        val a2 = stop("490000003C", listOf(departure("aline2", 180)), now, name = "Stop A")
+        val model = widgetModel(DeparturesSnapshot(listOf(a1, b, a2), now), now, maxLines = 3)
+        assertEquals(listOf("aline", "aline2"), model.rows.map { it.row.lineId })
+        assertEquals("A keeps its header though B didn't fit", listOf("Stop A", null), model.rows.map { it.header?.text })
+    }
+
+    @Test
+    fun `a later route that ends a shared-terminus header still fits`() {
+        // A letterless bus stop: one route alone gets a "-> terminus" header (header + row = 2, the
+        // whole budget). A second route to another terminus ends that header, so both routes fit.
+        fun bus(lineId: String, destination: String, offset: Long) = Departure(
+            lineId = lineId,
+            lineName = lineId,
+            direction = "outbound",
+            destination = destination,
+            platform = null,
+            expectedArrival = now.plusSeconds(offset),
+            mode = "bus",
+        )
+        val stop = stop("490000001A", listOf(bus("73", "Stoke Newington", 60), bus("38", "Clapton Pond", 120)), now)
+        val model = widgetModel(DeparturesSnapshot(listOf(stop), now), now, maxLines = 2)
+        assertEquals(listOf("73", "38"), model.rows.map { it.row.lineId })
+        assertTrue("two termini: no shared-terminus header", model.rows.all { it.header == null })
+    }
+
+    @Test
+    fun `a route that didn't fit still keeps its stop from claiming one terminus`() {
+        // A letterless bus stop with routes to two termini, beside another place. Budget 4: Stop A's
+        // header and 73 (2), Stop B's header and its row (4); 38 doesn't fit. The header is judged
+        // from every route at Stop A, so it stays the bare name rather than "➔ Stoke Newington".
+        fun bus(lineId: String, destination: String, offset: Long) = Departure(
+            lineId = lineId,
+            lineName = lineId,
+            direction = "outbound",
+            destination = destination,
+            platform = null,
+            expectedArrival = now.plusSeconds(offset),
+            mode = "bus",
+        )
+        val a = stop("490000001A", listOf(bus("73", "Stoke Newington", 60), bus("38", "Clapton Pond", 180)), now, name = "Stop A")
+        val b = stop("490000002B", listOf(departure("victoria", 120)), now, name = "Stop B")
+        val model = widgetModel(DeparturesSnapshot(listOf(a, b), now), now, maxLines = 4)
+        assertEquals(listOf("73", "victoria"), model.rows.map { it.row.lineId })
+        assertEquals(listOf("Stop A", "Stop B"), model.rows.map { it.header?.text })
     }
 }

@@ -33,6 +33,14 @@ internal fun groupHeaderLabel(qualifier: StopQualifier?): String? = when (qualif
 }
 
 /**
+ * A group header's full one-line text — the place [name], then " – " and the qualifier when there is
+ * one ("King's Cross St. Pancras – Platform 1"), else the bare name. Shared by the in-app list and the
+ * widget so the two surfaces title a place the same way.
+ */
+internal fun groupHeaderTitle(name: String, qualifier: StopQualifier?): String =
+    groupHeaderLabel(qualifier)?.let { "$name – $it" } ?: name
+
+/**
  * The **spoken** form of a group's qualifier — what a screen reader hears in place of the visible
  * segment's glyphs, keeping the direction/towards the visible label drops ("Platform 1, Northbound",
  * "Stop G, towards Farringdon", "Southwest-bound"). Null when the group carries no qualifier. The

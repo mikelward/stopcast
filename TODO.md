@@ -425,8 +425,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [x] **Split a mixed-platform row into a card per platform** (Codex P1, PR #119). A direction
         that runs from several platforms (Camden Town southbound: Platform 2 or 4) now gets a card
         per platform; platform-less predictions beside two platforms sit under the bare compass.
-  - [ ] **Show the platform on the widget.** The widget keeps one merged row per direction (it has
-        no platform headers); a platform cue on its rows would answer "which platform" there too.
+  - [~] **Show the platform on the widget.** The widget's stop headers now name the platform when
+        a merged direction row runs from exactly one ("Oxford Circus – Platform 3"). Still open: a
+        direction split across platforms stays one row under the bare compass, where the app shows a
+        card per platform; splitting it on the widget costs lines its budget may not have.
   - [ ] **Revisit the header grain for a busy interchange** (maintainer, 2026-09-21). The rail
         platform split and the bus letter split (above) already break a hub into per-platform/per-pole
         blocks. Still open: whether a dense hub wants a *finer* grain still (per-line dividers within
@@ -590,7 +592,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           `hubNaptanCode` would merge them into one place; the next grain down is
           `stationNaptan` (today's cluster) as a sub-header. Reverses a SPEC decision and hits
           the dense-header case below — a maintainer call, discussed but not taken.
-  - [ ] **Carry the stop grouping through the widget** (Codex, PR #78). The widget ships
+  - [x] **Carry the stop grouping through the widget** (Codex, PR #78). Landed: `widgetModel`
+        groups with the shared `StopGrouping` and titles each place with the in-app header text
+        (`groupHeaderTitle`); a header costs one line of the budget and is never drawn without a
+        row under it. One place with no qualifier stays header-less. Original note: The widget ships
         now and, on a multi-stop snapshot, renders a flat sequence of destination rows with
         no stop headers — so it gives no boarding location, the same gap this PR just closed
         in the app. `StopGrouping` is pure and shared-ready; adopt it in `widgetModel` /
@@ -1466,6 +1471,12 @@ and these carry the rest as their own PRs:
       cap overflowed even the default 240x180dp cell. The widget now uses `SizeMode.Responsive`
       height buckets and derives its line budget from the bucket's height (`widgetLineBudget`,
       conservative per-line cost), pixel-checked by the full-budget and minimum-size screenshots.
+- [ ] **Per-row widget stacking from the row's own width (Codex P2 on #155).** The widget stacks
+      a departure onto two lines only on the narrow (<220dp) bucket at 1.3x font or more. A wide-bucket
+      row with three times ("0 · 3 · 6 min") at a large font can still squeeze its destination out.
+      Fix properly: decide stacking per row from its estimated countdown width, count the line budget in
+      dp instead of lines, and add width buckets (the 220dp bucket stands for every width above it).
+      Glance can't measure text, so this stays an estimate; judge it on a device.
 - [ ] **Named Overground pills on the widget (own PR, Codex P2 on #44).** The in-app pill
       renders the six named Overground lines as a *hollow* pill (surface fill + accent border
       + accent label, via `overgroundAccentColor`); the widget falls back to a neutral pill for
@@ -1487,9 +1498,9 @@ and these carry the rest as their own PRs:
       view, not a separate design. Glance emits RemoteViews, so it can't call the Material
       composables — share a pure per-row UI model (label, countdown text, pill fill/hollow,
       status badge, stop header) computed once, with two thin renderers. Gaps vs. the main
-      view today: stop headers (the *stop grouping* item above), status badges (⚠ /
-      "Suspended", needs the persisted-status item), hollow Overground pills, the card
-      grouping, and the app icon in the header. The stamp already moved onto the title row.
+      view today: status badges (⚠ / "Suspended", needs the persisted-status item), hollow
+      Overground pills, the card grouping, and the app icon in the header. Landed: the stamp on
+      the title row, a pill on every line, and stop headers (shared `groupHeaderTitle`).
 
 ## Phase 5 — Distribution and polish
 

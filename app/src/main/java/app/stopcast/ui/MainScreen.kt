@@ -390,7 +390,7 @@ fun MainScreen(
             // cleaned names, and the first matched group depends on row order (Codex).
             if (platformIsStation) platformTitle
             else if (matched.size > 1) g.stopName
-            else groupHeaderLabel(g.qualifier)?.let { "${g.stopName} – $it" } ?: g.stopName
+            else groupHeaderTitle(g.stopName, g.qualifier)
         }
         // The place's closure cards are the full list's own — already folded and dismissal-filtered —
         // so a card dismissed on either screen carries one identity and stays hidden on both (Codex).
@@ -689,8 +689,7 @@ fun MainScreen(
                             platformStopIds = group.rows.mapTo(LinkedHashSet()) { it.stopId }.joinToString(",")
                             platformIsStation = false
                             platformKey = group.splitKey
-                            platformTitle = groupHeaderLabel(group.qualifier)
-                                ?.let { "${group.stopName} – $it" } ?: group.stopName
+                            platformTitle = groupHeaderTitle(group.stopName, group.qualifier)
                         }
                     },
                     // The whole station: the tapped place's clusters, keyed blank so the view keeps all of

@@ -51,8 +51,12 @@ import app.stopcast.domain.RouteTopology
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StarredRowSet
+import app.stopcast.domain.StopGroup
+import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.domain.lineCode
+import app.stopcast.ui.groupHeaderSpoken
+import app.stopcast.ui.groupHeaderTitle
 import app.stopcast.ui.lineFillColor
 import app.stopcast.ui.railOperatorColor
 import app.stopcast.ui.textColorOn
@@ -210,7 +214,20 @@ internal data class WidgetModel(
  * shows only the groups that fit (line-exact), rather than expanding to an unbounded height (D8
  * parity within the budget the cell allows).
  */
-internal data class WidgetRowModel(val row: DepartureRow, val groups: List<DestinationGroup>)
+internal data class WidgetRowModel(
+    val row: DepartureRow,
+    val groups: List<DestinationGroup>,
+    // The stop header drawn above this row, set on the first row of each place group that shows one
+    // (see [widgetModel]); null for every other row.
+    val header: WidgetHeader? = null,
+)
+
+/**
+ * A stop header above a group of widget rows — the same place name and qualifier the in-app list
+ * shows ("King's Cross St. Pancras – Platform 1", via [groupHeaderTitle]), so the widget tells the
+ * rider where to board. [spoken] is what TalkBack reads, keeping the direction the visible text drops.
+ */
+internal data class WidgetHeader(val text: String, val spoken: String)
 
 internal fun widgetModel(
     snapshot: DeparturesSnapshot?,
@@ -247,8 +264,8 @@ internal fun widgetModel(
     // dropped. Warnings still lead (pinStarred keeps them above even a starred row). Distance
     // ordering (nearbyDeduped / byStopDistance) stays a deferred follow-up — moot once Phase 2's
     // watched stops replace the interim nearby source (TODO).
-    // One row per direction, not per platform: the widget has no platform headers, so split rows
-    // would read as duplicates ("Morden 0" twice) and spend its line budget.
+    // One row per direction, not per platform: a split row costs a line and a header of the widget's
+    // tight budget. A merged row names its platform in the header only when every train agrees on it.
     val ordered = DepartureRows.across(snapshot.stops, now, splitPlatforms = false)
         .sortedBy { if (Staleness.isStale(Duration.between(it.fetchedAt, now).toKotlinDuration())) 1 else 0 }
     // Bound the widget by total RENDERED lines, not outer rows: a branching (line, direction)
@@ -268,14 +285,63 @@ internal fun widgetModel(
     // Only when there's a departure to fit: with none, the empty states ("No upcoming departures",
     // "may be out of date") are the honest message and fit any size.
     val tooSmall = budget < 1 && pinned.isNotEmpty()
+    // Headers cost a line each; a budget too small for a header and a line (the minimum size) drops
+    // them: the next departure matters more than naming its stop, and a lone header would leave no
+    // row — and an empty list reads as "No upcoming departures", a claim the data doesn't make.
+    val headersOn = budget >= 2
+    // Choose which rows fit in PRIORITY order (fresh before stale, starred first — `pinned`), counting
+    // the headers the chosen set will draw; only then group the chosen rows by place for display.
+    // Grouping first would let a place's lower-priority rows (a stale sibling, an unstarred one) take
+    // lines ahead of a fresher or starred row at another place. The grouping itself is the in-app
+    // list's (SPEC D8): a place's rows together, places in the order their first row came, and a
+    // header only where the list shows one — one place with no qualifier stays header-less, so the
+    // common single-stop widget pays nothing for it. warningsLead = false: `pinned` decided the lead.
+    val shownLines = java.util.IdentityHashMap<DepartureRow, List<DestinationGroup>>()
+    val selected = mutableListOf<DepartureRow>()
+    // Each header — whether it shows, and what it says — is judged against every row the widget has
+    // departures for, not just the rows that fit: when the cap leaves one place of several, its rows
+    // still need its name, and a bus place whose second route didn't fit mustn't claim the one shown
+    // route's terminus ("➔ …") as the whole stop's. Group keys are the same in both groupings (place
+    // plus split, read from each row), so a chosen group looks up its full-context twin.
+    val allLines = pinned.map { DepartureRows.destinationLines(it, WIDGET_MAX_TIMES, topology) }
+    val candidates = pinned.filterIndexed { i, _ -> allLines[i].isNotEmpty() }
+    val fullGroups = StopGrouping.groupByStop(candidates, warningsLead = false).associateBy { it.key }
+    fun context(group: StopGroup): StopGroup = fullGroups[group.key] ?: group
+    fun headed(group: StopGroup): Boolean = headersOn && context(group).showHeader
+    fun cost(rows: List<DepartureRow>): Int = StopGrouping.groupByStop(rows, warningsLead = false).sumOf { group ->
+        (if (headed(group)) 1 else 0) + group.rows.sumOf { shownLines.getValue(it).size }
+    }
+    for ((row, lines) in pinned.zip(allLines)) {
+        if (lines.isEmpty()) continue
+        selected += row
+        shownLines[row] = lines
+        val over = cost(selected) - budget
+        if (over <= 0) continue
+        // Over budget: a branching row may still fit with fewer of its destination lines (each line
+        // dropped saves exactly one); otherwise it's skipped. The scan never stops early: a row that
+        // opens a new group pays for its header too, so a later row of an already-shown group may
+        // still fit after one that couldn't. The rows are few; checking each is cheap.
+        if (lines.size - over >= 1) {
+            shownLines[row] = lines.take(lines.size - over)
+        } else {
+            selected.removeAt(selected.lastIndex)
+            shownLines.remove(row)
+        }
+    }
     val rows = buildList {
-        var used = 0
-        for (row in pinned) {
-            if (used >= budget) break
-            val groups = DepartureRows.destinationLines(row, WIDGET_MAX_TIMES, topology)
-            val shown = if (groups.size <= budget - used) groups else groups.take(budget - used)
-            add(WidgetRowModel(row, shown))
-            used += shown.size
+        for (group in StopGrouping.groupByStop(selected, warningsLead = false)) {
+            val header = if (headed(group)) {
+                val full = context(group)
+                WidgetHeader(
+                    text = groupHeaderTitle(full.stopName, full.qualifier),
+                    spoken = groupHeaderSpoken(full.qualifier)?.let { "${full.stopName}, $it" } ?: full.stopName,
+                )
+            } else {
+                null
+            }
+            group.rows.forEachIndexed { index, row ->
+                add(WidgetRowModel(row, shownLines.getValue(row), header.takeIf { index == 0 }))
+            }
         }
     }
     return WidgetModel(
@@ -357,7 +423,14 @@ internal fun WidgetContent(
                         if (model.uncertain) "Departures may be out of date" else "No upcoming departures",
                     )
                 else ->
-                    model.rows.forEach { rowModel ->
+                    model.rows.forEachIndexed { index, rowModel ->
+                        rowModel.header?.let { header ->
+                            // Extra space above every header but the first marks the break between
+                            // places, as in the in-app list; 4dp ties the header to its rows.
+                            if (index > 0) Spacer(GlanceModifier.height(4.dp))
+                            WidgetStopHeader(header)
+                            Spacer(GlanceModifier.height(4.dp))
+                        }
                         WidgetRow(rowModel, now, fontScale, stacked = model.stacked)
                         Spacer(GlanceModifier.height(8.dp))
                     }
@@ -407,6 +480,22 @@ private fun WidgetStatusLine(text: String) {
         text = text,
         maxLines = 1,
         style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
+    )
+}
+
+/** A stop header above its place's rows, on one line. A long one clips at the end: Glance can't
+ *  measure text, so it can't reserve the qualifier the way the in-app header does. */
+@androidx.compose.runtime.Composable
+private fun WidgetStopHeader(header: WidgetHeader) {
+    Text(
+        text = header.text,
+        maxLines = 1,
+        modifier = GlanceModifier.semantics { contentDescription = header.spoken },
+        style = TextStyle(
+            color = GlanceTheme.colors.onBackground,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+        ),
     )
 }
 
