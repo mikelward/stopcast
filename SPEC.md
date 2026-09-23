@@ -62,12 +62,22 @@ The app finds stops two ways:
   precise; either way it is never a background send. This is an in-app,
   on-demand action, never a background one.
 
-  The fix is taken when the near-me view first resolves **and again on every refresh**:
-  the refresh control and pull-to-refresh re-resolve the nearby set as well as re-fetching
-  departures, so a user walking from stop to stop sees the set follow them, one refresh at a
-  time (the common "walk past a station and check" case). It stays user-initiated — no
-  background or automatic polling — so the location send stays bounded by the user's own
-  refreshes rather than a timer. The re-locate **forces a fresh fix** (it does not take the
+  The fix is taken when the near-me view first resolves, **on every refresh**, and **on a
+  return to the foreground** (maintainer, 2026-09-23): the refresh control and pull-to-refresh
+  re-resolve the nearby set as well as re-fetching departures, and reopening the app after it was
+  backgrounded does the same, so a user walking from stop to stop sees the set follow them without
+  a manual pull (the common "walk to the next stop and check" case). It stays **foreground and
+  user-adjacent** — the fix is bounded to the user's own refreshes and app opens, never a
+  background send or a timer (the on-screen auto-refresh keeps departures live but does **not**
+  relocate). Sending the location on a foreground return is the deliberate trade for that UX. Its
+  cost is **one extra forced fix and one extra `/StopPoint` request per app-open** (on top of each
+  refresh's): a small, bounded **battery** draw on the locator for the ~1–2 s fix, and one more
+  keyless TfL request (**£0**, well within the ~50 req/min budget). It adds **no new Play Data
+  Safety surface** — the same precise-location-to-TfL the near-me action already declares, on the
+  same foreground, user-adjacent path, not a new recipient, category, or background collection. A
+  distance-triggered version that relocates as the user moves ~100 m *while the screen is open* is
+  still a later enhancement, with the parameters and battery trade-offs in `TODO.md`. The re-locate
+  **forces a fresh fix** (it does not take the
   recent-cached fast path a first open may use): a rider who has walked since the last fix
   must not be re-resolved against the old position, so a cached fix is only a bounded fallback
   here — a fresh fix is ~1–2 s in the common case, comfortably under the refresh spinner.
@@ -77,10 +87,8 @@ The app finds stops two ways:
   honestly, not swallowed** (principles 1–2): a failed fix, an unreachable lookup, or an
   out-of-range "no stops nearby" replaces the list rather than leaving a previous location's
   stops on screen as if current (cards omit the stop name, so a stale set is
-  indistinguishable from the real one). There is therefore **no separate "locate" control**
-  — refresh does both. (An automatic, distance-triggered version — update
-  when the user moves ~100 m — is a later enhancement; the parameters and battery trade-offs
-  are in `TODO.md`.) The list is a
+  indistinguishable from the real one). There is therefore **no separate "locate" control** —
+  the refresh control and a foreground return both do it. The list is a
   **useful, scannable spread, not a raw nearest-N**:
   - a **line appears once**, not once per stop it passes — a raw nearest-N repeats the same
     bus route several times, one per adjacent stop, which reads as noise;
@@ -118,8 +126,8 @@ The app finds stops two ways:
   tap appear to do nothing — so tapping "More" always surfaces something new when the reach holds
   one, rather than a dead tap followed by a working one. Each tap stays **bounded** — it reaches
   through only so many clusters before the next tap continues — so a dense redundant corridor never
-  fans out one oversized fetch that could hit TfL's rate limit. A **revealed expansion survives a relocation** — the near-me set re-resolves only on a
-  user-initiated refresh, and the retained view is keyed on the *whole* nearby cluster set (both
+  fans out one oversized fetch that could hit TfL's rate limit. A **revealed expansion survives a relocation** — the near-me set re-resolves on a user
+  refresh or a return to the foreground, and the retained view is keyed on the *whole* nearby cluster set (both
   tiers, order-independent), so a small move that only reorders the clusters, or shifts one across
   the eager/more boundary while all stay in range, keeps what the user opened. When a relocation
   drops a revealed cluster (or one of its poles leaves range), that stop leaves the list at once
@@ -868,11 +876,12 @@ Mirrors the sibling fleet:
   The app still uses on-demand location to *find and suggest* nearby stops to pin, and
   to show a "near me now" list. Location stays off the **background and widget** refresh
   paths — those re-fetch a fixed set of stops with no fix (the widget's persisted watched
-  set; the near-me view's already-resolved set). The one path that does take a fix is a
-  **manual near-me refresh**: a user refresh (button or pull-to-refresh) on the near-me
-  departures re-resolves the nearby set as well as re-fetching, so walking to the next stop
-  and refreshing follows the user (see *Finding stops*). That is still on-demand and
-  foreground — a user gesture, never a timer or a background wake.
+  set; the near-me view's already-resolved set). The paths that **do** take a fix are the
+  **user-adjacent near-me refreshes**: a refresh (button or pull-to-refresh) *and* a return to
+  the foreground on the near-me departures re-resolve the nearby set as well as re-fetching, so
+  walking to the next stop and reopening — or refreshing — follows the user (see *Finding stops*).
+  That is still on-demand and foreground — a user gesture or an app open, never a timer or a
+  background wake (the on-screen auto-refresh tick stays departures-only).
 - **D2 — A watched stop can be filtered to lines and/or a direction.** A station serves
   many lines and platforms; the rider takes one or two. Default is all.
 - **D3 — Disruptions are surfaced alongside departures, and mark the line/stop even
