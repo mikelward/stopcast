@@ -787,10 +787,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [x] **Auto-fetch only within walking reach** (maintainer, 2026-09-23). Eager is each mode's
         nearest two clusters within 500 m; a mode with none that close gets its single nearest out
         to the mile. At a big interchange a second Overground station 1.3 km off no longer loads.
-  - [ ] **Location fix at a big station waits the full 10 s timeout** (maintainer bug report,
-        2026-09-23): indoors the fused and GPS providers both time out before the last-known
-        fallback, so the near-me list starts ~10 s late. Consider a shorter wait when a recent
-        last-known fix exists.
+  - [x] **Location fix at a big station waited the full 10 s timeout** (maintainer bug report,
+        2026-09-23). Providers were asked one at a time, so indoors fused and GPS each ran out
+        their 4 s bound before the network provider was asked. They're now asked at once: an
+        accurate fix wins on arrival, a network fix after a 2 s grace.
   - [x] **A "More" tap fetches only the newly revealed page, not the whole set** (landed). `reveal()`
         no longer calls `refresh()`; it fetches just the stops not already shown and merges them into
         the current `Loaded` via `fetchIncremental`, persisting the widened set only when the fetch

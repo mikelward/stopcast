@@ -144,7 +144,12 @@ The app finds stops two ways:
   relocation resets it (maintainer's lean, 2026-09-21; reversible to an eager-only widget snapshot
   — `TODO.md`).
 
-  To keep the lookup fast and honest: a recent cached position is used at once; if a fresh fix
+  To keep the lookup fast and honest: a recent cached position is used at once. A fresh fix asks
+  **every location provider at once**: an accurate (fused/GPS) fix is used as soon as it arrives,
+  and an approximate (network) one after a ~2 s grace if no accurate fix beats it — so indoors or
+  underground, where fused and GPS can't see the sky, the list starts from the network fix in a few
+  seconds rather than after each accurate provider in turn has timed out (~10 s; maintainer bug
+  report, 2026-09-23). If a fresh fix
   is slow or absent, a *somewhat-stale* cached one substitutes for it rather than making the
   user wait or fail — but only within a bounded age, past which stopcast reports "couldn't get
   your location" rather than showing a previous location's stops as current (a user who has
