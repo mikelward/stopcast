@@ -235,6 +235,11 @@ fun MainScreen(
     // True when the view was opened from a place name: it is then the whole station, always titled
     // by the bare place name, however many groups it currently holds.
     var platformIsStation by rememberSaveable { mutableStateOf(false) }
+    // The whole-station view a platform view was opened from, if any (its cluster keys and title),
+    // so back steps out to the station rather than past it to the full list. Null when the platform
+    // was opened straight from the full list.
+    var parentStationIds by rememberSaveable { mutableStateOf<String?>(null) }
+    var parentStationTitle by rememberSaveable { mutableStateOf("") }
     // Built from the platform's own stops WITHOUT the near-me fold: the fold keeps a line only at its
     // nearest stop, which would drop services from a farther platform — the drill-down shows all of
     // them. The stop ids alone aren't the platform: a station's platforms all come from one TfL stop,
@@ -291,10 +296,27 @@ fun MainScreen(
     // that may still have trains (SPEC principle 1), so the full list shows instead — at once, not a
     // frame later — and the saved view is cleared.
     val platformGone = loaded != null && platformView != null && platformView.second == null
-    LaunchedEffect(platformGone) { if (platformGone) platformStopIds = null }
+    // Leave the current view one level: a platform opened from a station returns to that station;
+    // anything else returns to the full list.
+    fun closeView() {
+        val parent = parentStationIds
+        parentStationIds = null
+        if (parent != null && !platformIsStation) {
+            platformStopIds = parent
+            platformIsStation = true
+            platformKey = ""
+            platformTitle = parentStationTitle
+        } else {
+            platformStopIds = null
+        }
+    }
+    // A vanished platform steps back to its station (which closes in turn if it is gone too).
+    // Keyed on the view too: when a refresh drops both a platform and its station, closing to the
+    // station leaves platformGone true, and the effect must run again to close that as well.
+    LaunchedEffect(platformGone, platformStopIds, platformIsStation) { if (platformGone) closeView() }
     val platformRows = platformView?.first?.takeUnless { platformGone }
     val shownRows = platformRows ?: rows
-    BackHandler(enabled = platformRows != null) { platformStopIds = null }
+    BackHandler(enabled = platformRows != null) { closeView() }
 
     // The route whose detail is open, held by its stable row identity rather than the row object: a
     // saveable String survives a configuration change (the page stays open on rotation) and resets on
@@ -386,7 +408,7 @@ fun MainScreen(
                     // A drilled-into platform view is a destination of its own: back returns to the
                     // full list (the system back does too — see the BackHandler above).
                     if (platformRows != null) {
-                        IconButton(onClick = { platformStopIds = null }) {
+                        IconButton(onClick = { closeView() }) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = stringResource(R.string.action_back),
@@ -508,11 +530,19 @@ fun MainScreen(
                     },
                     dismissed = dismissed,
                     onDismissAlert = onDismissAlert,
-                    // Only the full list drills down; inside a platform view the header (if any) is inert.
-                    onOpenPlatform = if (platformRows != null) {
+                    // The full list and a whole-station view drill down to a platform; inside a platform
+                    // view the header is inert. From a station, the station is remembered so back
+                    // returns to it.
+                    onOpenPlatform = if (platformRows != null && !platformIsStation) {
                         null
                     } else {
                         { group ->
+                            if (platformRows != null) {
+                                parentStationIds = platformStopIds
+                                parentStationTitle = platformTitle
+                            } else {
+                                parentStationIds = null
+                            }
                             platformStopIds = group.rows.mapTo(LinkedHashSet()) { it.stopId }.joinToString(",")
                             platformIsStation = false
                             platformKey = group.splitKey
@@ -531,6 +561,7 @@ fun MainScreen(
                             platformStopIds = group.rows.mapTo(LinkedHashSet()) { stationClusterOf(it.clusterId, it.stopId) }
                                 .joinToString(",")
                             platformIsStation = true
+                            parentStationIds = null
                             platformKey = ""
                             platformTitle = group.stopName
                         }
