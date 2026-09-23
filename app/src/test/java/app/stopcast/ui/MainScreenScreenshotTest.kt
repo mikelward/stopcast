@@ -1,6 +1,8 @@
 package app.stopcast.ui
 
 import android.graphics.Bitmap
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.semantics.SemanticsProperties
 import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
@@ -52,6 +54,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowToast
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -810,6 +815,33 @@ class MainScreenScreenshotTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText(hubName).assertExists()
         captureSnapshot("main-near-me-hub-alert-expanded.png")
+    }
+
+    @Test
+    fun `a web link in a closure notice is a tappable link to that page`() {
+        // Generic notice text; a TfL-style bare domain + path gets https added (SPEC *Disruptions*).
+        val notice = "Station closed until further notice. Visit tfl.gov.uk/status-updates for more."
+        val closed = manorHouse().copy(disruptions = listOf(StopDisruption(notice)))
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(DeparturesUiState.Loaded(listOf(closed), now.minusSeconds(60)), now, {})
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        val text = composeRule.onNodeWithText("tfl.gov.uk/status-updates", substring = true).fetchSemanticsNode()
+            // The card merges its title and body into one node; take the body's text.
+            .config[SemanticsProperties.Text].first { "tfl.gov.uk/status-updates" in it }
+        val link = text.getLinkAnnotations(0, text.length).single()
+        assertEquals("https://tfl.gov.uk/status-updates", (link.item as LinkAnnotation.Url).url)
+        assertEquals("tfl.gov.uk/status-updates", text.substring(link.start, link.end))
+
+        // With no app to open it (no browser), the tap says so rather than crashing.
+        shadowOf(RuntimeEnvironment.getApplication()).checkActivities(true)
+        val url = link.item as LinkAnnotation.Url
+        composeRule.runOnUiThread { url.linkInteractionListener!!.onClick(url) }
+        assertEquals("No app to open this link", ShadowToast.getTextOfLatestToast())
     }
 
     @Test

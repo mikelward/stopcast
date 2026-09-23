@@ -120,6 +120,7 @@
          description too. -->
     <string name="update_available">Update available</string>
     <!-- Toast when neither the Play app nor a browser can open the Play listing. -->
+    <string name="link_open_failed">No app to open this link</string>
     <string name="update_open_failed">No app to open Google Play</string>
 
     <!-- Settings screen. -->
