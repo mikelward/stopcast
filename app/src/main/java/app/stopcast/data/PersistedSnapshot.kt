@@ -2,8 +2,10 @@ package app.stopcast.data
 
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DeparturesSnapshot
+import app.stopcast.domain.JourneyCall
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.WidgetJourney
 import app.stopcast.domain.normalizeBranch
 import java.time.Instant
 import kotlinx.serialization.Serializable
@@ -27,10 +29,21 @@ internal data class PersistedSnapshot(
     val version: Int = CURRENT_VERSION,
     val stops: List<PersistedStop> = emptyList(),
     val fetchedAtMillis: Long = 0L,
+    // The widget's starred journeys and journey-only stops ([DeparturesSnapshot]), added in version
+    // 2. Defaulted, so a version-1 snapshot reads back with none.
+    val journeys: List<PersistedWidgetJourney> = emptyList(),
+    val journeyOnlyStopIds: List<String> = emptyList(),
 ) {
     companion object {
-        /** The current on-disk format. Bump when a field's meaning changes incompatibly. */
-        const val CURRENT_VERSION = 1
+        /**
+         * The current on-disk format. Bump when a field's meaning changes incompatibly. Version 2
+         * added journey-only stops: a version-1 reader would show them as nearby stops, so it
+         * must discard a version-2 file, while this build still reads version 1.
+         */
+        const val CURRENT_VERSION = 2
+
+        /** The formats this build reads. */
+        val READABLE_VERSIONS = setOf(1, CURRENT_VERSION)
     }
 }
 
@@ -61,6 +74,21 @@ internal data class PersistedStop(
 // restore a stop carries no disruptions; the immediate refresh re-establishes them.
 
 @Serializable
+internal data class PersistedWidgetJourney(
+    val originId: String,
+    val calls: List<PersistedJourneyCall> = emptyList(),
+    val key: String = "",
+    val shownFrom: String = "",
+)
+
+@Serializable
+internal data class PersistedJourneyCall(
+    val lineId: String,
+    val destination: String,
+    val branch: String? = null,
+)
+
+@Serializable
 internal data class PersistedDeparture(
     val lineId: String,
     val lineName: String,
@@ -82,10 +110,19 @@ internal data class PersistedLine(
     val mode: String,
 )
 
+internal fun WidgetJourney.toPersisted(): PersistedWidgetJourney =
+    PersistedWidgetJourney(originId, calls.map { PersistedJourneyCall(it.lineId, it.destination, it.branch) }, key, shownFrom)
+
 internal fun DeparturesSnapshot.toPersisted(): PersistedSnapshot =
     PersistedSnapshot(
         stops = stops.map { it.toPersisted() },
         fetchedAtMillis = fetchedAt.toEpochMilli(),
+        journeys = journeys.map { j ->
+            PersistedWidgetJourney(
+                j.originId, j.calls.map { PersistedJourneyCall(it.lineId, it.destination, it.branch) }, j.key, j.shownFrom,
+            )
+        },
+        journeyOnlyStopIds = journeyOnlyStopIds.sorted(),
     )
 
 /**
@@ -94,14 +131,20 @@ internal fun DeparturesSnapshot.toPersisted(): PersistedSnapshot =
  * last-good".
  */
 internal fun PersistedSnapshot.toDomain(): DeparturesSnapshot? {
-    if (version != PersistedSnapshot.CURRENT_VERSION) return null
+    if (version !in PersistedSnapshot.READABLE_VERSIONS) return null
     return DeparturesSnapshot(
         stops = stops.map { it.toDomain() },
         fetchedAt = Instant.ofEpochMilli(fetchedAtMillis),
+        journeys = journeys.map { j ->
+            WidgetJourney(
+                j.originId, j.calls.mapTo(HashSet()) { JourneyCall(it.lineId, it.destination, it.branch) }, j.key, j.shownFrom,
+            )
+        },
+        journeyOnlyStopIds = journeyOnlyStopIds.toSet(),
     )
 }
 
-private fun StopArrivals.toPersisted(): PersistedStop =
+internal fun StopArrivals.toPersisted(): PersistedStop =
     PersistedStop(
         stopId = stopId,
         stopName = stopName,

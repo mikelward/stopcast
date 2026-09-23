@@ -780,6 +780,8 @@ class MainActivity : ComponentActivity() {
                     journeys = shownJourneys,
                     // The journeys' origins (this way round) are fetched alongside the near-me stops.
                     onJourneyOrigins = viewModel::setJourneyStops,
+                    onWidgetJourneys = viewModel::setWidgetJourneys,
+                    journeysKnown = savedJourneys != null,
                     // Null (stations inert) while the saved journeys are a newer app version's file this
                     // build can't read: it's preserved untouched, so a toggle could only be ignored.
                     onToggleJourney = if (savedJourneys == null) {

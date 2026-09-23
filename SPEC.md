@@ -538,9 +538,20 @@ line's route**: an end matches its own stop, else a stop in the same TfL stop ar
 same name, else — for a stop served one way only — the route's nearest stop within a short walk
 (400 m). When the route can't place the origin as one stop, the card says it couldn't check rather
 than guess one. The origin's departures are fetched alongside the near-me stops (one request, none
-when it's already near) and stay out of the near-me list and the widget; each line's route is the
-same lookup the route page makes (one per line at the origin, per process). Until they are in, the
-card says it's checking rather than claim there are none.
+when it's already near) and stay out of the near-me list; each line's route is the same lookup the
+route page makes (one per line at the origin, per process). Until they are in, the card says it's
+checking rather than claim there are none.
+
+**On the widget**, a journey's departures lead the list too (maintainer, 2026-09-23), in the
+direction the app last showed. The widget can't load routes, so the app saves, with the widget's
+snapshot, each origin and the departures it found to call at the far end (by line, destination and
+branch); the widget pins those and shows nothing else from an origin that isn't nearby. A
+destination the app hasn't seen yet is left out until the app next works the journey out; one a
+complete check finds no longer calls there is dropped, while a check that can't finish (a route
+loading or failed, a restart) keeps what was last saved. The widget's stamp and live refresh count
+an origin only once its journey is saved. With live refresh on, each saved origin that isn't nearby
+adds one arrivals request per refresh (free; well within TfL's keyless budget for a few journeys),
+the same kind of request the app already makes for it — no new data leaves the device.
 
 **Direct only, for now.** A journey that needs a change is routing — the eventual goal is starring
 home and work, which needs it, and it stays a non-goal until then. The tap-a-stop entry point is an

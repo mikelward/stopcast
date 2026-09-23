@@ -966,6 +966,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
     - [x] **The way back's own page shows the same star.** A route page places each saved journey
           on its route like the card does, so the return poles show (and toggle) the existing
           journey rather than star a second one.
+    - [x] **Journeys lead the widget too** (maintainer, 2026-09-23). The app saves each origin
+          and its far-end-calling departures (line, destination, branch) with the widget snapshot;
+          the widget pins them and hides a journey-only stop's other rows.
   - [ ] **Home and work, with routing** — the eventual goal: star two places, not two stations,
         and show how to get between them. Needs journey planning, a SPEC non-goal today and a
         separate product + privacy decision (it would send both places to TfL's Journey Planner).

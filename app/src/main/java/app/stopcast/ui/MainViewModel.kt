@@ -25,6 +25,9 @@ import app.stopcast.domain.StopDisruptionBatch
 import app.stopcast.domain.TflClient
 import app.stopcast.domain.stopPlaceKey
 import app.stopcast.domain.TflException
+import app.stopcast.domain.WidgetJourney
+import app.stopcast.domain.WidgetJourneyCheck
+import app.stopcast.domain.WidgetJourneys
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
@@ -42,6 +45,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -72,6 +77,9 @@ data class StopRef(
 /** The base backoff before restarting a failed dismissed-set read; doubled each attempt, and reset
  *  after any successful emission. */
 private const val DISMISSED_READ_RETRY_MS = 500L
+
+// The waits before each try at reading the widget's saved journeys at start-up (see init).
+private val WIDGET_JOURNEYS_RESTORE_WAITS_MS = listOf(0L, 500L, 2_000L)
 
 /** The ceiling the dismissed-set read backoff is capped at, so a persistently failing store is
  *  retried forever at a steady, quiet interval rather than giving up (storage can recover later). */
@@ -198,15 +206,312 @@ class MainViewModel(
             return merged + journeyStops.filter { it.id !in nearIds }
         }
 
+    // The starred journeys as the widget pins them (SPEC *Journeys*), by journey key: what the
+    // screen's checks have worked out ([setWidgetJourneys]), seeded at start from what was last
+    // saved, so a restart or a route that won't load doesn't unpin them. Held here, not in
+    // composition, so it survives a configuration change.
+    private var widgetJourneyMemory: Map<String, WidgetJourney> = emptyMap()
+    // Every departure a complete check has judged this session, per journey key (and its origin),
+    // so restoring the saved pins late can't bring back one a check has since rejected.
+    private var widgetJourneysChecked: Map<String, WidgetJourneyCheck> = emptyMap()
+    // The stop each starred journey was last shown from, by key (see setWidgetJourneys), and the
+    // keys flipped this session, whose saved (older-direction) pins a late restore mustn't bring back.
+    private var widgetJourneyFrom: Map<String, String> = emptyMap()
+    private val widgetJourneysTurned = HashSet<String>()
+    // The starred journeys' keys as last reported, or null before the screen's first report.
+    private var widgetJourneyKeys: Set<String>? = null
+    private var widgetJourneys: List<WidgetJourney> = emptyList()
+    // Serializes the direct journeys writes (writeWidgetJourneysDirectly).
+    private val widgetJourneysWrite = WidgetJourneysWrites.lock
+    // This ViewModel's place in line: a newer one (a relocation made it) owns the widget's journeys,
+    // so this one's outliving direct writes stand down rather than overwrite it.
+    private val widgetJourneysGeneration = WidgetJourneysWrites.next()
+    private val ownsWidgetJourneys get() = WidgetJourneysWrites.latest() == widgetJourneysGeneration
+    // Whether the saved journeys couldn't be read back (every start-up try failed): until a later
+    // read succeeds, widget saves leave the stored journeys as they are rather than write none.
+    private var widgetJourneysUnknown = false
+    // The start-up read of the journeys last saved for the widget (seedWidgetJourneys).
+    private var widgetJourneySeed: Job? = null
+    // The journey origins as last saved for the widget, carried into a save that didn't fetch them
+    // (a bus journey's origin waits for its route), so its pin isn't dropped meanwhile.
+    private var carriedWidgetOrigins: Map<String, StopArrivals> = emptyMap()
+
+    // The last snapshot saved for the widget, and what it was built from (the fetched snapshot, its
+    // nearby and journey-origin ids), so a journey worked out after that save can be added to it
+    // without a refetch; and the job re-saving it, superseded by any fetch.
+    private var lastWidgetSave: DeparturesSnapshot? = null
+    private var lastWidgetSource: Triple<DeparturesSnapshot, Set<String>, Set<String>>? = null
+    private var widgetResaveJob: Job? = null
+
     /**
-     * [snapshot] as the widget may show it: only the nearby stops [nearIds] (captured when the fetch
-     * began), never a journey's farther origin. Kept positively rather than by excluding the current
-     * journey origins, so an origin a flip has since dropped can't slip through a fetch in flight.
+     * [snapshot] as the widget may show it: the nearby stops [nearIds] and the journey origins
+     * [journeyIds], both captured when the fetch began — kept positively, so an origin a flip has
+     * since dropped can't slip through a fetch in flight. A journey origin that isn't nearby is
+     * marked journey-only: the widget shows just its journey's departures, so it is kept only once
+     * its journey is worked out — else the widget's live refresh would poll a stop it can't show.
      */
-    private fun forWidget(snapshot: DeparturesSnapshot, nearIds: Set<String>): DeparturesSnapshot {
-        // Its "updated" stamp is the freshest stop it keeps, never a dropped origin's.
-        val kept = snapshot.stops.filter { it.stopId in nearIds }
-        return DeparturesSnapshot(kept, kept.maxOfOrNull { it.fetchedAt } ?: snapshot.fetchedAt)
+    private fun forWidget(
+        snapshot: DeparturesSnapshot,
+        nearIds: Set<String>,
+        journeyIds: Set<String>,
+    ): DeparturesSnapshot {
+        val origins = widgetJourneys.mapTo(HashSet()) { it.originId }
+        val fetched = snapshot.stops.filter { it.stopId in nearIds || (it.stopId in journeyIds && it.stopId in origins) }
+        val fetchedIds = fetched.mapTo(HashSet()) { it.stopId }
+        // A pinned journey's origin this fetch didn't cover (or whose fetch failed, nearby or not)
+        // keeps its last saved arrivals, marked not refreshed so the widget shows them as aged,
+        // until the journey is worked out again or unstarred.
+        val carried = carriedWidgetOrigins.values
+            .filter { it.stopId in origins && it.stopId !in fetchedIds }
+            .map { it.copy(arrivalsFresh = false) }
+        val kept = fetched + carried
+        val keptIds = kept.mapTo(HashSet()) { it.stopId }
+        val journeys = widgetJourneys.filter { it.originId in keptIds }
+        return DeparturesSnapshot(
+            stops = kept,
+            fetchedAt = widgetShown(kept, nearIds, journeys).maxOfOrNull { it.fetchedAt } ?: snapshot.fetchedAt,
+            journeys = journeys,
+            journeyOnlyStopIds = keptIds - nearIds,
+        )
+    }
+
+    /**
+     * The stops whose departures the widget will actually show: the nearby ones, and a journey
+     * origin only once its journey is worked out. Its "updated" stamp and whether a fetch is worth
+     * saving are judged on these — never on an origin it can't show yet.
+     */
+    private fun widgetShown(stops: List<StopArrivals>, nearIds: Set<String>, journeys: List<WidgetJourney>): List<StopArrivals> {
+        val origins = journeys.mapTo(HashSet()) { it.originId }
+        return stops.filter { it.stopId in nearIds || it.stopId in origins }
+    }
+
+    /**
+     * The starred journeys' [keys] and their cards' latest [checks], merged into what the widget
+     * pins ([WidgetJourneys.merge]). A change re-saves the last widget snapshot with them (no
+     * refetch), unless a fetch is in flight, whose own save will carry them.
+     */
+    fun setWidgetJourneys(
+        keys: Set<String>,
+        checks: List<WidgetJourneyCheck>,
+        // The stop each journey is shown from (its direction), by key: a journey flipped while its
+        // route can't place it yet reports no check, so its old pin goes until one does.
+        shownFrom: Map<String, String> = emptyMap(),
+    ) {
+        val prior = widgetJourneyKeys
+        val priorOrigins = widgetJourneyMemory.mapValues { it.value.originId }
+        // Turned: shown from another stop than last reported, or than the pin was worked out for
+        // (a restored pin from a session that showed it the other way round).
+        val turned = shownFrom.filter { (key, from) ->
+            widgetJourneyFrom[key]?.let { it != from } == true ||
+                widgetJourneyMemory[key]?.shownFrom?.takeIf { it.isNotEmpty() }?.let { it != from } == true
+        }.keys
+        widgetJourneyFrom = widgetJourneyFrom.filterKeys { it in keys } + shownFrom
+        widgetJourneysTurned += turned
+        widgetJourneyKeys = keys
+        widgetJourneyMemory = WidgetJourneys.merge(widgetJourneyMemory - turned, keys, checks)
+        widgetJourneysChecked = widgetJourneysChecked - turned
+        widgetJourneysChecked = widgetJourneysChecked.filterKeys { it in keys }.toMutableMap().apply {
+            for (check in checks) {
+                val prior = get(check.key)?.takeIf { it.originId == check.originId }?.checked.orEmpty()
+                put(check.key, WidgetJourneyCheck(check.key, check.originId, emptySet(), prior + check.checked))
+            }
+        }
+        val origins = widgetJourneyMemory.mapValues { it.value.originId }
+        // An unstar or a flip with nothing saved yet this session to re-save: drop the stale entry
+        // from the stored snapshot directly, so the widget doesn't go on showing it.
+        val dropped = prior == null || !keys.containsAll(prior) || turned.isNotEmpty()
+        val flipped = origins.any { (key, origin) -> priorOrigins[key]?.let { it != origin } == true }
+        if (lastWidgetSave == null && (dropped || flipped)) {
+            val retainKeys = keys - (turned - origins.keys)
+            // Not canceled with the ViewModel (a failed relocation clears it), and in line with the
+            // other direct journeys writes.
+            viewModelScope.launch(NonCancellable) {
+                try {
+                    widgetJourneysWrite.withLock {
+                        if (ownsWidgetJourneys) {
+                            withContext(io) { snapshotStore.retainWidgetJourneys(retainKeys, origins) }
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    warn("widget journeys unpin failed: ${reason(e)}")
+                }
+            }
+        }
+        publishWidgetJourneys()
+    }
+
+    /** What was last saved for the widget, under anything the screen has already reported. */
+    private fun seedWidgetJourneys(snapshot: DeparturesSnapshot?) {
+        // Nothing stored (a fresh install) seeds nothing, but still flushes this session's pins below.
+        val saved = snapshot?.journeys.orEmpty()
+        // The saved origins fill any this session hasn't saved itself (a late restore after a save
+        // that couldn't read them back).
+        carriedWidgetOrigins = snapshot?.stops.orEmpty()
+            .filter { s -> saved.any { it.originId == s.stopId } }
+            .associateBy { it.stopId } + carriedWidgetOrigins
+        val keys = widgetJourneyKeys
+        // The saved calls sit beneath what this session has worked out at the same origin: a check
+        // since start adds its own and drops any it judged; another origin (a flip) is newer.
+        val seeded = saved.mapNotNull { s ->
+            if (s.key.isEmpty() || (keys != null && s.key !in keys) || s.key in widgetJourneysTurned) return@mapNotNull null
+            // Saved for the other direction than the one now shown: not this journey's pin now.
+            val from = widgetJourneyFrom[s.key]
+            if (from != null && s.shownFrom.isNotEmpty() && s.shownFrom != from) return@mapNotNull null
+            val known = widgetJourneyMemory[s.key]
+            if (known != null && known.originId != s.originId) return@mapNotNull null
+            val judged = widgetJourneysChecked[s.key]?.takeIf { it.originId == s.originId }?.checked.orEmpty()
+            s.copy(calls = (s.calls - judged) + known?.calls.orEmpty())
+        }
+        widgetJourneyMemory = widgetJourneyMemory + seeded.associateBy { it.key }
+        publishWidgetJourneys()
+        // With no successful refresh to save over them, the stored journeys must follow this
+        // session's. publishWidgetJourneys skipped its direct write while the seed job ran, so write here if
+        // the journeys now differ from what's stored at all: one dropped (unstarred, flipped, the
+        // other direction, every call since rejected) or one added or changed this session.
+        if (lastWidgetSave == null && saved.toSet() != widgetJourneys.toSet()) writeWidgetJourneysDirectly()
+    }
+
+    /**
+     * Writes the current journeys straight to the stored snapshot, stops untouched — for a change
+     * no snapshot save is sure to carry. One writer at a time, each writing what's current when it
+     * runs and again until what it wrote still is, so it never lands a stale list over a newer one.
+     */
+    private fun writeWidgetJourneysDirectly() {
+        viewModelScope.launch(NonCancellable) {
+            widgetJourneysWrite.withLock {
+                var written: List<WidgetJourney>? = null
+                while (true) {
+                    if (widgetJourneysUnknown || !ownsWidgetJourneys) break
+                    val current = widgetJourneys
+                    if (current == written) break
+                    try {
+                        // With each origin this session holds, so a journey whose origin isn't stored
+                        // yet (newly worked out, its fetch in) can join.
+                        val origins = widgetOriginStops(current)
+                        withContext(io) { snapshotStore.replaceWidgetJourneys(current, origins) }
+                        written = current
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        warn("widget journeys save failed: ${reason(e)}")
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    private fun publishWidgetJourneys() {
+        val journeys = widgetJourneyMemory.values.filter { it.calls.isNotEmpty() }.sortedBy { it.key }
+        if (journeys == widgetJourneys) return
+        widgetJourneys = journeys
+        // Nothing saved this session to re-save yet (a failing refresh): write the journeys straight
+        // to the stored snapshot, once the saved ones are read back so none is lost.
+        if (lastWidgetSave == null && widgetJourneySeed?.isCompleted == true && !widgetJourneysUnknown) {
+            writeWidgetJourneysDirectly()
+        }
+        // A fetch in flight re-saves once its own save lands; this waits for it to finish too, so a
+        // change arriving after that re-save (while the fetch winds up) isn't lost. Any newer fetch
+        // cancels the wait, and its own save carries the journeys.
+        val fetch = fetchJob
+        if (fetch?.isActive == true) {
+            widgetResaveJob?.cancel()
+            widgetResaveJob = viewModelScope.launch {
+                fetch.join()
+                resaveUntilCurrent()
+            }
+            return
+        }
+        resaveWidgetJourneys()
+    }
+
+    /** The stops [journeys] start from as this session holds them: fetched, else last saved. */
+    private fun widgetOriginStops(journeys: List<WidgetJourney>): List<StopArrivals> {
+        val ids = journeys.mapTo(HashSet()) { it.originId }
+        val fetched = (_state.value as? DeparturesUiState.Loaded)?.stops.orEmpty().filter { it.stopId in ids }
+        val fetchedIds = fetched.mapTo(HashSet()) { it.stopId }
+        return fetched + carriedWidgetOrigins.values.filter { it.stopId in ids && it.stopId !in fetchedIds }
+    }
+
+    /**
+     * A fetch's widget save: keeping any newer stored stop, and — while the saved journeys couldn't
+     * be read back — the stored journeys too, rather than writing none over them.
+     */
+    private suspend fun saveForWidget(snapshot: DeparturesSnapshot) =
+        // In line with the direct journeys writes, so an outgoing ViewModel's write that passed its
+        // ownership check can't land over this one's journeys after it.
+        widgetJourneysWrite.withLock {
+            if (widgetJourneysUnknown) {
+                snapshotStore.saveKeepingJourneys(snapshot)
+            } else {
+                snapshotStore.saveKeepingFresher(snapshot)
+            }
+        }
+
+    /**
+     * Reads the saved journeys back and seeds them; true once that has succeeded (now or before).
+     * A failure leaves [widgetJourneysUnknown] set.
+     */
+    private suspend fun retryWidgetJourneysRestore(label: String): Boolean {
+        if (!widgetJourneysUnknown) return true
+        return try {
+            val saved = withContext(io) { snapshotStore.loadForWidget() }
+            widgetJourneysUnknown = false
+            seedWidgetJourneys(saved)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            warn("widget journeys restore failed ($label): ${reason(e)}")
+            false
+        }
+    }
+
+    /**
+     * Every journey origin [saved] holds — journey-only or nearby then, since the nearby set may have
+     * moved since — for a later save that doesn't fetch them.
+     */
+    private fun rememberWidgetOrigins(saved: DeparturesSnapshot) {
+        val origins = saved.journeys.mapTo(HashSet()) { it.originId }
+        carriedWidgetOrigins = saved.stops.filter { it.stopId in origins }.associateBy { it.stopId }
+    }
+
+    /** Re-saves the last widget snapshot's source with the current journeys, if they changed it. */
+    private fun resaveWidgetJourneys() {
+        val last = lastWidgetSave ?: return
+        val (snapshot, nearIds, journeyIds) = lastWidgetSource ?: return
+        if (forWidget(snapshot, nearIds, journeyIds) == last) return
+        widgetResaveJob?.cancel()
+        widgetResaveJob = viewModelScope.launch { resaveUntilCurrent() }
+    }
+
+    /**
+     * Saves the last source with the current journeys until what's saved matches them — a change
+     * that arrives while a save is in flight is saved after it.
+     */
+    private suspend fun resaveUntilCurrent() {
+        while (true) {
+            // Journeys this session couldn't read back aren't its to rewrite.
+            if (widgetJourneysUnknown) return
+            val last = lastWidgetSave ?: return
+            val (snapshot, nearIds, journeyIds) = lastWidgetSource ?: return
+            val updated = forWidget(snapshot, nearIds, journeyIds)
+            if (updated == last) return
+            try {
+                // The widget's live refresh may have stored newer arrivals since that source was
+                // fetched: keep them, change only what the journeys change.
+                withContext(io) { widgetJourneysWrite.withLock { snapshotStore.saveKeepingFresher(updated) } }
+                lastWidgetSave = updated
+                rememberWidgetOrigins(updated)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                warn("widget journeys save failed: ${reason(e)}")
+                return
+            }
+        }
     }
 
     /**
@@ -378,6 +683,19 @@ class MainViewModel(
                 }
             }
         }
+        // The journeys last saved for the widget, read in their own job, which a relocation's
+        // cancelFetch() doesn't cancel; every widget save waits for it (joined before each save),
+        // so none goes out without them.
+        widgetJourneySeed = viewModelScope.launch {
+            // A failed read is retried before any widget save goes ahead without the saved pins. One
+            // that keeps failing is an unreadable file (a corrupt one is discarded by the store), so
+            // there are no pins left to keep: the journeys are worked out again from their routes.
+            widgetJourneysUnknown = true
+            for ((attempt, wait) in WIDGET_JOURNEYS_RESTORE_WAITS_MS.withIndex()) {
+                delay(wait)
+                if (retryWidgetJourneysRestore("attempt ${attempt + 1}")) break
+            }
+        }
         // Show the persisted last-good at once (a stamped placeholder, aged), then refresh.
         // The read is off the main thread and the first frame is already the Loading
         // placeholder, so nothing blocks on the DataStore read (SPEC snapshot-render). The
@@ -411,7 +729,12 @@ class MainViewModel(
         // fetch run and save during a re-locate's fix window.
         initLoadJob?.cancel()
         fetchJob?.cancel()
+        widgetResaveJob?.cancel()
         _refreshing.value = false
+        // A journeys change queued behind the canceled fetch has no save to ride now (the relocation
+        // may fail and never fetch): write just the journeys, leaving the stored stops alone.
+        val saved = lastWidgetSave
+        if (saved != null && widgetJourneys != saved.journeys) writeWidgetJourneysDirectly()
     }
 
     /**
@@ -786,6 +1109,7 @@ class MainViewModel(
      */
     fun refresh(automatic: Boolean = false) {
         fetchJob?.cancel()
+        widgetResaveJob?.cancel()
         val previous = _state.value
         // Keep the last-good list on screen while refreshing; only show the spinner
         // when there's nothing yet, so a manual refresh doesn't flash a blank screen.
@@ -845,6 +1169,7 @@ class MainViewModel(
             val reuse = if (priorLoaded != null) recentlyFetched(priorLoaded, now, automatic) else emptySet()
             // The nearby stops this fetch is for: the only ones the widget may be given below.
             val nearIds = nearStops.mapTo(HashSet()) { it.id }
+            val journeyIds = journeyStops.mapTo(HashSet()) { it.id }
             val toFetch = fetchedStops
             val batch = fetchBatch(toFetch, prior, now, reuse)
             val merged = batch.merged
@@ -922,11 +1247,18 @@ class MainViewModel(
             // its stops would leave the widget and next launch on the older snapshot on disk.
             // Judged on the stops the widget keeps ([forWidget]): a journey origin's fresh arrivals
             // must not make a save that rewrites the nearby stops as failed and stamps them "just now".
-            val widgetSnapshot = (newState as? DeparturesUiState.Loaded)
-                ?.let { forWidget(DeparturesSnapshot(it.stops, it.fetchedAt), nearIds) }
-            val widgetStops = widgetSnapshot?.stops.orEmpty()
-            val carriedFresh = widgetStops.any { it.stopId in reuse && it.arrivalsFresh }
-            val freshNear = widgetStops.any { it.stopId in batch.freshArrivalStopIds }
+            // The saved journeys are in before anything is saved for the widget.
+            widgetJourneySeed?.join()
+            retryWidgetJourneysRestore("before a save")
+            val widgetSource = (newState as? DeparturesUiState.Loaded)
+                ?.let { Triple(DeparturesSnapshot(it.stops, it.fetchedAt), nearIds, journeyIds) }
+            val widgetSnapshot = widgetSource?.let { (snapshot, near, origins) -> forWidget(snapshot, near, origins) }
+            val widgetStops = widgetSnapshot?.let { widgetShown(it.stops, nearIds, it.journeys) }.orEmpty()
+            // The nearby stops decide whenever any were asked for — even if none came back: a journey
+            // origin's fresh arrivals alone mustn't save failed nearby stops over the last good ones.
+            val judged = if (nearIds.isEmpty()) widgetStops else widgetStops.filter { it.stopId in nearIds }
+            val carriedFresh = judged.any { it.stopId in reuse && it.arrivalsFresh }
+            val freshNear = judged.any { it.stopId in batch.freshArrivalStopIds }
             val authoritative = freshNear || carriedFresh || (widgetStops.isEmpty() && firstError == null)
             val toSave: DeparturesSnapshot? = widgetSnapshot?.takeIf { authoritative }
             if (toSave != null) {
@@ -938,7 +1270,14 @@ class MainViewModel(
                     // merged set whenever it carries fresh arrivals — including these just-published
                     // ones carried onto the reveal — so the fix doesn't need a NonCancellable save that
                     // would defeat the relocation guard (Codex, PR #104).
-                    withContext(io) { snapshotStore.save(toSave) }
+                    // Keeping any stop the widget's live refresh stored newer (a carried journey
+                    // origin, say): this fetch's own stops are newer and win.
+                    withContext(io) { saveForWidget(toSave) }
+                    lastWidgetSave = toSave
+                    rememberWidgetOrigins(toSave)
+                    lastWidgetSource = widgetSource
+                    // Journeys worked out while that save was in flight weren't in it.
+                    resaveWidgetJourneys()
                     // save() pokes the widget itself (WidgetSnapshotStore), so it re-renders with
                     // the fresh snapshot; no separate redraw needed on this path.
                 } catch (e: CancellationException) {
@@ -953,6 +1292,8 @@ class MainViewModel(
                 // withheld "?" state (SPEC D4 / principle 2). Poke a best-effort redraw so it
                 // recomputes from the current clock, without overwriting the last-good snapshot.
                 redrawWidgetBestEffort("failed refresh")
+                // Journeys worked out during this fetch still reach the last good save.
+                resaveWidgetJourneys()
             }
 
             // Reconcile dismissals against this cycle's notices, from the batch directly rather than
@@ -1014,7 +1355,9 @@ class MainViewModel(
      */
     private fun fetchIncremental(current: DeparturesUiState.Loaded, newStops: List<StopRef>) {
         fetchJob?.cancel()
+        widgetResaveJob?.cancel()
         val nearIds = nearStops.mapTo(HashSet()) { it.id }
+        val journeyIds = journeyStops.mapTo(HashSet()) { it.id }
         _refreshing.value = true
         val job = viewModelScope.launch {
             val now = clock()
@@ -1077,10 +1420,19 @@ class MainViewModel(
             // fresh anywhere) saves nothing and just redraws, as before — the merged stops keep their
             // own arrivalsFresh, so this never rewrites a complete snapshot to stale.
             // Judged on the stops the widget keeps, as in refresh().
-            val widgetSnapshot = forWidget(DeparturesSnapshot(newState.stops, newState.fetchedAt), nearIds)
-            if (widgetSnapshot.stops.any { it.arrivalsFresh }) {
+            widgetJourneySeed?.join()
+            retryWidgetJourneysRestore("before a save")
+            val widgetSource = Triple(DeparturesSnapshot(newState.stops, newState.fetchedAt), nearIds, journeyIds)
+            val widgetSnapshot = forWidget(widgetSource.first, nearIds, journeyIds)
+            val widgetStops = widgetShown(widgetSnapshot.stops, nearIds, widgetSnapshot.journeys)
+            val judged = if (nearIds.isEmpty()) widgetStops else widgetStops.filter { it.stopId in nearIds }
+            if (judged.any { it.arrivalsFresh }) {
                 try {
-                    withContext(io) { snapshotStore.save(widgetSnapshot) }
+                    withContext(io) { saveForWidget(widgetSnapshot) }
+                    lastWidgetSave = widgetSnapshot
+                    rememberWidgetOrigins(widgetSnapshot)
+                    lastWidgetSource = widgetSource
+                    resaveWidgetJourneys()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -1091,6 +1443,7 @@ class MainViewModel(
                 // best-effort widget redraw so its static RemoteViews recompute staleness from the
                 // current clock rather than ageing invisibly past the cutoff (SPEC D4 / principle 2).
                 redrawWidgetBestEffort("incremental reveal with no fresh arrivals")
+                resaveWidgetJourneys()
             }
 
             // Reconcile dismissals for the stops THIS reveal queried too (not just full refreshes):
@@ -1199,6 +1552,11 @@ class MainViewModel(
      * Best-effort like the snapshot save: a failure is logged, sanitized, and swallowed.
      */
     private fun pruneDepartedFromWidget(departed: Set<String>) {
+        // A journeys re-save rebuilt from the last save would put the departed stops back: none
+        // until the next fetch saves afresh.
+        widgetResaveJob?.cancel()
+        lastWidgetSave = null
+        lastWidgetSource = null
         viewModelScope.launch {
             try {
                 withContext(NonCancellable + io) { snapshotStore.pruneStops(departed) }
@@ -1419,4 +1777,18 @@ class MainViewModel(
         is TflException.RateLimited -> DeparturesUiState.Error.Kind.RATE_LIMITED
         else -> DeparturesUiState.Error.Kind.UNREACHABLE
     }
+}
+
+/**
+ * The widget-journeys writes of every [MainViewModel] in the process — direct ones and widget
+ * snapshot saves alike: one lock, so no two interleave, and a generation per ViewModel, so only the newest one's writes land — one cleared by
+ * a relocation (its writes outlive it on purpose) can't overwrite the journeys its successor wrote.
+ */
+internal object WidgetJourneysWrites {
+    val lock = Mutex()
+    private val generation = java.util.concurrent.atomic.AtomicLong()
+
+    fun next(): Long = generation.incrementAndGet()
+
+    fun latest(): Long = generation.get()
 }

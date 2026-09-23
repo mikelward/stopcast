@@ -51,6 +51,19 @@ class WidgetRefreshTest {
     }
 
     @Test
+    fun `the widget's journeys ride along with a refresh`() = runTest {
+        val prior = snapshot(stop("B", listOf(departure("Walthamstow")))).copy(
+            journeys = listOf(WidgetJourney("B", setOf(JourneyCall("victoria", "Fresh B", null)))),
+            journeyOnlyStopIds = setOf("B"),
+        )
+        val refreshed = WidgetRefresh.refreshedArrivals(prior, t1, reuse = java.time.Duration.ZERO) { id ->
+            listOf(departure("Fresh $id"))
+        }!!
+        assertEquals(prior.journeys, refreshed.journeys)
+        assertEquals(prior.journeyOnlyStopIds, refreshed.journeyOnlyStopIds)
+    }
+
+    @Test
     fun `a cycle where every stop is recent fetches nothing and saves nothing`() = runTest {
         val prior = snapshot(stop("A", listOf(departure("Brixton")), fetchedAt = t1.minusSeconds(5)))
         var calls = 0
