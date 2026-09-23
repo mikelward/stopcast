@@ -20,6 +20,7 @@ import app.stopcast.data.SharedTflRequestPool
 import app.stopcast.data.logAppSettingsWarning
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.WidgetRefresh
+import app.stopcast.ui.ARRIVALS_REUSE
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
@@ -210,7 +211,12 @@ class WidgetRefreshWorker(appContext: Context, params: WorkerParameters) :
                     rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
                     requestPool = SharedTflRequestPool.pool,
                 )
-                val refreshed = WidgetRefresh.refreshedArrivals(prior, Instant.now()) { stopId ->
+                val refreshed = WidgetRefresh.refreshedArrivals(
+                    prior,
+                    Instant.now(),
+                    // Skip a stop the app fetched moments ago: same data, same shared rate budget.
+                    reuse = ARRIVALS_REUSE,
+                ) { stopId ->
                     try {
                         client.arrivals(stopId)
                     } catch (e: CancellationException) {

@@ -1,5 +1,6 @@
 package app.stopcast.domain
 
+import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -19,22 +20,33 @@ import kotlinx.coroutines.coroutineScope
  * no-op — this returns null and nothing is saved, leaving the last-good in place for the next
  * cycle. Disruptions/line-status are not refreshed here; carrying them onto the widget is its
  * own follow-up (the persisted snapshot deliberately holds only last-good arrivals + age).
+ *
+ * A stop fetched fresh less than [reuse] before [now] — typically by the app a moment ago, which
+ * shares the rate budget — is carried over as it is rather than fetched again. A cycle where every
+ * stop was carried over is a no-op too (null): the app's own save already poked the widget.
  */
 object WidgetRefresh {
     suspend fun refreshedArrivals(
         prior: DeparturesSnapshot,
         now: Instant,
+        reuse: Duration = Duration.ZERO,
         fetchArrivals: suspend (stopId: String) -> List<Departure>?,
     ): DeparturesSnapshot? {
         if (prior.stops.isEmpty()) return null
+        // A negative age (the clock moved back) is never "recent" — fetch it, rather than trust it.
+        fun recent(stop: StopArrivals): Boolean {
+            val age = Duration.between(stop.fetchedAt, now)
+            return stop.arrivalsFresh && !age.isNegative && age < reuse
+        }
         // Every stop's arrivals in parallel; the client's shared request pool bounds how many are in
         // flight. [fetchArrivals] returns null on failure rather than throwing, so one stop failing
         // never cancels the others.
         val fetchedByStop = coroutineScope {
-            prior.stops.map { stop -> async { fetchArrivals(stop.stopId) } }.awaitAll()
+            prior.stops.map { stop -> async { if (recent(stop)) null else fetchArrivals(stop.stopId) } }.awaitAll()
         }
         var anyFresh = false
         val stops = prior.stops.mapIndexed { i, stop ->
+            if (recent(stop)) return@mapIndexed stop
             when (val fetched = fetchedByStop[i]) {
                 // Keep the aged last-good, but mark it not-fresh so its stale withhold fires and
                 // it can't render as fresh within the freshness window (Codex P1 on #56). Its own

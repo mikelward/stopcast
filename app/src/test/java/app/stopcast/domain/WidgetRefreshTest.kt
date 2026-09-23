@@ -37,6 +37,43 @@ class WidgetRefreshTest {
         DeparturesSnapshot(stops = stops.toList(), fetchedAt = stops.maxOf { it.fetchedAt })
 
     @Test
+    fun `a stop fetched moments ago is carried over, not fetched again`() = runTest {
+        val recent = stop("A", listOf(departure("Brixton")), fetchedAt = t1.minusSeconds(10))
+        val prior = snapshot(recent, stop("B", listOf(departure("Walthamstow"))))
+        val fetched = mutableListOf<String>()
+        val refreshed = WidgetRefresh.refreshedArrivals(prior, t1, reuse = java.time.Duration.ofSeconds(30)) { id ->
+            fetched += id
+            listOf(departure("Fresh $id"))
+        }
+        assertEquals(listOf("B"), fetched)
+        assertEquals(recent, refreshed!!.stops.first { it.stopId == "A" })
+        assertEquals(t1, refreshed.stops.first { it.stopId == "B" }.fetchedAt)
+    }
+
+    @Test
+    fun `a cycle where every stop is recent fetches nothing and saves nothing`() = runTest {
+        val prior = snapshot(stop("A", listOf(departure("Brixton")), fetchedAt = t1.minusSeconds(5)))
+        var calls = 0
+        val refreshed = WidgetRefresh.refreshedArrivals(prior, t1, reuse = java.time.Duration.ofSeconds(30)) {
+            calls++
+            emptyList()
+        }
+        assertEquals(0, calls)
+        assertNull(refreshed)
+    }
+
+    @Test
+    fun `a recent stop that isn't fresh is fetched again`() = runTest {
+        val prior = snapshot(stop("A", listOf(departure("Brixton")), fetchedAt = t1.minusSeconds(5)).copy(arrivalsFresh = false))
+        var calls = 0
+        WidgetRefresh.refreshedArrivals(prior, t1, reuse = java.time.Duration.ofSeconds(30)) {
+            calls++
+            emptyList()
+        }
+        assertEquals(1, calls)
+    }
+
+    @Test
     fun `every stop fetching fresh stamps them now`() = runTest {
         val prior = snapshot(stop("A", listOf(departure("Brixton"))), stop("B", listOf(departure("Walthamstow"))))
         val refreshed = WidgetRefresh.refreshedArrivals(prior, t1) { id ->
