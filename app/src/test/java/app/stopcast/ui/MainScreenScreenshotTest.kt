@@ -1529,6 +1529,28 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithTag(UPDATE_AVAILABLE_DOT_TAG, useUnmergedTree = true).assertDoesNotExist()
     }
 
+    @Test
+    fun `the loading screen offers the update when one is available`() {
+        capture("main-loading-update.png") {
+            MainScreen(DeparturesUiState.Loading, now, {}, updateAvailable = true)
+        }
+        composeRule.onNodeWithText("Loading departures…").assertExists()
+        composeRule.onNodeWithText("Update available").assertExists()
+    }
+
+    @Test
+    fun `the loading screen has no update button when none is available`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(DeparturesUiState.Loading, now, {})
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Update available").assertDoesNotExist()
+    }
+
     private fun capture(name: String, dark: Boolean = false, content: @Composable () -> Unit) {
         composeRule.setContent {
             StopCastTheme(darkTheme = dark, dynamicColor = false) {

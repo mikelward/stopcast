@@ -78,6 +78,34 @@ class LocationGateScreenshotTest {
     }
 
     @Test
+    fun `the locating spinner offers the update when one is available`() {
+        capture("location-finding-update.png") {
+            LocationGate(
+                NearbyStopsViewModel.State.Locating,
+                onAllow = {},
+                onRetry = {},
+                onOpenSettings = {},
+                updateAvailable = true,
+            )
+        }
+        composeRule.onNodeWithText("Finding stops near you…").assertExists()
+        composeRule.onNodeWithText("Update available").assertExists()
+    }
+
+    @Test
+    fun `the locating spinner has no update button when none is available`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    LocationGate(NearbyStopsViewModel.State.Locating, onAllow = {}, onRetry = {}, onOpenSettings = {})
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Update available").assertDoesNotExist()
+    }
+
+    @Test
     fun `no fix`() {
         capture("location-no-fix.png") {
             LocationGate(NearbyStopsViewModel.State.NoLocation, onAllow = {}, onRetry = {}, onOpenSettings = {})

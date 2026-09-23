@@ -411,6 +411,9 @@ fun MainScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 16.dp),
                 )
+                // A more direct update prompt than the top-bar overflow dot, which is easy to miss
+                // while waiting on a cold load.
+                if (updateAvailable) UpdateAvailableButton(onClick = onOpenAppListing)
             }
 
             is DeparturesUiState.Loaded ->

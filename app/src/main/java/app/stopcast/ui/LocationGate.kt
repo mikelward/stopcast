@@ -32,7 +32,8 @@ import app.stopcast.R
  *
  * - [PermissionRequired][NearbyStopsViewModel.State.PermissionRequired] — the rationale
  *   (honest that the position is sent to TfL) and an **Allow location** button.
- * - [Locating][NearbyStopsViewModel.State.Locating] — a spinner, shown at once (SPEC 5).
+ * - [Locating][NearbyStopsViewModel.State.Locating] — a spinner, shown at once (SPEC 5), plus an
+ *   **Update available** button when [updateAvailable] (the overflow that carries it is past the gate).
  * - [NoLocation][NearbyStopsViewModel.State.NoLocation] / [Empty][NearbyStopsViewModel.State.Empty]
  *   / [Failed][NearbyStopsViewModel.State.Failed] — the reason and a **Try again**.
  *
@@ -55,6 +56,13 @@ fun LocationGate(
     // permanent denial) — exactly the failures the diagnostic log explains (Codex P2 on #86).
     // Default no-op so a screenshot test renders without it.
     onSendBugReport: () -> Unit = {},
+    // True when Google Play reports a newer version: the Locating spinner then offers an "Update
+    // available" button, so a user waiting on the nearby-stops fix can update without first reaching
+    // the departures overflow (which the gate is in front of). Off by default (and in debug — see
+    // PlayUpdateChecker), so the common build/test renders the plain gate.
+    updateAvailable: Boolean = false,
+    // Open the Play Store listing (from the "Update available" button). Default no-op.
+    onOpenAppListing: () -> Unit = {},
 ) {
     // Saved so an open About dialog survives rotation on the gate.
     var showAbout by rememberSaveable { mutableStateOf(false) }
@@ -88,6 +96,8 @@ fun LocationGate(
             NearbyStopsViewModel.State.Locating -> {
                 CircularProgressIndicator()
                 Body(stringResource(R.string.location_finding))
+                // The gate has no overflow menu, so this button is the only update affordance here.
+                if (updateAvailable) UpdateAvailableButton(onClick = onOpenAppListing)
             }
 
             NearbyStopsViewModel.State.NoLocation -> {
