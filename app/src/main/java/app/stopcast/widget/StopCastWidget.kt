@@ -1,12 +1,14 @@
 package app.stopcast.widget
 
 import android.content.Context
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
@@ -73,10 +75,11 @@ import kotlinx.coroutines.flow.first
  * replaces that with the watched stops; a live-refresh cadence for the widget is D5.
  */
 class StopCastWidget : GlanceAppWidget() {
-    // Two width buckets, so a narrow widget can shorten its stamp rather than clip it (see
-    // WIDGET_COMPACT_WIDTH); the host picks the largest bucket that fits the current size.
+    // Size buckets, so the layout fits the cell it's given: two widths (a narrow widget shortens its
+    // stamp rather than clip it, see WIDGET_COMPACT_WIDTH) by a ladder of heights (the line budget
+    // grows with the height, see widgetLineBudget). The host picks the largest bucket that fits.
     override val sizeMode = SizeMode.Responsive(
-        setOf(DpSize(WIDGET_MIN_WIDTH, WIDGET_MIN_HEIGHT), DpSize(WIDGET_COMPACT_WIDTH, WIDGET_MIN_HEIGHT)),
+        WIDGET_BUCKET_WIDTHS.flatMap { w -> WIDGET_BUCKET_HEIGHTS.map { h -> DpSize(w, h) } }.toSet(),
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -134,7 +137,21 @@ class StopCastWidget : GlanceAppWidget() {
         // The bundled branch topology (shared, cached instance), so the widget merges/labels a
         // branching row exactly as the in-app card does.
         val topology = RouteTopologyStore.load(context)
-        provideContent { WidgetContent(widgetModel(snapshot, now, starred, topology = topology), now) }
+        provideContent {
+            // The line budget comes from this bucket's height and the system font scale, so the rows
+            // never run past the cell's bottom edge. widgetModel is pure and cheap — no I/O on the render path.
+            val height = LocalSize.current.height
+            val fontScale = LocalContext.current.resources.configuration.fontScale
+            val model = widgetModel(
+                snapshot,
+                now,
+                starred,
+                maxLines = widgetLineBudget(height, fontScale),
+                maxLinesWithNote = widgetLineBudget(height, fontScale, withNote = true),
+                topology = topology,
+            )
+            WidgetContent(model, now)
+        }
     }
 
     override suspend fun onDelete(context: Context, glanceId: GlanceId) {
@@ -171,6 +188,10 @@ internal data class WidgetModel(
     val uncertain: Boolean,
     val stamp: String?,
     val rows: List<WidgetRowModel>,
+    // Too short for the title row and even one departure line (the minimum size at a large font):
+    // WidgetContent drops the title row for a single status line, so the next departure still fits
+    // with its freshness said, rather than clipping one or the other.
+    val compact: Boolean = false,
 )
 
 /**
@@ -187,6 +208,9 @@ internal fun widgetModel(
     now: Instant,
     starred: Set<StarredRow> = emptySet(),
     maxLines: Int = 6,
+    // The budget when the header's stale/partial note takes a line of its own (see WidgetContent),
+    // so that note can't push the last departure off the bottom. Defaults to [maxLines].
+    maxLinesWithNote: Int = maxLines,
     topology: RouteTopology = RouteTopology.EMPTY,
 ): WidgetModel {
     if (snapshot == null || snapshot.stops.isEmpty()) {
@@ -222,12 +246,17 @@ internal fun widgetModel(
     // an oversized *first* row too (it shows at most `maxLines` groups) rather than exempting
     // it. Groups within a row keep destinationLines' soonest-first order and per-line time cap.
     val pinned = DepartureRows.pinStarred(ordered, starred)
+    // The same condition WidgetContent draws the note under (a stamp is always set here).
+    val fullBudget = if (stale || uncertain) maxLinesWithNote else maxLines
+    // No room for a line under the full header: the compact layout makes room for exactly one.
+    val compact = fullBudget < 1
+    val budget = fullBudget.coerceAtLeast(1)
     val rows = buildList {
         var used = 0
         for (row in pinned) {
-            if (used >= maxLines) break
+            if (used >= budget) break
             val groups = DepartureRows.destinationLines(row, WIDGET_MAX_TIMES, topology)
-            val shown = if (groups.size <= maxLines - used) groups else groups.take(maxLines - used)
+            val shown = if (groups.size <= budget - used) groups else groups.take(budget - used)
             add(WidgetRowModel(row, shown))
             used += shown.size
         }
@@ -238,6 +267,7 @@ internal fun widgetModel(
         uncertain = uncertain,
         stamp = "Updated ${RelativeTime.formatAge(age.toKotlinDuration())}",
         rows = rows,
+        compact = compact,
     )
 }
 
@@ -251,37 +281,6 @@ internal fun WidgetContent(model: WidgetModel, now: Instant) {
                 .padding(12.dp)
                 .clickable(actionStartActivity<MainActivity>()),
         ) {
-            // Title and stamp share one header row — the stamp top-right, as in the app's top
-            // bar — so the departures start a line higher in the widget's tight height.
-            Row(
-                modifier = GlanceModifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // The title takes the row's slack and is the one that gives way (clipping) when space
-                // runs out — a large system font at the narrowest size — so the stamp, which carries
-                // the freshness the widget must never hide (SPEC D4), always keeps its full width.
-                Text(
-                    text = "StopDash",
-                    maxLines = 1,
-                    modifier = GlanceModifier.defaultWeight(),
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onBackground,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                    ),
-                )
-                Spacer(GlanceModifier.width(8.dp))
-                model.stamp?.let { stamp ->
-                    // A narrow widget has no room for "Updated 14 min ago" beside the title, so it
-                    // drops the prefix; the age alone, top-right, still reads as the update time.
-                    val compact = LocalSize.current.width < WIDGET_COMPACT_WIDTH
-                    Text(
-                        text = if (compact) stamp.removePrefix("Updated ") else stamp,
-                        maxLines = 1,
-                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
-                    )
-                }
-            }
             // The stamp reflects the *freshest* stop, so on a partial refresh (one stop fresh,
             // another carried `arrivalsFresh = false` but not yet age-stale) a bare "Updated just
             // now" would present the whole list as freshly refreshed while a carried row still
@@ -289,21 +288,35 @@ internal fun WidgetContent(model: WidgetModel, now: Instant) {
             // so one fresh stop can't mask the others (SPEC D4); a whole-snapshot-stale widget
             // gets the stronger "tap to refresh". Its own line, only when needed, so the header
             // row stays short enough for the narrowest widget.
-            if (model.stamp != null) {
-                val note = when {
-                    model.stale -> "Tap to refresh"
-                    model.uncertain -> "Some stops out of date"
-                    else -> null
-                }
-                note?.let {
-                    Text(
-                        text = it,
-                        maxLines = 1,
-                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
-                    )
-                }
+            val note = when {
+                model.stamp == null -> null
+                model.stale -> "Tap to refresh"
+                model.uncertain -> "Some stops out of date"
+                else -> null
             }
-            Spacer(GlanceModifier.height(8.dp))
+            // A narrow widget has no room for "Updated 14 min ago" beside the title, so it drops the
+            // prefix; the age alone still reads as the update time.
+            val stamp = model.stamp?.let {
+                if (LocalSize.current.width < WIDGET_COMPACT_WIDTH) it.removePrefix("Updated ") else it
+            }
+            if (model.compact) {
+                // Compact: no title row, just one status line — the warning when there is one (the
+                // stronger claim; a stale row's own countdown is already withheld as "?"), else the
+                // age — so the one departure below still fits (SPEC D4).
+                // Short forms, so the warning stays readable at the large font that forced compact.
+                val status = when {
+                    model.stamp == null -> null
+                    model.stale -> "Tap to refresh"
+                    model.uncertain -> "Partly stale"
+                    else -> stamp
+                }
+                status?.let { WidgetStatusLine(it) }
+                Spacer(GlanceModifier.height(4.dp))
+            } else {
+                WidgetHeaderRow(stamp)
+                note?.let { WidgetStatusLine(it) }
+                Spacer(GlanceModifier.height(8.dp))
+            }
             when {
                 !model.hasData ->
                     WidgetMessage("Open StopDash to load departures")
@@ -322,6 +335,50 @@ internal fun WidgetContent(model: WidgetModel, now: Instant) {
             }
         }
     }
+}
+
+/**
+ * The title and the stamp on one row — the stamp top-right, as in the app's top bar — so the
+ * departures start a line higher in the widget's tight height.
+ */
+@androidx.compose.runtime.Composable
+private fun WidgetHeaderRow(stamp: String?) {
+    Row(
+        modifier = GlanceModifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // The title takes the row's slack and is the one that gives way (clipping) when space runs
+        // out — a large system font at the narrowest size — so the stamp, which carries the
+        // freshness the widget must never hide (SPEC D4), always keeps its full width.
+        Text(
+            text = "StopDash",
+            maxLines = 1,
+            modifier = GlanceModifier.defaultWeight(),
+            style = TextStyle(
+                color = GlanceTheme.colors.onBackground,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+            ),
+        )
+        Spacer(GlanceModifier.width(8.dp))
+        stamp?.let {
+            Text(
+                text = it,
+                maxLines = 1,
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
+            )
+        }
+    }
+}
+
+/** A small freshness line: the stale/partial note under the header, or the compact layout's status. */
+@androidx.compose.runtime.Composable
+private fun WidgetStatusLine(text: String) {
+    Text(
+        text = text,
+        maxLines = 1,
+        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
+    )
 }
 
 /** A single-line message row (empty / prompt states), styled like the stamp. */
@@ -442,10 +499,47 @@ private val WIDGET_MIN_WIDTH = 180.dp
 private val WIDGET_MIN_HEIGHT = 110.dp
 
 /**
+ * How many departure lines fit a widget [height] tall at the system [fontScale]. Everything that
+ * isn't a departure line is the chrome (padding, the title row, the space under it, and the
+ * stale/partial note line when [withNote]); each line is
+ * its pill plus the widest gap below it. The text-driven parts — the title row and the pill's label
+ * — grow with [fontScale], the fixed padding and gaps don't. Costed at the widest case, so the
+ * estimate errs toward one line fewer rather than a line clipped off the bottom. Zero when not even
+ * one line fits under the full header; [widgetModel] then switches to the compact layout, which
+ * makes room for one (see [WidgetModel.compact]).
+ */
+internal fun widgetLineBudget(height: Dp, fontScale: Float = 1f, withNote: Boolean = false): Int {
+    val textChrome = WIDGET_TITLE_TEXT_HEIGHT + (if (withNote) WIDGET_NOTE_TEXT_HEIGHT else 0.dp)
+    val chrome = WIDGET_FIXED_CHROME + textChrome * fontScale
+    val line = WIDGET_LINE_FIXED + WIDGET_PILL_TEXT_HEIGHT * fontScale
+    return ((height - chrome) / line).toInt().coerceAtLeast(0)
+}
+
+/** The chrome's fixed part: 24dp of padding and the 8dp under the title row. */
+private val WIDGET_FIXED_CHROME = 32.dp
+
+/** The title row's text height at font scale 1 (the 14sp title's line). */
+private val WIDGET_TITLE_TEXT_HEIGHT = 20.dp
+
+/** The stale/partial note's height at font scale 1 (its 11sp line under the title row). */
+private val WIDGET_NOTE_TEXT_HEIGHT = 16.dp
+
+/** A line's fixed part: the pill's 8dp of vertical padding and up to 8dp of gap below it. */
+private val WIDGET_LINE_FIXED = 16.dp
+
+/** The pill label's text height at font scale 1 (its 12sp line). */
+private val WIDGET_PILL_TEXT_HEIGHT = 16.dp
+
+/**
  * Below this width the header can't fit the title and the full "Updated 14 min ago" stamp
  * (~165dp of text plus the 24dp of padding), so the stamp drops its "Updated" prefix.
  */
 internal val WIDGET_COMPACT_WIDTH = 220.dp
+
+/** The [StopCastWidget.sizeMode] buckets: the minimum and compact widths, and a ladder of heights
+ *  from the minimum up (each rung about two more departure lines). */
+private val WIDGET_BUCKET_WIDTHS = listOf(WIDGET_MIN_WIDTH, WIDGET_COMPACT_WIDTH)
+private val WIDGET_BUCKET_HEIGHTS = listOf(WIDGET_MIN_HEIGHT, 180.dp, 250.dp, 320.dp, 400.dp)
 
 /**
  * How many of a row's next departures the widget shows across its destination lines, matching

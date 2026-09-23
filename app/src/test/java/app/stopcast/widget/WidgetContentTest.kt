@@ -106,6 +106,24 @@ class WidgetContentTest {
     }
 
     @Test
+    fun `the compact layout swaps the title row for a short warning`() = runGlanceAppWidgetUnitTest {
+        provideComposable {
+            WidgetContent(
+                WidgetModel(
+                    hasData = true,
+                    stale = false, uncertain = true,
+                    stamp = "Updated just now",
+                    rows = listOf(rowModel(row("victoria", 120, now.minusSeconds(30)))),
+                    compact = true,
+                ),
+                now,
+            )
+        }
+        onNode(hasTextEqualTo("Partly stale")).assertExists()
+        onNode(hasTextEqualTo("StopDash")).assertDoesNotExist()
+    }
+
+    @Test
     fun `a narrow widget drops the stamp's Updated prefix`() = runGlanceAppWidgetUnitTest {
         setAppWidgetSize(DpSize(180.dp, 110.dp))
         provideComposable { WidgetContent(stampOnly("Updated 14 min ago"), now) }

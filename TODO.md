@@ -1462,10 +1462,10 @@ and these carry the rest as their own PRs:
       rounds all traced to the same shape (an activity effect clearing the shared store
       concurrently with the per-set writers), which is a design signal, not seven bugs. Revisit
       as a render-path scoping (the redesign option below), not as more race patches.**
-- [ ] **Size-aware row cap (own PR, Codex P2 on #44).** The fixed 6-row cap can clip at the
-      110dp minimum height; derive the count from `LocalSize`. The node-assertion harness that
-      landed can't verify "doesn't clip" (it asserts nodes, not pixels), so this waits on
-      pixel rendering or a device check.
+- [x] **Size-aware row cap (Codex P2 on #44, landed with the header row).** The fixed six-line
+      cap overflowed even the default 240x180dp cell. The widget now uses `SizeMode.Responsive`
+      height buckets and derives its line budget from the bucket's height (`widgetLineBudget`,
+      conservative per-line cost), pixel-checked by the full-budget and minimum-size screenshots.
 - [ ] **Named Overground pills on the widget (own PR, Codex P2 on #44).** The in-app pill
       renders the six named Overground lines as a *hollow* pill (surface fill + accent border
       + accent label, via `overgroundAccentColor`); the widget falls back to a neutral pill for

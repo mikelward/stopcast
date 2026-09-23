@@ -14,6 +14,8 @@ import androidx.test.core.app.ApplicationProvider
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.DeparturesSnapshot
+import app.stopcast.domain.StopArrivals
 import com.github.takahirom.roborazzi.captureRoboImage
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
@@ -171,13 +173,70 @@ class WidgetScreenshotTest {
                 stale = false,
                 uncertain = false,
                 stamp = "Updated 14 min ago",
-                rows = listOf(
-                    rowModel(row("victoria", "Victoria", "Brixton", 120)),
-                    rowModel(branchingRow()),
-                ),
+                // The minimum height's line budget (widgetLineBudget) is one line.
+                rows = listOf(rowModel(row("victoria", "Victoria", "Brixton", 120))),
             ),
             size = DpSize(180.dp, 110.dp),
         )
+    }
+
+    // The default size filled to its height's line budget by the real model, with two services that
+    // each branch three ways: every line has its pill, and the last one still clears the bottom edge.
+    @Test
+    fun `a full line budget fits the default size`() = captureFullBudget("widget-full-budget.png", fontScale = 1f)
+
+    // The same at a large system font: taller lines, so the budget admits fewer of them.
+    @Test
+    fun `a full line budget fits the default size at a large font`() =
+        captureFullBudget("widget-full-budget-large-font.png", fontScale = 1.3f)
+
+    // A partial refresh at full budget: the "Some stops out of date" note takes a line, and the budget
+    // gives it one, so the last departure still clears the bottom edge.
+    @Test
+    fun `a full line budget with the partial note fits the default size`() =
+        captureFullBudget("widget-full-budget-partial.png", fontScale = 1f, arrivalsFresh = false)
+
+    // The minimum size at a 2x font with the partial note: not even one line fits under the full
+    // header, so the compact layout shows the note in its place and the one departure below it.
+    @Test
+    fun `minimum size at a 2x font falls back to the compact layout`() =
+        captureFullBudget("widget-min-size-compact.png", fontScale = 2f, arrivalsFresh = false, size = DpSize(180.dp, 110.dp))
+
+    private fun captureFullBudget(
+        name: String,
+        fontScale: Float,
+        arrivalsFresh: Boolean = true,
+        size: DpSize = DpSize(240.dp, 180.dp),
+    ) {
+        fun dep(lineId: String, lineName: String, destination: String, offsetSeconds: Long) =
+            Departure(lineId, lineName, "inbound", destination, null, now.plusSeconds(offsetSeconds), "tube")
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                StopArrivals(
+                    "490000001A",
+                    "Example Stop",
+                    listOf(
+                        dep("northern", "Northern", "Morden", 60),
+                        dep("northern", "Northern", "Battersea Power", 120),
+                        dep("northern", "Northern", "Kennington", 180),
+                        dep("district", "District", "Richmond", 240),
+                        dep("district", "District", "Wimbledon", 300),
+                        dep("district", "District", "Ealing Broadway", 360),
+                    ),
+                    now.minusSeconds(30),
+                    disruptions = emptyList(),
+                    arrivalsFresh = arrivalsFresh,
+                ),
+            ),
+            fetchedAt = now.minusSeconds(30),
+        )
+        val model = widgetModel(
+            snapshot,
+            now,
+            maxLines = widgetLineBudget(size.height, fontScale),
+            maxLinesWithNote = widgetLineBudget(size.height, fontScale, withNote = true),
+        )
+        capture(name, model, size = size, fontScale = fontScale)
     }
 
     // Minimum size at a large system font: the title gives way, the freshness stamp stays whole.
