@@ -213,6 +213,34 @@ class WidgetModelTest {
     }
 
     @Test
+    fun `a narrow widget at a large font stacks its rows and budgets for them`() {
+        assertTrue(widgetRowsStacked(180.dp, 2f))
+        assertTrue(widgetRowsStacked(180.dp, 1.3f))
+        assertFalse("below the stacking scale", widgetRowsStacked(180.dp, 1.2f))
+        assertFalse("wide enough for one line", widgetRowsStacked(240.dp, 2f))
+        assertEquals(1, widgetLineBudget(180.dp, 2f, stacked = true))
+        assertEquals("the minimum size fits no stacked departure", 0, widgetLineBudget(110.dp, 2f, compact = true, stacked = true))
+        assertEquals("but fits one at 1.3x", 1, widgetLineBudget(110.dp, 1.3f, compact = true, stacked = true))
+    }
+
+    @Test
+    fun `no room even in the compact layout is too small, not "no departures"`() {
+        val departures = (1..3).map { departure("line$it", it * 60L) }
+        val snapshot = DeparturesSnapshot(listOf(stop("490000001A", departures, now)), now)
+        val model = widgetModel(snapshot, now, maxLines = 0, maxLinesCompact = 0)
+        assertTrue(model.tooSmall)
+        assertTrue(model.rows.isEmpty())
+    }
+
+    @Test
+    fun `with nothing to show, a tiny widget keeps its empty state rather than "too small"`() {
+        val snapshot = DeparturesSnapshot(listOf(stop("490000001A", emptyList(), now)), now)
+        val model = widgetModel(snapshot, now, maxLines = 0, maxLinesCompact = 0)
+        assertFalse(model.tooSmall)
+        assertTrue(model.rows.isEmpty())
+    }
+
+    @Test
     fun `a zero budget switches to the compact layout with one departure`() {
         val departures = (1..3).map { departure("line$it", it * 60L) }
         val snapshot = DeparturesSnapshot(listOf(stop("490000001A", departures, now)), now)

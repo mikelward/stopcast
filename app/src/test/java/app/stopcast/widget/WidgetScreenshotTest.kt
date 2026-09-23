@@ -196,11 +196,22 @@ class WidgetScreenshotTest {
     fun `a full line budget with the partial note fits the default size`() =
         captureFullBudget("widget-full-budget-partial.png", fontScale = 1f, arrivalsFresh = false)
 
-    // The minimum size at a 2x font with the partial note: not even one line fits under the full
-    // header, so the compact layout shows the note in its place and the one departure below it.
+    // The minimum size at a 1.3x font with the partial note: no line fits under the full header,
+    // so the compact layout shows the short warning in its place and one whole (stacked) departure.
     @Test
-    fun `minimum size at a 2x font falls back to the compact layout`() =
-        captureFullBudget("widget-min-size-compact.png", fontScale = 2f, arrivalsFresh = false, size = DpSize(180.dp, 110.dp))
+    fun `minimum size at a large font falls back to the compact layout`() =
+        captureFullBudget("widget-min-size-compact.png", fontScale = 1.3f, arrivalsFresh = false, size = DpSize(180.dp, 110.dp))
+
+    // A narrow widget at a 2x font: too narrow for pill, destination and countdown on one line, so
+    // each departure stacks on two.
+    @Test
+    fun `narrow widget at a 2x font stacks its rows`() =
+        captureFullBudget("widget-stacked.png", fontScale = 2f, size = DpSize(180.dp, 180.dp))
+
+    // The minimum size at a 2x font: not even one stacked departure fits, so it says it's too small.
+    @Test
+    fun `minimum size at a 2x font says it's too small`() =
+        captureFullBudget("widget-too-small.png", fontScale = 2f, arrivalsFresh = false, size = DpSize(180.dp, 110.dp))
 
     private fun captureFullBudget(
         name: String,
@@ -230,18 +241,24 @@ class WidgetScreenshotTest {
             ),
             fetchedAt = now.minusSeconds(30),
         )
+        // The same budgets StopCastWidget.provideGlance derives for this size and font.
+        val stacked = widgetRowsStacked(size.width, fontScale)
         val model = widgetModel(
             snapshot,
             now,
-            maxLines = widgetLineBudget(size.height, fontScale),
-            maxLinesWithNote = widgetLineBudget(size.height, fontScale, withNote = true),
+            maxLines = widgetLineBudget(size.height, fontScale, stacked = stacked),
+            maxLinesWithNote = widgetLineBudget(size.height, fontScale, withNote = true, stacked = stacked),
+            maxLinesCompact = widgetLineBudget(size.height, fontScale, compact = true, stacked = stacked),
+            stacked = stacked,
         )
         capture(name, model, size = size, fontScale = fontScale)
     }
 
-    // Minimum size at a large system font: the title gives way, the freshness stamp stays whole.
+    // The narrowest width at a large system font, tall enough for the title row: the title gives
+    // way, the freshness stamp stays whole, and the row stacks as it does at this width and font
+    // (widgetRowsStacked).
     @Test
-    fun `minimum size at a large font keeps the stamp whole`() {
+    fun `narrowest width at a large font keeps the stamp whole`() {
         capture(
             "widget-min-size-large-font.png",
             WidgetModel(
@@ -250,8 +267,9 @@ class WidgetScreenshotTest {
                 uncertain = false,
                 stamp = "Updated 14 min ago",
                 rows = listOf(rowModel(row("victoria", "Victoria", "Brixton", 120))),
+                stacked = widgetRowsStacked(180.dp, 1.3f),
             ),
-            size = DpSize(180.dp, 110.dp),
+            size = DpSize(180.dp, 180.dp),
             fontScale = 1.3f,
         )
     }
@@ -270,7 +288,7 @@ class WidgetScreenshotTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val result = runBlocking {
             GlanceRemoteViews().compose(context, size = size) {
-                WidgetContent(model, now)
+                WidgetContent(model, now, fontScale)
             }
         }
         val view = result.remoteViews.apply(context, FrameLayout(context))
