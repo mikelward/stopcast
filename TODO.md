@@ -782,10 +782,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         (maintainer, 2026-09-23). A stop fetched <30 s ago is carried over, so a retry after a
         rate-limited refresh fits the budget left; a stop's closure check is reused 5 min (line
         status still every refresh). In memory only.
-  - [ ] **Decide whether a sparse mode's far station stays eager** (maintainer, 2026-09-23). The
-        per-mode rule makes a mode's nearest station eager out to the 1 mile reach, so at a big
-        interchange an Overground station 1.3 km off is fetched up front. Option: auto-fetch only
-        within a nearer distance and leave farther stations behind "More". Pending the maintainer.
+  - [x] **Auto-fetch only within walking reach** (maintainer, 2026-09-23). Eager is each mode's
+        nearest two clusters within 500 m; a mode with none that close gets its single nearest out
+        to the mile. At a big interchange a second Overground station 1.3 km off no longer loads.
   - [ ] **Location fix at a big station waits the full 10 s timeout** (maintainer bug report,
         2026-09-23): indoors the fused and GPS providers both time out before the last-known
         fallback, so the near-me list starts ~10 s late. Consider a shorter wait when a recent

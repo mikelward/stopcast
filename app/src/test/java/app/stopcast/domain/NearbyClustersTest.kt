@@ -142,12 +142,13 @@ class NearbyClustersTest {
                 stop("u3", 900.0, "tube", "940GZZLU3"),
             ),
         )
-        // Eager: nearest two of each mode, kept in global distance order.
-        assertEquals(listOf(listOf("b1"), listOf("b2"), listOf("u1"), listOf("u2")), result.eager.ids())
+        // Eager: nearest two of each mode within walking reach, kept in global distance order — the
+        // tube at 600 m is past it, since a nearer tube is in reach.
+        assertEquals(listOf(listOf("b1"), listOf("b2"), listOf("u1")), result.eager.ids())
         // More stays globally ordered; the "More bus"/"More tube" buttons filter it by mode.
-        assertEquals(listOf(listOf("b3"), listOf("u3")), result.more.ids())
+        assertEquals(listOf(listOf("b3"), listOf("u2"), listOf("u3")), result.more.ids())
         assertEquals(listOf(listOf("b3")), result.more.filter { "bus" in it.modes }.ids())
-        assertEquals(listOf(listOf("u3")), result.more.filter { "tube" in it.modes }.ids())
+        assertEquals(listOf(listOf("u2"), listOf("u3")), result.more.filter { "tube" in it.modes }.ids())
     }
 
     @Test
@@ -195,6 +196,33 @@ class NearbyClustersTest {
         val result = select(listOf(thin))
         assertEquals(listOf(listOf("t")), result.eager.ids())
         assertTrue(result.more.isEmpty())
+    }
+
+    @Test
+    fun `only stops within walking reach are fetched up front, however many a mode has farther`() {
+        // Two overground stations, both past 500 m: only the nearest is eager (its mode's
+        // representative); the second waits behind More instead of being fetched a mile out.
+        val result = select(
+            listOf(
+                stop("bus", 80.0, "bus", "490G0B"),
+                stop("og1", 790.0, "overground", "910G1"),
+                stop("og2", 1270.0, "overground", "910G2"),
+            ),
+        )
+        assertEquals(listOf(listOf("bus"), listOf("og1")), result.eager.ids())
+        assertEquals(listOf(listOf("og2")), result.more.ids())
+    }
+
+    @Test
+    fun `a mode with a stop in reach doesn't also fetch its farther ones`() {
+        val result = select(
+            listOf(
+                stop("near", 300.0, "tube", "940G1"),
+                stop("far", 700.0, "tube", "940G2"),
+            ),
+        )
+        assertEquals(listOf(listOf("near")), result.eager.ids())
+        assertEquals(listOf(listOf("far")), result.more.ids())
     }
 
     @Test
