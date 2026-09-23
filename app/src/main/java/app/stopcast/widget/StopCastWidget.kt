@@ -1,15 +1,18 @@
 package app.stopcast.widget
 
 import android.content.Context
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.LocalSize
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
@@ -70,6 +73,12 @@ import kotlinx.coroutines.flow.first
  * replaces that with the watched stops; a live-refresh cadence for the widget is D5.
  */
 class StopCastWidget : GlanceAppWidget() {
+    // Two width buckets, so a narrow widget can shorten its stamp rather than clip it (see
+    // WIDGET_COMPACT_WIDTH); the host picks the largest bucket that fits the current size.
+    override val sizeMode = SizeMode.Responsive(
+        setOf(DpSize(WIDGET_MIN_WIDTH, WIDGET_MIN_HEIGHT), DpSize(WIDGET_COMPACT_WIDTH, WIDGET_MIN_HEIGHT)),
+    )
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         // Off the render path: read the persisted snapshot before composing. A read failure
         // degrades to the empty state (open-the-app prompt) rather than crashing the host —
@@ -242,30 +251,57 @@ internal fun WidgetContent(model: WidgetModel, now: Instant) {
                 .padding(12.dp)
                 .clickable(actionStartActivity<MainActivity>()),
         ) {
-            Text(
-                text = "StopDash",
-                style = TextStyle(
-                    color = GlanceTheme.colors.onBackground,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                ),
-            )
-            model.stamp?.let { stamp ->
-                // The stamp reflects the *freshest* stop, so on a partial refresh (one stop
-                // fresh, another carried `arrivalsFresh = false` but not yet age-stale) a clean
-                // "Updated just now" would present the whole list as freshly refreshed while a
-                // carried row still shows a live countdown. Surface `uncertain` here — the same
-                // flag the empty state uses — so one fresh stop can't mask the others (SPEC D4).
-                // A whole-snapshot-stale stamp keeps its stronger "tap to refresh".
-                val text = when {
-                    model.stale -> "$stamp · tap to refresh"
-                    model.uncertain -> "$stamp · some stops out of date"
-                    else -> stamp
-                }
+            // Title and stamp share one header row — the stamp top-right, as in the app's top
+            // bar — so the departures start a line higher in the widget's tight height.
+            Row(
+                modifier = GlanceModifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // The title takes the row's slack and is the one that gives way (clipping) when space
+                // runs out — a large system font at the narrowest size — so the stamp, which carries
+                // the freshness the widget must never hide (SPEC D4), always keeps its full width.
                 Text(
-                    text = text,
-                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
+                    text = "StopDash",
+                    maxLines = 1,
+                    modifier = GlanceModifier.defaultWeight(),
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onBackground,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                    ),
                 )
+                Spacer(GlanceModifier.width(8.dp))
+                model.stamp?.let { stamp ->
+                    // A narrow widget has no room for "Updated 14 min ago" beside the title, so it
+                    // drops the prefix; the age alone, top-right, still reads as the update time.
+                    val compact = LocalSize.current.width < WIDGET_COMPACT_WIDTH
+                    Text(
+                        text = if (compact) stamp.removePrefix("Updated ") else stamp,
+                        maxLines = 1,
+                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
+                    )
+                }
+            }
+            // The stamp reflects the *freshest* stop, so on a partial refresh (one stop fresh,
+            // another carried `arrivalsFresh = false` but not yet age-stale) a bare "Updated just
+            // now" would present the whole list as freshly refreshed while a carried row still
+            // shows a live countdown. Surface `uncertain` — the same flag the empty state uses —
+            // so one fresh stop can't mask the others (SPEC D4); a whole-snapshot-stale widget
+            // gets the stronger "tap to refresh". Its own line, only when needed, so the header
+            // row stays short enough for the narrowest widget.
+            if (model.stamp != null) {
+                val note = when {
+                    model.stale -> "Tap to refresh"
+                    model.uncertain -> "Some stops out of date"
+                    else -> null
+                }
+                note?.let {
+                    Text(
+                        text = it,
+                        maxLines = 1,
+                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
+                    )
+                }
             }
             Spacer(GlanceModifier.height(8.dp))
             when {
@@ -406,6 +442,16 @@ internal fun logWidgetSnapshotWarning(message: String) = StopcastDebugLog.warnin
  * label.
  */
 private val WIDGET_PILL_LABEL_WIDTH = 48.dp
+
+/** The provider's `minWidth` x `minHeight` (`stopcast_widget_info.xml`) — the smallest size. */
+private val WIDGET_MIN_WIDTH = 180.dp
+private val WIDGET_MIN_HEIGHT = 110.dp
+
+/**
+ * Below this width the header can't fit the title and the full "Updated 14 min ago" stamp
+ * (~165dp of text plus the 24dp of padding), so the stamp drops its "Updated" prefix.
+ */
+internal val WIDGET_COMPACT_WIDTH = 220.dp
 
 /**
  * How many of a row's next departures the widget shows across its destination lines, matching
