@@ -34,3 +34,18 @@ fun followedDeparture(row: DepartureRow, focus: RouteFocus?, topology: RouteTopo
     }
     return row.upcoming.firstOrNull()
 }
+
+/**
+ * Every departure on the route the detail follows — the [followedDeparture]'s destination and
+ * topology route — soonest-first and uncapped, so the page can list more than the card's few.
+ * It keys on the followed train, not [focus] directly, so the list always matches the title and
+ * stop list, fallback included. Empty for a status row.
+ */
+fun routeDepartures(row: DepartureRow, focus: RouteFocus?, topology: RouteTopology = RouteTopology.EMPTY): List<Departure> {
+    val followed = followedDeparture(row, focus, topology) ?: return emptyList()
+    val route = topology.grouping(row.lineId, row.stopId, followed.destination, followed.branch).mergeKey
+    return row.upcoming.filter {
+        it.destination == followed.destination &&
+            topology.grouping(row.lineId, row.stopId, it.destination, it.branch).mergeKey == route
+    }
+}

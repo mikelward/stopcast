@@ -363,7 +363,7 @@ destination by branch), not whichever of the line's trains is soonest
 title and stop list always name the same train) — its own app bar naming the route (line pill +
 destination) and
 carrying the star (so the long-press is the shortcut, the page the discoverable path), the boarding
-stop in the body, and the line's **full disruption text**, which the row's inline **⚠** glyph stands
+stop in the body, then **every upcoming departure on that route** — not the card's first three — on one full-width line of countdowns in the card's format (times only; any that don't fit ellipsize off the end, and the line is withheld while stale, D4), and the line's **full disruption text**, which the row's inline **⚠** glyph stands
 in for: shown collapsed to its first line, tapped to expand (the same widget the stop-closure card
 uses). Below that it lists **every station from the boarding stop to where the soonest train
 terminates** (a short-working ends where it does, not at the line's end), on a rail in the line's

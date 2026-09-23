@@ -87,6 +87,37 @@ class FollowedDepartureTest {
         assertEquals("Edgware", followedDeparture(after, focus, RouteTopology.EMPTY)?.destination)
     }
 
+    @Test
+    fun `a tapped route lists all its own departures, past the card's three`() {
+        val kennington = row(
+            KNG,
+            northern("Edgware", "Charing X", 60),
+            northern("High Barnet", "Charing X", 120),
+            northern("High Barnet", "Bank", 180),
+            northern("High Barnet", "Charing X", 300),
+            northern("High Barnet", "Charing X", 480),
+            northern("High Barnet", "Charing X", 660),
+            northern("High Barnet", "Charing X", 840),
+        )
+        val times = routeDepartures(kennington, tap(kennington, "High Barnet", "Charing X"), topology)
+        assertEquals(listOf(120L, 300L, 480L, 660L, 840L), times.map { it.expectedArrival.epochSecond - now.epochSecond })
+    }
+
+    @Test
+    fun `a merged route lists both branches' departures`() {
+        val highgate = row(HGT, northern("High Barnet", "Bank", 60), northern("High Barnet", "Charing X", 120))
+        val times = routeDepartures(highgate, tap(highgate, "High Barnet", "Bank"), topology)
+        assertEquals(listOf("Bank", "Charing X"), times.map { it.branch })
+    }
+
+    @Test
+    fun `once the tapped route ends, the list follows the fallback train's route`() {
+        val before = row(KNG, northern("Edgware", "Charing X", 60), northern("High Barnet", "Charing X", 180))
+        val focus = tap(before, "High Barnet", "Charing X")
+        val after = row(KNG, northern("Edgware", "Charing X", 60), northern("Edgware", "Charing X", 240))
+        assertEquals(listOf("Edgware", "Edgware"), routeDepartures(after, focus, topology).map { it.destination })
+    }
+
     private companion object {
         const val HBT = "940GZZLUHBT"
         const val HGT = "940GZZLUHGT"

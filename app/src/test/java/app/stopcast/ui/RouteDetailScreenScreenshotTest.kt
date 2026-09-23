@@ -80,6 +80,39 @@ class RouteDetailScreenScreenshotTest {
     }
 
     @Test
+    fun manyDepartures_listsThemAllNotJustTheCardsThree() {
+        val stop = StopArrivals(
+            stopId = "940GZZLUVIC",
+            stopName = "Victoria",
+            departures = (1..7).map { i ->
+                Departure("victoria", "Victoria", "northbound", "Walthamstow Central", null, now.plusSeconds(i * 150L), "tube")
+            },
+            fetchedAt = now,
+        )
+        val row = DepartureRows.across(listOf(stop), now).first { it.upcoming.isNotEmpty() }
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loading,
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("2 · 5 · 7 · 10 · 12 · 15 · 17 min").assertIsDisplayed()
+
+        captureSnapshot("route-detail-many-departures.png")
+    }
+
+    @Test
     fun disruptedRoute_showsChipStarAndCollapsedAlert() {
         composeRule.setContent {
             StopCastTheme {
@@ -89,6 +122,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                 )
@@ -118,6 +152,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                 )
@@ -145,6 +180,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
+                    now = now,
                     onToggleStar = { toggled = true },
                     onBack = {},
                 )
@@ -166,6 +202,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                 )
@@ -186,6 +223,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                 )
@@ -210,6 +248,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = false,
                     disruptionUnknown = true,
                     stale = false,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                 )
@@ -234,6 +273,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = false,
                     disruptionUnknown = true,
                     stale = true,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                 )
@@ -258,6 +298,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = true,
                     disruptionUnknown = true,
                     stale = false,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                 )
@@ -281,6 +322,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = true,
                     disruptionUnknown = false,
                     stale = true,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                 )
@@ -313,6 +355,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = true,
                     disruptionUnknown = false,
                     stale = false,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                     routeStops = RouteStopsUi.Loaded("Walthamstow Central", stops),
@@ -339,6 +382,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = true,
                     disruptionUnknown = false,
                     stale = true,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                     routeStops = RouteStopsUi.Loaded("Walthamstow Central", listOf(RouteStop("a", "Green Park"))),
@@ -360,6 +404,7 @@ class RouteDetailScreenScreenshotTest {
                     starrable = false,
                     disruptionUnknown = false,
                     stale = true,
+                    now = now,
                     onToggleStar = {},
                     onBack = {},
                 )
