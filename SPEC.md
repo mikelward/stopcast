@@ -250,9 +250,9 @@ that capture lands. TfL is inconsistent about where it carries the compass — s
 arrow-in-`stopLetter` is normalized to the bearing, and a compass-only pole renders the one way
 whichever field TfL used. With no letter, the pole falls back to its **compass bearing** — a bare
 direction word ("**Southbound**"), like the rail compass; with neither, to the **shared terminus** — an
-arrow plus the destination ("**-> Bank**") — when the whole stop heads one way (every route names the
+arrow plus the destination ("**➔ Bank**") — when the whole stop heads one way (every route names the
 same, non-blank terminus, principle 1); with none of the three, the **bare place name**. "Stop" is
-reserved for a literal pole letter; the direction word and the "-> destination" carry no "Stop".
+reserved for a literal pole letter; the direction word and the "➔ destination" carry no "Stop".
 Precedence: letter → bearing → terminus → bare. The header is **one line** — "Place – Qualifier
 (distance)", title case, no small caps — where the place name and the qualifier **share the row**
 (each weighted, each keeps at least its half and clips within it) so neither a long name nor a long
@@ -520,7 +520,7 @@ shade — a cosmetic gap, not a correctness failure.
 A rider can **star a journey** between two stations on one line (maintainer, 2026-09-23): on a
 route page, tapping a station on the stop list (after the boarding stop) stars the journey from the
 boarding stop to it — both directions — and marks the station with a star; tapping it again unstars
-it. Starred journeys lead the near-me list as cards, each headed by the direction shown ("Highgate →
+it. Starred journeys lead the near-me list as cards, each headed by the direction shown ("Highgate ➔
 King's Cross St. Pancras") with only that line's trains from the origin that **call at the far end**
 (from the line's route; a train whose path can't be resolved is left out, not guessed). The origin
 is whichever end is **nearer the rider's fix**, from TfL's published station positions; a tap on the
@@ -1070,7 +1070,7 @@ Mirrors the sibling fleet:
   distinct platforms; a platform-less rail direction falls to the bare compass), a **bus** pole's
   **letter** ("Stop D" — "Stop" only ever precedes a literal letter), else its **bearing** as a bare
   direction word ("Southbound"), else a bus place's shared **terminus** as an arrow plus the
-  destination ("-> Bank") — settled 2026-09-22, superseding the two-level header (place name once + indented
+  destination ("➔ Bank") — settled 2026-09-22, superseding the two-level header (place name once + indented
   sub-header) and the one-level `(place, direction)` step before it. The compass direction is not
   shown on the header (the destinations carry it). The cluster key is TfL's `stationNaptan` where
   the nearby lookup gives one,

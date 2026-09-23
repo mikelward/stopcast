@@ -344,7 +344,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         (the same `TextMeasurer` pattern the destination line uses); the letter still announces the
         full word for a screen reader. JVM + logic screenshot tests.
   - [x] **Bus terminus qualifier** (maintainer, 2026-09-22; "try the terminus form first"). A
-        compass-less **bus** place now takes "-> Terminus" when the whole stop heads one way (every
+        compass-less **bus** place now takes "➔ Terminus" when the whole stop heads one way (every
         timed bus row names the same, non-blank destination), else the bare name — the bus analog of
         the rail compass, judged honestly (diverging routes or a blank destination stay bare, SPEC
         principle 1). `StopGrouping.sharedBusTerminus` + `StopGroup.terminusLabel`; the header's
@@ -399,18 +399,18 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [x] **A unified, arrow-free appearance for the bus direction header** (maintainer, 2026-09-22;
         landed). The bus compass now reads as a bare direction word (`Southbound`), like the rail
         compass; `Stop` is reserved for a literal pole letter (`Stop E`); the shared terminus reads
-        as an arrow plus the destination (`-> Bank`). Both direction cases (a `CompassPoint` bearing
+        as an arrow plus the destination (`➔ Bank`). Both direction cases (a `CompassPoint` bearing
         and an arrow-in-`stopLetter`) share the one word path. Intercardinals use `bearingSpoken`'s
         hyphenated `-bound` form.
-  - [ ] **Find a better arrow glyph for the "-> destination" header, and the journey heading**
-        (maintainer, 2026-09-22; journey heading added 2026-09-23). The terminus arrow is ASCII `->`
-        for now — the only thing that aligns to the text baseline reliably. The starred-journey card
-        heading ("Victoria → Warren Street") has the same problem once starred journeys land (#151,
-        the card heading's `journey_title` string): its `→` sits off vertical center against the
-        station names. Fix both with the same choice. Preview single-glyph options (the maintainer thought `➔` U+2794 looked ok; also
-        `→`, `⟶`, `➜`, `»`) rendered in the app font to judge vertical alignment, and/or a centered
-        inline vector `ArrowRightAlt` icon (pixel-perfect, but the header can no longer be one plain
-        string — `InlineTextContent` in `StopGroupHeader`). Pick one and swap it in for the ASCII `->`.
+  - [x] **Find a better arrow glyph for the "-> destination" header, and the journey heading**
+        (maintainer, 2026-09-22/23). Rendered the candidates in the header style: the font's `→`/`⟶`
+        sit below the letters' center; `➔` (U+2794, from the symbol fallback font) sits centered at a
+        matching weight, so both the bus terminus header and `journey_title` use it.
+  - [ ] **Swap `➔` for an inline Material `ArrowForward` icon if it looks off on a device**
+        (maintainer, 2026-09-23 — the preferred look; `➔` is the plain-string compromise). `➔` comes
+        from the fallback font, so an OEM font may draw it differently. The icon is exactly centered but
+        needs `InlineTextContent` in `StopGroupHeader` and `JourneyHeader` (the arrow kept as a marker
+        character in the label, swapped for the icon when drawn) and a spoken "to" for the journey.
   - [ ] **Rethink the bus header cue: what's most informative, matched to the signage** (maintainer,
         2026-09-22; longer-term). A pole often carries several cues — a real `stopLetter`, a
         `CompassPoint`, a `Towards`, and the live departures' shared terminus. Today's precedence is
@@ -418,9 +418,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         informative *about the service* (where it's going) vs *about the stop* (which pole/where the
         rider stands); what riders actually look for at the stop; and what to fall back to when the
         preferred cue is missing — ideally matching the **physical signage**. Cranley Gardens has no
-        letter on the pole but the sign reads "Towards Friern Barnet", so `-> Friern Barnet` (the
+        letter on the pole but the sign reads "Towards Friern Barnet", so `➔ Friern Barnet` (the
         `Towards`) would match reality where `Northbound` (our derived compass) does not. Leaning
-        toward preferring `Towards` (`-> Archway`) over the bare compass; handle TfL's two-way
+        toward preferring `Towards` (`➔ Archway`) over the bare compass; handle TfL's two-way
         `Towards` (`"Farringdon Or Holborn Circus"` — already trimmed at `" Or "` for the spoken label).
   - [x] **Split a mixed-platform row into a card per platform** (Codex P1, PR #119). A direction
         that runs from several platforms (Camden Town southbound: Platform 2 or 4) now gets a card
