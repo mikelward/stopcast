@@ -412,6 +412,18 @@ branching-line paragraph above); a branching direction keeps **one row per termi
 by the **next branch or interchange point** downstream rather than the terminus, feeding
 letting users set **favorite destinations** to filter or rank by.
 
+Tapping a **platform/pole header** drills into that group alone (maintainer, 2026-09-23): the same
+screen, filtered to the header's stops, with a back arrow in place of the app's mark (system back
+returns too) and the header's text as the title. The title is **elided from the start**
+("…ouse – Platform 2"): it shares the bar with the freshness stamp, and the platform is the part
+that tells one view from another. The view is built from those stops' own departures, **not** the
+near-me fold: a line the full list showed only at a nearer stop still appears on the farther
+platform that also serves it. It reads the same snapshot as the list and fetches nothing of its
+own. When a refresh no longer holds that platform — its stops weren't fetched, its last train has
+left, or the feed dropped the platform number — the view closes back to the full list rather than
+show an empty platform as "no departures". A route tapped inside it opens the route page, and back from there
+returns to the platform view.
+
 TfL's endpoint is named "Arrivals"; for a bus stop these are departures *from* that
 stop, which is what a rider wants. StopCast calls them departures throughout the UI.
 

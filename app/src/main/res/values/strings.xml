@@ -150,6 +150,8 @@
     <string name="settings_licenses_title">Open source licenses</string>
     <string name="settings_licenses_authors">By %1$s</string>
     <string name="action_back">Back</string>
+    <!-- Screen-reader action on a stop/platform header: opens the view filtered to it. -->
+    <string name="action_show_platform">Show this stop only</string>
     <string name="action_done">Done</string>
     <string name="action_close">Close</string>
     <!-- Toast when a device has no browser to open a license's full text online. -->

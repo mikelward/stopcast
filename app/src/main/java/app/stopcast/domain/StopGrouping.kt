@@ -184,6 +184,7 @@ object StopGrouping {
                     rows = groupRows,
                     qualifier = qualifier,
                     placeKey = info.place,
+                    splitKey = info.split.keyPart,
                 )
             }
     }
@@ -408,4 +409,9 @@ data class StopGroup(
     // each its own group's members' nearest (Codex P2, PR #109). Blank only for a default-constructed
     // group.
     val placeKey: String = "",
+    // What splits this group from the place's others — its platform, pole letter, bearing or compass
+    // (blank for none) — read from each row's own fields, so it holds across refreshes. Unlike [key],
+    // it doesn't carry the place, whose key switches to a per-stop one while a stop has a line-status
+    // row; a drill-down that already knows its stops matches on this (SPEC D8).
+    val splitKey: String = "",
 )
