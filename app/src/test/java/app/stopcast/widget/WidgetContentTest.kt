@@ -164,6 +164,25 @@ class WidgetContentTest {
     }
 
     @Test
+    fun `a stop header renders above its rows`() = runGlanceAppWidgetUnitTest {
+        provideComposable {
+            WidgetContent(
+                WidgetModel(
+                    hasData = true,
+                    stale = false, uncertain = false,
+                    stamp = "Updated just now",
+                    rows = listOf(
+                        rowModel(row("victoria", 120, now.minusSeconds(30)))
+                            .copy(header = WidgetHeader("Example Stop – Platform 1", "Example Stop, Platform 1, Southbound")),
+                    ),
+                ),
+                now,
+            )
+        }
+        onNode(hasTextEqualTo("Example Stop – Platform 1")).assertExists()
+    }
+
+    @Test
     fun `a narrow widget drops the stamp's Updated prefix`() = runGlanceAppWidgetUnitTest {
         setAppWidgetSize(DpSize(180.dp, 110.dp))
         provideComposable { WidgetContent(stampOnly("Updated 14 min ago"), now) }

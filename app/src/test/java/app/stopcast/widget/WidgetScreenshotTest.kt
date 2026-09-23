@@ -140,6 +140,27 @@ class WidgetScreenshotTest {
         )
     }
 
+    // Two places, so each row sits under its stop header, as in the in-app list — two headers and two
+    // lines, the default size's four-line budget.
+    @Test
+    fun `stop headers name each place`() {
+        capture(
+            "widget-stop-headers.png",
+            WidgetModel(
+                hasData = true,
+                stale = false,
+                uncertain = false,
+                stamp = "Updated just now",
+                rows = listOf(
+                    rowModel(row("victoria", "Victoria", "Brixton", 120))
+                        .copy(header = WidgetHeader("Oxford Circus – Platform 3", "Oxford Circus, Platform 3")),
+                    rowModel(row("northern", "Northern", "Morden", 240))
+                        .copy(header = WidgetHeader("Euston – Platform 1", "Euston, Platform 1")),
+                ),
+            ),
+        )
+    }
+
     @Test
     fun `partial refresh flags some stops out of date`() {
         capture(

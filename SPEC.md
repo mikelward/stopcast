@@ -209,8 +209,7 @@ service's **next few countdowns merged onto one line** on the right ("0 · 3 · 
 "min" unit written once). A line that runs several routes (a branching direction) shows
 its **pill on each route row**, so every destination reads as its own service rather than a
 chip-less continuation. The **stop name is not repeated on every row**: it read as clutter
-restated per row, and on the lock-screen widget the stop is implied by the context the
-user set up. Instead each group's **header names the place and its platform/pole once**, on
+restated per row. Instead each group's **header names the place and its platform/pole once**, on
 one line — "King's Cross St. Pancras – Platform 1", "Cranley Gardens – Stop G" — with the
 near-me distance dimmed after it ("(120 m)"); place and platform share one weight and color,
 only the distance is muted. A *place* is the set of stops that share a
@@ -240,8 +239,15 @@ direction cue and disambiguates a rail direction with no platform number, which 
 Town's southbound Northern line runs from Platform 2 or 4 depending on the northern branch it came
 from, a terminus alternates platforms — splits into a card per platform, since which platform the
 next train is at is the point; a prediction in such a direction with no platform number can't be
-placed, so it sits under the bare compass rather than a platform it may not be at. The home-screen
-widget, which has no platform headers, keeps one merged row per direction. A **bus** pole carries no platform in the arrivals feed, so it
+placed, so it sits under the bare compass rather than a platform it may not be at. The widget
+groups its rows under the **same place headers**, one per place, but keeps one merged row per
+direction: its line budget is tight, so a direction split across platforms is one row whose header
+drops to the bare compass (or place) rather than name a platform only some of its trains use. A
+header costs a line of that budget, and a place is shown only with at least one departure under it,
+and a header is judged against every departure the widget has, not only those that fit: a place
+keeps its name when the others didn't fit, and a bus stop whose second route didn't fit doesn't
+claim the shown route's terminus as its own;
+a widget too short for a header and a departure drops headers rather than show no departures. A **bus** pole carries no platform in the arrivals feed, so it
 splits on its **stop letter** — the "D" a rider reads on the physical stop: "**Stop D**". The letter,
 bearing, and "towards" come from the near-me `/StopPoint` lookup (`stopLetter`, `CompassPoint`,
 `Towards`), not the arrivals feed, so a **watched** bus stop (no near-me lookup yet) has none until
