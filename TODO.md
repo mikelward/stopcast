@@ -529,16 +529,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       - [x] **Key a dismissal on the notice's window too** (maintainer, 2026-09-23). Dismiss lasts only
             until the stated end; an extended or moved window is a new notice and shows again at once.
             An undated notice keeps its text-only signature, so existing dismissals still match.
-      - [ ] **Extend dismiss to persistent line-status alerts** (maintainer, 2026-09-22). Only the
-            whole-stop closure cards are dismissible today. The *acute* line statuses (severe delays,
-            suspended) you'd never dismiss — keep them non-dismissible — but the persistent
-            informational ones (planned closures running months, long-running diversions, line-level
-            step-free notices) are the same "read and clear" kind. The signature would fold in TfL's
-            **severity** so a dismissed mild/planned status re-surfaces the moment it escalates (the
-            reappear-on-change net the maintainer named). Needs the dismiss control on the
-            line-status chip/row and a severity+description signature. **Entry point (maintainer,
-            2026-09-22):** the route detail page's service alert gets a dismiss, hidden until its text
-            changes — the same contract as the stop-closure dismiss.
+      - [x] **Dismiss line-status alerts too** (maintainer, 2026-09-23: "dismiss all service
+            alerts"). Supersedes keeping acute statuses undismissible. × beside the route detail's
+            status chip; keyed per line on severity + label + reason, so an escalation or rewording
+            shows again. The list drops the ⚠ (a no-departures status row goes outright); the detail
+            says "Service alert dismissed", never "No disruptions". Reconciled only for lines TfL
+            returned a status for.
       - [ ] **Expire a dismissal after ~a day?** — *open decision* (maintainer, 2026-09-22: "not
             sure I even want it"). A dismissal currently lasts until the notice text changes; a
             persistent closure then stays hidden indefinitely. Expiring after ~24h would re-surface

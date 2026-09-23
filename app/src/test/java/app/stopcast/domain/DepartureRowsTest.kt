@@ -1094,6 +1094,52 @@ class DepartureRowsTest {
     // --- withoutDismissed: hiding the stop-closure alerts the user tapped away ---
 
     @Test
+    fun `a dismissed line status keeps the departures, drops the warning, and returns on escalation`() {
+        val stop = StopArrivals(
+            "940GZZLUVIC", "Victoria",
+            departures = listOf(Departure("victoria", "Victoria", "northbound", "Walthamstow Central", null, now.plusSeconds(120), "tube")),
+            fetchedAt = now,
+        )
+        val minor = LineStatus("victoria", 9, "Minor Delays", "Victoria line: minor delays.")
+        val rows = DepartureRows.across(listOf(stop), now, mapOf("victoria" to minor))
+        val dismissed = setOf(DismissedAlert.ofLineStatus(minor))
+
+        val shown = DepartureRows.withoutDismissed(rows, dismissed).single()
+        assertNull(shown.status)
+        assertTrue(shown.statusDismissed)
+        assertEquals(rows.single().upcoming, shown.upcoming)
+
+        // Escalated to severe: a new alert, shown again.
+        val severe = minor.copy(severity = 6, description = "Severe Delays")
+        val escalated = DepartureRows.across(listOf(stop), now, mapOf("victoria" to severe))
+        assertEquals(severe, DepartureRows.withoutDismissed(escalated, dismissed).single().status)
+    }
+
+    @Test
+    fun `a dismissed status-only row is removed, since it exists only for the alert`() {
+        // A suspended line with no predictions: its one row is the alert itself.
+        val stop = StopArrivals(
+            "940GZZLUVIC", "Victoria", departures = emptyList(), fetchedAt = now,
+            lines = listOf(LineRef("victoria", "Victoria", "tube")),
+        )
+        val suspended = LineStatus("victoria", 1, "Suspended")
+        val rows = DepartureRows.across(listOf(stop), now, mapOf("victoria" to suspended))
+        assertEquals(1, rows.size)
+
+        assertTrue(DepartureRows.withoutDismissed(rows, setOf(DismissedAlert.ofLineStatus(suspended))).isEmpty())
+    }
+
+    @Test
+    fun `live line status alerts are the disrupted lines`() {
+        val severe = LineStatus("victoria", 6, "Severe Delays")
+        val good = LineStatus("central", LineStatus.GOOD_SERVICE, "Good Service")
+        assertEquals(
+            setOf(DismissedAlert.ofLineStatus(severe)),
+            DepartureRows.liveLineStatusAlerts(mapOf("victoria" to severe, "central" to good)),
+        )
+    }
+
+    @Test
     fun `a dismissed closure shows again when TfL extends or moves its window`() {
         fun rowsWith(vararg notices: StopDisruption) = DepartureRows.across(
             listOf(
@@ -1266,9 +1312,8 @@ class DepartureRowsTest {
 
     @Test
     fun `withoutDismissed never drops a timed or line-status row`() {
-        // Only stop-closure rows are dismissible; a same-place timed row and a no-prediction
-        // line-status row are untouched even if a dismissal shares their place (a closed stop's
-        // departures still show).
+        // A closure dismissal drops only the closure row; a same-place timed row is untouched even
+        // though the dismissal shares its place (a closed stop's departures still show).
         val timed = rowsFor("A", "Stop A", departure("55", "55", "outbound", "X", 60, mode = "bus"))
         val closure = stopStatusRow("A", "Stop A", "Bus Stop Closed", clusterId = "490G000A")
 

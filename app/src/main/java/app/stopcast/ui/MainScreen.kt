@@ -172,9 +172,9 @@ fun MainScreen(
     // default so an unwired build/test renders no snackbar.
     starWriteFailed: Boolean = false,
     onStarWriteFailureShown: () -> Unit = {},
-    // The stop-closure alerts the user has dismissed (SPEC *Disruptions*): the matching cards are
-    // hidden until their notice text changes. Empty by default so an unwired build/test shows every
-    // alert. [onDismissAlert] is called with the alert's stop-status row when its dismiss is tapped.
+    // The service alerts the user has dismissed (SPEC *Disruptions*): matching closure cards and line
+    // statuses are hidden until their content changes. Empty by default so an unwired build/test
+    // shows every alert. [onDismissAlert] is called with the alert's row when its dismiss is tapped.
     dismissed: Set<DismissedAlert> = emptySet(),
     onDismissAlert: (DepartureRow) -> Unit = {},
     // True while a dismiss write has failed and not yet been surfaced (SPEC principle 2): same
@@ -231,7 +231,7 @@ fun MainScreen(
                 val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters)
                 DepartureRows.byStopDistance(deduped, stopDistanceMeters)
             }
-        // Drop the stop-closure alerts the user has dismissed (hidden until their text changes),
+        // Hide the service alerts the user has dismissed (until their content changes),
         // then lift the user's starred services to the top (SPEC D8). Warnings still lead on the
         // location-free watched list; on the near-me list (distances present) an alert is not
         // hoisted, so a nearer stop is never pushed below a farther one for carrying one.
@@ -400,6 +400,11 @@ fun MainScreen(
             onToggleStar = { onToggleStar(detailRow) },
             onBack = { detailKey = null },
             focus = detailDestination?.let { RouteFocus(it, detailBranch) },
+            onDismissAlert = if (detailRow.status != null) {
+                { onDismissAlert(detailRow) }
+            } else {
+                null
+            },
         )
         return
     }
@@ -1365,8 +1370,8 @@ private fun StopClosureContent(disruption: String, title: String, onDismiss: () 
  * recycled.
  *
  * When [onDismiss] is non-null a leading dismiss (×) button hides the alert (the stop-closure card
- * — the user's read-and-clear control, SPEC *Disruptions*); the route detail passes null and shows
- * no dismiss (a line disruption there isn't dismissible). The button has its own click target, so a
+ * — the user's read-and-clear control, SPEC *Disruptions*); the route detail passes null, since its
+ * line alert's dismiss sits beside the status chip instead. The button has its own click target, so a
  * dismiss tap doesn't also toggle the expand/collapse.
  */
 /**
@@ -1479,7 +1484,7 @@ private fun CollapsibleStatus(
                     )
                 }
             } else {
-                // A non-dismissible status card (line status, route detail) keeps the top-aligned
+                // A status card without its own × (the route detail's line prose) keeps the top-aligned
                 // chevron beside its text — no × to align with.
                 Icon(chevron, contentDescription = null, modifier = Modifier.padding(start = 8.dp).size(20.dp))
             }
@@ -1534,6 +1539,9 @@ internal fun RouteDetailScreen(
     // The route tapped on the card; null (a status row, or a caller with no route) follows the
     // row's soonest train.
     focus: RouteFocus? = null,
+    // Dismisses the line's status alert (SPEC *Disruptions*): hidden until TfL changes its severity
+    // or wording. Null shows no dismiss control.
+    onDismissAlert: (() -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
     val followed = followedDeparture(row, focus, LocalRouteTopology.current)
@@ -1658,8 +1666,23 @@ internal fun RouteDetailScreen(
             val status = row.status
             if (status != null) {
                 // The short chip label always; the full prose below it, collapsed to its first line
-                // with tap-to-expand, when TfL gave a reason (SPEC *Disruptions*).
-                DisruptionChip(status.description, Modifier.padding(top = 12.dp))
+                // with tap-to-expand, when TfL gave a reason (SPEC *Disruptions*). The dismiss (×) sits
+                // at the chip's end, so it's there whether or not TfL gave prose.
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(modifier = Modifier.weight(1f)) { DisruptionChip(status.description) }
+                    if (onDismissAlert != null) {
+                        IconButton(onClick = onDismissAlert) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(R.string.alert_dismiss),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
                 status.fullText?.let { fullText ->
                     CollapsibleStatus(
                         text = fullText,
@@ -1675,6 +1698,16 @@ internal fun RouteDetailScreen(
             // and the stale caveat below never stands in for it. "No disruptions reported" only when
             // determined-clean AND fresh — never claimed from stale or unchecked data (SPEC principle
             // 1 / D4). A stale but determined-clean row shows neither here; the stale caveat covers it.
+            // A dismissed line alert is its own fact, shown beside any "couldn't check" note: the line
+            // IS disrupted, the user only hid the alert, so never claim a clean line (SPEC principle 1).
+            if (row.statusDismissed) {
+                Text(
+                    text = stringResource(R.string.route_detail_alert_dismissed),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
             if (disruptionUnknown) {
                 Text(
                     text = stringResource(R.string.disruptions_unknown),
@@ -1682,7 +1715,7 @@ internal fun RouteDetailScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 12.dp),
                 )
-            } else if (status == null && !stale) {
+            } else if (status == null && !row.statusDismissed && !stale) {
                 Text(
                     text = stringResource(R.string.route_detail_no_disruption),
                     style = MaterialTheme.typography.bodyMedium,

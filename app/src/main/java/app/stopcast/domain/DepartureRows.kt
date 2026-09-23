@@ -356,20 +356,34 @@ object DepartureRows {
     }
 
     /**
-     * Drop the **stop-closure rows the user has dismissed** (SPEC *Disruptions*): a stop-status row
-     * is removed only when its [DismissedAlert.ofStopClosure] identity — place key + the current
-     * notice text — is in [dismissed]. Because the signature is the *current* notice text, a
-     * reworded or replaced closure no longer matches its old dismissal and the card returns, so a
-     * dismiss clears what you've read without ever hiding a changed or escalated notice. Only
-     * stop-status rows are affected; timed rows and line-status rows are never dismissible here (a
-     * closed stop's departures still show). Empty [dismissed] returns [rows] unchanged.
+     * Hide the **service alerts the user has dismissed** (SPEC *Disruptions*). A stop-status row is
+     * removed when its [DismissedAlert.ofStopClosure] identity — place key + the current notice text
+     * and window — is in [dismissed]. A timed row whose **line status** matches a
+     * [DismissedAlert.ofLineStatus] identity keeps its departures but drops the status (so no ⚠) and
+     * is marked [DepartureRow.statusDismissed], so the detail never reads it as a clean line; a
+     * no-prediction status row exists only to carry that alert, so it is removed outright. Because each signature is the alert's *current* content, a reworded, re-dated or
+     * escalated alert no longer matches its old dismissal and shows again, so a dismiss clears what
+     * you've read without ever hiding a changed one. Empty [dismissed] returns [rows] unchanged.
      */
     fun withoutDismissed(rows: List<DepartureRow>, dismissed: Set<DismissedAlert>): List<DepartureRow> {
         if (dismissed.isEmpty()) return rows
-        return rows.filterNot { row ->
-            row.stopDisruption != null && DismissedAlert.ofStopClosure(row) in dismissed
+        return rows.mapNotNull { row ->
+            val status = row.status
+            when {
+                row.stopDisruption != null -> row.takeUnless { DismissedAlert.ofStopClosure(it) in dismissed }
+                status != null && DismissedAlert.ofLineStatus(status) in dismissed ->
+                    row.takeIf { it.upcoming.isNotEmpty() }?.copy(status = null, statusDismissed = true)
+                else -> row
+            }
         }
     }
+
+    /**
+     * The line-status alerts live among [lineStatuses] — the identities a refresh reconciles line
+     * dismissals against (see [Dismissed.reconcile], scoped to the lines actually checked).
+     */
+    fun liveLineStatusAlerts(lineStatuses: Map<String, LineStatus>): Set<DismissedAlert> =
+        lineStatuses.values.filter { it.disrupted }.mapTo(mutableSetOf()) { DismissedAlert.ofLineStatus(it) }
 
     /**
      * The cross-stop dedupe identity for [nearbyDeduped]: line + direction-of-travel.
