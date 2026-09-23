@@ -106,6 +106,7 @@ import app.stopcast.domain.StopQualifier
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.domain.RouteFocus
 import app.stopcast.domain.followedDeparture
+import app.stopcast.domain.routeDepartures
 import app.stopcast.ui.theme.LocalStarredBorderColor
 import java.time.Duration
 import java.time.Instant
@@ -277,6 +278,7 @@ fun MainScreen(
             // This row's own age (the same per-row rule the card uses to withhold countdowns): a
             // stale snapshot's disruption status isn't presented as current (SPEC D4).
             stale = Staleness.isStale(Duration.between(detailRow.fetchedAt, now).toKotlinDuration()),
+            now = now,
             onToggleStar = { onToggleStar(detailRow) },
             onBack = { detailKey = null },
             focus = detailDestination?.let { RouteFocus(it, detailBranch) },
@@ -1193,6 +1195,8 @@ internal fun RouteDetailScreen(
     // fetch, so the page — which carries no freshness stamp of its own, unlike the list — caveats it
     // and never claims "no disruptions" from stale data (SPEC D4).
     stale: Boolean,
+    // The ticking clock the countdowns count down against, as on the list.
+    now: Instant,
     onToggleStar: () -> Unit,
     onBack: () -> Unit,
     // The stop list for the soonest train. Null resolves it from [LocalRouteStops]; a screenshot
@@ -1214,6 +1218,11 @@ internal fun RouteDetailScreen(
         else -> rememberRouteStops(row, followed, routeStopsRetry)
     }
     val place = row.hubName.ifBlank { row.stopName }
+    // Every upcoming train on the followed route, not the card's first few — TfL predicts ~30 min
+    // ahead, and the page has the room (SPEC *Route detail*).
+    val topology = LocalRouteTopology.current
+    val departures = remember(row, focus, topology) { routeDepartures(row, focus, topology) }
+        .filterNot { Countdown.hasDeparted(it, now) }
     // The terminus(es) this service runs to, from its own departures — empty for a status row
     // (no predictions), which then shows only the line and its disruption.
     val destinations = if (row.upcoming.isEmpty()) {
@@ -1297,6 +1306,21 @@ internal fun RouteDetailScreen(
                     text = stringResource(R.string.route_detail_from, place),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // The followed route's countdowns — the card's one-line format, times only, but across
+            // the page's full width so more fit; the ones that don't ellipsize off the end, keeping
+            // the soonest. Left out while stale — the stale caveat below says why — so an old
+            // prediction is never shown as live (SPEC D4).
+            if (departures.isNotEmpty() && !stale) {
+                Text(
+                    text = Countdown.mergedLabel(departures, now),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
             val status = row.status
