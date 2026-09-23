@@ -57,6 +57,13 @@ internal fun groupHeaderSpoken(qualifier: StopQualifier?): String? = when (quali
     }
 }
 
+/** A bus pole's compass [bearing] as a direction word ("E" → "Eastbound"), else null when it names
+ *  none of the eight compass points — the route page heads its stop list with it. */
+internal fun bearingDirection(bearing: String): String? =
+    if (bearing.uppercase() in COMPASS_BEARINGS) bearingSpoken(bearing) else null
+
+private val COMPASS_BEARINGS = setOf("N", "E", "S", "W", "NE", "NW", "SE", "SW")
+
 /** A compass bearing as a direction word ("E" → "Eastbound"): the visible header segment and what a
  *  screen reader hears, one and the same. Intercardinals get the hyphenated "-bound" form. */
 private fun bearingSpoken(bearing: String): String = when (bearing.uppercase()) {

@@ -369,8 +369,9 @@ line is withheld while stale, D4), and the line's **full disruption text**, whic
 in for: shown collapsed to its first line, tapped to expand (the same widget the stop-closure card
 uses). Below that it lists **every station from the boarding stop to where the soonest train
 terminates** (a short-working ends where it does, not at the line's end), on a rail in the line's
-color. Neither the list nor the page carries a "From" or "Stops to" heading: the list opens
-on the boarding stop and the app bar already names the destination. The list comes from TfL's Route/Sequence for the line, fetched **when the page opens** — never
+color. The list is headed only by the **direction** the train runs ("Southbound") — read off its
+rail platform, or a bus pole's compass bearing, and left off when neither names one — not by "From" or
+"Stops to": the list opens on the boarding stop and the app bar already names the destination. The list comes from TfL's Route/Sequence for the line, fetched **when the page opens** — never
 on the refresh path — and held in memory for the process, so a reopened route shows at once; until
 it arrives the page says so, a failed fetch says why with a retry, and where TfL's data admits more
 than one path from here (a Northern train with no branch named) the page says the list is

@@ -67,12 +67,12 @@ class RouteDetailScreenScreenshotTest {
         return DepartureRows.across(listOf(stop), now, statuses).first { it.upcoming.isNotEmpty() }
     }
 
-    private fun healthyRow(): DepartureRow {
+    private fun healthyRow(platform: String? = null): DepartureRow {
         val stop = StopArrivals(
             stopId = "940GZZLUVIC",
             stopName = "Victoria",
             departures = listOf(
-                Departure("victoria", "Victoria", "northbound", "Walthamstow Central", null, now.plusSeconds(120), "tube"),
+                Departure("victoria", "Victoria", "northbound", "Walthamstow Central", platform, now.plusSeconds(120), "tube"),
             ),
             fetchedAt = now,
         )
@@ -349,7 +349,7 @@ class RouteDetailScreenScreenshotTest {
         composeRule.setContent {
             StopCastTheme {
                 RouteDetailScreen(
-                    row = healthyRow(),
+                    row = healthyRow(platform = "Northbound - Platform 5"),
                     isStarred = false,
                     starrable = true,
                     disruptionUnknown = false,
@@ -363,6 +363,8 @@ class RouteDetailScreenScreenshotTest {
         }
         composeRule.waitForIdle()
 
+        // The list is headed by the way the train runs, read off its platform.
+        composeRule.onNodeWithText("Northbound").assertIsDisplayed()
         composeRule.onNodeWithText("Seven Sisters").assertIsDisplayed()
         // A connection chip beside its station: the Lioness line at Euston, named for a screen reader.
         composeRule.onNodeWithContentDescription("Lioness").assertIsDisplayed()

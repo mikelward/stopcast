@@ -114,7 +114,8 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
 
 /**
  * The route detail's stop list: every station from the boarding stop to the train's
- * destination on a rail in the line's [railColor], the boarding stop and terminus solid and bold.
+ * destination on a rail in the line's [railColor], the boarding stop and terminus solid and bold,
+ * headed by the [direction] the train runs when known.
  */
 @Composable
 internal fun RouteStopsSection(
@@ -122,6 +123,8 @@ internal fun RouteStopsSection(
     railColor: Color,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    // The way the train heads ("Southbound"), shown atop the list; null shows no heading.
+    direction: String? = null,
 ) {
     val note = when (state) {
         RouteStopsUi.Hidden -> return
@@ -133,6 +136,13 @@ internal fun RouteStopsSection(
     }
     Column(modifier = modifier.fillMaxWidth()) {
         if (state is RouteStopsUi.Loaded) {
+            direction?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
             state.stops.forEachIndexed { index, stop ->
                 StopOnRail(
                     name = stop.name.ifBlank { stop.id },
