@@ -61,7 +61,7 @@ sealed interface RouteStopsUi {
     /** TfL answered, but no single path from here to this train's destination matched. */
     data class Unavailable(val reason: RouteStops.Resolution) : RouteStopsUi
     data class Failed(val kind: DeparturesUiState.Error.Kind) : RouteStopsUi
-    data class Loaded(val destination: String, val stops: List<RouteStop>) : RouteStopsUi
+    data class Loaded(val stops: List<RouteStop>) : RouteStopsUi
 }
 
 /**
@@ -78,7 +78,7 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
     val bus = row.mode.equals("bus", ignoreCase = true)
     fun resolve(sequence: LineSequence): RouteStopsUi =
         when (val resolution = RouteStops.resolve(sequence, row.stopId, destination, next.branch, row.lineId, bus)) {
-            is RouteStops.Resolution.Found -> RouteStopsUi.Loaded(destination, resolution.stops)
+            is RouteStops.Resolution.Found -> RouteStopsUi.Loaded(resolution.stops)
             else -> RouteStopsUi.Unavailable(resolution)
         }
     // Keyed by the followed train (and the mode, which changes the matching rule), so a change of
@@ -113,7 +113,7 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
 }
 
 /**
- * The route detail's "Stops to X" section: every station from the boarding stop to the train's
+ * The route detail's stop list: every station from the boarding stop to the train's
  * destination on a rail in the line's [railColor], the boarding stop and terminus solid and bold.
  */
 @Composable
@@ -133,11 +133,6 @@ internal fun RouteStopsSection(
     }
     Column(modifier = modifier.fillMaxWidth()) {
         if (state is RouteStopsUi.Loaded) {
-            Text(
-                text = stringResource(R.string.route_stops_title, state.destination),
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
             state.stops.forEachIndexed { index, stop ->
                 StopOnRail(
                     name = stop.name.ifBlank { stop.id },

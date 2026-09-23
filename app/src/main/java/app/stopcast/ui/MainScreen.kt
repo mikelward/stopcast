@@ -1217,7 +1217,6 @@ internal fun RouteDetailScreen(
         routeStops != null -> routeStops
         else -> rememberRouteStops(row, followed, routeStopsRetry)
     }
-    val place = row.hubName.ifBlank { row.stopName }
     // Every upcoming train on the followed route, not the card's first few — TfL predicts ~30 min
     // ahead, and the page has the room (SPEC *Route detail*).
     val topology = LocalRouteTopology.current
@@ -1299,18 +1298,10 @@ internal fun RouteDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            if (place.isNotBlank()) {
-                Text(
-                    // "From Victoria" — where the service departs; the app bar already shows where
-                    // it's going, so the body names the boarding stop, not the line.
-                    text = stringResource(R.string.route_detail_from, place),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            // The followed route's countdowns — the card's one-line format, times only, but across
-            // the page's full width so more fit; the ones that don't ellipsize off the end, keeping
-            // the soonest. Left out while stale — the stale caveat below says why — so an old
+            // The followed route's countdowns, leading the page — the card's one-line format, times
+            // only, but across the page's full width so more fit; the ones that don't ellipsize off
+            // the end, keeping the soonest. No "From <stop>": the stop list below starts at the
+            // boarding stop. Left out while stale — the stale caveat below says why — so an old
             // prediction is never shown as live (SPEC D4).
             if (departures.isNotEmpty() && !stale) {
                 Text(
@@ -1320,7 +1311,7 @@ internal fun RouteDetailScreen(
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             val status = row.status

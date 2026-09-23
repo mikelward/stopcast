@@ -133,9 +133,8 @@ class RouteDetailScreenScreenshotTest {
         composeRule.onNodeWithText("Severe Delays").assertIsDisplayed()
         // The discoverable star — an app-bar icon whose contentDescription labels the action.
         composeRule.onNodeWithContentDescription("Pin to top").assertIsDisplayed()
-        // The app bar names where the service is going; the body names the boarding stop.
+        // The app bar names where the service is going.
         composeRule.onNodeWithText("Walthamstow Central", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText("From Victoria", substring = true).assertIsDisplayed()
         // Collapsed: the alert shows its first line (clipped), the chevron marks it expandable.
         composeRule.onNodeWithText(reason, substring = true).assertIsDisplayed()
 
@@ -358,13 +357,12 @@ class RouteDetailScreenScreenshotTest {
                     now = now,
                     onToggleStar = {},
                     onBack = {},
-                    routeStops = RouteStopsUi.Loaded("Walthamstow Central", stops),
+                    routeStops = RouteStopsUi.Loaded(stops),
                 )
             }
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Stops to Walthamstow Central").assertIsDisplayed()
         composeRule.onNodeWithText("Seven Sisters").assertIsDisplayed()
         // A connection chip beside its station: the Lioness line at Euston, named for a screen reader.
         composeRule.onNodeWithContentDescription("Lioness").assertIsDisplayed()
@@ -385,7 +383,7 @@ class RouteDetailScreenScreenshotTest {
                     now = now,
                     onToggleStar = {},
                     onBack = {},
-                    routeStops = RouteStopsUi.Loaded("Walthamstow Central", listOf(RouteStop("a", "Green Park"))),
+                    routeStops = RouteStopsUi.Loaded(listOf(RouteStop("a", "Green Park"))),
                 )
             }
         }
