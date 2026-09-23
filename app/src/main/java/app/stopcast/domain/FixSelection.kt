@@ -111,6 +111,12 @@ object FixSelection {
         // sent to TfL after the user revoked access (Codex P1). Default `{ true }` for the
         // pure tests; the provider passes its real permission check.
         hasPermission: () -> Boolean = { true },
+        // Invoked when the fresh fix failed and a bounded last-known fix is returned as the
+        // fallback (step 3) — never for the instant fast path (a recent cache), a fresh fix, or a
+        // null result. The caller uses it to flag the fix low-confidence (don't re-resolve the
+        // nearby set to it; label a set shown from it), so the Underground no-signal case isn't
+        // silently presented as a current position (SPEC *Finding stops*, principle 2).
+        onFallbackUsed: () -> Unit = {},
         freshFix: suspend () -> Coordinates?,
     ): Coordinates? {
         // The instant fast path returns a recent cached fix without waiting — but when the
@@ -142,6 +148,7 @@ object FixSelection {
         val fallbackAgeMillis = lastKnownAgeMillis?.plus((elapsedMillis() - waitStart).coerceAtLeast(0))
         if (lastKnown != null && fallbackAgeMillis != null && fallbackAgeMillis <= maxFallbackAgeMillis) {
             warn("location fix: fresh fix $freshOutcome; using the last known one")
+            onFallbackUsed()
             return lastKnown
         }
         if (lastKnown != null) {

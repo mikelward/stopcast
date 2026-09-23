@@ -318,4 +318,40 @@ class FixSelectionTest {
         assertNull(result)
         assertTrue(logs.any { it.contains("revoked") })
     }
+
+    @Test
+    fun `onFallbackUsed fires only when the stale last-known fix is the result`() = runTest {
+        // The callback the caller uses to mark a fix low-confidence. It must fire when a fresh fix
+        // fails and a bounded cached fix is returned — but NOT for a fresh fix, the recent-cache
+        // fast path, or a null result — or the "location approximate / didn't update" signal would
+        // misfire on a good fix (SPEC *Finding stops*).
+        suspend fun fallbackFlag(
+            lastKnownAgeMillis: Long?,
+            forceFresh: Boolean = false,
+            freshFix: suspend () -> Coordinates?,
+        ): Boolean {
+            var used = false
+            FixSelection.resolve(
+                lastKnown = if (lastKnownAgeMillis == null) null else cached,
+                lastKnownAgeMillis = lastKnownAgeMillis,
+                forceFresh = forceFresh,
+                freshEnoughMillis = freshEnough,
+                maxFallbackAgeMillis = maxFallback,
+                timeoutMillis = timeout,
+                warn = {},
+                onFallbackUsed = { used = true },
+                freshFix = freshFix,
+            )
+            return used
+        }
+
+        // Fresh fix succeeds → not a fallback.
+        assertEquals(false, fallbackFlag(lastKnownAgeMillis = 300_000L, forceFresh = true) { fresh })
+        // Recent cache fast path → not a fallback.
+        assertEquals(false, fallbackFlag(lastKnownAgeMillis = 30_000L) { error("not requested") })
+        // No cached fix and no fresh fix → null result, not a fallback.
+        assertEquals(false, fallbackFlag(lastKnownAgeMillis = null) { null })
+        // Fresh fix fails but a bounded cached fix is used → fallback.
+        assertEquals(true, fallbackFlag(lastKnownAgeMillis = 300_000L, forceFresh = true) { null })
+    }
 }

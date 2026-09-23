@@ -97,6 +97,15 @@
     <string name="location_denied">Turn on location access in Settings to see nearby stops.</string>
     <string name="open_settings">Open settings</string>
 
+    <!-- Top banner over the departures list when the shown stops are backed by a low-confidence
+         location (SPEC *Finding stops*, principle 2), with a "Try again" that re-locates.
+         `location_approximate`: the set was resolved from a last-known fallback fix (a fresh fix
+         failed — e.g. no GPS on the Underground), so it may be a previous position.
+         `location_update_failed`: a refresh couldn't get a fresh fix, so the current set was kept
+         rather than jumping to a stale one. Both clear once a fresh fix resolves. -->
+    <string name="location_approximate">Showing your last-known area</string>
+    <string name="location_update_failed">Couldn\'t update your location</string>
+
     <!-- Shown in the widget picker. -->
     <string name="widget_description">Live departures from the stops near you</string>
 

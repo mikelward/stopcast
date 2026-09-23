@@ -88,7 +88,17 @@ The app finds stops two ways:
   out-of-range "no stops nearby" replaces the list rather than leaving a previous location's
   stops on screen as if current (cards omit the stop name, so a stale set is
   indistinguishable from the real one). There is therefore **no separate "locate" control** —
-  the refresh control and a foreground return both do it. The list is a
+  the refresh control and a foreground return both do it.
+
+  A fix the device can't refresh — the fresh attempt failed and a **bounded last-known** fix is
+  used instead (no GPS underground, where a station's Wi-Fi also places the network provider at a
+  *different* station) is **low-confidence**, and never silently presented as the current position
+  (principle 2). On a re-locate the set is **not jumped** to it — the stops already shown are kept
+  rather than re-resolved to a previous position — and a **top banner** over the list says the
+  location couldn't update, with a **Try again**. A set that could only be resolved *from* such a
+  fix (a cold start with no fresh fix) shows the same banner worded "your last-known area." The
+  banner clears the moment a fresh fix resolves. Gating on the fix's *measured accuracy/age*
+  (a fused fix can itself be Wi-Fi-derived) is a later refinement (`TODO.md`). The list is a
   **useful, scannable spread, not a raw nearest-N**:
   - a **line appears once**, not once per stop it passes — a raw nearest-N repeats the same
     bus route several times, one per adjacent stop, which reads as noise;

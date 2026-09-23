@@ -1737,6 +1737,13 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   "this fix is a stale/last-known fallback (age) / low-accuracy" out of `FixSelection` → provider →
   `NearbyStopsViewModel` and show a visible, honest signal (a banner or stamp: "Couldn't get a
   current location — showing your last-known area"), consistent with the staleness contract (D4).
+  **Shipped, first increment:** the **fallback** signal is threaded (`FixSelection.onFallbackUsed`
+  → `LocationFix.isFallback` → `NearbyStopsViewModel.locationBanner`), a re-locate onto a fallback
+  fix **doesn't jump** (keeps the shown set), and a top **banner with Try again** appears —
+  "Couldn't update your location" (re-locate failed) or "Showing your last-known area" (set resolved
+  from a fallback). **Still to do:** gate on **measured accuracy/age**, not just the fallback flag —
+  a *fresh* Wi-Fi/cell fused fix that's confidently wrong (the station-Wi-Fi case) still isn't
+  caught, since it's not a fallback; that needs the accuracy(+validity)/age plumbing above.
 - **Same-set re-locate discards updated stop metadata (Codex P2 on #70) — RESOLVED by the
   #87 reveal redesign (2026-09-21).** The old gap: `relocate()`'s same-set path kept the old
   `MainViewModel`, whose `seedStops` were fixed at init, so a refresh returning the *same* IDs

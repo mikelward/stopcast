@@ -2,6 +2,7 @@ package app.stopcast.ui
 
 import app.stopcast.domain.Coordinates
 import app.stopcast.domain.LineRef
+import app.stopcast.domain.LocationFix
 import app.stopcast.domain.LocationProvider
 import app.stopcast.domain.StopFinder
 import app.stopcast.domain.StopLocation
@@ -30,19 +31,24 @@ class NearbyStopsViewModelTest {
 
     @After fun tearDown() = Dispatchers.resetMain()
 
-    /** A location provider that hands back a fixed fix (or null for "no fix"). */
-    private class FakeLocation(private val fix: Coordinates?) : LocationProvider {
-        override suspend fun current(forceFresh: Boolean): Coordinates? = fix
+    /** A location provider that hands back a fixed fix (or null for "no fix"); [isFallback] marks
+     *  it a low-confidence last-known fix (a fresh fix failed). */
+    private class FakeLocation(
+        private val fix: Coordinates?,
+        private val isFallback: Boolean = false,
+    ) : LocationProvider {
+        override suspend fun current(forceFresh: Boolean): LocationFix? =
+            fix?.let { LocationFix(it, isFallback = isFallback) }
     }
 
-    /** A location provider whose fix can change between calls — for re-locate on refresh. It
-     *  records the last [forceFresh] it was asked for, so a test can assert relocate forces a
-     *  fresh fix (a cached one would re-resolve for the previous position). */
-    private class MutableLocation(var fix: Coordinates?) : LocationProvider {
+    /** A location provider whose fix (and its confidence) can change between calls — for re-locate
+     *  on refresh. It records the last [forceFresh] it was asked for, so a test can assert relocate
+     *  forces a fresh fix (a cached one would re-resolve for the previous position). */
+    private class MutableLocation(var fix: Coordinates?, var isFallback: Boolean = false) : LocationProvider {
         var lastForceFresh: Boolean? = null
-        override suspend fun current(forceFresh: Boolean): Coordinates? {
+        override suspend fun current(forceFresh: Boolean): LocationFix? {
             lastForceFresh = forceFresh
-            return fix
+            return fix?.let { LocationFix(it, isFallback = isFallback) }
         }
     }
 
@@ -270,6 +276,59 @@ class NearbyStopsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(NearbyStopsViewModel.State.Empty(origin), model.state.value)
+    }
+
+    @Test
+    fun `locate from a fallback fix shows the stops but flags the location approximate`() = runTest {
+        // Cold start with only a stale last-known fix (a fresh fix failed — the Underground case):
+        // the stops resolve, but the banner says the position is approximate (SPEC principle 2).
+        val model = vm(FakeLocation(origin, isFallback = true), FakeFinder { listOf(stop("a", 50.0, "bus")) })
+
+        model.locate()
+        advanceUntilIdle()
+
+        assertTrue(model.state.value is NearbyStopsViewModel.State.Ready)
+        assertEquals(LocationBanner.APPROXIMATE, model.locationBanner.value)
+    }
+
+    @Test
+    fun `relocate keeps the current set and flags update-failed on a fallback fix`() = runTest {
+        // A good set is shown, then a refresh can only get a low-confidence fix: don't jump to it —
+        // keep the set already shown and say the location couldn't update (SPEC *Finding stops*).
+        val location = MutableLocation(origin)
+        val model = vm(location, FakeFinder { listOf(stop("a", 50.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        val shown = model.state.value as NearbyStopsViewModel.State.Ready
+        assertEquals(null, model.locationBanner.value)
+
+        location.isFallback = true
+        var refreshed = false
+        model.relocate(onSameSet = { refreshed = true })
+        advanceUntilIdle()
+
+        // The set is unchanged (not re-resolved to the stale fix), and the banner explains why.
+        assertEquals(shown.clusterSetKey, (model.state.value as NearbyStopsViewModel.State.Ready).clusterSetKey)
+        assertEquals(LocationBanner.UPDATE_FAILED, model.locationBanner.value)
+        // The retained set's departures fetch still restarts in place: the caller canceled it before
+        // re-locating, so keeping the set without re-fetching would hang a mid-load screen forever.
+        assertTrue("keeping the set still re-fetches its departures", refreshed)
+    }
+
+    @Test
+    fun `a fresh relocate clears the location banner`() = runTest {
+        val location = MutableLocation(origin, isFallback = true)
+        val model = vm(location, FakeFinder { listOf(stop("a", 50.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(LocationBanner.APPROXIMATE, model.locationBanner.value)
+
+        // A later refresh gets a fresh fix — the banner clears.
+        location.isFallback = false
+        model.relocate()
+        advanceUntilIdle()
+
+        assertEquals(null, model.locationBanner.value)
     }
 
     @Test
