@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">StopCast</string>
+    <string name="app_name">StopDash</string>
 
     <!-- Freshness stamp in the top bar. %1$s is "just now" / "3 min ago". -->
     <string name="updated_stamp">Updated %1$s</string>
@@ -86,7 +86,7 @@
          honest about the location leaving the device, since it does — it's sent to TfL to
          find nearby stops (SPEC Privacy). -->
     <string name="location_title">Departures near you</string>
-    <string name="location_rationale">StopCast shows the stops nearest you. Your location is sent to TfL only to find them.</string>
+    <string name="location_rationale">StopDash shows the stops nearest you. Your location is sent to TfL only to find them.</string>
     <string name="location_allow">Allow location</string>
     <string name="location_finding">Finding stops near you…</string>
     <string name="location_no_fix">Couldn\'t get your location</string>
@@ -178,9 +178,9 @@
     <string name="bug_report_consent_continue">Continue</string>
     <string name="action_cancel">Cancel</string>
     <!-- Subject line and share-sheet / clipboard labels for the report. -->
-    <string name="bug_report_subject">StopCast bug report</string>
+    <string name="bug_report_subject">StopDash bug report</string>
     <string name="bug_report_chooser_title">Send bug report</string>
-    <string name="bug_report_clipboard_label">StopCast bug report</string>
+    <string name="bug_report_clipboard_label">StopDash bug report</string>
     <!-- Toasts when the share sheet didn't open (the report is on the clipboard) or nothing landed. -->
     <string name="bug_report_copied">Bug report copied to clipboard</string>
     <string name="bug_report_failed">Couldn\'t share the bug report</string>

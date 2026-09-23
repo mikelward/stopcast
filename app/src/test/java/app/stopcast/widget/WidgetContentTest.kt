@@ -59,7 +59,7 @@ class WidgetContentTest {
         provideComposable {
             WidgetContent(WidgetModel(hasData = false, stale = false, uncertain = false, stamp = null, rows = emptyList()), now)
         }
-        onNode(hasText("Open StopCast")).assertExists()
+        onNode(hasText("Open StopDash")).assertExists()
     }
 
     @Test

@@ -43,7 +43,7 @@ object BugReport {
         stops: List<StopLine>,
         logLines: List<String>,
     ): String = buildString {
-        appendLine("StopCast bug report")
+        appendLine("StopDash bug report")
         appendLine("version: ${header.versionName} (${header.versionCode})")
         appendLine("device: ${header.device}, Android ${header.androidRelease} (API ${header.sdkInt})")
         appendLine("captured: ${header.capturedAt}")
