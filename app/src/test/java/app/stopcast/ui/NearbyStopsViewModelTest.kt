@@ -157,7 +157,7 @@ class NearbyStopsViewModelTest {
         // lookup must be canceled before it hits the finder, so only the live one runs and
         // a stale first result can't finish last and overwrite the newer state.
         var lookups = 0
-        val finder = FakeFinder { lookups++; listOf(StopLocation("s", "S", 0.0, 0.0)) }
+        val finder = FakeFinder { lookups++; listOf(stop("s", 0.0, "bus")) }
         val model = vm(FakeLocation(origin), finder)
 
         model.locate()
