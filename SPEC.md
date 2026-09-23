@@ -163,8 +163,10 @@ The app finds stops two ways:
   is slow or absent, a *somewhat-stale* cached one substitutes for it rather than making the
   user wait or fail — but only within a bounded age, past which stopcast reports "couldn't get
   your location" rather than showing a previous location's stops as current (a user who has
-  traveled would be misled). A failure to get a fix is always logged, so a misfire is
-  diagnosable.
+  traveled would be misled). A failure to get a fix is always logged, and so is each fix the
+  app uses — which provider supplied it, the accuracy radius it reported, and its age, never the
+  coordinate — so a misfire, like station Wi-Fi placing the user at the wrong station, is
+  diagnosable from a bug report.
 
   Both tiers draw from one TfL `/StopPoint` lookup within the **~1 mile reach** (the lookup's
   own radius); the eager clusters' stops are fetched for arrivals at once, and a *more* cluster's

@@ -55,7 +55,9 @@ what the app saw, so the log carries **coarse state and reasons**, and nothing m
 - a **stop ID** or a **line id** (TfL identifiers, e.g. `victoria`, `940GZZLUOXC`),
 - an **HTTP status or failure reason** for a TfL request (e.g. `429`, `offline`),
 - **location fix outcomes**: that a fix could not be obtained, whether a recent cached
-  fix was used instead of a fresh one, and coarse timing — **never a coordinate**,
+  fix was used instead of a fresh one, and coarse timing; for each fix the app uses, **which
+  location provider** supplied it (e.g. `network`, `gps`), the **accuracy radius** that provider
+  reported (or "unknown"), and **how old** it was — **never a coordinate**,
 - **which disruption/status lookup was unknown and why** (e.g. a line TfL returned no
   status for, or a prediction with no line id to check),
 - a **failed Play update check, or a failed attempt to open the Play listing** (release
