@@ -59,6 +59,9 @@ class KtorTflClient(
     // opening one connection per stop. Unbounded by default (tests, an unwired client); production
     // passes [SharedTflRequestPool.pool] so the app and widget share one cap.
     private val requestPool: TflRequestPool = TflRequestPool.UNBOUNDED,
+    // Sink for recoverable response oddities (an unparseable disruption date), coarse facts only —
+    // a stop id, never a coordinate or key (SPEC *Privacy*). No-op by default (tests, widget).
+    private val warn: (String) -> Unit = {},
 ) : TflClient, StopFinder, RouteSequenceSource {
     override suspend fun arrivals(stopId: String): List<Departure> =
         tflRequest { key ->
@@ -127,7 +130,10 @@ class KtorTflClient(
                 parameter("getFamily", true)
                 parameter("includeRouteBlockedStops", true)
                 applyAppKey(key)
-            }.body<TflDisruptedPointFamilyDto>().allDisruptions()
+            }.body<TflDisruptedPointFamilyDto>().allDisruptions { raw ->
+                // Length only: the raw value is TfL's, but a bare fact keeps the log coarse.
+                warn("stop disruption for stop $stopId: unparseable date (${raw.length} chars), window left open")
+            }
         }
 
     /**

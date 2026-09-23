@@ -590,6 +590,7 @@ class MainActivity : ComponentActivity() {
                                 appKey = { UserApiKeySetting.current },
                                 rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
                                 requestPool = SharedTflRequestPool.pool,
+                                warn = ::logDepartureWarning,
                             ),
                             seedStops = ready.eagerStops,
                             initialMore = ready.more,

@@ -462,6 +462,13 @@ closures currently in effect, so telling current from future needs the dates in 
 and showing a not-yet-current diversion is the safe side (an extra chip beats a hidden
 disruption).
 
+A stop notice, by contrast, is shown **only while its TfL window (`fromDate`–`toDate`) covers
+now**, checked against the render clock: TfL lists a scheduled stop closure hours ahead ("Bus Stop
+Closed" at breakfast for a 10:00–15:00 closure), and a card claiming the stop is closed beside its
+live, catchable departures is itself quietly wrong (maintainer, 2026-09-23). The departures are
+untouched either way. A notice with no date, or one that can't be parsed, counts as current — an
+unreadable window never hides a closure.
+
 A stop-closure card is **headed by the place name — the interchange, else the stop — always
 shown**, with the notice **collapsed to a single line and expanded on tap**: TfL's stop notices
 are prose (a paragraph on a lift outage), and a glance surface shouldn't be dominated by one, so
