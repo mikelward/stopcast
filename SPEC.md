@@ -802,7 +802,17 @@ surface.)
   window, so it still refetches every stop. A stop's closure check (a closed or moved stop) is
   reused for 5 minutes — closures change over hours, and the check is half of every stop's cost —
   while line status, the fast-moving signal, is checked on every refresh. Both live in memory
-  only; a failed request is never reused.
+  only; a failed request is never reused. A junction's **bus poles share one closure request**
+  (TfL takes several stop ids at once); each pole gets only its own notices, so an open pole
+  never shows a sibling's closure. A station keeps its own request, since its closures live on
+  child platforms. Keyless, the app sends up to **20 requests at once, then 40 a minute**, at most
+  10 in flight: a whole typical cold near-me load
+  (the nearby lookup plus ~15-18 requests) goes out unpaced in two quick waves (2026-09-23). A flat-out minute
+  can reach 60, over TfL's ~50 — only sustained heavy use gets there, a 429 shows as rate-limited,
+  and fewer requests per refresh (caching) is the planned way back under.
+  Each departures refresh logs its request count and timing to the on-device debug log (the
+  nearby-stop lookup before a near-me load is one more request), so a slow load is diagnosable
+  from real numbers.
 
 ## One widget, many surfaces
 

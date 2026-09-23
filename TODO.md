@@ -841,20 +841,15 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         whether a key is active, so a mid-session paste or clear re-sizes at once (no process
         restart). The app's clients read the process-wide `UserApiKeySetting`; the widget worker
         passes its own loaded key so its request and its throttling share one source.
-  - [ ] **Batch a junction's poles into one request if TfL's arrivals/disruption endpoints accept
-        comma-separated stop ids** (2026-09-22). Today each lettered pole is its own
-        `/StopPoint/{id}/Arrivals` + disruption call, so a junction cluster is many requests — the
-        root of the per-request-cap and incremental-fetch items above. If `/StopPoint/{ids}/Arrivals`
-        (and the disruption endpoint) take a comma-separated id list, a whole cluster collapses to
-        one arrivals + one disruption request, cutting the burst at the source and largely mooting
-        the pole budget. **Verify first:** recollection is that arrivals is single-id, and this
-        sandbox can't reach `api.tfl.gov.uk` (network policy 403), so it needs a device/allowed-
-        network check before it's committed to; if unsupported, drop it and rely on the limiter +
-        budget. Batching *disruptions* by id must keep per-pole closure coverage (principle 1) — a
-        one-pole-per-cluster shortcut would drop a single closed pole's warning. **Impact (est., if
-        supported):** a P-pole junction drops from 2P requests (arrivals + disruption per pole) to
-        ~2 — e.g. a 4-pole junction 8→2, ~75% — the single biggest structural cut, and it largely
-        moots the per-pole budget. Conditional on the API, so unverified.
+  - [x] **Batch a junction's poles' closure checks into one request** (2026-09-22; landed
+        2026-09-23). Verified against the live API: `/StopPoint/{ids}/Disruption` takes a
+        comma-separated id list **without** `getFamily` (TfL rejects family for >1 stop) and returns
+        a flat array, each entry naming its pole (`atcoCode`), so per-pole coverage holds. Bus poles
+        now share one request per 20; stations keep their family-walking request. Side fix: a pole's
+        family is its whole junction, which had pinned a sibling's closure on an open pole.
+        **Arrivals stay one request per pole:** `/StopPoint/{ids}/Arrivals` 404s on a list, and a
+        stop area's (`490G…`) own arrivals come back empty — so a P-pole junction costs P + 1, not
+        2P. A per-cluster arrivals budget remains the lever for the arrivals half.
   - [ ] **A revealed stop whose first fetch fails isn't in the widget's polling set** (Codex P2, PR
         #87 — deferred there). When a newly revealed stop's first arrivals request fails with no prior
         while an eager stop succeeds, the authoritative save persists only the merged (eager) stops, so

@@ -676,6 +676,9 @@ class MainActivity : ComponentActivity() {
                             // few minutes — both spare TfL's keyless rate budget.
                             arrivalsReuse = ARRIVALS_REUSE,
                             disruptionReuse = DISRUPTION_REUSE,
+                            // Feeds the per-fetch debug-log line: time spent rate-limited.
+                            rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
+                            logStats = ::logDepartureWarning,
                         )
                     }
                 },

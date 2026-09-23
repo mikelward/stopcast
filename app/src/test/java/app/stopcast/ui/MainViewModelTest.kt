@@ -2112,6 +2112,100 @@ class MainViewModelTest {
         assertEquals(emptySet<DismissedAlert>(), backing.value)
     }
 
+    // Records closure lookups: each batched pole request and each single-stop request.
+    private class ClosureCountingClient(
+        private val poleResult: (List<String>) -> Map<String, List<StopDisruption>>,
+    ) : TflClient {
+        val poleCalls = mutableListOf<List<String>>()
+        val singleCalls = mutableListOf<String>()
+        override suspend fun arrivals(stopId: String) = listOf(departureAt(stopId))
+        override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> = emptyList()
+        override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+            singleCalls += stopId
+            return emptyList()
+        }
+        override suspend fun poleDisruptions(stopIds: List<String>): Map<String, List<StopDisruption>> {
+            poleCalls += stopIds
+            return poleResult(stopIds)
+        }
+        private fun departureAt(stopId: String) = Departure(
+            lineId = "141",
+            lineName = "141",
+            direction = "outbound",
+            destination = "Example $stopId",
+            platform = null,
+            expectedArrival = Instant.parse("2026-09-18T08:05:00Z"),
+            mode = "bus",
+        )
+    }
+
+    @Test
+    fun `a junction's poles share one closure request, a station keeps its own`() = runTest(dispatcher) {
+        val client = ClosureCountingClient { ids -> mapOf(ids.first() to listOf(StopDisruption("Bus Stop Closed"))) }
+        val vm = MainViewModel(
+            client,
+            listOf(
+                StopRef("490000001A", "Example Road", clusterId = "490G000EXAMPLE"),
+                StopRef("490000001B", "Example Road", clusterId = "490G000EXAMPLE"),
+                StopRef("940GZZLUMRH", "Manor House"),
+            ),
+            clock = { now },
+            io = dispatcher,
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("490000001A", "490000001B")), client.poleCalls)
+        assertEquals(listOf("940GZZLUMRH"), client.singleCalls)
+        // Each pole keeps only its own notice: the closed pole's sibling stays open.
+        val stops = (vm.state.value as DeparturesUiState.Loaded).stops.associateBy { it.stopId }
+        assertEquals(listOf(StopDisruption("Bus Stop Closed")), stops.getValue("490000001A").disruptions)
+        assertTrue(stops.getValue("490000001B").disruptions.isEmpty())
+    }
+
+    @Test
+    fun `a failed pole batch leaves each of its poles' closures unchecked`() = runTest(dispatcher) {
+        val client = ClosureCountingClient { throw TflException.Offline(null) }
+        val vm = MainViewModel(
+            client,
+            listOf(
+                StopRef("490000001A", "Example Road", clusterId = "490G000EXAMPLE"),
+                StopRef("490000001B", "Example Road", clusterId = "490G000EXAMPLE"),
+            ),
+            clock = { now },
+            io = dispatcher,
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(setOf("490000001A", "490000001B"), state.stopsDisruptionUnknown)
+    }
+
+    @Test
+    fun `each fetch logs its request count and time`() = runTest(dispatcher) {
+        val logged = mutableListOf<String>()
+        val client = ClosureCountingClient { emptyMap() }
+        MainViewModel(
+            client,
+            listOf(
+                StopRef("490000001A", "Example Road", clusterId = "490G000EXAMPLE"),
+                StopRef("490000001B", "Example Road", clusterId = "490G000EXAMPLE"),
+                StopRef("940GZZLUMRH", "Manor House"),
+            ),
+            clock = { now },
+            io = dispatcher,
+            elapsedMillis = { 0L },
+            logStats = { logged += it },
+        )
+        advanceUntilIdle()
+
+        assertTrue(
+            logged.toString(),
+            logged.contains(
+                "departures fetch: 6 requests (3 departures, 1 closure, 1 closure batch, 1 line status, 0 hub) in 0 ms, 0 ms rate-limited",
+            ),
+        )
+    }
+
     // A client that records every arrivals fetch, so a test can assert a "More" tap fetches only the
     // newly revealed stop and not the ones already shown.
     private class CountingClient(private val byStop: Map<String, List<Departure>>) : TflClient {

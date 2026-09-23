@@ -3,6 +3,7 @@ package app.stopcast.data
 import android.os.SystemClock
 import app.stopcast.domain.TflRateLimiter
 import app.stopcast.domain.TokenBucketRateLimiter
+import app.stopcast.domain.WaitMeter
 import kotlinx.coroutines.delay
 
 /**
@@ -18,17 +19,24 @@ import kotlinx.coroutines.delay
  * recorded persistence follow-up.
  */
 object SharedTflRateLimiter {
-    /** The keyless per-minute budget the keyless bucket keeps the app under. */
+    /** The keyless per-minute budget the keyless bucket keeps the app under (TfL's ~50 anonymous). */
     const val KEYLESS_PER_MINUTE = 50
 
     /**
-     * The immediate burst — a normal refresh's handful of requests goes at once. Kept small so the
-     * burst plus a minute's [SUSTAINED_PER_MINUTE] refill stays within [KEYLESS_PER_MINUTE]: a full
-     * bucket drained at once plus the refill is the most any 60-second window admits (Codex, #108).
+     * The immediate burst: a whole typical cold near-me load — the nearby lookup plus ~15-18
+     * departures requests once a junction's closure checks share one request — goes out unpaced,
+     * in two quick waves through the 10-request [SharedTflRequestPool] (2026-09-23).
      */
-    const val BURST = 10
+    const val BURST = 20
 
-    /** The sustained rate once the burst is spent. [BURST] + this stays within the budget. */
+    /**
+     * The sustained rate once the burst is spent (maintainer, 2026-09-23: kept at 40, not lowered to
+     * fit the bigger burst). A full bucket drained at once plus a minute's refill — the most any
+     * 60-second window admits — is therefore 60, over [KEYLESS_PER_MINUTE]: accepted, since only
+     * sustained heavy use (repeated reveals) reaches it and a 429 shows as rate-limited, with fewer
+     * requests per refresh (caching) the planned way back under. A 60 s auto-refresh of a near-me
+     * list (~10-14 requests, closures cached) sits well under it.
+     */
     const val SUSTAINED_PER_MINUTE = 40
 
     /** The higher budget a user `app_key` unlocks (~500 req/min, SPEC D7) — 10x the keyless one. */
@@ -53,6 +61,14 @@ object SharedTflRateLimiter {
     private val keylessBucket: TflRateLimiter by lazy { bucket(BURST, SUSTAINED_PER_MINUTE) }
     private val keyedBucket: TflRateLimiter by lazy { bucket(KEYED_BURST, KEYED_SUSTAINED_PER_MINUTE) }
 
+    // Wall-clock time any request spent waiting for a token, across both buckets — read before and
+    // after a fetch for its debug-log line ([app.stopcast.domain.LoadStats]). Concurrent waits count
+    // once; a widget refresh waiting at the same moment lands in the same total (a diagnostic).
+    private val waits = WaitMeter(SystemClock::elapsedRealtime)
+
+    /** Wall-clock milliseconds some request spent waiting on either bucket since the process started. */
+    val waitedMillis: Long get() = waits.totalMillis()
+
     /**
      * The shared bucket a request with key snapshot [key] is charged to: the keyed budget when a
      * non-blank key is active, the keyless budget otherwise (SPEC D7). The caller ([KtorTflClient])
@@ -71,6 +87,6 @@ object SharedTflRateLimiter {
             // wall clock would — a backward jump would otherwise wedge the limiter until real
             // time caught up, a forward jump would hand out a spurious full burst (Codex, #108).
             nowMillis = SystemClock::elapsedRealtime,
-            sleep = { delay(it) },
+            sleep = { waits.measure { delay(it) } },
         )
 }

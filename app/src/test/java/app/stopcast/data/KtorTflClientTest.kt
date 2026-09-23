@@ -544,6 +544,55 @@ class KtorTflClientTest {
         assertEquals("true", req.url.parameters["includeRouteBlockedStops"])
     }
 
+    // The multi-stop /StopPoint/{ids}/Disruption shape (no getFamily): a flat array, each entry
+    // naming its stop. Trimmed from a recorded response; the ids are example poles.
+    private val poleClosuresJson = """
+        [
+          {
+            "${'$'}type": "Tfl.Api.Presentation.Entities.DisruptedPoint, Tfl.Api.Presentation.Entities",
+            "atcoCode": "490000001A",
+            "fromDate": "2026-09-11T07:00:00Z",
+            "toDate": "2026-10-01T16:00:00Z",
+            "description": "Bus Stop Closed",
+            "commonName": "Example Road",
+            "type": "Closure",
+            "mode": "bus"
+          },
+          {
+            "atcoCode": "490000001A",
+            "description": "Bus Stop Closed",
+            "fromDate": "2026-09-11T07:00:00Z",
+            "toDate": "2026-10-01T16:00:00Z"
+          },
+          { "atcoCode": "490000009Z", "description": "Not asked for" }
+        ]
+    """.trimIndent()
+
+    @Test
+    fun `batches poles into one closure request, each pole getting only its own notices`() = runTest {
+        var captured: HttpRequestData? = null
+        val byStop = client(poleClosuresJson, capture = { captured = it })
+            .poleDisruptions(listOf("490000001A", "490000001B"))
+
+        val req = checkNotNull(captured)
+        assertEquals("/StopPoint/490000001A,490000001B/Disruption", req.url.encodedPath)
+        // TfL rejects getFamily for several stops, and a pole's family is its whole junction.
+        assertNull(req.url.parameters["getFamily"])
+        assertEquals("true", req.url.parameters["includeRouteBlockedStops"])
+        // The repeated notice folds to one; the open pole maps to empty; an unrequested stop is dropped.
+        assertEquals(setOf("490000001A", "490000001B"), byStop.keys)
+        assertEquals(1, byStop.getValue("490000001A").size)
+        assertEquals(Instant.parse("2026-10-01T16:00:00Z"), byStop.getValue("490000001A")[0].validTo)
+        assertTrue(byStop.getValue("490000001B").isEmpty())
+    }
+
+    @Test
+    fun `no poles makes no closure request`() = runTest {
+        var calls = 0
+        assertTrue(client(poleClosuresJson, capture = { calls++ }).poleDisruptions(emptyList()).isEmpty())
+        assertEquals(0, calls)
+    }
+
     @Test
     fun `parses nearby stops, cleaning names and dropping unidentifiable ones`() = runTest {
         val stops = client(nearbyJson).nearbyStops(latitude = 51.5, longitude = -0.12, radiusMeters = 350)

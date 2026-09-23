@@ -136,6 +136,28 @@ class KtorTflClient(
             }
         }
 
+    override suspend fun poleDisruptions(stopIds: List<String>): Map<String, List<StopDisruption>> {
+        if (stopIds.isEmpty()) return emptyMap()
+        val ids = stopIds.joinToString(",")
+        val entries = tflRequest { key ->
+            // No getFamily: TfL rejects it for more than one stop, and a pole's family is its whole
+            // junction, which would pin a sibling pole's closure on this one. A multi-stop request
+            // returns a flat array, each entry naming its stop.
+            httpClient.get("$baseUrl/StopPoint/$ids/Disruption") {
+                parameter("includeRouteBlockedStops", true)
+                applyAppKey(key)
+            }.body<List<TflStopDisruptionDto>>()
+        }
+        val byStop = entries.groupBy { it.atcoCode }
+        return stopIds.associateWith { stopId ->
+            byStop[stopId].orEmpty().mapNotNull { dto ->
+                dto.toStopDisruptionOrNull { raw ->
+                    warn("stop disruption for stop $stopId: unparseable date (${raw.length} chars), window left open")
+                }
+            }.distinct()
+        }
+    }
+
     /**
      * Adds the request's `app_key` [key] when one is set (SPEC D7); a null/blank value adds nothing
      * (keyless). [key] is the single per-request snapshot [tflRequest] took, the same value the
