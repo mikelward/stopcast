@@ -358,39 +358,33 @@ private fun WidgetRow(rowModel: WidgetRowModel, now: Instant) {
     // terminus — on its own line with its own countdown, so a divergent train's time never sits
     // under the wrong destination or branch (SPEC D8). The groups were chosen (and line-budgeted)
     // in widgetModel from the shared destinationLines, so the card and widget can't drift.
-    val lines = rowModel.groups
-    Row(
-        modifier = GlanceModifier.fillMaxWidth(),
-        // Single line → pill level with it; a branching row top-aligns the pill so it hugs the
-        // first line rather than floating against the set (matching the in-app card).
-        verticalAlignment = if (lines.size > 1) Alignment.Top else Alignment.CenterVertically,
-    ) {
-        WidgetPill(row)
-        Spacer(GlanceModifier.width(8.dp))
-        Column(modifier = GlanceModifier.defaultWeight()) {
-            lines.forEachIndexed { index, group ->
-                if (index > 0) Spacer(GlanceModifier.height(4.dp))
-                Row(
-                    modifier = GlanceModifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = widgetLineLabel(row, group),
-                        maxLines = 1,
-                        modifier = GlanceModifier.defaultWeight(),
-                        style = TextStyle(color = GlanceTheme.colors.onBackground, fontSize = 13.sp),
-                    )
-                    Spacer(GlanceModifier.width(8.dp))
-                    Text(
-                        text = if (stale) "?" else Countdown.mergedLabel(group.times, now),
-                        maxLines = 1,
-                        style = TextStyle(
-                            color = if (stale) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.onBackground,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                        ),
-                    )
-                }
+    // Every line carries its own pill, as every row in the in-app card does, so a branch's second
+    // destination never reads as belonging to a different (pill-less) service.
+    Column(modifier = GlanceModifier.fillMaxWidth()) {
+        rowModel.groups.forEachIndexed { index, group ->
+            if (index > 0) Spacer(GlanceModifier.height(4.dp))
+            Row(
+                modifier = GlanceModifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                WidgetPill(row)
+                Spacer(GlanceModifier.width(8.dp))
+                Text(
+                    text = widgetLineLabel(row, group),
+                    maxLines = 1,
+                    modifier = GlanceModifier.defaultWeight(),
+                    style = TextStyle(color = GlanceTheme.colors.onBackground, fontSize = 13.sp),
+                )
+                Spacer(GlanceModifier.width(8.dp))
+                Text(
+                    text = if (stale) "?" else Countdown.mergedLabel(group.times, now),
+                    maxLines = 1,
+                    style = TextStyle(
+                        color = if (stale) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.onBackground,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                    ),
+                )
             }
         }
     }

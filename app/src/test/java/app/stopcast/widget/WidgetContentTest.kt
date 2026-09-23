@@ -8,6 +8,7 @@ import androidx.glance.testing.unit.hasTextEqualTo
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.lineCode
 import java.time.Instant
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -171,6 +172,8 @@ class WidgetContentTest {
         }
         onNode(hasText("Brixton")).assertExists()
         onNode(hasText("Walthamstow Central")).assertExists()
+        // Each destination line carries its own pill, as each row of the in-app card does.
+        onAllNodes(hasTextEqualTo(lineCode("victoria", "tube"))).assertCountEquals(2)
     }
 
     @Test
