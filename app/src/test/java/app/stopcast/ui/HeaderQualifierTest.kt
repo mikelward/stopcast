@@ -82,4 +82,12 @@ class HeaderQualifierTest {
         assertEquals("-> Battersea", groupHeaderLabel(StopQualifier.Terminus("Battersea Power")))
         assertEquals("to Battersea", groupHeaderSpoken(StopQualifier.Terminus("Battersea Power")))
     }
+
+    @Test
+    fun `a bus bearing names its direction, and anything else names none`() {
+        assertEquals("Southbound", bearingDirection("s"))
+        assertEquals("Northeast-bound", bearingDirection("NE"))
+        assertNull(bearingDirection(""))
+        assertNull(bearingDirection("X"))
+    }
 }

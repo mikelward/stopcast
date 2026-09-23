@@ -106,6 +106,7 @@ import app.stopcast.domain.StopQualifier
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.domain.RouteFocus
 import app.stopcast.domain.followedDeparture
+import app.stopcast.domain.PlatformDirection
 import app.stopcast.domain.routeDepartures
 import app.stopcast.ui.theme.LocalStarredBorderColor
 import java.time.Duration
@@ -1368,6 +1369,9 @@ internal fun RouteDetailScreen(
                 railColor = railColorFor(row),
                 onRetry = { routeStopsRetry++ },
                 modifier = Modifier.padding(top = 16.dp),
+                // Rail reads it off the followed train's platform ("Southbound - Platform 2"); a bus
+                // off its pole's compass bearing. Neither known, no heading rather than a guess.
+                direction = PlatformDirection.of(followed?.platform) ?: bearingDirection(row.bearing),
             )
         }
     }
