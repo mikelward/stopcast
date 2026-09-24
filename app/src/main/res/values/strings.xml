@@ -169,6 +169,8 @@
     <string name="trip_checking">Checking routes…</string>
     <!-- A To… list with nothing that goes there directly. %1$s is the destination. -->
     <string name="trip_none">No direct trips to %1$s soon</string>
+    <!-- Title of a To… from the near-me list: the direct trips from the stops near you. -->
+    <string name="trip_title_here">To %1$s</string>
     <!-- Placeholder in the station search field. -->
     <string name="station_search_hint">Station or stop name</string>
     <!-- Shown under the empty search field. -->

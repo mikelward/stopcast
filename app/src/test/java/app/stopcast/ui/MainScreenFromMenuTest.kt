@@ -16,8 +16,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The overflow's station-search entry (SPEC *Finding stops*): labeled "From…" — the start of a
- * trip, with a "To…" to follow — and opening the search through `onFindStation`. The location
+ * The overflow's trip entries (SPEC *Finding stops → From… To…*): "From…" opens the station search
+ * through `onFindStation`, and "To…" starts a trip from the stops near the rider through `onPlanTo`. The location
  * screen's own button keeps "Find a station" ([LocationGateScreenshotTest]).
  */
 @RunWith(RobolectricTestRunner::class)
@@ -60,5 +60,26 @@ class MainScreenFromMenuTest {
 
         composeRule.onNodeWithContentDescription("More options").performClick()
         composeRule.onNodeWithText("From…").assertDoesNotExist()
+    }
+
+    @Test
+    fun overflowMenu_toPlansATripFromHere() {
+        var planned = false
+        composeRule.setContent {
+            StopCastTheme {
+                MainScreen(
+                    state = DeparturesUiState.Loading,
+                    now = now,
+                    onRefresh = {},
+                    onPlanTo = { planned = true },
+                )
+            }
+        }
+
+        // On the near-me list To… is an overflow item, not an app-bar action.
+        composeRule.onNodeWithText("To…").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("More options").performClick()
+        composeRule.onNodeWithText("To…").performClick()
+        composeRule.runOnIdle { assertTrue(planned) }
     }
 }

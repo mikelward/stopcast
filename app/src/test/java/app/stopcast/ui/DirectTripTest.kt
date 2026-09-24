@@ -1,6 +1,7 @@
 package app.stopcast.ui
 
 import app.stopcast.domain.DirectTrips
+import app.stopcast.domain.LineRef
 import app.stopcast.domain.StopArrivals
 import java.time.Instant
 import org.junit.Assert.assertEquals
@@ -39,5 +40,50 @@ class DirectTripTest {
         assertEquals(TripMessages(null, TripMessage.NONE), tripMessages(DirectTrips.Result(listOf(fresh), pending = false, unresolved = false)))
         assertEquals(TripMessage.CHECKING, tripMessages(DirectTrips.Result(listOf(fresh), pending = true, unresolved = false)).notice)
         assertEquals(TripMessage.INCOMPLETE, tripMessages(DirectTrips.Result(listOf(fresh), pending = false, unresolved = true)).notice)
+    }
+
+    private fun stop(id: String, mode: String) = StopRef(id, id, lines = listOf(LineRef("l-$id", "L", mode)))
+
+    @Test
+    fun `a trip from here starts at the list's stops and any within 0_2 mi`() {
+        val tube = stop("TUBE", "tube")
+        val pole = stop("POLE", "bus")
+        val farBus = stop("FARBUS", "bus")
+        val distances = mapOf("TUBE" to 1200.0, "POLE" to 200.0, "FARBUS" to 900.0)
+        assertEquals(
+            listOf("POLE", "TUBE"),
+            hereOriginIds(eager = listOf(tube), nearby = listOf(tube, pole, farBus), distanceMeters = distances, hidden = emptySet()),
+        )
+    }
+
+    @Test
+    fun `a trip from here leaves out hidden modes, and starts nowhere when all are hidden`() {
+        val tube = stop("TUBE", "tube")
+        val pole = stop("POLE", "bus")
+        val distances = mapOf("TUBE" to 1200.0, "POLE" to 200.0)
+        assertEquals(listOf("TUBE"), hereOriginIds(listOf(tube, pole), listOf(tube, pole), distances, setOf("bus")))
+        assertEquals(emptyList<String>(), hereOriginIds(listOf(tube, pole), listOf(tube, pole), distances, setOf("bus", "tube")))
+    }
+
+    @Test
+    fun `a stop with no routes is never an origin`() {
+        val tube = stop("TUBE", "tube")
+        val bare = StopRef("BARE", "BARE")
+        val distances = mapOf("TUBE" to 1200.0, "BARE" to 100.0)
+        assertEquals(listOf("TUBE"), hereOriginIds(listOf(tube), listOf(tube, bare), distances, emptySet()))
+        assertEquals(emptyList<String>(), hereOriginIds(listOf(tube), listOf(tube, bare), distances, setOf("tube")))
+    }
+
+    @Test
+    fun `a trip's tiers split each cluster into its origins and the places around them`() {
+        fun loc(id: String) = app.stopcast.domain.StopLocation(id, id, 0.0, 0.0)
+        val junction = app.stopcast.domain.NearbySelection.NearbyCluster("J", listOf(loc("J1"), loc("J2")), 50.0)
+        val far = app.stopcast.domain.NearbySelection.NearbyCluster("F", listOf(loc("F1")), 900.0)
+        val distances = mapOf("J1" to 50.0, "J2" to 80.0, "F1" to 900.0)
+        val tiers = hereTripTiers(listOf(junction, far), setOf("J1"), distances)
+        assertEquals(listOf(listOf("J1")), tiers.eager.map { c -> c.stops.map { it.id } })
+        assertEquals(listOf(listOf("J2"), listOf("F1")), tiers.more.map { c -> c.stops.map { it.id } })
+        assertEquals(listOf("J", "F"), tiers.more.map { it.key })
+        assertEquals(distances, tiers.distanceMeters)
     }
 }

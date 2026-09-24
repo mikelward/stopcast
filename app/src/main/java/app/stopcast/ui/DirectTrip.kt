@@ -7,7 +7,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import app.stopcast.R
 import app.stopcast.domain.DirectTrips
+import app.stopcast.domain.HiddenModes
 import app.stopcast.domain.LineSequence
+import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.StopArrivals
 import app.stopcast.domain.TflException
 import java.time.Instant
@@ -33,15 +35,16 @@ internal fun rememberTripView(
     destinationName: String,
     hubs: Map<String, String>,
     now: Instant,
+    hidden: Set<String> = emptySet(),
 ): TripView {
     val loaded = state as? DeparturesUiState.Loaded
-    val lineIds = remember(loaded?.stops) { DirectTrips.lineIds(loaded?.stops.orEmpty()) }
+    val lineIds = remember(loaded?.stops, hidden) { DirectTrips.lineIds(loaded?.stops.orEmpty(), hidden) }
     val sequences = rememberLineSequences(lineIds, now)
     val checking = stringResource(R.string.trip_checking)
     val incomplete = stringResource(R.string.journey_incomplete)
     val none = stringResource(R.string.trip_none, destinationName)
-    val result = remember(loaded?.stops, destination, sequences, hubs) {
-        DirectTrips.filter(loaded?.stops.orEmpty(), destination, sequences, hubs)
+    val result = remember(loaded?.stops, destination, sequences, hubs, hidden) {
+        DirectTrips.filter(loaded?.stops.orEmpty(), destination, sequences, hubs, hidden)
     }
     if (loaded == null) return TripView(state, null, none)
     fun text(message: TripMessage) = when (message) {
@@ -116,4 +119,51 @@ private fun rememberLineSequences(lineIds: List<String>, now: Instant): Map<Stri
         }
     }
     return lineIds.filter { it in loaded }.associateWith { loaded[it] }
+}
+
+/**
+ * The stops a To… from the near-me list starts from, worked out afresh from the current nearby set
+ * (SPEC *Finding stops → From… To…*), so a re-locate moves the trip with the rider: the stops the
+ * list shows by default ([eager], the nearest of each mode within a mile) plus any stop found within
+ * 0.2 mi ([DirectTrips.originIds]), leaving out a stop that serves only [hidden] modes or has no
+ * routes. Empty when every nearby stop is hidden.
+ */
+internal fun hereOriginIds(
+    eager: List<StopRef>,
+    nearby: List<StopRef>,
+    distanceMeters: Map<String, Double>,
+    hidden: Set<String>,
+): List<String> {
+    // A stop with no routes has nothing to take anywhere, so it's never an origin.
+    fun shown(stop: StopRef) = stop.lines.any { !HiddenModes.isHidden(it.mode, hidden) }
+    val candidates = nearby.filter(::shown).mapTo(HashSet()) { it.id }
+    return DirectTrips.originIds(
+        eager.filter(::shown).map { it.id },
+        distanceMeters.filterKeys { it in candidates },
+    ).filter { it in candidates || it !in distanceMeters }
+}
+
+/**
+ * A trip from here, as the near-me list's model sees a nearby set: the [origins] as the tier it
+ * fetches ([eager]), every other nearby stop as the places a departure may end at before them
+ * ([more], never fetched here), and each stop's [distanceMeters] from the rider. Fed to the trip's
+ * model when it is made and on every re-pick ([MainViewModel.reconcile]), so it knows the stops'
+ * current lines and which services go nowhere, as the list does.
+ */
+internal data class HereTripTiers(
+    val eager: List<NearbySelection.NearbyCluster>,
+    val more: List<NearbySelection.NearbyCluster>,
+    val distanceMeters: Map<String, Double>,
+)
+
+/** [clusters] split into the stops in [origins] and the rest, keeping each cluster's grouping. */
+internal fun hereTripTiers(
+    clusters: List<NearbySelection.NearbyCluster>,
+    origins: Set<String>,
+    distanceMeters: Map<String, Double>,
+): HereTripTiers {
+    fun part(keep: Boolean) = clusters.mapNotNull { cluster ->
+        cluster.copy(stops = cluster.stops.filter { (it.id in origins) == keep }).takeIf { it.stops.isNotEmpty() }
+    }
+    return HereTripTiers(part(true), part(false), distanceMeters)
 }

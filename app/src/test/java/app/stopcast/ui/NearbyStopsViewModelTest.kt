@@ -317,6 +317,35 @@ class NearbyStopsViewModelTest {
     }
 
     @Test
+    fun `a finished re-pick reports the set before and after, each with its own id`() = runTest {
+        var stops = listOf(stop("a", 50.0, "bus"))
+        val location = MutableLocation(origin)
+        val model = vm(location, FakeFinder { stops })
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(null, model.repicked.value)
+
+        stops = listOf(stop("b", 60.0, "tube"))
+        model.relocate()
+        advanceUntilIdle()
+        val moved = model.repicked.value!!
+        assertEquals(listOf("a"), moved.before.eagerStops.map { it.id })
+        assertEquals(listOf("b"), moved.after.eagerStops.map { it.id })
+
+        model.refilter()
+        advanceUntilIdle()
+        val refiltered = model.repicked.value!!
+        assertTrue(refiltered.id != moved.id)
+        assertEquals(listOf("b"), refiltered.before.eagerStops.map { it.id })
+
+        // A failed fix ends in no set at all: nothing to compare, so nothing is reported.
+        location.fix = null
+        model.relocate()
+        advanceUntilIdle()
+        assertEquals(refiltered, model.repicked.value)
+    }
+
+    @Test
     fun `relocate surfaces a failed fix honestly, not the stale set`() = runTest {
         val location = MutableLocation(origin)
         val model = vm(location, FakeFinder { listOf(stop("a", 50.0, "bus")) })

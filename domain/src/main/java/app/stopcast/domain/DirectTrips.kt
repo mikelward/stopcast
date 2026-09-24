@@ -33,6 +33,9 @@ object DirectTrips {
         destination: List<End>,
         sequences: Map<String, LineSequence?>,
         hubs: Map<String, String> = emptyMap(),
+        // Modes the rider has hidden: their services are left out without being checked, so a
+        // hidden bus's route loading or failing never holds up or caveats a shown tube trip.
+        hidden: Set<String> = emptySet(),
     ): Result {
         val destinationIds = destination.mapTo(HashSet()) { it.id }
         var pending = false
@@ -54,6 +57,7 @@ object DirectTrips {
             val departures = stop.departures.filter { departure ->
                 val lineId = departure.lineId
                 when {
+                    HiddenModes.isHidden(departure.mode, hidden) -> false
                     // No line to follow: it may well call there, so never a silent "no".
                     lineId.isBlank() -> {
                         unresolved = true
@@ -79,6 +83,7 @@ object DirectTrips {
                 }
             }
             val lines = stop.lines.filter { line ->
+                if (HiddenModes.isHidden(line.mode, hidden)) return@filter false
                 if (line.id !in sequences) {
                     pending = true
                     return@filter false
@@ -95,9 +100,31 @@ object DirectTrips {
         return Result(kept, pending, unresolved)
     }
 
-    /** The lines to load routes for: every line departing from or declared at [stops]. */
-    fun lineIds(stops: List<StopArrivals>): List<String> =
-        stops.flatMap { stop -> stop.departures.map { it.lineId } + stop.lines.map { it.id } }
+    /** How far from the rider a stop still counts as "here" for To… from the near-me list: 0.2 mi. */
+    const val ORIGIN_RADIUS_METERS = 320.0
+
+    /**
+     * The stops a To… from the near-me list starts from (SPEC *Finding stops → From… To…*): every
+     * stop the list is showing ([shown], a "More" reveal included), plus any stop the nearby lookup
+     * found within [ORIGIN_RADIUS_METERS] of the rider ([distances], by stop id) — a pole across the
+     * road the list folded away still boards the rider's trip. With neither, the nearest stop, so
+     * the page never starts from nothing while something was found. In [distances]' nearest-first
+     * order, then any shown stop without a known distance.
+     */
+    fun originIds(shown: Collection<String>, distances: Map<String, Double>): List<String> {
+        val byDistance = distances.entries.sortedBy { it.value }
+        val near = byDistance.filter { it.key in shown || it.value <= ORIGIN_RADIUS_METERS }.map { it.key }
+        val rest = shown.filter { it !in distances }
+        val ids = (near + rest).distinct()
+        return ids.ifEmpty { listOfNotNull(byDistance.firstOrNull()?.key) }
+    }
+
+    /** The lines to load routes for: every line departing from or declared at [stops], less [hidden] modes. */
+    fun lineIds(stops: List<StopArrivals>, hidden: Set<String> = emptySet()): List<String> =
+        stops.flatMap { stop ->
+            stop.departures.filterNot { HiddenModes.isHidden(it.mode, hidden) }.map { it.lineId } +
+                stop.lines.filterNot { HiddenModes.isHidden(it.mode, hidden) }.map { it.id }
+        }
             .filter { it.isNotBlank() }
             .distinct()
 

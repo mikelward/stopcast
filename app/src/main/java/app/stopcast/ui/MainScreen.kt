@@ -312,8 +312,9 @@ fun MainScreen(
     // the app's mark, and the overflow menu is left out — it belongs to the main list.
     stationTitle: String? = null,
     onCloseStation: () -> Unit = {},
-    // Non-null on a searched station's page: a "To…" action in the app bar that picks a destination,
-    // after which the page keeps only the departures that go there (SPEC *Finding stops → From… To…*).
+    // "To…" (SPEC *Finding stops → From… To…*): pick a destination, then only the departures that go
+    // there. An app-bar action on a searched station's page; an overflow item on the near-me list,
+    // where the trip starts from the stops near the rider. Null leaves it out.
     onPlanTo: (() -> Unit)? = null,
     // A line over the list saying a To… filter is still checking, or couldn't check, some
     // departures (SPEC principle 2); null hides it.
@@ -996,7 +997,7 @@ fun MainScreen(
                         Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
                     }
                     // A station's "To…": pick where to, and keep only the departures that go there.
-                    if (onPlanTo != null && platformRows == null && !journeyViewOpen) {
+                    if (stationTitle != null && onPlanTo != null && platformRows == null && !journeyViewOpen) {
                         TextButton(onClick = onPlanTo) { Text(stringResource(R.string.menu_to)) }
                     }
                     // Button and menu wrapped together so the dropdown anchors to the overflow
@@ -1048,6 +1049,17 @@ fun MainScreen(
                                         onClick = {
                                             menuExpanded = false
                                             onFindStation()
+                                        },
+                                    )
+                                }
+                                // To… from here: pick a destination, then the direct trips from
+                                // the stops near the rider (SPEC *Finding stops → From… To…*).
+                                if (onPlanTo != null) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.menu_to)) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onPlanTo()
                                         },
                                     )
                                 }
