@@ -58,7 +58,7 @@ import app.stopcast.domain.StopGroup
 import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.domain.lineCode
-import app.stopcast.ui.modeName
+import app.stopcast.ui.hiddenGroupsLabel
 import app.stopcast.ui.groupHeaderSpoken
 import app.stopcast.ui.groupHeaderTitle
 import app.stopcast.ui.lineFillColor
@@ -323,8 +323,7 @@ internal fun widgetModel(
     val nearby = withoutJourneys(ordered, snapshot)
     val shownNearby = HiddenModes.rows(nearby, hiddenModes)
     val pinned = journeyRows + DepartureRows.pinStarred(shownNearby, starred)
-    val onlyHidden = hiddenModes.takeIf { pinned.isEmpty() && nearby.isNotEmpty() }
-        ?.map(::modeName)?.sorted()?.joinToString(", ")
+    val onlyHidden = hiddenModes.takeIf { pinned.isEmpty() && nearby.isNotEmpty() }?.let(::hiddenGroupsLabel)
     // The journeys stay a band of their own at the top: grouping by place runs within each band, so
     // another row at a journey's origin can't pull ahead of a later journey.
     val journeyBand = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<DepartureRow, Boolean>())

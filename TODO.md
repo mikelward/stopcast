@@ -649,8 +649,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
 - [x] **Hide a mode from the near-me list** (maintainer, 2026-09-24): long-press a row or header
       for "Hide ‹mode›"; a one-line "‹Mode› hidden · Show all" banner undoes it; hidden stops aren't
       fetched from the next re-locate; the widget follows. Next ideas, for later:
-  - [ ] **Mode checkboxes in the overflow menu**, one per mode nearby (and any hidden), for hiding
-        or showing a single mode without the long press; no screen space spent on the list.
+  - [x] **Mode checkboxes in the overflow menu** (maintainer, 2026-09-24): six fixed groups — Tube &
+        DLR, Train (Overground, Elizabeth line, National Rail), Bus, Tram, Boat, Coach — each ticked
+        while shown; the long press hides by the same groups.
   - [ ] **Hide one line at a place** ("Hide Thameslink here") and **hide one platform/pole** (its
         card collapses to the header; a stop none of whose cards show isn't fetched).
   - [ ] **A "Hidden" list in Settings** to unhide one item at a time, and an **Undo** snackbar
