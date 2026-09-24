@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -128,6 +129,7 @@ import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.JourneyCall
+import app.stopcast.domain.JourneyChange
 import app.stopcast.domain.JourneyEnd
 import app.stopcast.domain.WidgetJourneyCheck
 import app.stopcast.domain.LineSequence
@@ -476,6 +478,8 @@ fun MainScreen(
                         unresolved = parts.any { it.unresolved },
                         routeFailed = parts.any { it.routeFailed },
                     )
+                    // Trains on another branch, offered with where to change when they leave first.
+                    val changes = Journeys.changesBefore(trains.rows, parts.flatMap { it.changes })
                     reached = parts.flatMapTo(HashSet()) { it.reachedIds }
                     // A neighboring pole whose fetch failed, whose lookup did, or whose line's route
                     // did, may have had a bus.
@@ -500,11 +504,14 @@ fun MainScreen(
                         // A neighboring pole asked for and not in yet.
                         siblings.zip(siblingStops).any { (pole, stop) -> stop == null && pole.id !in ld?.unavailableStopIds.orEmpty() } ->
                             JourneyCardState.Checking
-                        trains.rows.isNotEmpty() ->
+                        trains.rows.isNotEmpty() || changes.isNotEmpty() ->
                             JourneyCardState.Trains(
                                 trains.rows,
-                                incomplete = trains.unresolved || siblingsMissed,
+                                // With only trains to change from, "no direct trains" is a claim
+                                // only a fresh, current fetch can make too.
+                                incomplete = trains.unresolved || siblingsMissed || trains.rows.isEmpty() && !current,
                                 retry = trains.routeFailed || polesFailed,
+                                changes = changes,
                             )
                         // A route that failed to load is the one gap a retry can close.
                         trains.routeFailed -> JourneyCardState.RouteFailed
@@ -588,7 +595,7 @@ fun MainScreen(
     }
     // What the journey cards above already show: a near-me row they cover in full isn't repeated.
     val journeyRowsShown = remember(journeyCards) {
-        journeyCards.flatMap { (it.state as? JourneyCardState.Trains)?.rows.orEmpty() }
+        journeyCards.flatMap { (it.state as? JourneyCardState.Trains)?.shownRows.orEmpty() }
     }
     val nearbyRows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, dismissed) {
         val ld = loaded ?: return@remember emptyList()
@@ -755,7 +762,7 @@ fun MainScreen(
     // A journey card's train opens too: its farther origin isn't in the near-me rows, so the key is
     // also looked up among the journey cards' rows (shown only on the full list, as the cards are).
     val journeyRows = if (platformRows != null) emptyList() else journeyCards.flatMap {
-        (it.state as? JourneyCardState.Trains)?.rows.orEmpty()
+        (it.state as? JourneyCardState.Trains)?.shownRows.orEmpty()
     }
     // And, last, among every loaded stop's rows: a page opened from a journey card stays open when
     // that journey is unstarred from the page itself, while its origin's departures are still loaded.
@@ -1478,13 +1485,30 @@ private fun DepartureList(
             }
             when (val state = card.state) {
                 is JourneyCardState.Trains -> if (state.rows.isEmpty()) {
-                    item(key = "journey-note|${card.journey.key}") {
-                        JourneyNote(
-                            stringResource(
-                                if (card.journey.bus) R.string.journey_none_bus else R.string.journey_none,
-                                card.journey.to.name,
-                            ),
-                        )
+                    // Only trains to change from: "no direct trains" unless some departure couldn't be
+                    // checked (it may be direct), which the note below says instead.
+                    if (state.changes.isEmpty() || !state.incomplete) {
+                        item(key = "journey-none|${card.journey.key}") {
+                            JourneyNote(
+                                stringResource(
+                                    when {
+                                        state.changes.isNotEmpty() -> R.string.journey_none_direct
+                                        card.journey.bus -> R.string.journey_none_bus
+                                        else -> R.string.journey_none
+                                    },
+                                    card.journey.to.name,
+                                ),
+                            )
+                        }
+                    }
+                    journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail)
+                    if (state.incomplete) {
+                        item(key = "journey-note|${card.journey.key}") {
+                            JourneyNote(
+                                stringResource(R.string.journey_incomplete),
+                                onRetry = onRetryJourneyRoutes.takeIf { state.retry },
+                            )
+                        }
                     }
                 } else {
                     // Any bus boarding elsewhere than the origin (a pole beside it), even when it's the
@@ -1517,6 +1541,7 @@ private fun DepartureList(
                             )
                         }
                     }
+                    journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail)
                     if (state.incomplete) {
                         item(key = "journey-note|${card.journey.key}") {
                             JourneyNote(
@@ -1829,7 +1854,64 @@ internal sealed interface JourneyCardState {
         val incomplete: Boolean = false,
         // [incomplete] because some line's route failed to load: offer a retry.
         val retry: Boolean = false,
-    ) : JourneyCardState
+        // Trains on another branch that leave before the first direct one, with where to change.
+        val changes: List<JourneyChange> = emptyList(),
+    ) : JourneyCardState {
+        /**
+         * Every row the card shows, the direct trains and those to change from, with the two parts of
+         * one row (the same stop, line, direction and platform) joined again: the near-me list's
+         * no-repeat check and a tapped train's route page each look for the whole row.
+         */
+        val shownRows: List<DepartureRow>
+            get() = (rows + changes.map { it.row })
+                .groupBy { listOf(it.stopId, it.lineId, it.directionKey, it.platform) }
+                .values
+                .map { parts ->
+                    if (parts.size == 1) {
+                        parts.single()
+                    } else {
+                        val upcoming = parts.flatMap { it.upcoming }.distinct().sortedBy { it.expectedArrival }
+                        parts.first().copy(upcoming = upcoming, destination = upcoming.first().destination)
+                    }
+                }
+    }
+}
+
+/**
+ * A journey card's trains on another branch ([JourneyCardState.Trains.changes]), under a "Change at
+ * Camden Town" heading per change stop, each boarding stop's in its own card like the direct trains.
+ */
+private fun LazyListScope.journeyChanges(
+    card: JourneyCard,
+    state: JourneyCardState.Trains,
+    now: Instant,
+    starred: Set<StarredRow>,
+    onToggleStar: (DepartureRow) -> Unit,
+    starringAvailable: Boolean,
+    onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
+) {
+    state.changes.groupBy { it.stopId }.forEach { (stopId, changes) ->
+        item(key = "journey-change|${card.journey.key}|$stopId") {
+            StopGroupHeader(
+                stringResource(R.string.journey_change_at, changes.first().stopName),
+                qualifier = null,
+                distanceLabel = null,
+                firstOnScreen = false,
+            )
+        }
+        StopGrouping.groupByStop(changes.map { it.row }, warningsLead = false).forEach { group ->
+            item(key = "journey-change-card|${card.journey.key}|$stopId|${group.key}") {
+                StopGroupCard(
+                    group,
+                    now,
+                    starred = starred,
+                    onToggleStar = onToggleStar,
+                    starringAvailable = starringAvailable,
+                    onOpenDetail = onOpenDetail,
+                )
+            }
+        }
+    }
 }
 
 /** A journey card's one-line status in place of trains, with a retry when there's one to offer. */

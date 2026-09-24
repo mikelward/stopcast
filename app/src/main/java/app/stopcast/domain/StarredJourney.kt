@@ -84,7 +84,18 @@ data class JourneyTrains(
     // The far-end stops the kept departures actually call at (a line may reach another pole there),
     // whose closure the card checks.
     val reachedIds: Set<String> = emptySet(),
+    // Trains that don't reach the far end but share its route as far as a stop where one that does
+    // can be caught ([JourneyChange]); [Journeys.changesBefore] picks those worth showing.
+    val changes: List<JourneyChange> = emptyList(),
 )
+
+/**
+ * Departures ([row]) that don't call at a journey's far end but run with its route as far as [stopId]
+ * ([stopName]), the last stop they share, where the rider changes for a train that does — a Northern
+ * line train to Edgware for High Barnet, changing at Camden Town, while the High Barnet branch isn't
+ * served from here. Only where to change: the connecting train's time isn't known.
+ */
+data class JourneyChange(val stopId: String, val stopName: String, val row: DepartureRow)
 
 object Journeys {
     /** How far a way-back stop may be from the end it stands in for, when nothing else matches. */
@@ -191,6 +202,7 @@ object Journeys {
         var unresolved = false
         var routeFailed = false
         val reached = HashSet<String>()
+        val changes = ArrayList<JourneyChange>()
         val atOrigin = rows.filter { it.stopId == segment.originId && it.stopDisruption == null }
         // A departure TfL gave no line id can't be checked against any route: it may well call there.
         if (atOrigin.any { it.lineId.isBlank() && it.upcoming.isNotEmpty() }) unresolved = true
@@ -222,16 +234,65 @@ object Journeys {
                 // The mode from any departure when TfL left it off the soonest one.
                 val mode = row.mode.ifBlank { row.upcoming.firstOrNull { it.mode.isNotBlank() }?.mode.orEmpty() }
                 val bus = mode.equals("bus", ignoreCase = true)
+                // Rail only: a bus's path comes from its route's end as often as not, too loose to
+                // send a rider to change on.
+                val changing = LinkedHashMap<String, MutableList<Departure>>()
                 val calling = row.upcoming.filter { departure ->
                     val path = RouteStops.ahead(sequence, segment.originId, departure.destination, departure.branch, row.lineId, bus)
                     if (path == null) unresolved = true
                     val hits = path?.filter { it.id in destinations }.orEmpty()
                     hits.mapTo(reached) { it.id }
+                    if (hits.isEmpty() && path != null && !bus && journey?.bus != true) {
+                        changeStop(sequence, segment.originId, path.map { it.id }, destinations)
+                            ?.let { changing.getOrPut(it) { ArrayList() } += departure }
+                    }
                     hits.isNotEmpty()
+                }
+                changing.forEach { (stopId, departures) ->
+                    changes += JourneyChange(
+                        stopId,
+                        sequence.stopNames[stopId].orEmpty(),
+                        row.copy(upcoming = departures, destination = departures.first().destination),
+                    )
                 }
                 if (calling.isEmpty()) null else row.copy(upcoming = calling, destination = calling.first().destination)
             }
-        return JourneyTrains(kept, pending, unresolved, routeFailed, reached)
+        return JourneyTrains(kept, pending, unresolved, routeFailed, reached, changes)
+    }
+
+    /**
+     * Where a train following [path] (from [originId], as [RouteStops.ahead] gives it) and missing
+     * [destinations] should be left for one that reaches them: the last stop it shares with a route
+     * from [originId] to a destination, counting from the origin — Camden Town, where an Edgware train
+     * leaves the High Barnet branch. The route that shares the most wins; null when none shares a stop
+     * past the origin.
+     */
+    internal fun changeStop(sequence: LineSequence, originId: String, path: List<String>, destinations: Set<String>): String? {
+        var shared = 0
+        for (route in sequence.routes) {
+            val i = route.stopIds.indexOf(originId)
+            if (i < 0) continue
+            val j = (i + 1 until route.stopIds.size).firstOrNull { route.stopIds[it] in destinations } ?: continue
+            val leg = route.stopIds.subList(i, j + 1)
+            var k = 0
+            while (k < path.size && k < leg.size && path[k] == leg[k]) k++
+            // Short of the far end itself, which would make it a direct train.
+            if (k in 2 until leg.size && k > shared) shared = k
+        }
+        return if (shared >= 2) path[shared - 1] else null
+    }
+
+    /**
+     * The [changes] worth offering beside the direct trains in [rows]: only departures that leave
+     * before the first direct one (any, when there's none) — a later change-train is never the quicker
+     * way. Each change keeps just those departures; one left with none is dropped.
+     */
+    fun changesBefore(rows: List<DepartureRow>, changes: List<JourneyChange>): List<JourneyChange> {
+        val firstDirect = rows.flatMap { it.upcoming }.minOfOrNull { it.expectedArrival }
+        return changes.mapNotNull { change ->
+            val sooner = change.row.upcoming.filter { firstDirect == null || it.expectedArrival < firstDirect }
+            if (sooner.isEmpty()) null else change.copy(row = change.row.copy(upcoming = sooner, destination = sooner.first().destination))
+        }
     }
 
     /**
