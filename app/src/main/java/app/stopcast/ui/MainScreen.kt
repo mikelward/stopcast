@@ -530,7 +530,11 @@ fun MainScreen(
     LaunchedEffect(journeysKnown, journeyKeys, widgetJourneyChecks, journeyShownFrom, widgetJourneyBoarding) {
         if (journeysKnown) reportWidgetJourneys(journeyKeys, widgetJourneyChecks, journeyShownFrom, widgetJourneyBoarding)
     }
-    val rows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, starred, dismissed) {
+    // What the journey cards above already show: a near-me row they cover in full isn't repeated.
+    val journeyRowsShown = remember(journeyCards) {
+        journeyCards.flatMap { (it.state as? JourneyCardState.Trains)?.rows.orEmpty() }
+    }
+    val nearbyRows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, dismissed) {
         val ld = loaded ?: return@remember emptyList()
         // A near-me list shows its nearby stops only: a journey's farther origin, fetched for its
         // card above, isn't one of them (SPEC *Journeys*).
@@ -546,12 +550,16 @@ fun MainScreen(
                 val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters)
                 DepartureRows.byStopDistance(deduped, stopDistanceMeters)
             }
-        // Hide the service alerts the user has dismissed (until their content changes),
-        // then lift the user's starred services to the top (SPEC D8). Warnings still lead on the
-        // location-free watched list; on the near-me list (distances present) an alert is not
-        // hoisted, so a nearer stop is never pushed below a farther one for carrying one.
+        // Hide the service alerts the user has dismissed (until their content changes).
+        DepartureRows.withoutDismissed(ordered, dismissed)
+    }
+    // Without the rows a journey card above already shows in full, then with the user's starred
+    // services lifted to the top (SPEC D8). Warnings still lead on the location-free watched list; on
+    // the near-me list (distances present) an alert is not hoisted, so a nearer stop is never pushed
+    // below a farther one for carrying one.
+    val rows = remember(nearbyRows, journeyRowsShown, starred, stopDistanceMeters) {
         DepartureRows.pinStarred(
-            DepartureRows.withoutDismissed(ordered, dismissed),
+            DepartureRows.withoutShownAbove(nearbyRows, journeyRowsShown),
             starred,
             warningsLead = stopDistanceMeters.isEmpty(),
         )
@@ -936,6 +944,8 @@ fun MainScreen(
                     onOpenStopMap = onOpenStopMap,
                     // Journey cards sit atop the near-me list only, not a platform or station view.
                     journeyCards = if (platformRows != null) emptyList() else journeyCards,
+                    // Every nearby row is on a journey card above: nothing to call "no departures".
+                    nearbyShownAbove = platformRows == null && rows.isEmpty() && nearbyRows.isNotEmpty(),
                     onFlipJourney = onFlipJourney,
                     onRetryJourneyRoutes = { journeyRouteRetry++ },
                     starred = starred,
@@ -1071,6 +1081,8 @@ private fun LoadedContent(
     stopDistanceMeters: Map<String, Double> = emptyMap(),
     onOpenStopMap: ((String, String) -> Unit)? = null,
     journeyCards: List<JourneyCard> = emptyList(),
+    // True when the nearby list is empty only because the journey cards above already show it all.
+    nearbyShownAbove: Boolean = false,
     onFlipJourney: (StarredJourney) -> Unit = {},
     onRetryJourneyRoutes: () -> Unit = {},
     onOpenJourney: ((StarredJourney) -> Unit)? = null,
@@ -1182,7 +1194,9 @@ private fun LoadedContent(
                     onOpenJourney = onOpenJourney,
                     journeyView = journeyView,
                     onUnstarJourney = onUnstarJourney,
-                    nearbyEmptyNote = if (rows.isEmpty() && !journeyView) {
+                    // Not in a journey's own view, nor when every nearby row is already on a journey
+                    // card above.
+                    nearbyEmptyNote = if (rows.isEmpty() && !journeyView && !nearbyShownAbove) {
                         stringResource(
                             if (emptyStateUncertain) R.string.departures_stale_empty else R.string.departures_empty_nearby,
                         )

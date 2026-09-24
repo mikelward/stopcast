@@ -1191,6 +1191,41 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `a nearby row a journey card already shows isn't repeated below it`() {
+        // The journey's origin is also a nearby stop: its train shows on the card, once.
+        val origin = StopArrivals(
+            "940GZZLUVIC", "Victoria",
+            listOf(Departure("victoria", "Victoria", "outbound", "Walthamstow Central", null, now.plusSeconds(120), "tube")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(
+                        LocalRouteStops provides RouteStopsRepository(
+                            object : RouteSequenceSource {
+                                override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+                            },
+                        ),
+                    ) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse(), origin), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0, "940GZZLUVIC" to 100.0),
+                            journeys = listOf(victoriaToWarrenStreet),
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Walthamstow Central", substring = true).assertCountEquals(1)
+        // The rest of the nearby list is untouched.
+        composeRule.onNodeWithText("Cockfosters", substring = true).assertExists()
+    }
+
+    @Test
     fun `journey cards still show when nothing nearby has departures`() {
         val origin = StopArrivals(
             "940GZZLUVIC",
