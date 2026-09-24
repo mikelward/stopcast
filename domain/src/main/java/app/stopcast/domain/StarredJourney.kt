@@ -14,6 +14,10 @@ data class JourneyEnd(
     // known: "Find a station" lists and opens the end as that area, whose page holds all its poles.
     // Blank for an end starred before it was recorded, or where TfL gave none.
     val areaId: String = "",
+    // The interchange the end's stop belongs to (TfL `topMostParentId`), where known: an end starred
+    // under a station id its line's route doesn't call at is placed on that route through it
+    // ([LineSequence.callingAt]). Blank for an end starred before it was recorded, or in no hub.
+    val hubId: String = "",
 )
 
 /**
@@ -229,7 +233,8 @@ object Journeys {
      * stop. The distance fallback applies only to a bus journey on its starred line's own route:
      * another line that merely passes near an end hasn't been shown to serve it.
      */
-    fun segment(journey: StarredJourney, sequence: LineSequence, lineId: String = journey.lineId): JourneySegment? {
+    fun segment(journey: StarredJourney, lineSequence: LineSequence, lineId: String = journey.lineId): JourneySegment? {
+        val sequence = lineSequence.callingAtEnds(journey)
         for (tier in 0..maxTier(journey, lineId)) {
             val pairs = sequence.routes.flatMap { route ->
                 val origins = matches(route, journey.from, sequence, tier)
@@ -300,7 +305,10 @@ object Journeys {
                     pending = true
                     return@mapNotNull null
                 }
-                val sequence = sequences[row.lineId]
+                // The row's own stop id (and the journey's ends) stand in for a sibling its routes
+                // call at (see callingAt), as [segment] placed them.
+                val sequence = sequences[row.lineId]?.callingAt(row.stopId, row.hubId, row.stopName)
+                    ?.let { if (journey == null) it else it.callingAtEnds(journey) }
                 if (sequence == null) {
                     // A failed route can't say whether its departures — or its warning, on a
                     // status-only row — belong to this segment: never a silent drop.
@@ -377,6 +385,20 @@ object Journeys {
      */
     fun changesWithoutDirect(rows: List<DepartureRow>, changes: List<JourneyChange>): List<JourneyChange> =
         if (directDue(rows)) emptyList() else changes
+
+    /**
+     * The interchange of [originId], the stop [journey]'s card fetches: its saved origin's when that
+     * is the stop (a station), else the looked-up [pole]'s (a bus's way-back pole), blank when
+     * neither is known. Stamped on the card's rows so their route page boards at a sibling stop id
+     * the line's route calls at ([LineSequence.callingAt]).
+     */
+    fun originHub(journey: StarredJourney, originId: String, pole: StopLocation?): String =
+        if (originId == journey.from.stopId) journey.from.hubId else pole?.hubId.orEmpty()
+
+    /** [this] with [journey]'s ends in place of the sibling stop ids its routes call at. */
+    private fun LineSequence.callingAtEnds(journey: StarredJourney): LineSequence =
+        callingAt(journey.from.stopId, journey.from.hubId, journey.from.name)
+            .callingAt(journey.to.stopId, journey.to.hubId, journey.to.name)
 
     /** Whether any of a journey card's direct [rows] has a train due: a status-only row has none. */
     fun directDue(rows: List<DepartureRow>): Boolean = rows.any { it.upcoming.isNotEmpty() }

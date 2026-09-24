@@ -42,12 +42,18 @@ data class TflRouteSequenceDto(
         for (stop in stopPointSequences.flatMap { it.stopPoint }) {
             if (stop.id.isNotBlank() && stop.stationId.isNotBlank()) areas.putIfAbsent(stop.id, stop.stationId)
         }
+        val hubs = HashMap<String, String>()
+        for (stop in stopPointSequences.flatMap { it.stopPoint }) {
+            val hub = stop.topMostParentId
+            if (stop.id.isNotBlank() && hub.isNotBlank() && hub != stop.id) hubs.putIfAbsent(stop.id, hub)
+        }
         return LineSequence(
             routes = orderedLineRoutes.filter { it.naptanIds.size >= 2 }.map { LineRoute(it.name, it.naptanIds) },
             stopNames = names,
             stopLines = lines,
             stopPositions = positions,
             stopAreas = areas,
+            stopHubs = hubs,
         )
     }
 }

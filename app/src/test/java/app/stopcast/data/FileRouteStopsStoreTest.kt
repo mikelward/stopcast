@@ -31,6 +31,7 @@ class FileRouteStopsStoreTest {
                     stopLines = mapOf("490000002B" to listOf(LineRef("northern", "Northern", "tube"))),
                     stopPositions = mapOf("490000001A" to (51.5 to -0.12)),
                     stopAreas = mapOf("490000001A" to "490G00000001"),
+                    stopHubs = mapOf("490000001A" to "HUBEXA"),
                 ),
             ),
         ),
@@ -71,7 +72,7 @@ class FileRouteStopsStoreTest {
 
     @Test
     fun `a file from another version loads as empty and is deleted`() {
-        val file = File(tmp.root, "route-stops.json").apply { writeText("""{"version":2,"sequences":[]}""") }
+        val file = File(tmp.root, "route-stops.json").apply { writeText("""{"version":99,"sequences":[]}""") }
         assertEquals(RouteStopsStore.Contents(), FileRouteStopsStore(file).load())
         assertFalse(file.exists())
     }
