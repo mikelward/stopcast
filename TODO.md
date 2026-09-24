@@ -1435,7 +1435,8 @@ Builds on Phase 1's minimal line-status marking.
   - [ ] **Re-check Play Data Safety before the release that ships this**: no new data type
         expected (SPEC *Data source*), but confirm the form and the privacy-policy link.
   - [ ] **Check the board parser against a live response** and record a real fixture (a public
-        station, no key in the fixture); confirm the product URL in `KtorDarwinClient`.
+        station, no key in the fixture). The endpoint in `KtorDarwinClient` matches the Rail Data
+        Marketplace's own for the Live Departure Board product (maintainer, 2026-09-24).
   - [ ] **Show delays and cancellations honestly**: a "Delayed" train with no estimate as "?",
         a cancelled one as cancelled, rather than leaving them out.
   - [x] **Say why a rail line has no times** (maintainer, 2026-09-24): a status row says "No key"

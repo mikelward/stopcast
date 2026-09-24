@@ -831,6 +831,11 @@ That attribution is exported at build time and bundled, so the list itself rende
 network. The full license *text* is not bundled (following the sibling repos' export, which
 omits it): each license links out to its canonical text, one tap to the browser.
 
+The dialog also credits the data sources, as their licenses require (maintainer, 2026-09-24):
+**"National Rail"** for the live National Rail times (the Rail Data Marketplace license names
+the organizations to attribute), **TfL** for everything else, and NaPTAN's station codes under
+the Open Government Licence v3.0. A test pins the credits so a rewording can't drop one.
+
 ### Settings
 
 An overflow-menu entry opens a Settings screen, hosted at the activity top level like the
