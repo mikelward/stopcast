@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -152,6 +153,9 @@ internal fun RouteStopsSection(
     // Stars or unstars the journey from the boarding stop to a tapped station (SPEC *Journeys*);
     // null leaves the stations inert.
     onToggleJourneyTo: ((RouteStop) -> Unit)? = null,
+    // Dismisses the tip atop a starrable list that tapping a stop stars a journey; null shows none
+    // (already dismissed, or not yet known to be undismissed).
+    onDismissJourneyTip: (() -> Unit)? = null,
 ) {
     val note = when (state) {
         RouteStopsUi.Hidden -> return
@@ -163,6 +167,9 @@ internal fun RouteStopsSection(
     }
     Column(modifier = modifier.fillMaxWidth()) {
         if (state is RouteStopsUi.Loaded) {
+            if (onToggleJourneyTo != null && onDismissJourneyTip != null) {
+                JourneyTip(onDismiss = onDismissJourneyTip, modifier = Modifier.padding(bottom = 12.dp))
+            }
             direction?.let {
                 Text(
                     text = it,
@@ -193,6 +200,32 @@ internal fun RouteStopsSection(
                     TextButton(onClick = onRetry) { Text(stringResource(R.string.route_stops_retry)) }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The one-time tip that a stop on the list can be tapped to star the journey there — the gesture has
+ * no other visible cue — until the user dismisses it.
+ */
+@Composable
+private fun JourneyTip(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.journey_tip),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.journey_tip_dismiss)) }
         }
     }
 }

@@ -51,6 +51,15 @@ interface AppSettings {
     suspend fun setSkipBugReportConsent(enabled: Boolean)
 
     /**
+     * Whether the user has dismissed the route page's tip on starring a journey (SPEC *Journeys*).
+     * Off by default, so the tip shows until dismissed; a store that keeps no settings never shows it.
+     */
+    fun journeyTipDismissed(): Flow<Boolean> = flowOf(true)
+
+    /** Set [journeyTipDismissed]. Suspending, off the main thread; best-effort. */
+    suspend fun setJourneyTipDismissed(dismissed: Boolean) {}
+
+    /**
      * The user's own free TfL `app_key`, pasted in Settings for the higher request budget
      * (SPEC D7), or null when keyless — the default. StopCast ships no baked-in key; a
      * per-user key raises the limit ~50→~500 req/min. Blank is normalized to null on write,

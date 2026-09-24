@@ -66,6 +66,14 @@ class DataStoreAppSettingsTest {
     }
 
     @Test
+    fun `the journey tip shows until dismissed, and stays dismissed`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(null))
+        assertFalse(store.journeyTipDismissed().first())
+        store.setJourneyTipDismissed(true)
+        assertTrue(store.journeyTipDismissed().first())
+    }
+
+    @Test
     fun `the documented consent default is to ask every time`() {
         assertEquals(false, DataStoreAppSettings.DEFAULT_SKIP_BUG_REPORT_CONSENT)
     }

@@ -726,6 +726,15 @@ class MainActivity : ComponentActivity() {
             }
             val journeyScope = rememberCoroutineScope()
             var journeyWriteFailed by rememberSaveable { mutableStateOf(false) }
+            // The route page's journey tip: hidden (true) until the setting is read, so it never
+            // flashes up for someone who already dismissed it.
+            val tipSettings = remember { DataStoreAppSettings.from(appContext, warn = ::logAppSettingsWarning) }
+            val journeyTipStored by remember(tipSettings) { tipSettings.journeyTipDismissed() }
+                .collectAsStateWithLifecycle(initialValue = true)
+            // Closed for this session at once on "Got it", whether or not the save lands (a failed
+            // one is logged, and the tip returns next launch). Held for the process, not this
+            // composition, which Settings or Licenses replaces.
+            val journeyTipDismissed = journeyTipStored || JourneyTipSession.closed
             val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
             val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
             val dismissed by viewModel.dismissed.collectAsStateWithLifecycle()
@@ -802,6 +811,23 @@ class MainActivity : ComponentActivity() {
                     },
                     journeyWriteFailed = journeyWriteFailed,
                     onJourneyWriteFailureShown = { journeyWriteFailed = false },
+                    onDismissJourneyTip = if (journeyTipDismissed) {
+                        null
+                    } else {
+                        {
+                            JourneyTipSession.closed = true
+                            // On the application scope, like the bug-report opt-out: a rotation or
+                            // Settings disposes this composition's scope, which would cancel the save.
+                            ((application as? StopcastApp)?.applicationScope ?: journeyScope).launch {
+                                try {
+                                    tipSettings.setJourneyTipDismissed(true)
+                                } catch (e: IOException) {
+                                    // Closed for this session already; it shows again next launch.
+                                    logAppSettingsWarning("journey tip dismissal not saved: ${e::class.simpleName}")
+                                }
+                            }
+                        }
+                    },
                     onFlipJourney = { journey ->
                         flippedJourneys = if (journey.key in flippedJourneys) flippedJourneys - journey.key else flippedJourneys + journey.key
                     },
@@ -977,6 +1003,11 @@ internal fun bugReportRequestFor(state: NearbyStopsViewModel.State): BugReportRe
  * principle 2), so it is logged sanitized and swallowed rather than propagated out of the UI
  * coroutine (Codex P2 on #86 / *Error handling*). Cancellation rethrows first.
  */
+/** The route page's journey tip, once closed this process (whether or not its dismissal was saved). */
+internal object JourneyTipSession {
+    var closed by mutableStateOf(false)
+}
+
 internal suspend fun persistBugReportOptOut(settings: AppSettings) {
     try {
         settings.setSkipBugReportConsent(true)

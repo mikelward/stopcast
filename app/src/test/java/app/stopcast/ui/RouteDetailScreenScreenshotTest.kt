@@ -533,6 +533,56 @@ class RouteDetailScreenScreenshotTest {
     }
 
     @Test
+    fun theJourneyTip_showsAboveAStarrableList_untilDismissed() {
+        val stops = listOf(RouteStop("940GZZLUVIC", "Victoria"), RouteStop("940GZZLUGPK", "Green Park"))
+        var dismissed = 0
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = healthyRow(platform = "Northbound - Platform 5"),
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded(stops),
+                    onToggleJourney = {},
+                    onDismissJourneyTip = { dismissed++ },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Tap a stop to star the journey there").assertIsDisplayed()
+        captureSnapshot("route-detail-journey-tip.png")
+        composeRule.onNodeWithText("Got it").performClick()
+        assertEquals(1, dismissed)
+    }
+
+    @Test
+    fun theJourneyTip_isHiddenWhereNoJourneyCanBeStarred() {
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = healthyRow(platform = "Northbound - Platform 5"),
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded(listOf(RouteStop("940GZZLUVIC", "Victoria"))),
+                    onDismissJourneyTip = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Tap a stop to star the journey there").assertDoesNotExist()
+    }
+
+    @Test
     fun tappingAnUnnamedStation_savesTheIdItShows() {
         val stops = listOf(RouteStop("940GZZLUVIC", "Victoria"), RouteStop("940GZZLUGPK", ""))
         val toggled = mutableListOf<StarredJourney>()
