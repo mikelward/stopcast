@@ -1322,6 +1322,9 @@ class MainActivity : ComponentActivity() {
                 ),
                 warn = ::logRouteStopsWarning,
                 store = FileRouteStopsStore(File(context.applicationContext.cacheDir, "route-stops.json"), ::logRouteStopsWarning),
+                // Places a station departures are listed under by an id its line's route doesn't
+                // call at (St Pancras's Thameslink platforms), wherever that id comes from.
+                stations = { StationIndexStore.load(context.applicationContext).stations },
             ).also { repository ->
                 routeStopsInstance = repository
                 (context.applicationContext as? StopcastApp)?.applicationScope?.launch { repository.warm() }

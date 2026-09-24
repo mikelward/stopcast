@@ -47,20 +47,22 @@ data class LineSequence(
         )
 
     /**
-     * This sequence as seen from [stopId], a stop departures or a journey end are listed under. TfL can list a station's
-     * departures under one stop id and route the line through a sibling: St Pancras's Thameslink
-     * trains depart under its domestic-platforms id, while the sequence calls at its main and
-     * low-level ids. When no route calls at [stopId], every stop in the same interchange ([hubId])
-     * that is the same station by name ([stopName], or it plus a platform qualifier like "LL")
-     * becomes [stopId] — so the route page, a journey starred from it, and that journey's trains all
-     * work from the id the departures carry. The name keeps another station in the hub (King's Cross
-     * beside St Pancras) out, which would otherwise make the path ambiguous or wrong. Unchanged when
-     * a route calls at [stopId] or no sibling matches.
+     * This sequence as seen from [stopId], a stop departures or a journey end are listed under. TfL
+     * can list a station's departures under one stop id and route the line through a sibling: St
+     * Pancras's Thameslink trains depart under its domestic-platforms id, while the sequence calls at
+     * its main and low-level ids. When no route calls at [stopId], every stop on a route in the same
+     * interchange ([stopHubs]) that is the same station by name ([stopNames], or it plus a platform
+     * qualifier like "LL") becomes [stopId], so the route page, a journey starred from it, and that
+     * journey's trains all work from the id the departures carry. The name keeps another station in
+     * the hub (King's Cross beside St Pancras) out, which would otherwise make the path ambiguous or
+     * wrong. [stopId]'s own hub and name come from the station index ([withStations]). Unchanged
+     * when a route calls at [stopId], its hub or name is unknown, or no sibling matches.
      */
-    fun callingAt(stopId: String, hubId: String, stopName: String): LineSequence {
+    fun callingAt(stopId: String): LineSequence {
         val onRoute = routes.flatMapTo(HashSet()) { it.stopIds }
         if (stopId in onRoute) return this
-        val name = cleanStopName(stopName)
+        val hubId = stopHubs[stopId].orEmpty()
+        val name = stopNames[stopId].orEmpty()
         if (hubId.isBlank() || name.isBlank()) return this
         val siblings = onRoute.filterTo(LinkedHashSet()) { id ->
             stopHubs[id] == hubId && sameStation(name, stopNames[id].orEmpty())
@@ -69,11 +71,25 @@ data class LineSequence(
         fun <T> firstOf(map: Map<String, T>): T? = siblings.firstNotNullOfOrNull { map[it] }
         return copy(
             routes = routes.map { route -> route.copy(stopIds = route.stopIds.map { if (it in siblings) stopId else it }) },
-            stopNames = stopNames + (stopId to name),
             stopLines = stopLines + (stopId to siblings.flatMap { stopLines[it].orEmpty() }.distinct()),
             stopPositions = firstOf(stopPositions)?.let { stopPositions + (stopId to it) } ?: stopPositions,
             stopAreas = firstOf(stopAreas)?.let { stopAreas + (stopId to it) } ?: stopAreas,
-            stopHubs = stopHubs + (stopId to hubId),
+        )
+    }
+
+    /**
+     * This sequence knowing the [stations] (the bundled station index) that share an interchange
+     * with one of its stops: each one's hub and name, for [callingAt]. A stop TfL routes the line
+     * past is added this way, whatever row, saved snapshot or journey names it. What TfL's response
+     * already says about a stop is kept.
+     */
+    fun withStations(stations: Map<String, List<IndexedStation>>): LineSequence {
+        val hubs = stopHubs.values.toSet()
+        val known = stations.filterKeys { it in hubs }.values.flatten().filter { it.id !in stopHubs }
+        if (known.isEmpty()) return this
+        return copy(
+            stopNames = known.associate { it.id to it.name } + stopNames,
+            stopHubs = known.associate { it.id to it.hubId } + stopHubs,
         )
     }
 }
@@ -270,8 +286,14 @@ class RouteStopsRepository(
     private val clock: () -> Instant = Instant::now,
     private val maxAge: Duration = MAX_AGE,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    // The bundled station index (blocking, read once in [warm]): lets a sequence place a station
+    // TfL lists departures under an id its routes don't call at ([LineSequence.withStations]).
+    // Null: none, as in a test.
+    private val stations: (() -> List<IndexedStation>)? = null,
 ) {
     private val cache = ConcurrentHashMap<String, RouteStopsStore.Timed<LineSequence>>()
+    // The index's stations by interchange, once read; empty when no index is wired.
+    @Volatile private var stationsByHub: Map<String, List<IndexedStation>>? = if (stations == null) emptyMap() else null
     private val areaCache = ConcurrentHashMap<String, RouteStopsStore.Timed<List<StopLocation>>>()
     private val storeLock = Mutex()
     // Nothing to read from a store that keeps nothing, so no IO hop (a test's store is NONE).
@@ -283,6 +305,10 @@ class RouteStopsRepository(
      * path, lets [cached] answer a first frame from what an earlier process fetched.
      */
     suspend fun warm() {
+        if (stationsByHub == null) {
+            val index = withContext(io) { stations?.invoke().orEmpty() }
+            stationsByHub = index.filter { it.hubId.isNotBlank() }.groupBy { it.hubId }
+        }
         if (storeRead) return
         storeLock.withLock {
             if (storeRead) return
@@ -362,10 +388,14 @@ class RouteStopsRepository(
         warn("route stops unavailable for line $lineId at stop $stopId: $reason")
     }
 
-    /** The merged sequence if already fetched (and not expired), else null. No IO. */
+    /**
+     * The merged sequence if already fetched (and not expired), else null — also null until [warm]
+     * has read the station index, so a first frame never resolves without it. No IO.
+     */
     fun cached(lineId: String, direction: String): LineSequence? {
+        val byHub = stationsByHub ?: return null
         val parts = RouteStops.directionsFor(direction).map { cache.freshValue("$lineId/$it") ?: return null }
-        return parts.reduce(LineSequence::plus)
+        return parts.reduce(LineSequence::plus).withStations(byHub)
     }
 
     /**
@@ -391,7 +421,7 @@ class RouteStopsRepository(
             }
         }.reduce(LineSequence::plus)
         if (fetched) save()
-        return sequence
+        return sequence.withStations(stationsByHub.orEmpty())
     }
 
     companion object {

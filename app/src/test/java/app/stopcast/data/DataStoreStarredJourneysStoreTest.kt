@@ -19,7 +19,7 @@ import org.junit.Test
 class DataStoreStarredJourneysStoreTest {
     private val journey = StarredJourney(
         from = JourneyEnd("940GZZLUHGT", "Highgate", 51.5, -0.12),
-        to = JourneyEnd("940GZZLUKSX", "King's Cross St. Pancras", 51.49, -0.12, areaId = "HUBKGX", hubId = "HUBKGX"),
+        to = JourneyEnd("940GZZLUKSX", "King's Cross St. Pancras", 51.49, -0.12, areaId = "HUBKGX"),
         lineId = "northern",
         lineName = "Northern",
         mode = "tube",

@@ -497,7 +497,9 @@ so a miss there is a working the sequence doesn't model. **A station TfL lists u
 under another** (St Pancras's Thameslink departures, whose route calls at the station's low-level
 platforms) boards at the same-named station in the same interchange — never a different station
 in it, like King's Cross beside St Pancras. A journey starred there keeps the id the departures
-carry, and its card places it the same way. Whenever the list is unavailable, the
+carry, and its card places it the same way. Which interchange a stop is in comes from the bundled
+station index, so this holds however the stop reached the screen — nearby, watched, or a journey's
+end. Whenever the list is unavailable, the
 debug log records why (principle 2). The list follows one predicted train, so
 it is **withheld while the row is stale** — that prediction may no longer be the next train — and
 returns with the next refresh (D4). Each station carries a **line pill per connection** — the
