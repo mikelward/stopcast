@@ -1214,6 +1214,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       rail operator not in the confirmed set still falls back to a neutral pill. The confirmed set
       wants a final eyeball on a real device once rail departures land — the brand hexes weren't
       verifiable against a live TfL operator set from CI.
+      London Northwestern Railway (LNWR) joined later, green `#27B67A`: no color template had
+      it, so the maintainer picked it (2026-09-24) from the route-map legend in Wikipedia's *West
+      Midlands Trains* article over an unsourced `#00BF6F`, after seeing both rendered. Matched
+      by name prefix, like its pill code, since the rail feed's exact spelling is unconfirmed.
 - [ ] (Later) **Revisit auto-locate-on-open and the location states.** StopCast
       resolves location once on open (a `LaunchedEffect` gated on `PermissionRequired`) and
       the nearby set never re-resolves afterward except via the temporary crosshair button.
