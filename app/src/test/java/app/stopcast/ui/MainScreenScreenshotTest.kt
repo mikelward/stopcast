@@ -1458,7 +1458,7 @@ class MainScreenScreenshotTest {
     fun `a train on the other branch leaving first is shown with where to change`() {
         journeyScreen(forkedOrigin("West End" to 60, "North End" to 600, "West End" to 900), forkedSource, kingToNorthEnd)
         composeRule.onNodeWithText("King ➔ North End").assertExists()
-        composeRule.onNodeWithText("Change at Fork").assertExists()
+        composeRule.onNodeWithText("King ➔ Fork (for North End)").assertExists()
         // The direct train, and the one West End train leaving before it; the later one isn't offered.
         composeRule.onNodeWithText("North End").assertExists()
         composeRule.onNodeWithText("West End").assertExists()
@@ -1480,7 +1480,7 @@ class MainScreenScreenshotTest {
     fun `with no direct train soon the card says so above the trains to change from`() {
         journeyScreen(forkedOrigin("West End" to 60, "West End" to 480), forkedSource, kingToNorthEnd)
         composeRule.onNodeWithText("No direct trains to North End soon").assertExists()
-        composeRule.onNodeWithText("Change at Fork").assertExists()
+        composeRule.onNodeWithText("King ➔ Fork (for North End)").assertExists()
         composeRule.onNodeWithText("1 · 8 min").assertExists()
     }
 
@@ -1488,7 +1488,7 @@ class MainScreenScreenshotTest {
     fun `with a train that couldn't be checked the card doesn't claim there's no direct one`() {
         // "Nowhere" matches no stop or route end, so that train might yet be a direct one.
         journeyScreen(forkedOrigin("West End" to 60, "Nowhere" to 120), forkedSource, kingToNorthEnd)
-        composeRule.onNodeWithText("Change at Fork").assertExists()
+        composeRule.onNodeWithText("King ➔ Fork (for North End)").assertExists()
         composeRule.onNodeWithText("Some routes couldn't be checked").assertExists()
         composeRule.onAllNodesWithText("No direct trains", substring = true).assertCountEquals(0)
     }

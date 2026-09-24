@@ -650,8 +650,9 @@ claims nothing new. Alerts on lines with no starred journey (a separate favorite
 
 **Change at a fork.** When a line runs only one branch from the origin (a Northern line train to
 Edgware from King's Cross, none to High Barnet), a train on the other branch that leaves before the
-next direct one is shown too, under "Change at Camden Town": the last stop its path shares with the
-route to the far end, from the route data the card already loads (maintainer, 2026-09-24). With no
+next direct one is shown too, under "King's Cross ➔ Camden Town (for High Barnet)" (maintainer,
+2026-09-24): the change stop is the last stop its path shares with the route to the far end, from
+the route data the card already loads. With no
 direct train at all, the card says "No direct trains" above them. It names only where to change,
 not the connecting train's time, which isn't known; a later change-train is never offered, since
 the direct one is then no slower. Rail only: a bus's path is often the route's end, too loose to

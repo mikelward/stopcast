@@ -1027,7 +1027,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           pole's heading and the widget pins them from it.
     - [x] **Change at a fork** (maintainer, 2026-09-24). When only the other branch runs from the
           origin (Northern line trains to Edgware, none to High Barnet), a train on it that leaves
-          before the next direct one shows under "Change at Camden Town", the last stop it shares
+          before the next direct one shows under "King's Cross ➔ Camden Town (for High Barnet)", the last stop it shares
           with the route to the far end. Rail only; the widget stays direct-only.
     - [x] **Hold back faraway journeys** (maintainer, 2026-09-24). A journey more than a mile
           from both ends of a confirmed fix waits behind a "Faraway favorites" button at the foot

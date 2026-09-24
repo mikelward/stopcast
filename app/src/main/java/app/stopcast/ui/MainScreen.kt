@@ -1776,6 +1776,8 @@ private fun StopGroupHeader(
     onNameClick: (() -> Unit)? = null,
     // Shows the stop in the maps app from a tap on the distance. Null leaves the distance to the row.
     onDistanceClick: (() -> Unit)? = null,
+    // A place name stays one line; a journey's change heading wraps rather than lose its "(for …)".
+    nameMaxLines: Int = 1,
 ) {
     val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
     val openLabel = stringResource(R.string.action_show_platform)
@@ -1808,10 +1810,12 @@ private fun StopGroupHeader(
         // #122). `fill = false` lets a short name/qualifier sit at its natural width and pack left
         // rather than pad out its half. The name ellipsizes; the qualifier hard-clips its glyphs.
         Text(
-            text = name,
+            // A journey's change heading carries the "heading to" arrow ("King's Cross ➔ Camden Town").
+            text = withArrowIcons(name),
+            inlineContent = arrowInlineContent(MaterialTheme.colorScheme.onSurface),
             style = style,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
+            maxLines = nameMaxLines,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f, fill = false)
@@ -1959,8 +1963,8 @@ internal sealed interface JourneyCardState {
 }
 
 /**
- * A journey card's trains on another branch ([JourneyCardState.Trains.changes]), under a "Change at
- * Camden Town" heading per change stop, each boarding stop's in its own card like the direct trains.
+ * A journey card's trains on another branch ([JourneyCardState.Trains.changes]), under a "King's Cross
+ * ➔ Camden Town (for High Barnet)" heading per change stop, each boarding stop's in its own card like the direct trains.
  */
 private fun LazyListScope.journeyChanges(
     card: JourneyCard,
@@ -1974,10 +1978,11 @@ private fun LazyListScope.journeyChanges(
     state.changes.groupBy { it.stopId }.forEach { (stopId, changes) ->
         item(key = "journey-change|${card.journey.key}|$stopId") {
             StopGroupHeader(
-                stringResource(R.string.journey_change_at, changes.first().stopName),
+                stringResource(R.string.journey_change_at, card.journey.from.name, changes.first().stopName, card.journey.to.name),
                 qualifier = null,
                 distanceLabel = null,
                 firstOnScreen = false,
+                nameMaxLines = 2,
             )
         }
         StopGrouping.groupByStop(changes.map { it.row }, warningsLead = false).forEach { group ->
