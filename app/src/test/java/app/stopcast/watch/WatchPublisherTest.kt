@@ -9,6 +9,7 @@ import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopArrivals
 import java.io.IOException
 import java.time.Instant
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -155,5 +156,37 @@ class WatchPublisherTest {
         advanceTimeBy(2_001)
         assertEquals(listOf(snapshot(minutes = 3) to emptySet<StarredRow>()), requests)
         job.cancel()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a failed collection restarts with backoff, then gives up`() = runTest {
+        var runs = 0
+        val job = launch {
+            WatchPublisher.keepCollecting(listOf(30.seconds, 2.minutes), logged::add) {
+                runs++
+                throw IOException("store unreadable")
+            }
+        }
+        runCurrent()
+        assertEquals(1, runs)
+        advanceTimeBy(30_001)
+        assertEquals(2, runs)
+        advanceTimeBy(120_001)
+        assertEquals(3, runs)
+        advanceTimeBy(3_600_000)
+        assertEquals("no restarts past the last wait", 3, runs)
+        assertEquals("sync stopped: IOException, giving up", logged.last())
+        job.join()
+    }
+
+    @Test
+    fun `a collection that recovers keeps running`() = runTest {
+        var runs = 0
+        WatchPublisher.keepCollecting(listOf(1.seconds), logged::add) {
+            runs++
+            if (runs == 1) throw IOException("store unreadable")
+        }
+        assertEquals(2, runs)
     }
 }

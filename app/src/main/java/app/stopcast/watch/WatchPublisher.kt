@@ -7,9 +7,11 @@ import app.stopcast.domain.StarredRow
 import java.security.MessageDigest
 import java.time.Instant
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -87,6 +89,29 @@ class WatchPublisher(
     companion object {
         /** A burst of writes (one refresh saves several times) publishes once, at most this often. */
         val COALESCE: Duration = 2.seconds
+
+        /** The waits before each restart of a collection that failed. */
+        val RESTARTS: List<Duration> = listOf(30.seconds, 2.minutes, 10.minutes)
+
+        /**
+         * Runs [collect], restarting it after each failure (logged, the failure type only) once per
+         * wait in [waits], then giving up. Cancellation passes straight through; a [collect] that
+         * returns normally ends it.
+         */
+        suspend fun keepCollecting(waits: List<Duration> = RESTARTS, log: (String) -> Unit, collect: suspend () -> Unit) {
+            for (attempt in 0..waits.size) {
+                try {
+                    collect()
+                    return
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val wait = waits.getOrNull(attempt)
+                    log("sync stopped: ${e::class.simpleName}" + if (wait == null) ", giving up" else ", restarting in $wait")
+                    wait?.let { delay(it) }
+                }
+            }
+        }
 
         fun sha256(bytes: ByteArray): String =
             MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

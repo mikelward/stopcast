@@ -151,20 +151,16 @@ object WatchSync {
     fun start(context: Context, scope: CoroutineScope) {
         val appContext = context.applicationContext
         scope.launch(Dispatchers.IO) {
-            try {
+            // A store that can't be read stops the collection, never the app; it's restarted a few
+            // times with backoff, then left to the next start (or a watch reconnecting). The watch
+            // keeps its last envelope meanwhile, which ages to stale on its own clock.
+            WatchPublisher.keepCollecting(log = { StopcastDebugLog.warning("watch: %s", it) }) {
                 // Each settled change is a cue; the publish itself reads the latest stored state.
                 WatchPublisher.requests(snapshots(appContext), starred(appContext), HiddenModesSetting.changes).collect {
                     if (publishCurrent(appContext, force = false) == WatchPublisher.Outcome.Failed) {
                         WatchPublishWorker.enqueue(appContext, force = false)
                     }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // A store that can't be read stops the sync for this process, never the app: the
-                // watch keeps its last envelope, which ages to stale on its own clock, and the next
-                // start (or a watch reconnecting) publishes again.
-                StopcastDebugLog.warning("watch: sync stopped: %s", e::class.simpleName)
             }
         }
     }
