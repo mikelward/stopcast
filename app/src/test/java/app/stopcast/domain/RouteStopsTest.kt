@@ -1,5 +1,8 @@
 package app.stopcast.domain
 
+import java.time.Duration
+import java.time.Instant
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -186,5 +189,101 @@ class RouteStopsTest {
         assertTrue("a failed fetch propagates its reason", thrown != null)
         assertNull("and caches nothing", repository.cached("22", "inbound"))
         assertEquals(listOf("route sequence fetch failed for line 22: Offline"), warnings)
+    }
+
+    private class MemoryStore : RouteStopsStore {
+        var contents = RouteStopsStore.Contents()
+        var saves = 0
+        override fun load() = contents
+        override fun save(contents: RouteStopsStore.Contents) {
+            this.contents = contents
+            saves++
+        }
+    }
+
+    private val pole = StopLocation("490000001A", "Hill", 51.5, -0.12, listOf(LineRef("43", "43", "bus")), stopLetter = "A")
+
+    private class CountingSource(private val sequence: LineSequence, private val poles: List<StopLocation>) :
+        RouteSequenceSource, StopAreaSource {
+        val calls = mutableListOf<String>()
+        override suspend fun routeSequence(lineId: String, direction: String): LineSequence {
+            calls += "$lineId/$direction"
+            return sequence
+        }
+        override suspend fun stopAreaPoles(areaId: String): List<StopLocation> {
+            calls += areaId
+            return poles
+        }
+    }
+
+    @Test
+    fun `a route and a stop area fetched by one process are reused by the next for a day`() = runTest {
+        val store = MemoryStore()
+        var now = Instant.parse("2026-09-24T08:00:00Z")
+        val io = StandardTestDispatcher(testScheduler)
+        val first = CountingSource(bus, listOf(pole))
+        val before = RouteStopsRepository(first, store = store, clock = { now }, io = io)
+        before.load("14", "inbound")
+        before.loadPoles("490G00000001")
+        assertEquals(listOf("14/inbound", "490G00000001"), first.calls)
+
+        // A new process: nothing in memory, the store read once on warm-up, so the first frame
+        // has the stops and neither is fetched again.
+        now = now.plus(Duration.ofHours(23))
+        val second = CountingSource(bus, listOf(pole))
+        val after = RouteStopsRepository(second, store = store, clock = { now }, io = io)
+        assertNull(after.cached("14", "inbound"))
+        after.warm()
+        assertEquals(bus, after.cached("14", "inbound"))
+        assertEquals(listOf(pole), after.cachedPoles("490G00000001"))
+        after.load("14", "inbound")
+        after.loadPoles("490G00000001")
+        assertEquals(emptyList<String>(), second.calls)
+
+        // A day on, both have expired: not offered to a first frame, fetched again.
+        now = now.plus(Duration.ofHours(1))
+        assertNull(after.cached("14", "inbound"))
+        assertNull(after.cachedPoles("490G00000001"))
+        after.load("14", "inbound")
+        after.loadPoles("490G00000001")
+        assertEquals(listOf("14/inbound", "490G00000001"), second.calls)
+    }
+
+    @Test
+    fun `entries a day old are dropped from the store when it is read`() = runTest {
+        val at = Instant.parse("2026-09-24T08:00:00Z")
+        val store = MemoryStore().apply {
+            contents = RouteStopsStore.Contents(
+                sequences = mapOf(
+                    "14/inbound" to RouteStopsStore.Timed(at, bus),
+                    "22/inbound" to RouteStopsStore.Timed(at.plus(Duration.ofHours(2)), bus),
+                ),
+                poles = mapOf("490G00000001" to RouteStopsStore.Timed(at, listOf(pole))),
+            )
+        }
+        val repository = RouteStopsRepository(
+            CountingSource(bus, listOf(pole)),
+            store = store,
+            clock = { at.plus(Duration.ofHours(25)) },
+            io = StandardTestDispatcher(testScheduler),
+        )
+        repository.warm()
+        assertEquals(setOf("22/inbound"), store.contents.sequences.keys)
+        assertEquals(emptySet<String>(), store.contents.poles.keys)
+        assertNull(repository.cached("14", "inbound"))
+        assertEquals(bus, repository.cached("22", "inbound"))
+    }
+
+    @Test
+    fun `an entry stamped in the future, the clock having moved back, is fetched again`() = runTest {
+        val now = Instant.parse("2026-09-24T08:00:00Z")
+        val store = MemoryStore().apply {
+            contents = RouteStopsStore.Contents(sequences = mapOf("14/inbound" to RouteStopsStore.Timed(now.plusSeconds(60), bus)))
+        }
+        val source = CountingSource(bus, emptyList())
+        val repository = RouteStopsRepository(source, store = store, clock = { now }, io = StandardTestDispatcher(testScheduler))
+        repository.load("14", "inbound")
+        assertEquals(listOf("14/inbound"), source.calls)
+        assertEquals(now, store.contents.sequences.getValue("14/inbound").at)
     }
 }

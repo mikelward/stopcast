@@ -425,7 +425,7 @@ rail platform, or a bus pole's compass bearing, and left off when neither names 
 "Stops to": the list opens on the boarding stop and the app bar already names the destination. Only
 while no list is shown (a status row, or a list loading, failed, unavailable, or withheld) does the
 body name the boarding stop ("From Victoria"), so the page always says which stop it is about. The list comes from TfL's Route/Sequence for the line, fetched **when the page opens** — never
-on the refresh path — and held in memory for the process, so a reopened route shows at once; until
+on the refresh path — and kept for a day, in memory and in the app's cache directory, so a reopened route shows at once, even after the process was killed; until
 it arrives the page says so, a failed fetch says why with a retry, and where TfL's data admits more
 than one path from here (a Northern train with no branch named) the page says the list is
 unavailable rather than guessing a trunk (principle 1). **A bus runs to its route's end** when its
@@ -563,12 +563,12 @@ road that merely passes by — and it applies to the far end only. At the near e
 also boards from the **poles beside its origin** (maintainer, 2026-09-24): a pole in the same TfL
 stop area whose line — one the origin itself doesn't serve — reaches the far end on its route (a bus
 from stop K beside the starred bus's stop L). Its buses join the card under their pole's own heading,
-and the widget pins them from that pole. It costs one lookup of the stop area's poles per process,
+and the widget pins them from that pole. It costs one lookup of the stop area's poles a day,
 the routes of lines found only at those poles, and one more arrivals request per qualifying pole
 per refresh. A pole is dropped only once it has been judged: while its lookup or a line's route is
 loading or has failed, the card says so and the widget keeps what it had. The origin's departures are fetched alongside the near-me stops (one request, none
 when it's already near) and stay out of the near-me list; each line's route is the same lookup the
-route page makes (one per line at the origin, per process). Until they are in, the card says it's
+route page makes (one per line at the origin, a day). Until they are in, the card says it's
 checking rather than claim there are none.
 
 **On the widget**, a journey's departures lead the list too (maintainer, 2026-09-23), in the
@@ -914,6 +914,11 @@ surface.)
   position and stops) are kept in the app's cache directory so a reopen after the process was
   killed still benefits (maintainer, 2026-09-23); the OS never backs that directory up, and it
   never reaches a log or leaves the device (`docs/PRIVACY.md`).
+- **Routes and stop areas are kept for a day.** A line's route sequence and a stop area's poles
+  barely change, so each is fetched at most once a day (maintainer, 2026-09-24) and kept in memory
+  and in the app's cache directory, so a route page or journey card opened after the process was
+  killed shows its stops without a request. The file is read once at startup, off the main thread;
+  an entry a day old is refetched and leaves the file with the next write.
 
 ## One widget, many surfaces
 

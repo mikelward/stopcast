@@ -1,7 +1,14 @@
 package app.stopcast.domain
 
+import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * One end-to-end route of a line in one direction, from TfL's `/Line/{id}/Route/Sequence`
@@ -178,38 +185,120 @@ object RouteStops {
 }
 
 /**
- * The route detail's stop lists, fetched on demand and held in memory for the process (a line's
- * route barely changes; the next process start refetches). [cached] is the IO-free peek a first
- * frame can use; [load] fetches on a miss. One or two requests per line+direction per process.
+ * Where [RouteStopsRepository] keeps what it fetched between processes: each line+direction's
+ * sequence (keyed `"$lineId/$direction"`) and each stop area's poles, with when each was fetched.
+ * Blocking; the repository calls it off the main thread. [load] never throws — an unreadable store
+ * loads as empty.
+ */
+interface RouteStopsStore {
+    fun load(): Contents
+    fun save(contents: Contents)
+
+    data class Timed<T>(val at: Instant, val value: T)
+
+    data class Contents(
+        val sequences: Map<String, Timed<LineSequence>> = emptyMap(),
+        val poles: Map<String, Timed<List<StopLocation>>> = emptyMap(),
+    )
+
+    companion object {
+        /** Keeps nothing: the repository holds its entries in memory only, as in a test. */
+        val NONE: RouteStopsStore = object : RouteStopsStore {
+            override fun load() = Contents()
+            override fun save(contents: Contents) = Unit
+        }
+    }
+}
+
+/**
+ * The route detail's stop lists and stop areas' poles, fetched on demand and kept for up to
+ * [maxAge] (a day: a line's route and a stop area's poles barely change), in memory and through
+ * [store] so a reopen after the process was killed still has them. [cached] is the IO-free peek a
+ * first frame can use; [load] reads [store] once (see [warm]) and fetches on a miss or an expired
+ * entry. One or two requests per line+direction per day.
  */
 class RouteStopsRepository(
     private val source: RouteSequenceSource,
     private val warn: (String) -> Unit = {},
     // A stop area's poles, for a bus journey's origin (null: none looked up, as in a test).
     private val areas: StopAreaSource? = source as? StopAreaSource,
+    private val store: RouteStopsStore = RouteStopsStore.NONE,
+    private val clock: () -> Instant = Instant::now,
+    private val maxAge: Duration = MAX_AGE,
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private val cache = ConcurrentHashMap<String, LineSequence>()
-    private val areaCache = ConcurrentHashMap<String, List<StopLocation>>()
-
-    /** The poles of stop area [areaId] if already fetched, else null. No IO. */
-    fun cachedPoles(areaId: String): List<StopLocation>? = areaCache[areaId]
+    private val cache = ConcurrentHashMap<String, RouteStopsStore.Timed<LineSequence>>()
+    private val areaCache = ConcurrentHashMap<String, RouteStopsStore.Timed<List<StopLocation>>>()
+    private val storeLock = Mutex()
+    // Nothing to read from a store that keeps nothing, so no IO hop (a test's store is NONE).
+    @Volatile private var storeRead = store === RouteStopsStore.NONE
 
     /**
-     * The poles of stop area [areaId], fetched once per process and cached (a stop area's poles
-     * barely change). Empty when no area source is wired. Throws a [TflException] on failure after
-     * logging it (sanitized: the area id and error class).
+     * Reads [store] into memory if not yet read, dropping (and deleting from it) anything older
+     * than [maxAge]. [load] and [loadPoles] do this themselves; calling it early, off the render
+     * path, lets [cached] answer a first frame from what an earlier process fetched.
+     */
+    suspend fun warm() {
+        if (storeRead) return
+        storeLock.withLock {
+            if (storeRead) return
+            val contents = withContext(io) { store.load() }
+            val now = clock()
+            contents.sequences.forEach { (key, entry) -> if (fresh(entry, now)) cache.putIfAbsent(key, entry) }
+            contents.poles.forEach { (key, entry) -> if (fresh(entry, now)) areaCache.putIfAbsent(key, entry) }
+            storeRead = true
+            val expired = contents.sequences.size + contents.poles.size -
+                contents.sequences.values.count { fresh(it, now) } - contents.poles.values.count { fresh(it, now) }
+            if (expired > 0) saveLocked()
+        }
+    }
+
+    // A negative age (the clock moved back) is never fresh: fetch again rather than trust it.
+    private fun fresh(entry: RouteStopsStore.Timed<*>, now: Instant): Boolean {
+        val age = Duration.between(entry.at, now)
+        return !age.isNegative && age < maxAge
+    }
+
+    private fun <T> Map<String, RouteStopsStore.Timed<T>>.freshValue(key: String): T? =
+        this[key]?.takeIf { fresh(it, clock()) }?.value
+
+    /** Writes the fresh entries to [store], so an expired one leaves it too. */
+    private suspend fun save() {
+        if (store === RouteStopsStore.NONE) return
+        storeLock.withLock { saveLocked() }
+    }
+
+    private suspend fun saveLocked() {
+        val now = clock()
+        cache.entries.removeIf { !fresh(it.value, now) }
+        areaCache.entries.removeIf { !fresh(it.value, now) }
+        val contents = RouteStopsStore.Contents(cache.toMap(), areaCache.toMap())
+        withContext(io) { store.save(contents) }
+    }
+
+    /** The poles of stop area [areaId] if already fetched (and not expired), else null. No IO. */
+    fun cachedPoles(areaId: String): List<StopLocation>? = areaCache.freshValue(areaId)
+
+    /**
+     * The poles of stop area [areaId], fetched once a day and cached (a stop area's poles barely
+     * change). Empty when no area source is wired. Throws a [TflException] on failure after logging
+     * it (sanitized: the area id and error class).
      */
     suspend fun loadPoles(areaId: String): List<StopLocation> {
-        areaCache[areaId]?.let { return it }
+        warm()
+        areaCache.freshValue(areaId)?.let { return it }
         val areas = areas ?: return emptyList()
-        return try {
-            areas.stopAreaPoles(areaId).also { areaCache[areaId] = it }
+        val poles = try {
+            areas.stopAreaPoles(areaId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: TflException) {
             warn("stop area fetch failed for $areaId: ${e::class.simpleName}")
             throw e
         }
+        areaCache[areaId] = RouteStopsStore.Timed(clock(), poles)
+        save()
+        return poles
     }
 
     /**
@@ -229,9 +318,9 @@ class RouteStopsRepository(
         warn("route stops unavailable for line $lineId at stop $stopId: $reason")
     }
 
-    /** The merged sequence if already fetched, else null. No IO. */
+    /** The merged sequence if already fetched (and not expired), else null. No IO. */
     fun cached(lineId: String, direction: String): LineSequence? {
-        val parts = RouteStops.directionsFor(direction).map { cache["$lineId/$it"] ?: return null }
+        val parts = RouteStops.directionsFor(direction).map { cache.freshValue("$lineId/$it") ?: return null }
         return parts.reduce(LineSequence::plus)
     }
 
@@ -239,15 +328,30 @@ class RouteStopsRepository(
      * The sequence for [lineId] in [direction] (both directions when blank), fetched and cached.
      * Throws a [TflException] on failure after logging it (sanitized: line id and error class).
      */
-    suspend fun load(lineId: String, direction: String): LineSequence =
-        RouteStops.directionsFor(direction).map { dir ->
-            cache["$lineId/$dir"] ?: try {
-                source.routeSequence(lineId, dir).also { cache["$lineId/$dir"] = it }
+    suspend fun load(lineId: String, direction: String): LineSequence {
+        warm()
+        var fetched = false
+        val sequence = RouteStops.directionsFor(direction).map { dir ->
+            cache.freshValue("$lineId/$dir") ?: try {
+                source.routeSequence(lineId, dir).also {
+                    cache["$lineId/$dir"] = RouteStopsStore.Timed(clock(), it)
+                    fetched = true
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TflException) {
                 warn("route sequence fetch failed for line $lineId: ${e::class.simpleName}")
+                // A direction fetched before the other failed is still kept.
+                if (fetched) save()
                 throw e
             }
         }.reduce(LineSequence::plus)
+        if (fetched) save()
+        return sequence
+    }
+
+    companion object {
+        /** How long a fetched route or stop area's poles is reused (maintainer, 2026-09-24). */
+        val MAX_AGE: Duration = Duration.ofHours(24)
+    }
 }

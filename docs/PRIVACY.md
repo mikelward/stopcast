@@ -62,6 +62,13 @@ directory. Android never includes that directory in a backup or device transfer,
 logged or sent anywhere, and clearing the app's cache removes it; an entry older than a day is
 deleted the next time the app looks up nearby stops.
 
+The **routes and stop areas the app fetched** (a line's stops, and the stops grouped with a
+journey's starting stop) are kept the same way, for up to a day, so reopening a route doesn't ask
+TfL again. They are TfL's public network data, but which ones are there says which routes you
+looked at, so they stay in the app's cache directory too: never backed up, logged, or sent
+anywhere, and an entry older than a day is deleted the next time the app starts or looks up a
+route or stop area.
+
 ## The on-device diagnostic log
 
 StopCast keeps a diagnostic log on the device so a misbehaving routing or departure

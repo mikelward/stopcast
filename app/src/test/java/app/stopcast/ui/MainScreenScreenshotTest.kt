@@ -56,6 +56,7 @@ import app.stopcast.domain.LineRoute
 import app.stopcast.domain.StopDisruption
 import app.stopcast.ui.theme.StopCastTheme
 import com.github.takahirom.roborazzi.captureRoboImage
+import java.time.Duration
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -1188,6 +1189,66 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.waitForIdle()
+    }
+
+    @Test
+    fun `a journey card refetches its route once a day old, keeping the old one if that fails`() {
+        val calls = mutableListOf<String>()
+        var fail = false
+        var clock = now
+        val repository = RouteStopsRepository(
+            object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String): LineSequence {
+                    calls += "$lineId/$direction"
+                    if (fail) throw TflException.Offline(null)
+                    return victoriaLine
+                }
+            },
+            clock = { clock },
+        )
+        val origin = StopArrivals(
+            "940GZZLUVIC", "Victoria",
+            listOf(Departure("victoria", "Victoria", "outbound", "Walthamstow Central", null, now.plusSeconds(120), "tube")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        var screenNow by mutableStateOf(now)
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(LocalRouteStops provides repository) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse(), origin), now.minusSeconds(60)),
+                            screenNow,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(victoriaToWarrenStreet),
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        assertEquals(listOf("victoria/inbound", "victoria/outbound"), calls)
+
+        // An hour on, the route is still fresh: the recheck asks for nothing.
+        clock = now.plus(Duration.ofHours(1))
+        screenNow = clock
+        composeRule.waitForIdle()
+        assertEquals(2, calls.size)
+
+        // A day on, with the screen still up, it's fetched again.
+        clock = now.plus(Duration.ofHours(25))
+        screenNow = clock
+        composeRule.waitForIdle()
+        assertEquals(4, calls.size)
+
+        // Another day, with TfL down: the card keeps the route it has rather than lose it.
+        fail = true
+        clock = now.plus(Duration.ofHours(50))
+        screenNow = clock
+        composeRule.waitForIdle()
+        assertEquals(5, calls.size)
+        composeRule.onAllNodesWithText("Couldn't load the route").assertCountEquals(0)
     }
 
     @Test
