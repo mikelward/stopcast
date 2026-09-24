@@ -14,6 +14,7 @@ import app.stopcast.domain.LineStatus
 import app.stopcast.domain.lineAlertKey
 import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.Snapshot
+import app.stopcast.domain.Terminating
 import app.stopcast.domain.SnapshotStore
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StarredRowSet
@@ -187,6 +188,14 @@ class MainViewModel(
     private var stopDistanceMeters: Map<String, Double> = stopDistanceMeters
     private var more: List<NearbySelection.NearbyCluster> = initialMore
     private var revealedKeys: Set<String> = emptySet()
+
+    private fun nearbyPlaces(): List<Terminating.Place> {
+        val all = eagerStops.map { Triple(it.id, it.clusterId, it.name) } +
+            more.flatMap { cluster -> cluster.stops.map { Triple(it.id, it.clusterId, it.name) } }
+        return all.mapNotNull { (id, cluster, name) ->
+            stopDistanceMeters[id]?.let { Terminating.Place(id, cluster, name, it) }
+        }
+    }
 
     // The set actually fetched and shown: the eager tier plus every revealed `more` cluster's
     // stops. DERIVED — so a cluster dropped on a relocation leaves the fetched set automatically,
@@ -785,6 +794,10 @@ class MainViewModel(
             hubIds.map { hubId -> async { hubId to resolveHubInfo(hubId) } }.awaitAll().toMap()
         }
 
+        // The near-me places by distance, for [Terminating]: every eager and "more" stop, revealed or
+        // not, since the rider's nearest place may sit in either tier.
+        val places = nearbyPlaces()
+
         // Merge in stop order, so the first error, the logs and the merged list read the same as a
         // one-at-a-time fetch would, whatever order the responses came back in.
         stops.forEachIndexed { i, stop ->
@@ -793,7 +806,11 @@ class MainViewModel(
             if (arrivalResult == null || disruptionResult == null) {
                 // Reused: carried over as it was, neither a fresh result nor a failure — but with the
                 // lines it declares now (a journey origin can gain one), so their status is checked.
-                merged += prior.getValue(stop.id).let { p -> if (p.lines == stop.lines) p else p.copy(lines = stop.lines) }
+                // Its nearer places too: the rider may have moved since, and the rows hide by them.
+                val nearer = Terminating.nearer(stop.id, places)
+                merged += prior.getValue(stop.id).let { p ->
+                    if (p.lines == stop.lines && p.nearer == nearer) p else p.copy(lines = stop.lines, nearer = nearer)
+                }
                 return@forEachIndexed
             }
             val departures = arrivalResult.getOrElse { e ->
@@ -802,6 +819,9 @@ class MainViewModel(
                 warn("arrivals fetch failed for stop ${stop.id}: ${reason(e)}")
                 null
             }
+            // The places no farther from the rider than this stop, saved with it: the rows hide a
+            // service ending at one ([Terminating], [DepartureRows.across]), in the app and widget.
+            val nearer = Terminating.nearer(stop.id, places)
             val disruptions = disruptionResult.getOrElse { e ->
                 if (firstError == null) firstError = e
                 stopsDisruptionUnknown += stop.id
@@ -834,6 +854,7 @@ class MainViewModel(
                 stopLetter = stop.stopLetter,
                 bearing = stop.bearing,
                 towards = stop.towards,
+                nearer = nearer,
             )?.let { merged += it }
         }
 
@@ -1393,6 +1414,20 @@ class MainViewModel(
         val presentKeys = (newEager + newMore).mapTo(mutableSetOf()) { it.key }
         revealedKeys = revealedKeys intersect presentKeys
         _moreState.value = NearbySelection.revealableBuckets(more, revealedKeys)
+        // The shown stops take their new nearer places now, before any refetch returns, so the rows
+        // hide by where the rider is rather than where they were ([Terminating]); and the widget's
+        // stored copy too, whether or not that refetch succeeds.
+        (_state.value as? DeparturesUiState.Loaded)?.let { loaded ->
+            val places = nearbyPlaces()
+            val moved = loaded.stops.map { stop ->
+                val nearer = Terminating.nearer(stop.stopId, places)
+                if (nearer == stop.nearer) stop else stop.copy(nearer = nearer)
+            }
+            if (moved != loaded.stops) {
+                _state.value = loaded.copy(stops = moved)
+                updateWidgetNearer(moved.associate { it.stopId to it.nearer })
+            }
+        }
         val departed = before - fetchedStops.mapTo(mutableSetOf()) { it.id }
         if (departed.isNotEmpty()) {
             (_state.value as? DeparturesUiState.Loaded)?.let { loaded ->
@@ -1432,6 +1467,19 @@ class MainViewModel(
      * point is that the removal does not depend on the re-fetch's save or this ViewModel surviving.
      * Best-effort like the snapshot save: a failure is logged, sanitized, and swallowed.
      */
+    /** Store [nearer] in the widget snapshot, off this ViewModel's lifecycle, like [pruneDepartedFromWidget]. */
+    private fun updateWidgetNearer(nearer: Map<String, Terminating.Nearer>) {
+        viewModelScope.launch {
+            try {
+                withContext(NonCancellable + io) { snapshotStore.updateNearer(nearer) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                warn("widget snapshot nearer update failed: ${reason(e)}")
+            }
+        }
+    }
+
     private fun pruneDepartedFromWidget(departed: Set<String>) {
         viewModelScope.launch {
             try {

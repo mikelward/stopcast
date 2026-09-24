@@ -79,6 +79,14 @@ interface SnapshotStore {
      */
     suspend fun pruneStops(departedStopIds: Collection<String>)
 
+    /**
+     * Set each stored stop's nearer places ([StopArrivals.nearer]) from [nearer], by stop id, leaving
+     * everything else as stored. The rider's location, not the network, decides them, so a move
+     * writes them at once — like [pruneStops], independent of whether the refresh that follows
+     * succeeds — and the widget hides by where the rider is now. A no-op when nothing is stored.
+     */
+    suspend fun updateNearer(nearer: Map<String, Terminating.Nearer>) {}
+
     companion object {
         /** A store that persists nothing — the default for tests and for a build with no
          *  wired DataStore, so the app runs identically minus the cross-session restore. */

@@ -3032,6 +3032,58 @@ class MainViewModelTest {
         }
 
     @Test
+    fun `a service ending at the rider's nearest stop is hidden, with no status row in its place`() = runTest(dispatcher) {
+        val toOxford = departure("victoria", "Victoria", 60).copy(destination = "Oxford Circus", destinationId = oxcId)
+        val onward = departure("northern", "Northern", 120)
+        val client = FakeClient(
+            byStop = mapOf(oxcId to Result.success(emptyList()), ksxId to Result.success(listOf(toOxford, onward))),
+            statuses = Result.success(listOf(status("victoria", 6, "Severe Delays"))),
+        )
+        val vm = MainViewModel(
+            client,
+            listOf(StopRef(oxcId, "Oxford Circus", clusterId = oxcId), StopRef(ksxId, "King's Cross St. Pancras", lines = listOf(LineRef("victoria", "Victoria", "tube")))),
+            clock = { now }, io = dispatcher,
+            stopDistanceMeters = mapOf(oxcId to 100.0, ksxId to 900.0),
+        )
+        advanceUntilIdle()
+        val state = vm.state.value as DeparturesUiState.Loaded
+        val ksx = state.stops.single { it.stopId == ksxId }
+        assertTrue("the nearer place is saved with the stop", oxcId in ksx.nearer.ids)
+        val rows = DepartureRows.across(state.stops, now, state.lineStatuses).filter { it.stopId == ksxId }
+        assertEquals("no timed row and no \"no departures\" row for the hidden line", listOf("northern"), rows.map { it.lineId })
+    }
+
+    @Test
+    fun `a stop carried over after the rider moves takes the new nearer places`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val stored = mutableListOf<Map<String, app.stopcast.domain.Terminating.Nearer>>()
+        val store = object : SnapshotStore by SnapshotStore.NONE {
+            override suspend fun updateNearer(nearer: Map<String, app.stopcast.domain.Terminating.Nearer>) {
+                stored += nearer
+            }
+        }
+        val vm = MainViewModel(
+            client, seeds, clock = { now }, io = dispatcher, snapshotStore = store,
+            arrivalsReuse = ARRIVALS_REUSE, disruptionReuse = DISRUPTION_REUSE,
+            stopDistanceMeters = mapOf(oxcId to 100.0, ksxId to 900.0),
+        )
+        advanceUntilIdle()
+        // The rider walks: King's Cross is now the nearer one, and the refresh reuses both stops.
+        val clusters = seeds.map { NearbySelection.NearbyCluster("c:${it.id}", listOf(StopLocation(it.id, it.name, 0.0, 0.0)), 0.0) }
+        vm.reconcile(clusters, emptyList(), mapOf(oxcId to 900.0, ksxId to 100.0))
+        // At once, before any refetch runs.
+        val now0 = (vm.state.value as DeparturesUiState.Loaded).stops.associateBy { it.stopId }
+        assertTrue("the shown stops take the new places before the network", ksxId in now0.getValue(oxcId).nearer.ids)
+        advanceUntilIdle()
+        assertTrue("and the widget's stored copy, whatever the refetch does", ksxId in stored.last().getValue(oxcId).ids)
+        vm.refresh()
+        advanceUntilIdle()
+        val stops = (vm.state.value as DeparturesUiState.Loaded).stops.associateBy { it.stopId }
+        assertTrue(ksxId in stops.getValue(oxcId).nearer.ids)
+        assertFalse(oxcId in stops.getValue(ksxId).nearer.ids)
+    }
+
+    @Test
     fun `the timer refreshes a far stop every other minute, a user refresh every time`() = runTest(dispatcher) {
         var current = now
         val client = ReuseCountingClient()

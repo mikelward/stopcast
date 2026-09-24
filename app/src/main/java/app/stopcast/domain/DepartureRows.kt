@@ -93,11 +93,21 @@ object DepartureRows {
         splitPlatforms: Boolean = true,
     ): List<DepartureRow> =
         stops.flatMap { stop ->
+            // A service ending no farther from the rider than this stop goes nowhere for them
+            // ([Terminating]). Hidden here, as the rows are built, rather than dropped from the
+            // stop's data, so a new location (a new [StopArrivals.nearer]) applies at once and the
+            // widget, which renders through here too, hides the same ones.
+            val shown = Terminating.drop(stop.departures, stop.nearer)
             val timed =
                 forStop(
-                    stop.stopId, stop.stopName, stop.departures, now, lineStatuses, stop.fetchedAt,
+                    stop.stopId, stop.stopName, shown, now, lineStatuses, stop.fetchedAt,
                     stop.clusterId, stop.stopLetter, stop.bearing, stop.towards, splitPlatforms,
                 )
+            // A line whose every live prediction was hidden has departures, just none that help: it
+            // mustn't surface as a "No departures" status row. Counted over live predictions only,
+            // like the timed rows, so an expired onward one doesn't make it look shown.
+            val hiddenLines = Countdown.upcoming(stop.departures, now).mapTo(HashSet()) { it.lineId } -
+                Countdown.upcoming(shown, now).mapTo(HashSet()) { it.lineId }
             // A synthesized line-status row asserts "No departures", which is only true when
             // this stop's arrivals were actually fetched AND are still current: fetched (not
             // a disruption-only stop stamped `now` with no arrivals, nor one carried from a
@@ -107,7 +117,7 @@ object DepartureRows {
             // fresh stop-status closure still show.
             val status =
                 if (stop.arrivalsFresh && !isStale(stop.fetchedAt, now)) {
-                    statusRows(stop, timed, lineStatuses)
+                    statusRows(stop, timed, lineStatuses, hiddenLines)
                 } else {
                     emptyList()
                 }
@@ -561,10 +571,11 @@ object DepartureRows {
         stop: StopArrivals,
         timed: List<DepartureRow>,
         lineStatuses: Map<String, LineStatus>,
+        hiddenLines: Set<String> = emptySet(),
     ): List<DepartureRow> {
         val timedLineIds = timed.mapTo(mutableSetOf()) { it.lineId }
         return stop.lines
-            .filter { it.id !in timedLineIds }
+            .filter { it.id !in timedLineIds && it.id !in hiddenLines }
             .mapNotNull { line ->
                 val status = lineStatuses[line.id]?.takeIf(LineStatus::disrupted)
                     ?: return@mapNotNull null
@@ -718,6 +729,11 @@ data class StopArrivals(
     val stopLetter: String = "",
     val bearing: String = "",
     val towards: String = "",
+    // The places no farther from the rider than this stop ([Terminating.Nearer]): a service ending
+    // at one goes nowhere for them and is dropped. Worked out when the near-me list fetched the
+    // stop, and saved with it so the widget's location-free refresh drops the same ones. Empty for
+    // a stop with no known distance.
+    val nearer: Terminating.Nearer = Terminating.Nearer(),
 )
 
 /**

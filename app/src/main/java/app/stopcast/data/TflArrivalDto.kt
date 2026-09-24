@@ -24,6 +24,7 @@ data class TflArrivalDto(
     val direction: String? = null,
     val platformName: String? = null,
     val destinationName: String? = null,
+    val destinationNaptanId: String? = null,
     val towards: String? = null,
     val modeName: String = "",
     val expectedArrival: String = "",
@@ -59,5 +60,6 @@ fun TflArrivalDto.toDeparture(): Departure {
         expectedArrival = Instant.parse(expectedArrival),
         mode = modeName,
         branch = branchOf(towards),
+        destinationId = destinationNaptanId?.trim().orEmpty(),
     )
 }

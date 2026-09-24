@@ -8,6 +8,7 @@ import app.stopcast.domain.WidgetJourney
 import app.stopcast.domain.WidgetJourneyCheck
 import app.stopcast.domain.WidgetJourneysReport
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.Terminating
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -307,6 +308,28 @@ class DataStoreSnapshotStoreTest {
         val refreshed = snapshot().copy(fetchedAt = now.plusSeconds(60))
         assertEquals(true, store.saveIfStopsMatch(refreshed, listOf("940GZZLUOXC")))
         assertEquals(refreshed.copy(journeys = journeys), store.load())
+    }
+
+    @Test
+    fun `updateNearer sets the stored stops' places and leaves the rest`() = runTest {
+        val store = DataStoreSnapshotStore(FakeDataStore(snapshot().toPersisted()))
+        val nearer = Terminating.Nearer(ids = setOf("940GZZLUKSX"), names = setOf("king's cross"))
+        store.updateNearer(mapOf("940GZZLUOXC" to nearer, "940GZZLUGONE" to Terminating.Nearer(ids = setOf("x"))))
+        val expected = snapshot().let { s -> s.copy(stops = s.stops.map { it.copy(nearer = nearer) }) }
+        assertEquals(expected, store.load())
+    }
+
+    @Test
+    fun `saveIfStopsMatch keeps each stop's stored nearer places`() = runTest {
+        // The app has since saved the stop with the rider's new nearer places; a worker that loaded
+        // the old ones writes them back, and they must not win.
+        val current = Terminating.Nearer(ids = setOf("940GZZLUKSX"))
+        val stale = Terminating.Nearer(ids = setOf("940GZZLUBND"))
+        val withNearer = { n: Terminating.Nearer, s: DeparturesSnapshot -> s.copy(stops = s.stops.map { it.copy(nearer = n) }) }
+        val store = DataStoreSnapshotStore(FakeDataStore(withNearer(current, snapshot()).toPersisted()))
+        val refreshed = withNearer(stale, snapshot().copy(fetchedAt = now.plusSeconds(60)))
+        assertEquals(true, store.saveIfStopsMatch(refreshed, listOf("940GZZLUOXC")))
+        assertEquals(withNearer(current, refreshed), store.load())
     }
 
     @Test

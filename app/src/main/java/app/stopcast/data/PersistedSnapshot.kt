@@ -5,6 +5,7 @@ import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.JourneyCall
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.Terminating
 import app.stopcast.domain.WidgetJourney
 import app.stopcast.domain.normalizeBranch
 import java.time.Instant
@@ -66,6 +67,11 @@ internal data class PersistedStop(
     val stopLetter: String = "",
     val bearing: String = "",
     val towards: String = "",
+    // The places no farther from the rider than this stop ([Terminating.Nearer]), so the widget's
+    // refresh hides the same terminating services the app does. Defaulted: an older snapshot reads
+    // back empty and hides nothing until the app next fetches the stop.
+    val nearerIds: List<String> = emptyList(),
+    val nearerNames: List<String> = emptyList(),
 )
 // Stop disruptions (closures) are deliberately NOT persisted: a closure is a point-in-time
 // claim the screen renders unconditionally, with no stale-safe rendering (unlike a countdown,
@@ -101,6 +107,9 @@ internal data class PersistedDeparture(
     // an older build (no branch field) reads back as null — restored departures show no branch
     // until the next refresh, no version bump needed.
     val branch: String? = null,
+    // The terminus stop id (TfL `destinationNaptanId`), so a restored or widget-refreshed snapshot
+    // hides the same terminating services ([Terminating]). Defaulted blank for an older snapshot.
+    val destinationId: String = "",
 )
 
 @Serializable
@@ -157,6 +166,8 @@ internal fun StopArrivals.toPersisted(): PersistedStop =
         stopLetter = stopLetter,
         bearing = bearing,
         towards = towards,
+        nearerIds = nearer.ids.sorted(),
+        nearerNames = nearer.names.sorted(),
     )
 
 private fun PersistedStop.toDomain(): StopArrivals =
@@ -172,6 +183,7 @@ private fun PersistedStop.toDomain(): StopArrivals =
         stopLetter = stopLetter,
         bearing = bearing,
         towards = towards,
+        nearer = Terminating.Nearer(nearerIds.toSet(), nearerNames.toSet()),
     )
 
 private fun Departure.toPersisted(): PersistedDeparture =
@@ -184,6 +196,7 @@ private fun Departure.toPersisted(): PersistedDeparture =
         expectedArrivalMillis = expectedArrival.toEpochMilli(),
         mode = mode,
         branch = branch,
+        destinationId = destinationId,
     )
 
 private fun PersistedDeparture.toDomain(): Departure =
@@ -198,4 +211,5 @@ private fun PersistedDeparture.toDomain(): Departure =
         // Fold an older build's raw spelling ("Charing Cross", "Bank Branch") to the canonical
         // short label on restore, so a persisted row matches a freshly-fetched one (SPEC).
         branch = normalizeBranch(branch),
+        destinationId = destinationId,
     )

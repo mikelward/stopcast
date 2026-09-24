@@ -239,6 +239,18 @@ For each watched stop, stopcast shows the next few departures: **line**, **desti
 (where the service is headed), and a **countdown**. Countdowns render as minutes — "0 min"
 when imminent, "3 min", "12 min" — sorted soonest-first.
 
+**A service that goes nowhere for the rider is left out** (maintainer, 2026-09-24): one whose
+terminus is a nearby place no farther from the rider than the stop it leaves from — a bus
+arriving to terminate at this stop, or a train ending at the station the rider is nearest to.
+Boarding it would only bring them to where they already are. The terminus is matched by TfL's
+destination stop id against the nearby stops and their stop areas or stations; only when TfL
+gives no id, by name (two places can share one). The services are hidden as the rows are
+built, not dropped from the stop's data, so a new location applies at once; each stop's
+nearer places are saved with it in the snapshot, so the widget, whose own refresh has no
+location, hides the same services. A stop with no known distance (a journey's far
+origin, a searched station) keeps every departure. A line whose predictions were all left
+out gets no "No departures" status row either, since it has departures, just none that help.
+
 **The unit of display is one card per platform or pole** (maintainer, 2026-09-22) — a
 group of same-cluster stops split by platform / stop letter (see below). Each card is
 headed by a **single title-case line** naming the place and that platform/pole, and holds

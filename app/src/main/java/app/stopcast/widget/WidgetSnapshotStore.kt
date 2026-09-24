@@ -6,6 +6,7 @@ import app.stopcast.data.DataStoreSnapshotStore
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.SnapshotStore
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.Terminating
 import app.stopcast.domain.WidgetJourneysReport
 import kotlinx.coroutines.CancellationException
 
@@ -59,6 +60,13 @@ class WidgetSnapshotStore(context: Context) : SnapshotStore {
         val applied = delegate.saveIfStopsMatch(snapshot, expectedStopIds)
         if (applied) pokeWidget()
         return applied
+    }
+
+    override suspend fun updateNearer(nearer: Map<String, Terminating.Nearer>) {
+        if (nearer.isEmpty()) return
+        // The widget hides by the stored places, so re-render once they're updated.
+        delegate.updateNearer(nearer)
+        pokeWidget()
     }
 
     override suspend fun pruneStops(departedStopIds: Collection<String>) {

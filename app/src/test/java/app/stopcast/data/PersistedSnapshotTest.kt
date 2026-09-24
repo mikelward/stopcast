@@ -118,6 +118,22 @@ class PersistedSnapshotTest {
     }
 
     @Test
+    fun `a stop's nearer places survive the round trip, for the widget's refresh`() {
+        val nearer = app.stopcast.domain.Terminating.Nearer(setOf("490000000001A", "490G00000001"), setOf("example road"))
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                StopArrivals(
+                    "490000000003C", "Far Street",
+                    listOf(Departure("example", "Example", "inbound", "Example Road", null, now, "bus", destinationId = "490000000001A")),
+                    now, nearer = nearer,
+                ),
+            ),
+            fetchedAt = now,
+        )
+        assertEquals(snapshot, snapshot.toPersisted().toDomain())
+    }
+
+    @Test
     fun `the bus pole letter, bearing, and towards survive the round trip`() {
         // They are grouping inputs like clusterId, so a restored snapshot must keep its per-pole
         // "Stop D (towards Farringdon)" / "(Eastbound)" sub-headers instead of collapsing to bare/terminus

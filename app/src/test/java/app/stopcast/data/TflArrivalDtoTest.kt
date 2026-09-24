@@ -90,4 +90,11 @@ class TflArrivalDtoTest {
         assertEquals("", dto(destinationName = "", towards = "").toDeparture().destination)
         assertEquals("", dto().toDeparture().destination)
     }
+
+    @Test
+    fun `carries the terminus stop id, blank when TfL gives none`() {
+        val withId = dto(destinationName = "Brixton Underground Station").copy(destinationNaptanId = " 940GZZLUBXN ")
+        assertEquals("940GZZLUBXN", withId.toDeparture().destinationId)
+        assertEquals("", dto(destinationName = "Brixton").toDeparture().destinationId)
+    }
 }
