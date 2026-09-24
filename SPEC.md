@@ -920,6 +920,11 @@ spells them.
   (`dev-docs/wear-os.md`): nearest-stop ranking,
   arrival→countdown formatting, disruption summarization, and staleness
   classification live there.
+- A small **`:shared` Android library** holds what the phone and a Wear OS app must do
+  identically but that needs Android types: the bundled route topology and its loader, so
+  both group branching services the same way, and the line-pill color rules (*Line pill
+  colors*) as one pure resolver taking the line and the surface color, so a pill is colored
+  the same on the phone and the watch. Compose UI, the widget and the stores stay in `:app`.
 - The **TfL client** (Ktor/OkHttp + kotlinx.serialization models) sits behind a
   domain interface, so the decision logic is tested against recorded fixtures, not the
   live network.

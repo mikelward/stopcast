@@ -19,6 +19,7 @@
 /local.properties
 /build
 /domain/build
+/shared/build
 /captures
 local.properties
 app/build
