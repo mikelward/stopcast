@@ -91,6 +91,11 @@ def collect(block: str, commits: list) -> tuple:
         git(repo, "init", "-q", "-b", "main")
         git(repo, "config", "user.email", "test@example.com")
         git(repo, "config", "user.name", "Test")
+        # No background housekeeping: a recent git follows each commit with a
+        # detached `maintenance run --auto`, which can still be writing into
+        # .git when the temporary directory is removed ("Directory not empty").
+        git(repo, "config", "maintenance.auto", "false")
+        git(repo, "config", "gc.auto", "0")
         make_commit(repo, "setup", "app/setup.kt", 0)
 
         shas = [
