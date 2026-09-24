@@ -19,4 +19,14 @@ class TestStopcastApp : StopcastApp() {
         // Intentionally empty — a unit test needs no real DataStore-backed app_key holder or its
         // background collector. Tests that exercise the holder drive it directly.
     }
+
+    override fun installCrashRedaction() {
+        // Intentionally empty — no Firebase in the test suite, and no process-wide crash handler
+        // to chain; RedactingCrashHandlerTest covers the handler.
+    }
+
+    override fun installTelemetry() {
+        // Intentionally empty — no Firebase in the test suite, and the consent holder and gate are
+        // driven directly by their own tests.
+    }
 }

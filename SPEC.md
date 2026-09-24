@@ -1068,7 +1068,8 @@ Play Data Safety type the nearby action may collect (and so declares), not a cla
 every fix sent is precise.
 
 All of stopcast's persisted config — watched stops, per-stop filters, row stars, starred
-journeys, any saved favorite destinations, the user's `app_key` — and the last-good snapshot travel through
+journeys, any saved favorite destinations, the user's `app_key` — and the last-good snapshot (all but
+the crash-report opt-in, which is per install) travel through
 **Android's own backup and device-to-device transfer** — stopcast allows
 both, deliberately, so a phone swap keeps the user's setup rather than losing it
 (maintainer, 2026-09-18; the fleet's "never lose the user's work" over a literal
@@ -1082,14 +1083,17 @@ call, the release-only Play update check, carries none — see *Update indicator
 own backup/transfer carries their config under their control; and a **consent-gated bug
 report** (see below and `docs/PRIVACY.md`) carries the exact location, per-stop distances, and
 a screenshot of the reporting screen the user explicitly agrees to share on a screen they can
-decline.
+decline; and, only while the user has opted in, **crash reports and usage stats** go to Firebase
+(below) — no coordinate, stop, journey or key, but app interactions, device details and an
+IP-derived region.
 
 No **user data** else leaves the device unbidden — no analytics over the user's stops or
 movements, and no coordinate, stop list, or API key in logs, commits, PRs, or fixtures; the
 consent-gated bug report is the one user-authorized exception, and it discloses exactly what
-it carries before anything leaves. The one off-device call that is not a TfL request is the
-release-only Play update-availability check (*Update indicator*): a Play Services query about
-the app's own version that carries no user data and adds no Data Safety surface. The on-device
+it carries before anything leaves. Without the opt-in, the one off-device call that is not a
+TfL request is the release-only Play update-availability check (*Update indicator*): a Play
+Services query about the app's own version that carries no user data and adds no Data Safety
+surface. With it, Firebase is the other. The on-device
 debug log carries coarse diagnostics only: a stop ID, a line id, an HTTP status, or a
 failed Play update check's exception class — never a raw coordinate or the user's API key.
 
@@ -1097,6 +1101,25 @@ With a National Rail key set (*Data source*), a rail station's departures reques
 the Rail Data Marketplace, carrying that station's CRS code and the user's own key, never a
 location; it is disclosed alongside the TfL requests. The key is a credential, handled like the
 TfL `app_key`: never logged or placed in any other off-device artifact.
+
+**Crash reports and usage stats are opt-in** (maintainer, 2026-09-24, following `mikelward/simmo`).
+Firebase Crashlytics and Analytics are compiled in but collect only while the persisted **Help make
+StopCast better** setting is on — **off by default**, since data leaving the device waits for the
+user to agree. A build without a Firebase config never starts Firebase, and a debug build never has
+one. Crash reports carry the diagnostic log's **off-device** rendering (`mikelward/androidlog`),
+where any argument not explicitly marked safe — a stop ID, a line id, a coordinate — is replaced
+before it leaves, and exceptions travel without their messages — a fatal crash too, redacted in a
+handler placed in front of Crashlytics' own. Usage stats carry Firebase's
+automatic events and its IP-derived region, under a random app-instance ID (reset on opt-out;
+Crashlytics keeps its own installation ID); the advertising ID is not collected. Turning the setting
+on never releases a crash captured before consent: collection starts at once only if the crash SDK
+found none waiting, otherwise the crash is discarded and collection starts on a later launch that
+finds none; turning it off stops collection and discards what's unsent, so no report crosses the
+consent line either way. A withdrawal reaches the SDKs before the tap returns, an opt-in is stored
+before it reaches them, and the stored choice counts only while the SDKs agree with it (or an opt-in
+is pending): a failed write, a kill mid-change, or a backup restored onto a new install all resolve
+to **off**, so the user is asked again rather than collected from. `docs/PRIVACY.md` is the user-
+facing disclosure and the Play Data Safety source.
 
 ## Engineering quality bar
 
@@ -1138,11 +1161,12 @@ Mirrors the sibling fleet:
 - CI mirrors the sibling `ci.yml` (build + unit tests + lint, a screenshot job, a
   Play-internal-track deploy job with release notes built from commit subjects) plus
   the shared `lanes`, `codex`, and `zizmor` checks.
-- **Diagnostics are a persisted, on-device debug log**, off every render path: warnings are
-  buffered and written to a rotating file in app-private storage that survives a crash or a
-  silent process kill, so a misbehaving fix or refresh can be diagnosed after the fact (serves
-  *never fail silently*). It stays on the device — no off-device sink — and carries coarse
-  diagnostics only (see *Data source, cost, and reliability*). The implementation is the shared
+- **Diagnostics are a persisted, on-device debug log**, off every render path: warnings are buffered
+  and written to a rotating file in app-private storage that survives a crash or a silent process
+  kill, so a misbehaving fix or refresh can be diagnosed after the fact (serves *never fail
+  silently*). It stays on the device and carries coarse diagnostics only (see *Data source, cost,
+  and reliability*); its one off-device sink is Crashlytics, only while the user has opted in, and
+  only its redacted off-device rendering (see *Privacy*). The implementation is the shared
   `mikelward/androidlog` buffer, resolved as a published dependency.
 - **A bug report leaves the device only under explicit consent.** The overflow's *Send bug
   report* composes the log plus the **exact location**, per-stop distances, and a **screenshot of

@@ -82,6 +82,10 @@ fun SettingsScreen(
     railApiKey: String = "",
     onRailApiKeyChange: (String) -> Unit = {},
     railApiKeyLoaded: Boolean = true,
+    // The "Help make StopCast better" opt-in (SPEC *Privacy*): off by default; null until the stored
+    // choice is read, when the switch is disabled so a slow read can't present "off" to act on.
+    telemetryOptIn: Boolean? = false,
+    onTelemetryOptInChange: (Boolean) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -137,6 +141,14 @@ fun SettingsScreen(
                 if (liveWidgetRefreshFailed) {
                     LiveWidgetRefreshErrorRow(onDismiss = onDismissLiveWidgetRefreshError)
                 }
+                SettingSwitchRow(
+                    title = stringResource(R.string.settings_telemetry_title),
+                    summary = stringResource(R.string.settings_telemetry_summary),
+                    checked = telemetryOptIn == true,
+                    onCheckedChange = onTelemetryOptInChange,
+                    enabled = telemetryOptIn != null,
+                    switchTestTag = "telemetrySwitch",
+                )
                 // The optional user app_key (SPEC D7): keyless out of the box, a pasted key raises
                 // the TfL request budget. Last because it's the advanced, rarely-touched control.
                 ApiKeyRow(

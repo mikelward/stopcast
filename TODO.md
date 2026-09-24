@@ -139,7 +139,8 @@ exercises the whole spine the widget later renders from.
       the log ships. Landed: `docs/PRIVACY.md` is the source of truth for what leaves the
       device (the TfL requests the product needs, the optional user `app_key` → TfL if set,
       and the platform backup/transfer channel that carries persisted config including the
-      key — no off-device channel stopcast adds beyond TfL), what the on-device log carries
+      key — no off-device channel stopcast adds beyond TfL but the opt-in crash reports and
+      usage stats), what the on-device log carries
       (coarse stop/line IDs, HTTP status, location fix outcomes — never a coordinate or
       key), and that a shareable export redacts travel data. See the doc for the precise,
       canonical wording — this line is a pointer, not a second inventory to keep in sync.
@@ -149,7 +150,8 @@ exercises the whole spine the widget later renders from.
         `cacheDir`, chained crash handler — the seam Crashlytics hangs off later). The
         location / departures / stars / update / settings / widget warning seams now route
         through it, so every warning is both in Logcat and persisted on-device
-        (`docs/PRIVACY.md`). On-device only — no off-device sink. Logcat tags consolidated to
+        (`docs/PRIVACY.md`). Built on-device only; its one off-device sink since is the opt-in
+        Crashlytics one below, fed only redacted lines. Logcat tags consolidated to
         one `StopCast` tag with an area prefix (e.g. `location: …`).
   - [ ] **Wire the shared logger into the `DataStoreWatchedStopsStore` corruption handler**
         once that store is actually constructed (it has no construction site yet, so there is
@@ -157,13 +159,38 @@ exercises the whole spine the widget later renders from.
         already routes to the shared logger via `logWidgetSnapshotWarning`. The watched-set
         discard is the higher-stakes one — it loses the user's own config (though the set also
         rides Android backup). SPEC principle 2 / *never fail silently*; Codex P2 on PR #26.
-  - [ ] **Crashlytics — off-device crash + breadcrumb reporting** (requested 2026-09-21).
-        Add a Firebase Crashlytics `Destination.OFF_DEVICE` sink to `StopcastDebugLog`; the
-        library's type boundary withholds every `String` unless `safe(...)`, so breadcrumbs
-        can't leak travel data without an explicit opt-in per call. This is a **new off-device
-        channel**: a Firebase dependency, a Play **Data Safety** change, and a battery/network
-        cost — each named when built, and gated behind a user opt-in as the siblings do. Comes
-        after the shareable export.
+  - [x] **Crashlytics — off-device crash + breadcrumb reporting** (requested 2026-09-21; built
+        2026-09-24). A Crashlytics `Destination.OFF_DEVICE` sink on `StopcastDebugLog` (androidlog
+        redacts every argument not marked `safe(...)`), logged exceptions as non-fatals, and
+        Firebase Analytics, all behind the **Help make StopCast better** opt-in (off by default,
+        Settings). Inert without `google-services.json`; debug builds never collect. SPEC
+        *Privacy*, `docs/PRIVACY.md`, `dev-docs/firebase.md`.
+    - [ ] **Human setup before it collects anything** (`dev-docs/firebase.md`): after the package
+          rename, a Firebase project with the final application ID registered, its
+          `google-services.json` as the `GOOGLE_SERVICES_JSON` secret in the `production`
+          environment, and the Play Data Safety answers updated.
+    - [ ] **Usage analytics events** (maintainer, 2026-09-24): custom events carrying categories
+          and bucketed counts only, never a stop, line, journey or coordinate — each tap by kind
+          (journey card, stop row, change card, swap, star/unstar, search, settings), the "More
+          stops" (by mode) and "Faraway favorites" reveals, location permission (precise /
+          approximate / denied), fix outcome (fresh / last-known / failed), fix accuracy and
+          time-to-fix in bands, and nearby stops per mode bucketed (0 / 1 / 2–3 / 4+).
+    - [ ] **Check the stored opt-in before Firebase starts**, not after: Firebase's init provider
+          starts the SDKs from their own persisted flags before `Application.onCreate`, while our
+          consent load runs afterwards, off the main thread. Today that's safe by ordering (an SDK
+          flag is switched on only after a stored yes, and off before a stored no), so an early
+          upload rides the last recorded consent; it would not survive our consent prefs being
+          lost or corrupted on their own. The fix is manual Firebase init (drop the init
+          provider) once the stored choice is read.
+    - [ ] **A pending opt-in withdrawn while storage refuses every change** can come back on the
+          next start: an opt-out that can't delete the pending marker, write "off", or delete the
+          stored choice leaves the disk exactly as it was before the tap, so the next start reads
+          the old "pending yes". No layout avoids that once nothing can be written or deleted; the
+          SDKs are off, the switch shows off and each failure is logged. If it ever bites, the
+          narrower step is to hold a pending opt-in in the SDKs' own state (Analytics on,
+          Crashlytics off) so a withdrawal also changes a third, SDK-managed file.
+    - [ ] **Invite the opt-in once on the home screen**, as simmo does, since stopcast has no
+          onboarding to ask it in: a dismissible card; off stays the default.
   - [ ] **Log recent process-exit reasons at startup** into the shared log
         (`ActivityManager.getHistoricalProcessExitReasons`), as the siblings do
         (`ProcessExitReasons`), so a silent kill or native crash leaves a coarse cause in the

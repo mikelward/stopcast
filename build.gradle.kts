@@ -11,4 +11,8 @@ plugins {
     // catalog: the Compose and serialization compiler plugins must match the
     // Kotlin version exactly.
     alias(libs.plugins.kotlin.compose) apply false
+    // Applied by :app only when its (untracked) google-services.json exists;
+    // declared here so the classpath is pinned once for the build.
+    alias(libs.plugins.google.services) apply false
+    alias(libs.plugins.firebase.crashlytics) apply false
 }
