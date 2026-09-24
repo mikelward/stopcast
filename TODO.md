@@ -406,11 +406,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         (maintainer, 2026-09-22/23). Rendered the candidates in the header style: the font's `→`/`⟶`
         sit below the letters' center; `➔` (U+2794, from the symbol fallback font) sits centered at a
         matching weight, so both the bus terminus header and `journey_title` use it.
-  - [ ] **Swap `➔` for an inline Material `ArrowForward` icon if it looks off on a device**
-        (maintainer, 2026-09-23 — the preferred look; `➔` is the plain-string compromise). `➔` comes
-        from the fallback font, so an OEM font may draw it differently. The icon is exactly centered but
-        needs `InlineTextContent` in `StopGroupHeader` and `JourneyHeader` (the arrow kept as a marker
-        character in the label, swapped for the icon when drawn) and a spoken "to" for the journey.
+  - [x] **Draw the arrow as an inline Material `ArrowForward` icon** (maintainer, 2026-09-24): the
+        labels keep `➔` as a marker character, drawn as the icon (centered, lighter than the glyph) in
+        `StopGroupHeader` and `JourneyHeader`; the journey heading is spoken "A to B".
   - [ ] **Rethink the bus header cue: what's most informative, matched to the signage** (maintainer,
         2026-09-22; longer-term). A pole often carries several cues — a real `stopLetter`, a
         `CompassPoint`, a `Towards`, and the live departures' shared terminus. Today's precedence is

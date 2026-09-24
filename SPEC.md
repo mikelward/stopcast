@@ -210,7 +210,7 @@ service's **next few countdowns merged onto one line** on the right ("0 · 3 · 
 its **pill on each route row**, so every destination reads as its own service rather than a
 chip-less continuation. The **stop name is not repeated on every row**: it read as clutter
 restated per row. Instead each group's **header names the place and its platform/pole once**, on
-one line — "King's Cross St. Pancras – Platform 1", "Cranley Gardens – Stop G" — with the
+one line — "King's Cross St. Pancras – Platform 1", "Cranley Gardens – Stop G", or "Turnpike Lane ➔ Bank" for a destination (the arrow joins them, so no dash) — with the
 near-me distance dimmed after it ("(120 m)"); place and platform share one weight and color,
 only the distance is muted. A *place* is the set of stops that share a
 **cluster** — a bus junction's two poles, a station's several platforms — grouped together so

@@ -59,6 +59,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
@@ -623,7 +624,8 @@ fun MainScreen(
                         // Elided from the start, so a narrow bar (it shares the row with the
                         // freshness stamp) keeps the platform — the part that tells platforms apart.
                         Text(
-                            platformView?.second ?: platformTitle,
+                            withArrowIcons(platformView?.second ?: platformTitle),
+                            inlineContent = arrowInlineContent(LocalContentColor.current),
                             maxLines = 1,
                             softWrap = false,
                             overflow = TextOverflow.StartEllipsis,
@@ -1363,7 +1365,8 @@ private fun StopGroupHeader(
         )
         if (label != null) {
             Text(
-                text = " – $label",
+                text = withArrowIcons("${groupHeaderJoin(label)}$label"),
+                inlineContent = arrowInlineContent(MaterialTheme.colorScheme.onSurface),
                 style = style,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -1490,8 +1493,10 @@ private fun JourneyNote(text: String, onRetry: (() -> Unit)? = null) {
 @Composable
 private fun JourneyHeader(journey: StarredJourney, firstOnScreen: Boolean, onFlip: () -> Unit) {
     val flipLabel = stringResource(R.string.action_flip_journey)
+    val spoken = stringResource(R.string.journey_title_spoken, journey.from.name, journey.to.name)
     Text(
-        text = stringResource(R.string.journey_title, journey.from.name, journey.to.name),
+        text = withArrowIcons(stringResource(R.string.journey_title, journey.from.name, journey.to.name)),
+        inlineContent = arrowInlineContent(MaterialTheme.colorScheme.onSurface),
         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.onSurface,
         maxLines = 1,
@@ -1499,6 +1504,8 @@ private fun JourneyHeader(journey: StarredJourney, firstOnScreen: Boolean, onFli
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClickLabel = flipLabel, onClick = onFlip)
+            // Read "Highgate to King's Cross", not the arrow's name.
+            .semantics { contentDescription = spoken }
             .padding(start = 4.dp, end = 4.dp, top = if (firstOnScreen) 0.dp else 16.dp),
     )
 }
