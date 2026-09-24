@@ -646,12 +646,6 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       terminus is this stop). Leave room for a "show terminating services" option. Watch the
       edge where an interchange train "terminates" only nominally before continuing under a new
       id; scope it to genuine terminations.
-- [ ] **A watched station's rows carry no interchange yet.** Nearby stops and a saved snapshot
-      stamp each row with its stop's hub, which is how a station whose departures TfL lists under an
-      id its route doesn't call at (St Pancras's Thameslink platforms) still gets a stop list and a
-      placeable journey. A watched stop's seed has no hub, so the same station watched rather than
-      nearby still says the list is unavailable. Record the hub when a stop is watched.
-
 - [x] **Hide a mode from the near-me list** (maintainer, 2026-09-24): long-press a row or header
       for "Hide ‹mode›"; a one-line "‹Mode› hidden · Show all" banner undoes it; hidden stops aren't
       fetched from the next re-locate; the widget follows. Next ideas, for later:

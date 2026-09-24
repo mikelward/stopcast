@@ -74,9 +74,6 @@ data class PersistedStop(
     val stopLetter: String = "",
     val bearing: String = "",
     val towards: String = "",
-    // The stop's interchange, so a restored row's route page can board at a sibling stop id
-    // ([LineSequence.callingAt]) before the refresh. Defaulted: an older snapshot reads back blank.
-    val hubId: String = "",
     // The places no farther from the rider than this stop ([Terminating.Nearer]), so the widget's
     // refresh hides the same terminating services the app does. Defaulted: an older snapshot reads
     // back empty and hides nothing until the app next fetches the stop.
@@ -183,7 +180,6 @@ fun StopArrivals.toPersisted(): PersistedStop =
         stopLetter = stopLetter,
         bearing = bearing,
         towards = towards,
-        hubId = hubId,
         nearerIds = nearer.ids.sorted(),
         nearerNames = nearer.names.sorted(),
         railFeed = railFeed?.name,
@@ -202,7 +198,6 @@ fun PersistedStop.toDomain(): StopArrivals =
         stopLetter = stopLetter,
         bearing = bearing,
         towards = towards,
-        hubId = hubId,
         nearer = Terminating.Nearer(nearerIds.toSet(), nearerNames.toSet()),
         railFeed = railFeed?.let { name -> RailFeed.entries.firstOrNull { it.name == name } },
     )

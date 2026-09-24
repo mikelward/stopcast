@@ -398,9 +398,9 @@ fun MainScreen(
                 id, j.from.name, lines = listOf(j.line) + served,
                 clusterId = pole?.clusterId.orEmpty(), stopLetter = pole?.stopLetter.orEmpty(),
                 bearing = pole?.bearing.orEmpty(), towards = pole?.towards.orEmpty(),
-                // The saved end's interchange, so a card row's route page can board at a sibling id
-                // its line's route calls at (LineSequence.callingAt), as the card itself does.
-                hubId = Journeys.originHub(j, id, pole),
+                // Its interchange, so a closure there folds and titles by the interchange (SPEC
+                // *Disruptions*) when no nearby stop brought it in.
+                hubId = Journeys.originHub(id, starSequences[j.lineId], pole),
             )
         }.let(::mergeJourneyOrigins)
     }
@@ -3063,17 +3063,11 @@ internal fun RouteDetailScreen(
                         { stop ->
                             val positions = (stops as? RouteStopsUi.Loaded)?.positions.orEmpty()
                             val areas = (stops as? RouteStopsUi.Loaded)?.sequence?.stopAreas.orEmpty()
-                            val hubs = (stops as? RouteStopsUi.Loaded)?.sequence?.stopHubs.orEmpty()
                             // The name as the list shows it: a stop TfL gave no name keeps its id,
                             // so a saved journey's heading never has a blank end. Its stop area rides
-                            // along, so "Find a station" can open the end as the whole place, and its
-                            // interchange, so the card can place an end its line's route calls at
-                            // under a sibling id.
+                            // along, so "Find a station" can open the end as the whole place.
                             fun end(id: String, name: String) =
-                                JourneyEnd(
-                                    id, name.ifBlank { id }, positions[id]?.first, positions[id]?.second, areas[id].orEmpty(),
-                                    hubs[id].orEmpty(),
-                                )
+                                JourneyEnd(id, name.ifBlank { id }, positions[id]?.first, positions[id]?.second, areas[id].orEmpty())
                             // A saved journey this stop already ends on this page is toggled (off) as
                             // itself, rather than starred again under this direction's pole ids.
                             val existing = journeysHere.entries.firstOrNull { stop.id in it.value }?.key
@@ -3404,8 +3398,7 @@ internal class DrillScrollStates(private val states: HashMap<String, LazyListSta
 
 /**
  * One [StopRef] per journey origin stop: the lines of every journey fetching it, and the first
- * interchange any of them knows — an older journey saved before its end recorded one mustn't blank
- * a newer one's, which its card rows' route page needs (LineSequence.callingAt).
+ * interchange any of them knows, so one whose route isn't in yet doesn't blank another's.
  */
 internal fun mergeJourneyOrigins(refs: List<StopRef>): List<StopRef> =
     refs.groupBy { it.id }.map { (_, same) ->

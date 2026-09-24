@@ -96,8 +96,6 @@ internal data class PersistedJourneyEnd(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val areaId: String = "",
-    // Defaulted: an end saved before it was recorded reads back blank.
-    val hubId: String = "",
 )
 
 @Serializable
@@ -109,8 +107,8 @@ internal data class PersistedStarredJourney(
     val mode: String = "",
 )
 
-private fun JourneyEnd.toPersisted() = PersistedJourneyEnd(stopId, name, latitude, longitude, areaId, hubId)
-private fun PersistedJourneyEnd.toDomain() = JourneyEnd(stopId, name, latitude, longitude, areaId, hubId)
+private fun JourneyEnd.toPersisted() = PersistedJourneyEnd(stopId, name, latitude, longitude, areaId)
+private fun PersistedJourneyEnd.toDomain() = JourneyEnd(stopId, name, latitude, longitude, areaId)
 
 internal fun List<StarredJourney>.toPersisted(): PersistedStarredJourneys =
     PersistedStarredJourneys(journeys = map { PersistedStarredJourney(it.from.toPersisted(), it.to.toPersisted(), it.lineId, it.lineName, it.mode) })

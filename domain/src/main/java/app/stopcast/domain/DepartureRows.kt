@@ -39,9 +39,6 @@ object DepartureRows {
         stopLetter: String = "",
         bearing: String = "",
         towards: String = "",
-        // The stop's interchange, stamped on each timed row so its route page can find the sibling
-        // stop id a line's route calls at ([LineSequence.callingAt]). Blank for a stop in no hub.
-        hubId: String = "",
         // Whether a rail (line, direction) splits into one row per platform ([byPlatform]). The
         // in-app list does, so each platform gets its own header; the widget, which has no
         // per-platform headers, keeps one merged row per direction.
@@ -60,7 +57,6 @@ object DepartureRows {
                     stopId = stopId,
                     stopName = stopName,
                     clusterId = clusterId,
-                    hubId = hubId,
                     stopLetter = stopLetter,
                     bearing = bearing,
                     towards = towards,
@@ -105,7 +101,7 @@ object DepartureRows {
             val timed =
                 forStop(
                     stop.stopId, stop.stopName, shown, now, lineStatuses, stop.fetchedAt,
-                    stop.clusterId, stop.stopLetter, stop.bearing, stop.towards, stop.hubId, splitPlatforms,
+                    stop.clusterId, stop.stopLetter, stop.bearing, stop.towards, splitPlatforms,
                 )
             // A line whose every live prediction was hidden has departures, just none that help: it
             // mustn't surface as a "No departures" status row. Counted over live predictions only,

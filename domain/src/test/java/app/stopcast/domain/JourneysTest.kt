@@ -489,11 +489,11 @@ class JourneysTest {
     }
 
     @Test
-    fun `a card's origin takes its saved end's interchange, or its pole's`() {
-        val station = journey.copy(from = journey.from.copy(hubId = "HUBEXA"))
-        assertEquals("HUBEXA", Journeys.originHub(station, station.from.stopId, null))
-        val pole = StopLocation("POLE", "Across", 51.5, -0.12, hubId = "HUBPOL")
-        assertEquals("HUBPOL", Journeys.originHub(station, "POLE", pole))
-        assertEquals("", Journeys.originHub(station, "POLE", null))
+    fun `a card's origin takes its pole's interchange, else its route's`() {
+        val sequence = LineSequence(emptyList(), emptyMap(), stopHubs = mapOf("STN" to "HUBSEQ"))
+        assertEquals("HUBSEQ", Journeys.originHub("STN", sequence, null))
+        val pole = StopLocation("STN", "Across", 51.5, -0.12, hubId = "HUBPOL")
+        assertEquals("HUBPOL", Journeys.originHub("STN", sequence, pole))
+        assertEquals("", Journeys.originHub("STN", null, null))
     }
 }
