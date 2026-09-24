@@ -133,4 +133,36 @@ class DirectTripsTest {
         val top = stop("TOP", "Top", departure("Bottom A", 60), departure("X", 60, lineId = ""), lines = listOf(LineRef("other", "Other", "tube")))
         assertEquals(listOf("rail", "other"), DirectTrips.lineIds(listOf(top)))
     }
+
+    @Test
+    fun `a trip from here starts at every shown stop and every stop within 0_2 mi`() {
+        val distances = mapOf("SHOWN_FAR" to 1200.0, "CLOSE" to 150.0, "EDGE" to 320.0, "BEYOND" to 330.0)
+        assertEquals(
+            listOf("CLOSE", "EDGE", "SHOWN_FAR", "NO_DISTANCE"),
+            DirectTrips.originIds(listOf("SHOWN_FAR", "NO_DISTANCE"), distances),
+        )
+    }
+
+    @Test
+    fun `with nothing shown or close, a trip from here starts at the nearest stop`() {
+        assertEquals(listOf("NEAREST"), DirectTrips.originIds(emptyList(), mapOf("FAR" to 900.0, "NEAREST" to 500.0)))
+        assertTrue(DirectTrips.originIds(emptyList(), emptyMap()).isEmpty())
+    }
+
+    @Test
+    fun `hidden modes are left out unchecked, so they never hold up a shown trip`() {
+        val top = stop(
+            "TOP", "Top",
+            departure("Bottom A", 60),
+            departure("Somewhere", 90, lineId = "bus1", mode = "bus"),
+            lines = listOf(LineRef("bus2", "Bus 2", "bus")),
+        )
+        // The bus routes were never loaded: hidden, they're neither pending nor unresolved.
+        val result = DirectTrips.filter(listOf(top), listOf(station("BOTA", "Bottom A")), mapOf("rail" to rail), hidden = setOf("bus"))
+        assertEquals(listOf("rail"), result.stops.single().departures.map { it.lineId })
+        assertTrue(result.stops.single().lines.isEmpty())
+        assertFalse(result.pending)
+        assertFalse(result.unresolved)
+        assertEquals(listOf("rail"), DirectTrips.lineIds(listOf(top), hidden = setOf("bus")))
+    }
 }

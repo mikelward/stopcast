@@ -820,8 +820,8 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           but sends both ends).
     - [ ] **Star a From… To… trip as a journey**: the trip has no single starred line, which
           `StarredJourney` places its ends on, so it needs a line-free journey first.
-    - [ ] **To… from the near-me list** ("from here"): filter the nearby stops' departures by a
-          destination, without picking a *From…* station first.
+    - [x] **To… from the near-me list** (maintainer, 2026-09-24): the overflow's *To…* starts
+          from the list's default stops plus any within 0.2 mi (`hereOriginIds`).
   - [x] **Find a station from the location gate**: a *Find a station* button under the gate's
         own action, since the search needs no location and helps most a user who denied it (Codex).
 - [ ] **Search for a stop by name or line, and pin it.** Beyond nearby discovery, let the
@@ -1903,13 +1903,17 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
 
 ## Decisions needing review
 
-- **To… is a look with no Star button, and lives on the station page only (autopilot,
-  2026-09-24).** Picking From… then To… narrows the station's page to the departures that call at
-  the destination; nothing is saved. *Alternatives:* star the trip straight away (needs a line-free
-  journey — `StarredJourney` places its ends on one starred line's route), or a *To…* on the near-me
-  list ("from here"). Both are logged under *Find a station* above. **Reversible:** the To… state is
-  three saved UI values in `MainActivity`; the filter is a pure `DirectTrips` function either
-  option can reuse.
+- **To… is a look with no Star button (autopilot, 2026-09-24).** Picking a destination narrows
+  the departures to those that call there; nothing is saved. *Alternative:* star the trip straight
+  away, which needs a line-free journey (`StarredJourney` places its ends on one starred line's
+  route); logged under *Find a station* above. **Reversible:** the To… state is a few saved UI values
+  in `MainActivity`; the filter is a pure `DirectTrips` function.
+- **To… from the near-me list starts from the list's default stops plus any within 0.2 mi
+  (autopilot, 2026-09-24).** The maintainer asked for "the near-me list's stations": the nearest
+  of each mode within a mile (the list's default set, so a "More" reveal isn't carried over), plus
+  any stop within 0.2 mi, less hidden modes, worked out afresh on every re-locate so the trip moves
+  with the rider. *Alternatives:* freeze the rows shown when To… was tapped (tried: it went stale
+  on a re-locate), or the 0.2 mi radius alone. **Reversible:** `hereOriginIds` and its radius.
 - **To… reads "No direct trips to ‹place› soon" and "Checking routes…" (autopilot, 2026-09-24).**
   Provisional copy (with "To station or stop" in the search field); strings only, not translated.
 - **The "More" reveal widget mirrors the app's *current* view, not eager-only (autopilot,

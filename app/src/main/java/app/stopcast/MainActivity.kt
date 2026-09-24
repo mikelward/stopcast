@@ -9,6 +9,7 @@ import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.JourneyEnd
 import androidx.compose.ui.res.stringResource
 import app.stopcast.ui.rememberTripView
+import app.stopcast.ui.hereOriginIds
 import app.stopcast.domain.DirectTrips
 import app.stopcast.domain.stopPlace
 import app.stopcast.data.FileStarredPlacesStore
@@ -43,6 +44,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -109,6 +111,9 @@ import app.stopcast.ui.FAR_ARRIVALS_REUSE
 import app.stopcast.ui.LINE_STATUS_REUSE
 import app.stopcast.ui.MainViewModel
 import app.stopcast.ui.NearbyStopsViewModel
+import app.stopcast.domain.NearbySelection
+import app.stopcast.ui.hereTripTiers
+import app.stopcast.ui.HereTripTiers
 import app.stopcast.ui.SettingsScreen
 import app.stopcast.ui.StationPlaceholderScreen
 import app.stopcast.ui.StationSearchScreen
@@ -349,6 +354,25 @@ class MainActivity : ComponentActivity() {
                 var tripPicking by rememberSaveable { mutableStateOf(false) }
                 var tripToId by rememberSaveable { mutableStateOf<String?>(null) }
                 var tripToName by rememberSaveable { mutableStateOf("") }
+                // "To…" from the near-me list (SPEC *Finding stops → From… To…*): whether it's open,
+                // whether its destination search is up, and the destination picked. Its starting
+                // stops aren't kept: they're worked out from the current nearby set.
+                var hereTripOpen by rememberSaveable { mutableStateOf(false) }
+                var herePicking by rememberSaveable { mutableStateOf(false) }
+                var hereToId by rememberSaveable { mutableStateOf<String?>(null) }
+                var hereToName by rememberSaveable { mutableStateOf("") }
+                // The list's retained departures model is dropped when the trip opens: while the trip
+                // is up it re-locates for both, and a list model left behind would neither take those
+                // re-picks (it'd hide rows by where the rider used to be) nor stop its own fetches (one
+                // could save the old place's departures to the widget mid-fix). Back on the list, it
+                // is rebuilt from the current set.
+                val listStores: NearbyDeparturesStores = viewModel()
+                val closeHereTrip = {
+                    hereTripOpen = false
+                    herePicking = false
+                    hereToId = null
+                    hereToName = ""
+                }
 
                 // App settings + the opt-in "live widget" refresh (SPEC D5). The setting is
                 // collected here and applied to the scheduler at start — so an enabled toggle
@@ -501,7 +525,52 @@ class MainActivity : ComponentActivity() {
                     },
                     body = {
                         when (val state = nearby) {
-                            is NearbyStopsViewModel.State.Ready ->
+                            // "To…" from the near-me list takes the list's place while it's open,
+                            // inside the nearby lifecycle: the location gate, its errors and a
+                            // re-locate on return apply to it as they do to the list.
+                            is NearbyStopsViewModel.State.Ready -> if (hereTripOpen) {
+                                val hidden by HiddenModesSetting.changes.collectAsStateWithLifecycle()
+                                HereTripArea(
+                                    // Worked out from the current set, so a re-locate moves the
+                                    // trip with the rider; none left (all hidden) ends it (below).
+                                    origin = remember(state, hidden) {
+                                        val byId = state.nearbyStops.associateBy { it.id }
+                                        hereOriginIds(state.eagerStops, state.nearbyStops, state.distanceMeters, hidden)
+                                            .mapNotNull { byId[it] }
+                                    },
+                                    distanceMeters = state.distanceMeters,
+                                    clusters = state.eager + state.more,
+                                    hiddenModes = hidden,
+                                    picking = herePicking,
+                                    toId = hereToId,
+                                    toName = hereToName,
+                                    onPlanTo = { herePicking = true },
+                                    onPickTo = { match ->
+                                        herePicking = false
+                                        hereToId = match.id
+                                        hereToName = match.name
+                                    },
+                                    // Back from the search returns to the trip, or to the list when
+                                    // no destination was picked yet.
+                                    onClosePicker = { if (hereToId == null) closeHereTrip() else herePicking = false },
+                                    onClose = closeHereTrip,
+                                    // A return to the foreground re-locates first, as the list does,
+                                    // then refreshes the trip if the rider is still near its stops.
+                                    foregroundReturnPending = returnLatch.pending,
+                                    onForegroundReturnConsumed = { returnLatch.pending = false },
+                                    isRelocating = { nearbyViewModel.relocating.value },
+                                    relocate = { nearbyViewModel.relocate() },
+                                    // "Show all" re-picks the set from the same fix, as the list's does,
+                                    // so a hidden mode's stops can become origins again.
+                                    showAllModes = {
+                                        HiddenModesSetting.showAll()
+                                        nearbyViewModel.refilter()
+                                    },
+                                    relocating = nearbyViewModel.relocating,
+                                    repicked = nearbyViewModel.repicked,
+                                    locationBanner = nearbyViewModel.locationBanner,
+                                )
+                            } else {
                                 DeparturesForStops(
                                     ready = state,
                                     relocate = { onSameSet -> nearbyViewModel.relocate(onSameSet) },
@@ -510,6 +579,11 @@ class MainActivity : ComponentActivity() {
                                     onOpenLicenses = openLicenses,
                                     onOpenSettings = { settingsOpen = true },
                                     onFindStation = { stationSearchOpen = true },
+                                    onPlanTo = {
+                                        listStores.clearAll()
+                                        hereTripOpen = true
+                                        herePicking = true
+                                    },
                                     updateAvailable = updateAvailable.value,
                                     onOpenAppListing = ::openPlayListing,
                                     onSendBugReport = requestBugReport,
@@ -520,6 +594,7 @@ class MainActivity : ComponentActivity() {
                                     listState = departuresListState,
                                     farReveal = farReveal,
                                 )
+                            }
                             else -> {
                                 // While the gate is up (a failed/empty relocate, or a retry), drop
                                 // any departures store retained from the pre-gate set, so recovering
@@ -528,8 +603,11 @@ class MainActivity : ComponentActivity() {
                                 // (Codex). Ready never enters this branch, so a same-set relocate is
                                 // untouched. Runs once on gate entry (keyed Unit).
                                 val stores: NearbyDeparturesStores = viewModel()
+                                // The from-here trip's origins too, for the same reason (Codex).
+                                val hereTripStores: NearbyDeparturesStores = viewModel(key = "here-trip-stores")
                                 DisposableEffect(Unit) {
                                     stores.clearAll()
+                                    hereTripStores.clearAll()
                                     onDispose {}
                                 }
                                 LocationGate(
@@ -751,6 +829,8 @@ class MainActivity : ComponentActivity() {
         onOpenLicenses: () -> Unit,
         onOpenSettings: () -> Unit,
         onFindStation: () -> Unit,
+        // "To…" from the near-me list (SPEC *Finding stops → From… To…*).
+        onPlanTo: () -> Unit,
         // Play reports a newer version — the overflow gets its red dot and "Update available"
         // item. Threaded from the activity's [updateAvailable] state, refreshed on each resume.
         updateAvailable: Boolean,
@@ -1086,6 +1166,14 @@ class MainActivity : ComponentActivity() {
                     onOpenLicenses = onOpenLicenses,
                     onOpenSettings = onOpenSettings,
                     onFindStation = onFindStation,
+                    // Offered only while some nearby stop could start a trip (not every mode hidden).
+                    onPlanTo = if (
+                        hereOriginIds(ready.eagerStops, ready.nearbyStops, ready.distanceMeters, hiddenModes).isEmpty()
+                    ) {
+                        null
+                    } else {
+                        { onPlanTo() }
+                    },
                     updateAvailable = updateAvailable,
                     onOpenAppListing = onOpenAppListing,
                     revealableModes = revealableModes,
@@ -1275,86 +1363,314 @@ class MainActivity : ComponentActivity() {
                 )
                 return@CompositionLocalProvider
             }
-            val viewModel: MainViewModel = viewModel(
-                factory = viewModelFactory {
-                    initializer {
-                        MainViewModel(
-                            client = departuresClient(appContext),
-                            departureSourceChanges = RailApiKeySetting.changes,
-                            seedStops = ready.stops,
-                            // Stars and dismissals are per row/place across every view, so a star
-                            // set here shows on the near-me list too, and the other way round.
-                            starredStore = DataStoreStarredRowsStore.from(appContext, warn = ::logStarWarning),
-                            dismissedStore = DataStoreDismissedAlertsStore.from(appContext, warn = ::logDepartureWarning),
-                            warn = ::logDepartureWarning,
-                            arrivalsReuse = ARRIVALS_REUSE,
-                            disruptionReuse = DISRUPTION_REUSE,
-                            lineStatusReuse = LINE_STATUS_REUSE,
-                            rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
-                            logStats = ::logDepartureWarning,
-                            // Not the widget's list: the near-me model keeps the journey pins.
-                            ownsWidgetJourneys = false,
-                            // A star set here reorders the widget's pinned rows too, so redraw it.
-                            redrawWidget = { StopCastWidget().updateAll(appContext) },
-                            writeFailures = writeFailures,
-                            onStarToggled = { row -> rememberStarredPlace(appContext, row) },
-                        )
-                    }
-                },
+            LookDepartures(
+                stops = ready.stops,
+                title = if (tripTo == null) stationName else stringResource(R.string.journey_title, stationName, tripToName),
+                onClose = closeStation,
+                onPlanTo = onPlanTo,
+                destination = (tripTo?.second as? StationStopsViewModel.State.Ready)?.stops,
+                destinationName = tripToName,
+                onClearDestination = clearTo,
+                writeFailures = writeFailures,
             )
-            val state by viewModel.state.collectAsStateWithLifecycle()
-            val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
-            val starred by viewModel.starred.collectAsStateWithLifecycle()
-            val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
-            val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
-            val dismissed by viewModel.dismissed.collectAsStateWithLifecycle()
-            val dismissWriteFailed by viewModel.dismissWriteFailed.collectAsStateWithLifecycle()
-            // Kept live while shown, like the near-me list; there's no location to re-resolve.
-            AutoRefresh(viewModel, NOT_RELOCATING)
-            // And refreshed on a return to the foreground, as the near-me list is (by its relocate),
-            // so coming back to the app doesn't leave aged departures up until the next tick.
-            val lifecycleOwner = LocalLifecycleOwner.current
-            LaunchedEffect(lifecycleOwner, viewModel) {
-                var returning = false
-                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                    if (returning && !viewModel.refreshing.value) viewModel.refresh()
-                    returning = true
+        }
+    }
+
+    /**
+     * "To…" from the near-me list (SPEC *Finding stops → From… To…*): the destination search, then
+     * the direct trips there from the [origin] stops near the rider, titled "To ‹place›". Like a
+     * searched station, a look: its models are retained apart from the near-me list's and dropped
+     * when it closes, nothing is saved, and the destination isn't added to the search's Recent list.
+     */
+    @Composable
+    private fun HereTripArea(
+        origin: List<StopRef>,
+        // Each stop's distance from the rider: the trip's rows show a line once, from its nearest
+        // stop, ordered nearest first, with distances in the headers, as the near-me list does.
+        distanceMeters: Map<String, Double>,
+        // The whole nearby set, split into the trip's origins and the places around them for its model.
+        clusters: List<NearbySelection.NearbyCluster>,
+        hiddenModes: Set<String>,
+        picking: Boolean,
+        toId: String?,
+        toName: String,
+        onPlanTo: () -> Unit,
+        onPickTo: (StationMatch) -> Unit,
+        onClosePicker: () -> Unit,
+        onClose: () -> Unit,
+        foregroundReturnPending: Boolean,
+        onForegroundReturnConsumed: () -> Unit,
+        isRelocating: () -> Boolean,
+        relocate: () -> Unit,
+        showAllModes: () -> Unit,
+        relocating: StateFlow<Boolean>,
+        // Each finished re-pick of the nearby set (a fresh fix, or "Show all").
+        repicked: StateFlow<NearbyStopsViewModel.Repick?>,
+        // Whether the nearby set's fix is low-confidence (a re-locate that kept the old set, or an
+        // approximate fix): shown over the trip as over the list, so its departures never read as
+        // from where the rider is now when the location couldn't be confirmed.
+        locationBanner: StateFlow<LocationBanner?>,
+    ) {
+        val appContext = applicationContext
+        val originKey = remember(origin) { origin.map { it.id }.sorted().joinToString(",") }
+        val repick by repicked.collectAsStateWithLifecycle()
+        ConsumeForegroundReturn(
+            pending = foregroundReturnPending,
+            isBusy = isRelocating,
+            onConsumed = onForegroundReturnConsumed,
+            onRelocate = relocate,
+        )
+        val search: StationSearchViewModel = viewModel(
+            key = "here-to-search",
+            factory = viewModelFactory {
+                initializer {
+                    StationSearchViewModel(
+                        stationFinder,
+                        createSavedStateHandle(),
+                        loadIndex = { StationIndexStore.load(appContext) },
+                        loadYours = { loadYourStops(appContext) },
+                        recordOpen = {},
+                        warn = ::logDepartureWarning,
+                    )
                 }
-            }
-            CompositionLocalProvider(
-                LocalRouteTopology provides routeTopology.value,
-                LocalRouteStops provides routeStops(appContext),
-            ) {
-                val now = tickingNow()
-                val destination = (tripTo?.second as? StationStopsViewModel.State.Ready)?.stops
-                val hubs = remember(ready.stops) { ready.stops.associate { it.id to it.hubId } }
-                val tripEnds = remember(destination) {
-                    destination?.map { DirectTrips.End(it.id, it.name, it.hubId) }
+            },
+        )
+        val stores: NearbyDeparturesStores = viewModel(key = "here-trip-stores")
+        val toStores: NearbyDeparturesStores = viewModel(key = "here-to-stores")
+        val writeFailures = viewModel<WriteFailuresHolder>().failures
+        val close = {
+            stores.clearAll()
+            toStores.clearAll()
+            search.clear()
+            onClose()
+        }
+        // Nothing nearby to start from (every mode hidden, or a relocation that left none of the
+        // origins): end the trip before offering a destination search it couldn't use.
+        if (origin.isEmpty()) {
+            LaunchedEffect(Unit) { close() }
+            return
+        }
+        if (picking || toId == null) {
+            val state by search.state.collectAsStateWithLifecycle()
+            LaunchedEffect(Unit) { search.refreshYours() }
+            StationSearchScreen(
+                state = state,
+                onQueryChange = search::onQueryChange,
+                onOpenStation = { match ->
+                    toStores.clearAll()
+                    search.clear()
+                    onPickTo(match)
+                },
+                onRetry = search::retry,
+                onBack = {
+                    search.clear()
+                    if (toId == null) close() else onClosePicker()
+                },
+                hint = stringResource(R.string.station_search_to_hint),
+            )
+            return
+        }
+        val title = stringResource(R.string.trip_title_here, toName)
+        val toOwner = remember(toId) { toStores.ownerFor(toId) }
+        val toModel: StationStopsViewModel = viewModel(
+            viewModelStoreOwner = toOwner,
+            factory = viewModelFactory {
+                initializer { StationStopsViewModel(stationFinder, toId, warn = ::logDepartureWarning) }
+            },
+        )
+        val to by toModel.state.collectAsStateWithLifecycle()
+        val destination = (to as? StationStopsViewModel.State.Ready)?.stops
+        if (destination == null) {
+            StationPlaceholderScreen(title = title, state = to, onRetry = toModel::retry, onBack = close)
+            return
+        }
+        // Keyed on the origin set, so a relocation that changes it fetches the new stops afresh.
+        val owner = remember(originKey) { stores.ownerFor(originKey) }
+        CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
+            LookDepartures(
+                stops = origin,
+                locationBanner = locationBanner,
+                hereTiers = remember(clusters, originKey, distanceMeters) {
+                    hereTripTiers(clusters, origin.mapTo(HashSet()) { it.id }, distanceMeters)
+                },
+                title = title,
+                onClose = close,
+                // Changing the destination drops the trip's model: while the search is up nothing
+                // of the trip is on screen to stop its fetches during a re-locate, and the next
+                // destination's page is built afresh from the current stops.
+                onPlanTo = {
+                    stores.clearAll()
+                    onPlanTo()
+                },
+                destination = destination,
+                destinationName = toName,
+                onClearDestination = null,
+                writeFailures = writeFailures,
+                refreshOnReturn = false,
+                repick = repick,
+                // Refresh re-locates first, as the list's does, then refreshes on the same set; a
+                // moved-to set works the origins out again.
+                onRefresh = relocate,
+                relocating = relocating,
+                distanceMeters = distanceMeters,
+                hiddenModes = hiddenModes,
+                onShowAllModes = showAllModes,
+            )
+        }
+    }
+
+    /**
+     * A looked-up set of [stops]' live departures (SPEC *Finding stops*) — a searched station's page,
+     * or a To… trip from the stops near the rider — under [title], with its own retained
+     * [MainViewModel] from the caller's store. With a [destination] ([destinationName]'s stops) it
+     * keeps only the departures that go there directly (*From… To…*). Never saved for the widget.
+     * Back runs [onClearDestination] while a destination is set and it is given, else [onClose].
+     */
+    @Composable
+    private fun LookDepartures(
+        stops: List<StopRef>,
+        title: String,
+        onClose: () -> Unit,
+        onPlanTo: () -> Unit,
+        destination: List<StopRef>?,
+        destinationName: String,
+        onClearDestination: (() -> Unit)?,
+        writeFailures: WriteFailures,
+        // Refresh on a return to the foreground. Off for a trip from here, whose caller re-locates
+        // first and hands over the outcome as a [repick].
+        refreshOnReturn: Boolean = true,
+        // A trip from here: the latest finished re-pick of the nearby set, to reconcile to.
+        repick: NearbyStopsViewModel.Repick? = null,
+        // In place of a plain refresh (the trip from here re-locates first), and its fix in flight.
+        onRefresh: (() -> Unit)? = null,
+        relocating: StateFlow<Boolean>? = null,
+        distanceMeters: Map<String, Double> = emptyMap(),
+        hiddenModes: Set<String> = emptySet(),
+        onShowAllModes: () -> Unit = HiddenModesSetting::showAll,
+        // A trip from here: the model is built from, and each new [repick] reconciles it to,
+        // these tiers, as the near-me list's is, rather than refreshing a seeded stop list.
+        hereTiers: HereTripTiers? = null,
+        // The near-me set's location banner, for a trip from here.
+        locationBanner: StateFlow<LocationBanner?>? = null,
+    ) {
+        val appContext = applicationContext
+        val viewModel: MainViewModel = viewModel(
+            factory = viewModelFactory {
+                initializer {
+                    MainViewModel(
+                        client = departuresClient(appContext),
+                        departureSourceChanges = RailApiKeySetting.changes,
+                        seedStops = stops,
+                        initialMore = hereTiers?.more.orEmpty(),
+                        stopDistanceMeters = hereTiers?.distanceMeters.orEmpty(),
+                        // A trip from here spaces out its far origins' fetches as the list does.
+                        farArrivalsReuse = if (hereTiers != null) FAR_ARRIVALS_REUSE else java.time.Duration.ZERO,
+                        // Stars and dismissals are per row/place across every view, so a star
+                        // set here shows on the near-me list too, and the other way round.
+                        starredStore = DataStoreStarredRowsStore.from(appContext, warn = ::logStarWarning),
+                        dismissedStore = DataStoreDismissedAlertsStore.from(appContext, warn = ::logDepartureWarning),
+                        warn = ::logDepartureWarning,
+                        arrivalsReuse = ARRIVALS_REUSE,
+                        disruptionReuse = DISRUPTION_REUSE,
+                        lineStatusReuse = LINE_STATUS_REUSE,
+                        rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
+                        logStats = ::logDepartureWarning,
+                        // Not the widget's list: the near-me model keeps the journey pins.
+                        ownsWidgetJourneys = false,
+                        // A star set here reorders the widget's pinned rows too, so redraw it.
+                        redrawWidget = { StopCastWidget().updateAll(appContext) },
+                        writeFailures = writeFailures,
+                        onStarToggled = { row -> rememberStarredPlace(appContext, row) },
+                    )
                 }
-                // With a destination, only the departures that go there (SPEC *Finding stops →
-                // From… To…*); the station's whole page otherwise.
-                val trip = tripEnds?.let { rememberTripView(state, it, tripToName, hubs, now) }
-                MainScreen(
-                    state = trip?.state ?: state,
-                    now = now,
-                    onRefresh = { viewModel.refresh() },
-                    refreshing = refreshing,
-                    starred = starred,
-                    onToggleStar = viewModel::toggleStar,
-                    starringAvailable = starringAvailable,
-                    starWriteFailed = starWriteFailed,
-                    onStarWriteFailureShown = viewModel::starWriteFailureShown,
-                    dismissed = dismissed,
-                    onDismissAlert = viewModel::dismissAlert,
-                    dismissWriteFailed = dismissWriteFailed,
-                    onDismissWriteFailureShown = viewModel::dismissWriteFailureShown,
-                    stationTitle = if (trip == null) stationName else stringResource(R.string.journey_title, stationName, tripToName),
-                    onCloseStation = if (trip == null) closeStation else clearTo,
-                    onPlanTo = onPlanTo,
-                    tripNotice = trip?.notice,
-                    emptyMessage = trip?.emptyMessage,
-                )
+            },
+        )
+        val state by viewModel.state.collectAsStateWithLifecycle()
+        val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+        val starred by viewModel.starred.collectAsStateWithLifecycle()
+        val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
+        val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
+        val dismissed by viewModel.dismissed.collectAsStateWithLifecycle()
+        val dismissWriteFailed by viewModel.dismissWriteFailed.collectAsStateWithLifecycle()
+        // Kept live while shown, like the near-me list; there's no location to re-resolve.
+        AutoRefresh(viewModel, relocating ?: NOT_RELOCATING)
+        val relocatingNow = relocating?.collectAsStateWithLifecycle()?.value ?: false
+        val locationBannerNow = locationBanner?.collectAsStateWithLifecycle()?.value
+        val hiddenModesWriteFailed by HiddenModesSetting.writeFailed.collectAsStateWithLifecycle()
+        // And refreshed on a return to the foreground, as the near-me list is (by its relocate),
+        // so coming back to the app doesn't leave aged departures up until the next tick.
+        val lifecycleOwner = LocalLifecycleOwner.current
+        LaunchedEffect(lifecycleOwner, viewModel, refreshOnReturn) {
+            if (!refreshOnReturn) return@LaunchedEffect
+            var returning = false
+            lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                if (returning && !viewModel.refreshing.value) viewModel.refresh()
+                returning = true
             }
+        }
+        val latestTiers by rememberUpdatedState(hereTiers)
+        // Which re-pick this model last took, kept beside the model in its own store, so it
+        // outlives this composition (the To… search replacing the page, a rotation) exactly as
+        // long as the model does. A new model (new origins) starts from the latest: it fetches on
+        // its own. A re-pick it hasn't taken reconciles it — any that finished while the page was
+        // away included — re-fetching with the current stops, places and distances, and replacing
+        // any fetch still in flight rather than skipping behind it.
+        val taken: TakenRepick = viewModel(
+            factory = viewModelFactory { initializer { TakenRepick(repick?.id) } },
+        )
+        LaunchedEffect(viewModel, repick) {
+            val done = repick ?: return@LaunchedEffect
+            val tiers = latestTiers ?: return@LaunchedEffect
+            if (done.id == taken.id) return@LaunchedEffect
+            taken.id = done.id
+            viewModel.reconcile(tiers.eager, tiers.more, tiers.distanceMeters)
+        }
+        // A trip from here re-locates in the background: stop its fetch while the fix is in
+        // flight, as the list's refresh does, so the old origins' departures aren't stamped as new.
+        if (relocating != null && hereTiers != null) {
+            LaunchedEffect(viewModel, relocating) {
+                relocating.collect { if (it) viewModel.cancelFetch() }
+            }
+        }
+        CompositionLocalProvider(
+            LocalRouteTopology provides routeTopology.value,
+            LocalRouteStops provides routeStops(appContext),
+        ) {
+            val now = tickingNow()
+            val hubs = remember(stops) { stops.associate { it.id to it.hubId } }
+            val tripEnds = remember(destination) {
+                destination?.map { DirectTrips.End(it.id, it.name, it.hubId) }
+            }
+            // With a destination, only the departures that go there (SPEC *Finding stops →
+            // From… To…*); the whole page otherwise.
+            val trip = tripEnds?.let { rememberTripView(state, it, destinationName, hubs, now, hiddenModes) }
+            MainScreen(
+                state = trip?.state ?: state,
+                now = now,
+                onRefresh = onRefresh ?: { viewModel.refresh() },
+                refreshing = refreshing || relocatingNow,
+                starred = starred,
+                onToggleStar = viewModel::toggleStar,
+                stopDistanceMeters = distanceMeters,
+                hiddenModes = hiddenModes,
+                onShowAllModes = onShowAllModes,
+                // A "Show all" that couldn't be saved says so here too, as on the list.
+                hiddenModesWriteFailed = hiddenModesWriteFailed,
+                onHiddenModesWriteFailureShown = HiddenModesSetting::writeFailureShown,
+                locationBanner = locationBannerNow,
+                starringAvailable = starringAvailable,
+                starWriteFailed = starWriteFailed,
+                onStarWriteFailureShown = viewModel::starWriteFailureShown,
+                dismissed = dismissed,
+                onDismissAlert = viewModel::dismissAlert,
+                dismissWriteFailed = dismissWriteFailed,
+                onDismissWriteFailureShown = viewModel::dismissWriteFailureShown,
+                stationTitle = title,
+                onCloseStation = if (trip == null || onClearDestination == null) onClose else onClearDestination,
+                onPlanTo = { onPlanTo() },
+                tripNotice = trip?.notice,
+                emptyMessage = trip?.emptyMessage,
+            )
         }
     }
 
@@ -1567,6 +1883,9 @@ internal suspend fun persistBugReportOptOut(settings: AppSettings) {
 internal class WriteFailuresHolder : androidx.lifecycle.ViewModel() {
     val failures = WriteFailures()
 }
+
+/** The last nearby re-pick a trip's model was reconciled to, retained beside that model. */
+internal class TakenRepick(var id: Long?) : androidx.lifecycle.ViewModel()
 
 internal class NearbyDeparturesStores : androidx.lifecycle.ViewModel() {
     private val stores = mutableMapOf<String, ViewModelStore>()

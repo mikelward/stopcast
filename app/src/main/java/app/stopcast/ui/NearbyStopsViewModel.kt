@@ -156,6 +156,24 @@ class NearbyStopsViewModel(
     private val _locationBanner = MutableStateFlow<LocationBanner?>(null)
     val locationBanner: StateFlow<LocationBanner?> = _locationBanner.asStateFlow()
 
+    /**
+     * A finished re-pick of a shown set ([relocate] or [refilter]): the set shown [before] it and
+     * the one after (the same one when a re-locate kept it). A view that shows part of the set (the
+     * To… trip from here) compares the two to decide whether its own part is unchanged and wants a
+     * refresh. Held here, not in the view, so the outcome survives a configuration change that
+     * lands mid-re-pick. [id] is unique per re-pick, for a view to remember which it has handled.
+     */
+    data class Repick(val id: Long, val before: State.Ready, val after: State.Ready)
+
+    private val _repicked = MutableStateFlow<Repick?>(null)
+    val repicked: StateFlow<Repick?> = _repicked.asStateFlow()
+
+    private fun repicked(before: State, after: State) {
+        if (before is State.Ready && after is State.Ready) {
+            _repicked.value = Repick(maxOf(System.nanoTime(), (_repicked.value?.id ?: 0) + 1), before, after)
+        }
+    }
+
     // The in-flight resolve, canceled before a new one starts so a superseded lookup can't
     // finish last and overwrite the newer result (e.g. a quick double-tap on Try again).
     private var locateJob: Job? = null
@@ -231,6 +249,7 @@ class NearbyStopsViewModel(
                 // left as they were.
                 fix.isFallback && current is State.Ready -> {
                     _locationBanner.value = LocationBanner.UPDATE_FAILED
+                    repicked(current, current)
                     // A re-locate arrives with the retained set's in-flight fetch already canceled
                     // (the caller cancels before re-locating, so a superseded fetch can't stamp the
                     // old set's departures). We're keeping that set, so restart its fetch in place —
@@ -250,6 +269,7 @@ class NearbyStopsViewModel(
                     _state.value = next
                     _locationBanner.value =
                         if (next is State.Ready && fix.isFallback) LocationBanner.APPROXIMATE else null
+                    repicked(current, next)
                     if (
                         next is State.Ready && current is State.Ready &&
                         next.clusterSetKey == current.clusterSetKey
@@ -292,6 +312,7 @@ class NearbyStopsViewModel(
         locateJob = viewModelScope.launch {
             val next = resolveFrom(fix)
             _state.value = next
+            repicked(shown, next)
             if (next is State.Ready && shown is State.Ready && next.clusterSetKey == shown.clusterSetKey) onSameSet(next)
         }
     }
