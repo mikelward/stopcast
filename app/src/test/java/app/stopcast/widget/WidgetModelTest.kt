@@ -534,4 +534,27 @@ class WidgetModelTest {
         val rows = widgetModel(snapshot, now).rows.map { it.row }
         assertEquals(listOf(listOf("Hill"), listOf("Dale")), rows.map { r -> r.upcoming.map { it.destination } })
     }
+
+    @Test
+    fun `a stop the refresh couldn't get makes the rest uncertain, however fresh`() {
+        val fresh = stop("490000001A", listOf(departure("victoria", 120)), now)
+        val complete = widgetModel(DeparturesSnapshot(stops = listOf(fresh), fetchedAt = now), now)
+        assertFalse(complete.uncertain)
+        val missing = widgetModel(
+            DeparturesSnapshot(stops = listOf(fresh), fetchedAt = now, missingStopIds = setOf("490000002B")),
+            now,
+        )
+        assertFalse("the shown stop is still fresh", missing.stale)
+        assertTrue("but a requested stop is absent, so the widget isn't complete", missing.uncertain)
+    }
+
+    @Test
+    fun `a snapshot left with only missing stops says they may be out of date, not load the app`() {
+        val onlyMissing = DeparturesSnapshot(stops = emptyList(), fetchedAt = now, missingStopIds = setOf("490000002B"))
+        val model = widgetModel(onlyMissing, now)
+        assertTrue(model.hasData)
+        assertTrue(model.uncertain)
+        assertTrue(model.rows.isEmpty())
+        assertFalse(widgetModel(DeparturesSnapshot(stops = emptyList(), fetchedAt = now), now).hasData)
+    }
 }

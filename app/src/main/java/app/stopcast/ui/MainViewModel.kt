@@ -262,6 +262,9 @@ class MainViewModel(
             stops = kept,
             fetchedAt = snapshot.fetchedAt,
             journeyOnlyStopIds = kept.mapTo(HashSet()) { it.stopId } - nearIds,
+            // A nearby stop with no arrivals at all failed with nothing to fall back on
+            // ([Snapshot.mergeStop] drops it), so the widget must not read the rest as complete.
+            missingStopIds = nearIds - kept.mapTo(HashSet()) { it.stopId },
         )
     }
 

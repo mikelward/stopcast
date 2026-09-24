@@ -32,6 +32,10 @@ data class WatchEnvelope(
     val starred: List<WatchStarKey> = emptyList(),
     /** Stops left out past the transfer ceiling, lowest priority first; the watch says so. */
     val omittedStops: Int = 0,
+    /** The widget's stops the last refresh couldn't get ([DeparturesSnapshot.missingStopIds]), so
+     *  the watch never shows an incomplete refresh as complete. Past the transfer ceiling, one id
+     *  stands for the list: the watch reads only whether it's empty. */
+    val missingStopIds: List<String> = emptyList(),
 ) {
     companion object {
         /** Bump on any change an older watch app would misread; it refuses rather than guesses. */
@@ -94,7 +98,8 @@ object WatchEnvelopes {
      *   renders at [now] (fresh rows ahead of stale, favorites pinned; a stop with no row at all
      *   ranks last), holding back any stop with a starred row or a row a complication is set to
      *   ([selected]) until no other is left. The ceiling is a hard bound: past it even those go,
-     *   lowest-ranked first. The count is recorded so the watch can say so.
+     *   lowest-ranked first. The count is recorded so the watch can say so. Before any stop goes,
+     *   the missing-stop list shrinks to one id, which still marks the envelope incomplete.
      */
     fun build(
         snapshot: DeparturesSnapshot,
@@ -120,19 +125,25 @@ object WatchEnvelopes {
             return allKeys.filter { it.stopId in ids }
         }
         val protectedStops = (starred + selected).mapTo(HashSet()) { it.stopId }
+        val missing = (snapshot.missingStopIds - snapshot.journeyOnlyStopIds).sorted()
 
-        var envelope = WatchEnvelope(stops = stops, starred = keysFor(stops))
+        var envelope = WatchEnvelope(stops = stops, starred = keysFor(stops), missingStopIds = missing)
         var bytes = encode(envelope)
         if (bytes.size <= dataItemBudget) return WatchPayload(envelope, bytes, asAsset = false)
         if (bytes.size <= transferCeiling) return WatchPayload(envelope, bytes, asAsset = true)
         val ranked = rankedStopIds(snapshot.stops.filterNot { it.stopId in snapshot.journeyOnlyStopIds }, starred, threshold, now)
         val dropOrder = ranked.reversed().let { low -> low.filterNot { it in protectedStops } + low.filter { it in protectedStops } }
+        // The watch reads only whether any stop is missing, so past the ceiling one id keeps the
+        // flag, and the list can't hold the payload over the bound on its own.
+        val missingFlag = missing.take(1)
+        envelope = envelope.copy(missingStopIds = missingFlag)
+        bytes = encode(envelope)
         val dropped = HashSet<String>()
         for (id in dropOrder) {
             if (bytes.size <= transferCeiling) break
             dropped += id
             val kept = stops.filterNot { it.stopId in dropped }
-            envelope = WatchEnvelope(stops = kept, starred = keysFor(kept), omittedStops = stops.size - kept.size)
+            envelope = WatchEnvelope(stops = kept, starred = keysFor(kept), omittedStops = stops.size - kept.size, missingStopIds = missingFlag)
             bytes = encode(envelope)
         }
         return WatchPayload(envelope, bytes, asAsset = true)

@@ -27,6 +27,10 @@ data class DeparturesSnapshot(
     // Stops kept only as a journey's origin (not nearby): the widget shows just their journey
     // departures, never their other rows.
     val journeyOnlyStopIds: Set<String> = emptySet(),
+    // Stops the widget should show that the last refresh asked for but couldn't get, with no
+    // earlier arrivals to fall back on, so they're absent from [stops]. Without this an initial
+    // refresh where one stop failed would look complete: every stop present is fresh.
+    val missingStopIds: Set<String> = emptySet(),
 )
 
 /**
@@ -121,7 +125,10 @@ object WidgetJourneys {
             stops = next,
             fetchedAt = next.maxOfOrNull { it.fetchedAt } ?: stored!!.fetchedAt,
             journeys = journeys,
-            journeyOnlyStopIds = journeyOnly.filterTo(HashSet()) { it in nextIds } + added,
+            // An origin that was a missing nearby stop is nearby, recovered: not journey-only.
+            journeyOnlyStopIds = journeyOnly.filterTo(HashSet()) { it in nextIds } +
+                added.filterNot { it in stored?.missingStopIds.orEmpty() },
+            missingStopIds = stored?.missingStopIds.orEmpty() - nextIds,
         )
     }
 

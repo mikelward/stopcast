@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -397,5 +398,53 @@ class DataStoreSnapshotStoreTest {
         val store = DataStoreSnapshotStore(FakeDataStore(null))
         store.pruneStops(listOf("940GZZLUOXC"))
         assertNull(store.load())
+    }
+
+    @Test
+    fun `missing stops round-trip, and a stop the store holds isn't missing`() = runTest {
+        val backing = FakeDataStore(null)
+        val store = DataStoreSnapshotStore(backing)
+        store.save(snapshot().copy(missingStopIds = setOf("940GZZLUKSX")))
+        assertEquals(setOf("940GZZLUKSX"), store.load()!!.missingStopIds)
+        // A later save that names the held stop as missing (a narrower fetch) keeps its copy instead.
+        store.saveKeepingJourneys(snapshot().copy(missingStopIds = setOf("940GZZLUOXC", "940GZZLUKSX")))
+        assertEquals(setOf("940GZZLUKSX"), store.load()!!.missingStopIds)
+    }
+
+    @Test
+    fun `a departed stop is no longer missing`() = runTest {
+        val backing = FakeDataStore(null)
+        val store = DataStoreSnapshotStore(backing)
+        store.save(snapshot().copy(missingStopIds = setOf("940GZZLUKSX", "940GZZLUBND")))
+        store.pruneStops(listOf("940GZZLUKSX"))
+        assertEquals(setOf("940GZZLUBND"), store.load()!!.missingStopIds)
+    }
+
+    @Test
+    fun `an older worker result can't clear the app's newer missing stops`() = runTest {
+        val backing = FakeDataStore(null)
+        val store = DataStoreSnapshotStore(backing)
+        // The app stored the same stops, now with one it couldn't get.
+        store.save(snapshot().copy(missingStopIds = setOf("940GZZLUKSX")))
+        // A worker that loaded before that write saves its result over the same stop set.
+        val applied = store.saveIfStopsMatch(snapshot(), snapshot().stops.map { it.stopId })
+        assertTrue(applied)
+        assertEquals(setOf("940GZZLUKSX"), store.load()!!.missingStopIds)
+    }
+
+    @Test
+    fun `a pinned origin that's also nearby, carried from its stored copy, is unrefreshed, not missing or journey-only`() = runTest {
+        val backing = FakeDataStore(null)
+        val store = DataStoreSnapshotStore(backing)
+        val pin = WidgetJourney("940GZZLUKSX", setOf(JourneyCall("victoria", "Brixton", null)), key = "j")
+        val origin = StopArrivals("940GZZLUKSX", "King's Cross St. Pancras", emptyList(), now.minusSeconds(120))
+        store.save(snapshot().copy(stops = snapshot().stops + origin, journeys = listOf(pin)))
+        // After a restart the origin is nearby, but its fetch failed with nothing in memory.
+        store.saveKeepingJourneys(snapshot().copy(missingStopIds = setOf("940GZZLUKSX")))
+        val after = store.load()!!
+        // Its refresh failed, so the widget flags it rather than showing it as live.
+        assertFalse(after.stops.single { it.stopId == "940GZZLUKSX" }.arrivalsFresh)
+        assertEquals(emptySet<String>(), after.missingStopIds)
+        assertTrue("940GZZLUKSX" !in after.journeyOnlyStopIds)
     }
 }
