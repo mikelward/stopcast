@@ -133,8 +133,21 @@ fun lineFillColor(lineId: String, mode: String): Color? {
  */
 fun railOperatorColor(mode: String, operator: String): Color? {
     if (!mode.equals("national-rail", ignoreCase = true)) return null
-    return railOperatorColors[normalizeRailOperator(operator)]
+    val key = normalizeRailOperator(operator)
+    railOperatorColors[key]?.let { return it }
+    return railOperatorColorPrefixes.firstOrNull { (prefix, _) -> key.startsWith(prefix) }?.second
 }
+
+/**
+ * Brand colors matched by the start of the normalized operator name, for an operator the rail
+ * feed spells more than one way (the same reason its pill code is prefix-pinned in
+ * `LineCode.kt`). London Northwestern's green is the maintainer's pick (2026-09-24) of
+ * `#27B67A`, from the route-map legend in Wikipedia's *West Midlands Trains* article, over an
+ * unsourced `#00BF6F`: it takes a white label like most rail pills.
+ */
+private val railOperatorColorPrefixes: List<Pair<String, Color>> = listOf(
+    "londonnorthwestern" to Color(0xFF27B67A),
+)
 
 /**
  * The accent color for a named Overground line, or `null` for anything else. A non-null

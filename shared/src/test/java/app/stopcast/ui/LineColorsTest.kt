@@ -99,6 +99,18 @@ class LineColorsTest {
     }
 
     @Test
+    fun `London Northwestern is green however the feed spells it`() {
+        val green = Color(0xFF27B67A)
+        assertEquals(green, railOperatorColor("national-rail", "London Northwestern Railway"))
+        assertEquals(green, railOperatorColor("national-rail", "London North Western Railway"))
+        assertEquals(green, railOperatorColor("national-rail", "London Northwestern Railway (LNR)"))
+        // Rail only, like every operator color.
+        assertNull(railOperatorColor("bus", "London Northwestern Railway"))
+        // A white label, like most rail pills.
+        assertEquals(Color.White, textColorOn(green))
+    }
+
+    @Test
     fun `operator color is case- and punctuation-insensitive`() {
         val emr = Color(0xFF713563)
         assertEquals(emr, railOperatorColor("national-rail", "east midlands railway"))
