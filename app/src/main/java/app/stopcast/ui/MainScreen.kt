@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +62,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.Dp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -95,6 +100,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
@@ -195,6 +201,9 @@ fun MainScreen(
     // Whether [journeys] is the saved list yet: until it is, nothing is reported for the widget, so
     // a list still loading isn't taken for "no journeys" and unpins them.
     journeysKnown: Boolean = true,
+    // True only until the saved journeys' first read arrives (not when that read failed): an open
+    // journey view restored across a rotation waits this out rather than closing.
+    journeysLoading: Boolean = false,
     // The rows the user has starred (SPEC D8): pinned to the top, and their star filled.
     // Empty by default so an unwired build/test renders the plain soonest-first list.
     starred: Set<StarredRow> = emptySet(),
@@ -642,6 +651,21 @@ fun MainScreen(
     val shownRows = platformRows ?: rows
     BackHandler(enabled = platformRows != null) { closeView() }
 
+    // The starred journey whose own view is open (its key), from a tap on its heading, or null. It
+    // resolves against the current cards each recomposition, so it follows a swap and its trains stay
+    // live; once the saved journeys are known and it isn't among them (unstarred), the view closes.
+    var journeyViewKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val journeyViewCard = journeyViewKey?.let { key -> journeyCards.firstOrNull { it.journey.key == key } }
+    LaunchedEffect(journeyViewKey, journeyViewCard == null, journeysLoading) {
+        if (journeyViewKey != null && journeyViewCard == null && !journeysLoading) journeyViewKey = null
+    }
+    // Open while its card is shown, and while the saved journeys' first read is pending (after a
+    // rotation they re-read from disk): the view then holds a placeholder rather than flashing to the
+    // list, and Back still leaves it (Codex). A read that failed isn't pending, so the view closes
+    // rather than spin forever (Codex).
+    val journeyViewOpen = journeyViewKey != null && (journeyViewCard != null || journeysLoading)
+    BackHandler(enabled = journeyViewOpen) { journeyViewKey = null }
+
     // The route whose detail is open, held by its stable row identity rather than the row object: a
     // saveable String survives a configuration change (the page stays open on rotation) and resets on
     // process death, and it re-resolves against the current `rows` each recomposition so the page
@@ -746,7 +770,11 @@ fun MainScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    if (platformRows != null) {
+                    // A journey's own view heads its content with the full journey instead: the bar
+                    // shares its row with the freshness stamp, too narrow for both names.
+                    if (journeyViewOpen) {
+                        Unit
+                    } else if (platformRows != null) {
                         // Elided from the start, so a narrow bar (it shares the row with the
                         // freshness stamp) keeps the platform — the part that tells platforms apart.
                         Text(
@@ -763,7 +791,14 @@ fun MainScreen(
                 navigationIcon = {
                     // A drilled-into platform view is a destination of its own: back returns to the
                     // full list (the system back does too — see the BackHandler above).
-                    if (platformRows != null) {
+                    if (journeyViewOpen) {
+                        IconButton(onClick = { journeyViewKey = null }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back),
+                            )
+                        }
+                    } else if (platformRows != null) {
                         IconButton(onClick = { closeView() }) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
@@ -868,7 +903,31 @@ fun MainScreen(
                 if (updateAvailable) UpdateAvailableButton(onClick = onOpenAppListing)
             }
 
-            is DeparturesUiState.Loaded ->
+            is DeparturesUiState.Loaded -> if (journeyViewOpen && journeyViewCard == null) {
+                // The saved journeys are still loading: a placeholder until the card is back.
+                Centered(content) { CircularProgressIndicator() }
+            } else if (journeyViewCard != null) {
+                // A journey's own view: just its card, each group headed by where it boards, under
+                // Swap and Unstar. Rendered from the same snapshot as the list (SPEC D4).
+                LoadedContent(
+                    state, now, onRefresh, refreshing, content, rows = emptyList(),
+                    journeyCards = listOf(journeyViewCard),
+                    journeyView = true,
+                    onFlipJourney = onFlipJourney,
+                    onUnstarJourney = onToggleJourney,
+                    onRetryJourneyRoutes = { journeyRouteRetry++ },
+                    starred = starred,
+                    onToggleStar = onToggleStar,
+                    starringAvailable = starringAvailable,
+                    onOpenDetail = { row, focus ->
+                        detailKey = row.detailKey()
+                        detailDestination = focus?.destination
+                        detailBranch = focus?.branch
+                    },
+                    dismissed = dismissed,
+                    onDismissAlert = onDismissAlert,
+                )
+            } else {
                 LoadedContent(
                     state, now, onRefresh, refreshing, content, shownRows,
                     // The platform view is one place: no distances (its header would only repeat the
@@ -929,7 +988,10 @@ fun MainScreen(
                     // A platform/station drill-down shows one place's stops, not the near-me set, so
                     // the "your location is low-confidence" banner doesn't apply there.
                     locationBanner = if (platformRows != null) null else locationBanner,
+                    // A journey heading opens the journey's own view (from the full list only).
+                    onOpenJourney = { journey -> journeyViewKey = journey.key },
                 )
+            }
 
             is DeparturesUiState.Error ->
                 // Under the pull box with a scrollable child so a downward swipe refreshes
@@ -1011,6 +1073,9 @@ private fun LoadedContent(
     journeyCards: List<JourneyCard> = emptyList(),
     onFlipJourney: (StarredJourney) -> Unit = {},
     onRetryJourneyRoutes: () -> Unit = {},
+    onOpenJourney: ((StarredJourney) -> Unit)? = null,
+    journeyView: Boolean = false,
+    onUnstarJourney: ((StarredJourney) -> Unit)? = null,
     starred: Set<StarredRow> = emptySet(),
     onToggleStar: (DepartureRow) -> Unit = {},
     starringAvailable: Boolean = true,
@@ -1114,7 +1179,10 @@ private fun LoadedContent(
                     journeyCards = journeyCards,
                     onFlipJourney = onFlipJourney,
                     onRetryJourneyRoutes = onRetryJourneyRoutes,
-                    nearbyEmptyNote = if (rows.isEmpty()) {
+                    onOpenJourney = onOpenJourney,
+                    journeyView = journeyView,
+                    onUnstarJourney = onUnstarJourney,
+                    nearbyEmptyNote = if (rows.isEmpty() && !journeyView) {
                         stringResource(
                             if (emptyStateUncertain) R.string.departures_stale_empty else R.string.departures_empty_nearby,
                         )
@@ -1214,6 +1282,13 @@ private fun DepartureList(
     journeyCards: List<JourneyCard> = emptyList(),
     onFlipJourney: (StarredJourney) -> Unit = {},
     onRetryJourneyRoutes: () -> Unit = {},
+    // Opens a journey's own view from a tap on its heading; null leaves the heading inert.
+    onOpenJourney: ((StarredJourney) -> Unit)? = null,
+    // True in a journey's own view: the title bar names the journey, so its heading is dropped, and
+    // each of its groups is headed by its platform/pole so the rider sees where to board.
+    journeyView: Boolean = false,
+    // Unstars a journey from its own view's action row; null hides the button.
+    onUnstarJourney: ((StarredJourney) -> Unit)? = null,
     // Why the near-me part is empty, shown under the journey cards when there are no nearby rows.
     nearbyEmptyNote: String? = null,
     modifier: Modifier,
@@ -1261,8 +1336,23 @@ private fun DepartureList(
         // Starred journeys lead the list (SPEC *Journeys*): each a header naming the direction shown,
         // tappable to show the other, over a card of just the trains that call at the far end.
         journeyCards.forEachIndexed { index, card ->
-            item(key = "journey-header|${card.journey.key}") {
-                JourneyHeader(card.journey, firstOnScreen = index == 0, onFlip = { onFlipJourney(card.journey) })
+            if (journeyView) {
+                item(key = "journey-actions|${card.journey.key}") {
+                    JourneyActions(
+                        card.journey,
+                        onSwap = { onFlipJourney(card.journey) },
+                        onUnstar = onUnstarJourney?.let { unstar -> { unstar(card.journey) } },
+                    )
+                }
+            } else {
+                item(key = "journey-header|${card.journey.key}") {
+                    JourneyHeader(
+                        card.journey,
+                        firstOnScreen = index == 0,
+                        onSwap = { onFlipJourney(card.journey) },
+                        onOpen = onOpenJourney?.let { open -> { open(card.journey) } },
+                    )
+                }
             }
             // The origin's closure notice rides the journey card: a farther origin isn't on the near-me
             // list, so without it the trains below would read as catchable at a closed station.
@@ -1284,12 +1374,21 @@ private fun DepartureList(
                 } else {
                     // Any bus boarding elsewhere than the origin (a pole beside it), even when it's the
                     // only one: each stop's buses go under its own heading and pole letter, so none
-                    // reads as leaving from the stop the rider is at.
+                    // reads as leaving from the stop the rider is at. The journey's own view heads
+                    // every group that way ("King's Cross St. Pancras – Platform 7"), so it shows
+                    // where to board; the list's card otherwise leaves that to the journey heading.
                     val severalStops = state.rows.any { it.stopId != card.boardingIds.firstOrNull() }
-                    StopGrouping.groupByStop(state.rows, warningsLead = false).forEach { group ->
-                        if (severalStops) {
+                    StopGrouping.groupByStop(state.rows, warningsLead = false).forEachIndexed { groupIndex, group ->
+                        if (severalStops || journeyView) {
                             item(key = "journey-stop|${card.journey.key}|${group.key}") {
-                                StopGroupHeader(group.stopName, group.qualifier, distanceLabel = null, firstOnScreen = false)
+                                StopGroupHeader(
+                                    group.stopName,
+                                    group.qualifier,
+                                    distanceLabel = null,
+                                    // In the journey view the first group heads the page under the
+                                    // actions, with no group break above it.
+                                    firstOnScreen = journeyView && groupIndex == 0,
+                                )
                             }
                         }
                         item(key = "journey-card|${card.journey.key}|${group.key}") {
@@ -1628,40 +1727,114 @@ private fun JourneyNote(text: String, onRetry: (() -> Unit)? = null) {
 }
 
 /**
- * A journey card's heading, "Highgate ➔ King's Cross St. Pancras": the direction shown, which a tap
- * flips. Styled like a stop group header (same weight and group-break space) so the list reads as one.
+ * A journey's own view's heading and actions, above its trains: the journey in full, then swap the
+ * direction shown, and unstar the journey
+ * (which closes the view, as its card is gone). Labeled buttons rather than bare icons — this is the
+ * view a rider opens to act on the journey.
  */
 @Composable
-private fun JourneyHeader(journey: StarredJourney, firstOnScreen: Boolean, onFlip: () -> Unit) {
-    val flipLabel = stringResource(R.string.action_flip_journey)
+private fun JourneyActions(journey: StarredJourney, onSwap: () -> Unit, onUnstar: (() -> Unit)?) {
+    val spoken = stringResource(R.string.journey_title_spoken, journey.from.name, journey.to.name)
+    Column {
+        // The journey in full, wrapping as far as it needs, so both names show however long they are
+        // and at any text size (Codex).
+        Text(
+            text = withArrowIcons(stringResource(R.string.journey_title, journey.from.name, journey.to.name)),
+            inlineContent = arrowInlineContent(MaterialTheme.colorScheme.onSurface),
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .padding(start = 4.dp, end = 4.dp, bottom = 12.dp)
+                .semantics { heading(); contentDescription = spoken },
+        )
+        // Wraps, so at a large text size or on a narrow screen Unstar drops to its own line rather
+        // than being squeezed or clipped (Codex).
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(onClick = onSwap) {
+                Icon(SwapIcon, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(stringResource(R.string.action_flip_journey), modifier = Modifier.padding(start = 8.dp))
+            }
+            if (onUnstar != null) {
+                OutlinedButton(onClick = onUnstar) {
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription = null,
+                        tint = LocalStarredBorderColor.current,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(stringResource(R.string.action_unstar_journey), modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A journey card's heading, "Highgate ➔ King's Cross St. Pancras ★": the direction shown, styled like
+ * a stop group header (same weight and group-break space) so the list reads as one. A tap on the
+ * heading opens the journey's own view ([onOpen], null leaves it inert — as in that view); the ⇄
+ * button at the end swaps the direction in place ([onSwap]), for planning the way back without
+ * leaving the list (maintainer, 2026-09-24).
+ */
+@Composable
+private fun JourneyHeader(
+    journey: StarredJourney,
+    firstOnScreen: Boolean,
+    onSwap: () -> Unit,
+    onOpen: (() -> Unit)? = null,
+) {
+    val openLabel = stringResource(R.string.action_open_journey)
+    val swapLabel = stringResource(R.string.action_flip_journey)
     val spoken = stringResource(R.string.journey_title_spoken, journey.from.name, journey.to.name)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClickLabel = flipLabel, onClick = onFlip)
-            // Read "Highgate to King's Cross", not the arrow's name.
-            .semantics(mergeDescendants = true) { contentDescription = spoken }
             .padding(start = 4.dp, end = 4.dp, top = if (firstOnScreen) 0.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = withArrowIcons(stringResource(R.string.journey_title, journey.from.name, journey.to.name)),
-            inlineContent = arrowInlineContent(MaterialTheme.colorScheme.onSurface),
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        // The gold star marks a starred journey, telling its heading apart from a bus place's
-        // "Place ➔ Destination" header (maintainer, 2026-09-24). Decorative: the card is a journey
-        // by construction, so it adds nothing to the spoken label.
-        Icon(
-            Icons.Filled.Star,
-            contentDescription = null,
-            tint = LocalStarredBorderColor.current,
-            modifier = Modifier.padding(start = 4.dp).size(16.dp),
-        )
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .then(if (onOpen != null) Modifier.clickable(onClickLabel = openLabel, onClick = onOpen) else Modifier)
+                // Read "Highgate to King's Cross", not the arrow's name.
+                .semantics(mergeDescendants = true) { contentDescription = spoken },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = withArrowIcons(stringResource(R.string.journey_title, journey.from.name, journey.to.name)),
+                inlineContent = arrowInlineContent(MaterialTheme.colorScheme.onSurface),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            // The gold star marks a starred journey, telling its heading apart from a bus place's
+            // "Place ➔ Destination" header (maintainer, 2026-09-24). Decorative: the card is a journey
+            // by construction, so it adds nothing to the spoken label.
+            Icon(
+                Icons.Filled.Star,
+                contentDescription = null,
+                tint = LocalStarredBorderColor.current,
+                modifier = Modifier.padding(start = 4.dp).size(16.dp),
+            )
+        }
+        // Compact on purpose (maintainer, 2026-09-24): a 24dp target with no 48dp minimum, so the
+        // heading keeps a header's height while the swap control is still being tried out. The
+        // journey's own view carries a full-size Swap direction button.
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
+            IconButton(onClick = onSwap, modifier = Modifier.size(24.dp)) {
+                Icon(
+                    SwapIcon,
+                    contentDescription = swapLabel,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
     }
 }
 

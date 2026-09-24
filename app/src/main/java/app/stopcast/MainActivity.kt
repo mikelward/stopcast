@@ -58,6 +58,7 @@ import app.stopcast.domain.BugReport
 import java.io.IOException
 import app.stopcast.domain.Journeys
 import app.stopcast.data.DataStoreStarredJourneysStore
+import app.stopcast.domain.StarredJourney
 import app.stopcast.domain.CachingStopFinder
 import app.stopcast.domain.NearbyStopsCache
 import app.stopcast.domain.Coordinates
@@ -715,8 +716,11 @@ class MainActivity : ComponentActivity() {
             val journeyStore = remember { DataStoreStarredJourneysStore.from(appContext, warn = ::logStarWarning) }
             // Null until the first read arrives (and when unreadable), so journey starring stays off
             // rather than showing a saved journey as unstarred and letting a tap remove it.
-            val savedJourneys by remember(journeyStore) { journeyStore.journeys() }
+            // Wrapped so "not read yet" (null) stays distinct from "read, but unreadable" (a read of
+            // null): a journey view restored across a rotation waits out the first, not the second.
+            val journeysRead by remember(journeyStore) { journeyStore.journeys().map { JourneysRead(it) } }
                 .collectAsStateWithLifecycle(initialValue = null)
+            val savedJourneys = journeysRead?.journeys
             var flippedJourneys by rememberSaveable { mutableStateOf(emptyList<String>()) }
             val shownJourneys = remember(savedJourneys, ready.location, flippedJourneys) {
                 savedJourneys.orEmpty().map { journey ->
@@ -791,6 +795,7 @@ class MainActivity : ComponentActivity() {
                     onJourneyOrigins = viewModel::setJourneyStops,
                     onWidgetJourneys = viewModel::setWidgetJourneys,
                     journeysKnown = savedJourneys != null,
+                    journeysLoading = journeysRead == null,
                     // Null (stations inert) while the saved journeys are a newer app version's file this
                     // build can't read: it's preserved untouched, so a toggle could only be ignored.
                     onToggleJourney = if (savedJourneys == null) {
@@ -1366,3 +1371,6 @@ private fun logStarWarning(message: String) = StopcastDebugLog.warning("stars: %
  * like [logLocationWarning], for the same no-Activity-capture reason.
  */
 private fun logUpdateWarning(message: String) = StopcastDebugLog.warning("update: %s", message)
+
+/** One read of the saved journeys: [journeys] is null when the store couldn't be read. */
+private class JourneysRead(val journeys: List<StarredJourney>?)

@@ -1096,6 +1096,10 @@ class MainScreenScreenshotTest {
             JourneyEnd("940GZZLUVIC", "Victoria"), JourneyEnd("940GZZLUWRR", "Warren Street"), "victoria",
         )
         var flipped: StarredJourney? = null
+        // The saved journeys, reloadable: after a rotation they re-read from disk (unknown, empty).
+        var saved by mutableStateOf(listOf(journey))
+        var savedKnown by mutableStateOf(true)
+        var savedLoading by mutableStateOf(false)
         composeRule.setContent {
             StopCastTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -1105,8 +1109,11 @@ class MainScreenScreenshotTest {
                             now,
                             {},
                             stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
-                            journeys = listOf(journey),
+                            journeys = saved,
+                            journeysKnown = savedKnown,
+                            journeysLoading = savedLoading,
                             onFlipJourney = { flipped = it },
+                            onToggleJourney = {},
                         )
                     }
                 }
@@ -1121,8 +1128,39 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("Manor House", substring = true).assertExists()
         captureSnapshot("main-journey-card.png")
 
-        composeRule.onNodeWithText("Victoria ➔ Warren Street").performClick()
+        // The ⇄ at the end of the heading swaps the direction in place.
+        composeRule.onNodeWithContentDescription("Swap direction").performClick()
         assertEquals(journey, flipped)
+
+        // A tap on the heading opens the journey's own view: its trains headed by where they board,
+        // under Swap and Unstar, with the near-me list gone.
+        composeRule.onNodeWithText("Victoria ➔ Warren Street").performClick()
+        composeRule.onNodeWithText("Unstar journey").assertExists()
+        composeRule.onNodeWithText("Platform 5", substring = true).assertExists()
+        composeRule.onAllNodesWithText("Manor House", substring = true).assertCountEquals(0)
+        captureSnapshot("main-journey-view.png")
+        flipped = null
+        composeRule.onNodeWithText("Swap direction").performClick()
+        assertEquals(journey, flipped)
+
+        // While the saved journeys reload, the view holds (no flash to the near-me list) and comes
+        // back once they're known again (Codex).
+        saved = emptyList()
+        savedKnown = false
+        savedLoading = true
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Manor House", substring = true).assertCountEquals(0)
+        saved = listOf(journey)
+        savedKnown = true
+        savedLoading = false
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Unstar journey").assertExists()
+
+        // A read that failed isn't loading: the view closes to the list rather than spin forever.
+        saved = emptyList()
+        savedKnown = false
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Manor House", substring = true).assertExists()
     }
 
     private val victoriaLine = LineSequence(
