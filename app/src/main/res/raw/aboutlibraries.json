@@ -2463,6 +2463,21 @@
             ]
         },
         {
+            "uniqueId": "com.google.android.gms:play-services-wearable",
+            "artifactVersion": "20.0.1",
+            "name": "play-services-wearable",
+            "description": "",
+            "developers": [
+                
+            ],
+            "licenses": [
+                "ASDKL"
+            ],
+            "funding": [
+                
+            ]
+        },
+        {
             "uniqueId": "com.google.android.play:app-update",
             "artifactVersion": "2.1.0",
             "name": "app-update",

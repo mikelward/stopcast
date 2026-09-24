@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">StopCast</string>
+    <!-- Nothing has come from the phone yet. -->
+    <string name="watch_open_phone">Open StopCast on your phone</string>
+    <!-- The phone has sent a snapshot with no stops in it. -->
+    <string name="watch_add_stops">Add stops on your phone</string>
+    <!-- Some of the widget's stops failed to refresh or load. -->
+    <string name="watch_partly_out_of_date">Some stops out of date</string>
+    <!-- Stops left out because the snapshot was too big to send. -->
+    <plurals name="watch_more_stops_on_phone">
+        <item quantity="one">%d more stop on phone</item>
+        <item quantity="other">%d more stops on phone</item>
+    </plurals>
+</resources>

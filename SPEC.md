@@ -980,6 +980,9 @@ spells them.
   both group branching services the same way, and the line-pill color rules (*Line pill
   colors*) as one pure resolver taking the line and the surface color, so a pill is colored
   the same on the phone and the watch. Compose UI, the widget and the stores stay in `:app`.
+- A **`:wear` Wear OS app** (a companion: it shows only what the phone sends, over the Wearable
+  Data Layer, and never calls TfL). It shares the phone's application ID, so it can't be released
+  before the package rename; its release build fails until the maintainer lifts that gate.
 - The **TfL client** (Ktor/OkHttp + kotlinx.serialization models) sits behind a
   domain interface, so the decision logic is tested against recorded fixtures, not the
   live network.
@@ -1165,6 +1168,15 @@ Services query about the app's own version that carries no user data and adds no
 surface. With it, Firebase is the other. The on-device
 debug log carries coarse diagnostics only: a stop ID, a line id, an HTTP status, or a
 failed Play update check's exception class — never a raw coordinate or the user's API key.
+
+**The Wear OS watch sync** (dev-docs/wear-os.md; maintainer, 2026-09-24): when a paired watch has
+the StopCast watch app, the phone sends it the widget's snapshot — its stops' names and IDs, their
+departures, the nearer-stop lists the terminating filter compares against (location-derived place
+data), and the starred-row keys — never a coordinate or a key. The watch sends back the rows its
+complications show and its refresh requests. It goes over Google Play services' Wearable Data Layer,
+which may relay through Google's servers when the watch isn't on Bluetooth; that relay is accepted,
+with this disclosure. Nothing is sent when no paired watch has the app. `docs/PRIVACY.md` carries
+the user-facing wording and the Data Safety determination, re-checked before the watch release.
 
 With a National Rail key set (*Data source*), a rail station's departures request also goes to
 the Rail Data Marketplace, carrying that station's CRS code and the user's own key, never a

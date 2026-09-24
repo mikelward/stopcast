@@ -36,3 +36,4 @@ rootProject.name = "StopCast"
 include(":app")
 include(":domain")
 include(":shared")
+include(":wear")

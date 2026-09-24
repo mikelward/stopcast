@@ -19,7 +19,7 @@ easy to repeat.
 
 ## What gets uploaded
 
-`./gradlew bundleRelease` produces
+`./gradlew :app:bundleRelease` produces
 `app/build/outputs/bundle/release/app-release.aab` and the action uploads it to
 the `internal` track on the `app.stopcast` listing. Play App Signing re-signs the
 AAB with its managed app-signing key before delivery, so the upload key
@@ -47,7 +47,7 @@ receive the older bundle either.
 Forks and fresh clones without these secrets still get a green run — the AAB
 build and upload steps are skipped. The release `signingConfig` in
 `app/build.gradle.kts` is also only attached when `RELEASE_KEYSTORE_FILE` is
-set, so a local `./gradlew bundleRelease` without the env vars produces an
+set, so a local `./gradlew :app:bundleRelease` without the env vars produces an
 unsigned AAB rather than a build failure. It is still fully minified: R8 runs on
 every release build, not only in CI.
 
@@ -87,8 +87,11 @@ RELEASE_KEYSTORE_FILE=/path/to/release.keystore \
 RELEASE_KEYSTORE_PASSWORD=<password> \
 RELEASE_KEY_PASSWORD=<password> \
 RELEASE_KEY_ALIAS=stopcast \
-./gradlew bundleRelease
+./gradlew :app:bundleRelease
 ```
+
+Scope it to `:app`: a root `bundleRelease` also runs `:wear`'s, which fails at the watch
+app's release gate (TODO Phase 6).
 
 No `CI=true` needed. Release minification is unconditional
 (`isMinifyEnabled = true` in `app/build.gradle.kts`), so a local `bundleRelease`

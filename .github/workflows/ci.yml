@@ -53,6 +53,20 @@ jobs:
         run: ./gradlew test
       - name: Lint
         run: ./gradlew lint
+      - name: The Wear OS app can't be released yet
+        # Its release build must fail until the maintainer renames the package and decides to
+        # launch (TODO Phase 6, the release gate in wear/build.gradle.kts). This fails if anyone
+        # removes the gate, and never passes -Pstopcast.wearRelease=approved.
+        run: |
+          if ./gradlew :wear:bundleRelease > wear-release.log 2>&1; then
+            echo "::error::The Wear OS release build succeeded; its release gate is gone."
+            exit 1
+          fi
+          grep -q "The Wear OS app isn't released yet" wear-release.log || {
+            cat wear-release.log
+            echo "::error::The Wear OS release build failed, but not at its release gate."
+            exit 1
+          }
       # The weekly dependency-update workflow trusts this script to decide when a
       # batch changes what the app legally declares, so its suite runs here —
       # dependency-free, under node --test, nothing to install.
@@ -175,7 +189,7 @@ jobs:
             exit 1
           fi
           missing=""
-          for f in $(grep -rl 'class [A-Za-z0-9_]*ScreenshotTest' app/src/test); do
+          for f in $(grep -rl 'class [A-Za-z0-9_]*ScreenshotTest' app/src/test wear/src/test); do
             pkg=$(sed -n 's/^package \([A-Za-z0-9_.]*\).*/\1/p' "$f" | head -1)
             for cls in $(sed -n 's/.*class \([A-Za-z0-9_]*ScreenshotTest\).*/\1/p' "$f"); do
               printf '%s\n' "$allow" | grep -qxF "$pkg.$cls" \
@@ -214,6 +228,10 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.RouteDetailScreenScreenshotTest" -Proborazzi.test.record=true
       - name: Run StationSearch screenshot tests
         run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.StationSearchScreenshotTest" -Proborazzi.test.record=true
+      # The watch's captures land in app/src/test/snapshots too (wear_*.png), so this one
+      # pipeline records, diffs and commits them.
+      - name: Run WatchHome screenshot tests
+        run: ./gradlew :wear:testDebugUnitTest --tests "app.stopcast.wear.WatchHomeScreenshotTest" -Proborazzi.test.record=true
       - name: Print failing test details
         if: failure()
         run: |
@@ -528,7 +546,8 @@ jobs:
         # RELEASE_KEYSTORE_* variables are set, which `release-build` does and
         # this job does not. Build-time only; runtime reflection still needs a
         # device check.
-        run: ./gradlew assembleRelease
+        # Scoped to the phone app: the Wear OS app's release is gated (below).
+        run: ./gradlew :app:assembleRelease
 
   release-build:
     name: Build the release AAB
@@ -666,7 +685,8 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
         run: |
-          ./gradlew bundleRelease
+          # Only the phone app: the Wear OS app isn't released yet (TODO Phase 6).
+          ./gradlew :app:bundleRelease
           # Read by `deploy` as needs.release-build.outputs.signed. Set
           # after the build, so it means "a signed AAB exists" rather
           # than "the keystore decoded".
