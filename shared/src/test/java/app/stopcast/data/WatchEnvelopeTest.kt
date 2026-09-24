@@ -276,4 +276,28 @@ class WatchEnvelopeTest {
             .stops.single().departures
         assertEquals(1, kept.count { it.destinationId == "940GFARTHER" })
     }
+
+    @Test
+    fun `the stops the last refresh couldn't get travel with it`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(stop("940GEXAMPLE1", listOf(departure(2)))),
+            fetchedAt = now,
+            missingStopIds = setOf("940GMISSING"),
+        )
+        assertEquals(listOf("940GMISSING"), decoded(WatchEnvelopes.build(snapshot, emptySet(), now = now)).missingStopIds)
+    }
+
+    @Test
+    fun `a long missing-stop list can't hold the payload over the ceiling`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(stop("940GEXAMPLE1", listOf(departure(2)))),
+            fetchedAt = now,
+            missingStopIds = (1..5_000).mapTo(HashSet()) { "940GMISSING$it" },
+        )
+        val payload = WatchEnvelopes.build(snapshot, emptySet(), dataItemBudget = 10, transferCeiling = 2_000, now = now)
+        assertTrue(payload.bytes.size <= 2_000)
+        val envelope = decoded(payload)
+        assertEquals(1, envelope.missingStopIds.size)
+        assertEquals(listOf("940GEXAMPLE1"), envelope.stops.map { it.stopId })
+    }
 }

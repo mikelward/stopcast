@@ -258,11 +258,27 @@ internal fun widgetModel(
     // Modes hidden from the near-me list: left out here too, except on a journey's own rows.
     hiddenModes: Set<String> = emptySet(),
 ): WidgetModel {
-    if (snapshot == null || snapshot.stops.isEmpty()) {
+    if (snapshot == null) {
         return WidgetModel(hasData = false, stale = false, uncertain = false, stamp = null, rows = emptyList())
     }
     val age = Duration.between(snapshot.fetchedAt, now)
     val stale = Staleness.isStale(age.toKotlinDuration())
+    // Nothing to show but a stop the refresh couldn't get (the others pruned since): say the stops
+    // may be out of date, not "open the app to load", so the failure stays explicit.
+    val onlyMissing = WidgetModel(
+        hasData = true,
+        stale = stale,
+        uncertain = true,
+        stamp = "Updated ${RelativeTime.formatAge(age.toKotlinDuration())}",
+        rows = emptyList(),
+    )
+    if (snapshot.stops.isEmpty()) {
+        return if (snapshot.missingStopIds.isNotEmpty()) {
+            onlyMissing
+        } else {
+            WidgetModel(hasData = false, stale = false, uncertain = false, stamp = null, rows = emptyList())
+        }
+    }
     // Whether an empty list can be trusted as a real "no departures". Only when every stop is
     // fresh: a stop that wasn't refreshed (arrivalsFresh = false, carried from a partial
     // refresh) or is stale by its own age might have expired predictions, not a true absence —
@@ -275,9 +291,14 @@ internal fun widgetModel(
     // Nothing it can show yet (only journey origins whose journeys aren't worked out): no data, not
     // a trustworthy "no departures".
     if (shownStops.isEmpty()) {
-        return WidgetModel(hasData = false, stale = false, uncertain = false, stamp = null, rows = emptyList())
+        return if (snapshot.missingStopIds.isNotEmpty()) {
+            onlyMissing
+        } else {
+            WidgetModel(hasData = false, stale = false, uncertain = false, stamp = null, rows = emptyList())
+        }
     }
-    val uncertain = stale || shownStops.any {
+    // A stop the refresh asked for but couldn't get makes the rest incomplete, however fresh.
+    val uncertain = stale || snapshot.missingStopIds.isNotEmpty() || shownStops.any {
         !it.arrivalsFresh || Staleness.isStale(Duration.between(it.fetchedAt, now).toKotlinDuration())
     }
     // Order for the cap, matching the in-app list: rank fresh rows ahead of stale ones (so a

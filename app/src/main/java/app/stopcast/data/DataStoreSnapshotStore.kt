@@ -62,6 +62,9 @@ class DataStoreSnapshotStore internal constructor(
             return desired.copy(
                 journeys = current.journeys,
                 journeyOnlyStopIds = current.journeyOnlyStopIds,
+                // Which requested stops are missing is the app's too: the worker only refetches the
+                // stops it holds, so an older worker result can't clear a newer missing set.
+                missingStopIds = current.missingStopIds,
                 stops = desired.stops.map { stop ->
                     nearerById[stop.stopId]?.let { (ids, names) -> stop.copy(nearerIds = ids, nearerNames = names) } ?: stop
                 },
@@ -101,13 +104,16 @@ class DataStoreSnapshotStore internal constructor(
             val origins = current.journeys.mapTo(HashSet()) { it.originId }
             val kept = current.stops.filterNot { it.stopId in departed && it.stopId !in origins }
             val demoted = current.stops.map { it.stopId }.filter { it in departed && it in origins }
-            if (kept.size == current.stops.size && demoted.all { it in current.journeyOnlyStopIds }) {
+            val unchanged = kept.size == current.stops.size && current.missingStopIds.none { it in departed }
+            if (unchanged && demoted.all { it in current.journeyOnlyStopIds }) {
                 current
             } else {
                 current.copy(
                     // Journey-only stops are a version-2 field: an older reader mustn't take them.
                     version = PersistedSnapshot.CURRENT_VERSION,
                     stops = kept,
+                    // A departed stop is no longer one the widget should show, missing or not.
+                    missingStopIds = current.missingStopIds.filterNot { it in departed },
                     fetchedAtMillis = kept.maxOfOrNull { it.fetchedAtMillis } ?: current.fetchedAtMillis,
                     journeyOnlyStopIds = (current.journeyOnlyStopIds + demoted).distinct(),
                 )
@@ -129,7 +135,10 @@ class DataStoreSnapshotStore internal constructor(
             val ids = own.stops.mapTo(HashSet()) { it.stopId }
             // Every stored pin's origin stays: one the caller doesn't hold now is journey-only; one
             // it holds keeps the caller's class.
+            // A carried origin the caller asked for as nearby and couldn't get stands in for a failed
+            // refresh, so it's marked unrefreshed, as a stop kept from a failed fetch is.
             val carried = current?.stops.orEmpty().filter { it.stopId in origins && it.stopId !in ids }
+                .map { if (it.stopId in desired.missingStopIds) it.copy(arrivalsFresh = false) else it }
             val stops = own.stops + carried
             own.copy(
                 stops = stops,
@@ -137,7 +146,14 @@ class DataStoreSnapshotStore internal constructor(
                 // since), never a dropped one the widget won't show.
                 fetchedAtMillis = stops.maxOfOrNull { it.fetchedAtMillis } ?: desired.fetchedAtMillis,
                 journeys = journeys,
-                journeyOnlyStopIds = (desired.journeyOnlyStopIds.filter { it in origins } + carried.map { it.stopId }).distinct(),
+                // A carried origin the caller asked for as nearby (and couldn't get) is a nearby stop
+                // recovered from its stored copy, not a journey-only one.
+                journeyOnlyStopIds = (
+                    desired.journeyOnlyStopIds.filter { it in origins } +
+                        carried.map { it.stopId }.filterNot { it in desired.missingStopIds }
+                    ).distinct(),
+                // A stop the stored copy still holds, carried or not, isn't missing, whoever fetched it.
+                missingStopIds = desired.missingStopIds.filter { id -> stops.none { it.stopId == id } },
             )
         }
     }

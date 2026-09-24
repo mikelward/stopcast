@@ -243,4 +243,10 @@ class PersistedSnapshotTest {
         assertNull(PersistedSnapshot(stops = listOf(stop)).toDomain()!!.stops.single().railFeed)
         assertNull(PersistedSnapshot(stops = listOf(stop.copy(railFeed = null))).toDomain()!!.stops.single().railFeed)
     }
+
+    @Test
+    fun `missing stops survive the round trip`() {
+        val snapshot = sample().copy(missingStopIds = setOf("940GZZLUBND"))
+        assertEquals(snapshot, snapshot.toPersisted().toDomain())
+    }
 }

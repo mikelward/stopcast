@@ -1572,7 +1572,9 @@ and these carry the rest as their own PRs:
       withhold (landed) already stops *old* numbers reading as live; this marks a *fresh*
       disrupted service on the widget.
 - [ ] **Persist a refresh-failure kind / incompleteness for the widget (own PR, rides with the
-      above).** Same schema reversal: the snapshot excludes the transient refresh-failure flag
+      above).** *Incompleteness landed (2026-09-24): the snapshot persists the requested stops a
+      refresh couldn't get (`missingStopIds`), and the widget is `uncertain` while any is. The
+      typed failure kind (offline / rate-limited / unreachable) is still open.* Same schema reversal: the snapshot excludes the transient refresh-failure flag
       by design, so the widget can't say *why* data is old beyond the age stamp. Add a typed
       failure to the persisted schema so the widget can render offline/rate-limited/unreachable.
       **Includes the absent-stop case (Codex P1 on #44):** on an *initial* multi-stop refresh

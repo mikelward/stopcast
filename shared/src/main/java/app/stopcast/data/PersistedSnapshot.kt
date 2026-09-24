@@ -37,6 +37,10 @@ data class PersistedSnapshot(
     // 2. Defaulted, so a version-1 snapshot reads back with none.
     val journeys: List<PersistedWidgetJourney> = emptyList(),
     val journeyOnlyStopIds: List<String> = emptyList(),
+    // Stops the last refresh asked for but couldn't get ([DeparturesSnapshot.missingStopIds]).
+    // Defaulted, so an older snapshot reads back with none, as before; an older build reading
+    // this one ignores it and shows what it did before.
+    val missingStopIds: List<String> = emptyList(),
 ) {
     companion object {
         /**
@@ -143,6 +147,7 @@ fun DeparturesSnapshot.toPersisted(): PersistedSnapshot =
             )
         },
         journeyOnlyStopIds = journeyOnlyStopIds.sorted(),
+        missingStopIds = missingStopIds.sorted(),
     )
 
 /**
@@ -161,6 +166,7 @@ fun PersistedSnapshot.toDomain(): DeparturesSnapshot? {
             )
         },
         journeyOnlyStopIds = journeyOnlyStopIds.toSet(),
+        missingStopIds = missingStopIds.toSet(),
     )
 }
 

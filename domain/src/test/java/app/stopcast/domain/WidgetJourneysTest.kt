@@ -100,4 +100,14 @@ class WidgetJourneysTest {
         val pinned = WidgetJourneys.apply(stored, WidgetJourneysReport(setOf("j"), listOf(check)), emptyList())!!
         assertEquals(setOf(dale, town), pinned.journeys.single { it.key == poleKey }.calls)
     }
+
+    @Test
+    fun `a journey update keeps the missing stops, less any origin it adds`() {
+        val stored = DeparturesSnapshot(listOf(stop("490000001A")), now, missingStopIds = setOf("490000002B", "490000003C"))
+        val report = WidgetJourneysReport(setOf("j"), listOf(WidgetJourneyCheck("j", "490000002B", setOf(hill))))
+        val after = WidgetJourneys.apply(stored, report, listOf(stop("490000002B")))!!
+        assertEquals(setOf("490000003C"), after.missingStopIds)
+        // It was a nearby stop that failed, now recovered: shown as nearby, not journey-only.
+        assertTrue("490000002B" !in after.journeyOnlyStopIds)
+    }
 }

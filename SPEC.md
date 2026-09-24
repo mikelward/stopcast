@@ -1083,7 +1083,10 @@ the widget also schedules **one render-only redraw at its staleness boundary**, 
 left untouched after the app closes flips itself to the stale `?` treatment instead of
 holding live-looking countdowns forever (D4) — a single bounded wake per snapshot, not a
 polling cadence, and not a data refresh (fetching new data while the app isn't driving the
-widget stays deferred, D5). **Interim data source**: until Phase 2's user-chosen watched stops exist, the
+widget stays deferred, D5). The snapshot also records which of the stops it should show a
+refresh asked for but couldn't get, with nothing earlier to fall back on; while any is missing
+the widget says its stops are partly out of date, so a first refresh where one stop failed never
+reads as complete (principle 1). **Interim data source**: until Phase 2's user-chosen watched stops exist, the
 widget shows the last *nearby* set the app fetched — "the stops near where you last
 opened the app". Phase 2 replaces that with the watched stops; a live-refresh cadence for
 the widget when the app isn't driving it is deferred (D5).
