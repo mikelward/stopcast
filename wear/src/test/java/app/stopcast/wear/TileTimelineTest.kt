@@ -78,7 +78,8 @@ class TileTimelineTest {
     fun `each stop turns stale at its own boundary while a fresher one stays live`() {
         val older = stop("940GOLD", listOf(departure(600)), at = fetched.minusSeconds(120))
         val newer = stop("940GNEW", listOf(departure(600, line = "central", destination = "Ealing")), line = "central")
-        val entries = TileTimeline.entries(envelope(older, newer), fetched)
+        // A screen with room for both stops' headers and rows beside the notes.
+        val entries = TileTimeline.schedule(envelope(older, newer), fetched, screen = TileScreen(454, 1f)).entries
         val justAfterOld = entries.at(fetched.plusSeconds(181)) as TileFrame.Rows
         assertEquals("?", rows(justAfterOld).single { it.lineId == "victoria" }.countdown)
         assertEquals("6 min", rows(justAfterOld).single { it.lineId == "central" }.countdown)
@@ -138,7 +139,13 @@ class TileTimelineTest {
         // frame changes far more often than the cap allows.
         val busy = (1..150L).map { departure(it * 2, line = "l$it", destination = "Stop $it") }
         val schedule = TileTimeline.schedule(envelope(stop("940GA", busy)), fetched)
-        assertEquals(TileTimeline.MAX_ENTRIES, schedule.entries.size)
+        assertEquals(TileTimeline.MAX_SCHEDULED, schedule.entries.size)
+        // A pending refresh's two notices, each ending mid-entry, split two entries: still within the cap.
+        val notices = listOf(
+            RefreshNotice(RefreshNotice.Kind.REFRESHING, schedule.entries[10].start.plusMillis(500)),
+            RefreshNotice(RefreshNotice.Kind.PHONE_OUT_OF_REACH, schedule.entries[20].start.plusMillis(500)),
+        )
+        assertEquals(TileTimeline.MAX_ENTRIES, TileTimeline.withNotice(schedule.entries, notices).size)
         val tail = schedule.entries.last()
         assertNull(tail.end)
         assertEquals(schedule.refreshAt, tail.start)
@@ -218,15 +225,19 @@ class TileTimelineTest {
         assertEquals(TileTimeline.MAX_LINES, TileTimeline.lineBudget(TileScreen(454, 1f), notes = 2))
         assertEquals("never none", 1, TileTimeline.lineBudget(TileScreen(100, 2f), notes = 2))
         assertEquals(TileTimeline.MAX_LINES - 1, TileTimeline.lineBudget(null, notes = 1))
+        // The Refresh chip, padded and spaced, costs a small screen a whole line.
+        assertEquals(3, TileTimeline.lineBudget(small, notes = 0, refreshLine = true))
+        assertEquals(TileTimeline.MAX_LINES - 2, TileTimeline.lineBudget(null, notes = 1, refreshLine = true))
     }
 
     @Test
     fun `a partial tile lists fewer lines, so its note doesn't push one off`() {
         val busy = (1..8L).map { departure(it * 60, line = "l$it", destination = "Stop $it") }
         val env = envelope(stop("940GA", busy))
-        assertEquals(TileTimeline.MAX_LINES, rows(TileTimeline.frame(env, fetched)).size)
+        // The Refresh line takes one line; a partial note takes another.
+        assertEquals(TileTimeline.MAX_LINES - 1, rows(TileTimeline.frame(env, fetched)).size)
         val partial = env.copy(missingStopIds = listOf("940GMISSING"))
-        assertEquals(TileTimeline.MAX_LINES - 1, rows(TileTimeline.frame(partial, fetched)).size)
+        assertEquals(TileTimeline.MAX_LINES - 2, rows(TileTimeline.frame(partial, fetched)).size)
     }
 
     @Test
@@ -259,5 +270,29 @@ class TileTimelineTest {
         val schedule = TileTimeline.schedule(env, fetched)
         assertNull(schedule.refreshAt)
         assertTrue(schedule.entries.size < TileTimeline.MAX_ENTRIES)
+    }
+
+    @Test
+    fun `a refresh notice shows until it expires, splitting the entry it ends in`() {
+        val entries = TileTimeline.entries(envelope(stop("940GA", listOf(departure(150)))), fetched)
+        val notice = RefreshNotice(RefreshNotice.Kind.RATE_LIMITED, fetched.plusSeconds(45))
+        val noticed = TileTimeline.withNotice(entries, listOf(notice))
+        fun at(t: Instant) = noticed.single { it.start <= t && (it.end == null || t < it.end) }
+        assertEquals(RefreshNotice.Kind.RATE_LIMITED, at(fetched.plusSeconds(44)).notice)
+        assertNull(at(fetched.plusSeconds(45)).notice)
+        assertTrue(noticed.any { it.start == fetched.plusSeconds(45) })
+        assertEquals(entries, TileTimeline.withNotice(entries, emptyList()))
+    }
+
+    @Test
+    fun `a pending refresh turns to out of reach on the timeline, with no process to do it`() {
+        val entries = TileTimeline.entries(envelope(stop("940GA", listOf(departure(600)))), fetched)
+        val notices = RefreshPolicy.notices(RefreshState.Pending(fetched, 1L), fetched)
+        val noticed = TileTimeline.withNotice(entries, notices)
+        fun at(t: Instant) = noticed.single { it.start <= t && (it.end == null || t < it.end) }.notice
+        val timeout = fetched.plus(RefreshPolicy.TIMEOUT)
+        assertEquals(RefreshNotice.Kind.REFRESHING, at(timeout.minusSeconds(1)))
+        assertEquals(RefreshNotice.Kind.PHONE_OUT_OF_REACH, at(timeout))
+        assertNull(at(timeout.plus(RefreshPolicy.NOTICE_FOR)))
     }
 }

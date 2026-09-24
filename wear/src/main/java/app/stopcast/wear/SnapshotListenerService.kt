@@ -2,6 +2,7 @@ package app.stopcast.wear
 
 import android.content.Context
 import android.util.Log
+import app.stopcast.data.WatchRefreshReply
 import app.stopcast.data.WatchSyncContract
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.tasks.Tasks
@@ -9,6 +10,7 @@ import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import java.io.IOException
@@ -19,6 +21,18 @@ import java.util.concurrent.ExecutionException
  * and stores it for the watch's surfaces. The Data Layer calls this on a background thread.
  */
 class SnapshotListenerService : WearableListenerService() {
+    /** The phone's answer to a refresh request ([WatchRefresh]); one from a newer build is ignored. */
+    override fun onMessageReceived(event: MessageEvent) {
+        when (event.path) {
+            WatchSyncContract.REFRESH_ACK_PATH ->
+                WatchRefreshReply.decodeRequest(event.data)?.let { WatchRefresh.onAck(this, it) }
+                    ?: Log.w(TAG, "refresh acknowledgement unreadable")
+            WatchSyncContract.REFRESH_RESULT_PATH ->
+                WatchRefreshReply.decode(event.data)?.let { WatchRefresh.onReply(this, it) }
+                    ?: Log.w(TAG, "refresh answer unreadable")
+        }
+    }
+
     override fun onDataChanged(events: DataEventBuffer) {
         val store = WatchEnvelopeStore.from(this)
         val ingested = events

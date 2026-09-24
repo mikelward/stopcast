@@ -1840,7 +1840,7 @@ and these carry the rest as their own PRs:
               androidx/wear/protolayout/renderer/R$style`, as a test or debug dependency). The
               timeline tests pin every frame's content; the look needs a device or emulator
               check until a renderer or preview-tooling route works in CI.
-  - [ ] Watch-initiated refresh: a tap asks the phone for one debounced, location-free fetch.
+  - [x] Watch-initiated refresh: a tap asks the phone for one debounced, location-free fetch.
         - The phone answers every request with a typed outcome: refreshed, partly refreshed,
           not refreshed with a reason (such as rate-limited), or debounced. The watch says so.
         - When the phone is out of reach, the watch keeps the last snapshot, stamped with its

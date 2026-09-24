@@ -292,10 +292,16 @@ the watch app ships would break pairing between old and new installs.
 - **Push, don't poll.** The watch never schedules its own data refresh. It re-renders when a
   new snapshot arrives: the tile asks its updater for a re-render, and the complication asks
   for a data update.
-- **Watch-initiated refresh.** Tapping the tile's **Refresh** edge button, opening the watch app, or its Refresh button sends a `MessageClient`
-  request to the phone. The phone runs one bounded, location-free fetch of the widget's stops
+- **Watch-initiated refresh.** Tapping the tile's **Refresh** line, opening the watch app, or its
+  Refresh button sends a `MessageClient` request to the phone. The phone runs one bounded, location-free fetch of the widget's stops
   (the same work as a `WidgetRefreshWorker` cycle, D1/D5) and pushes the result.
-  - It's debounced on both ends, so repeated taps can't become a polling loop.
+  - It's debounced on both ends, so repeated taps can't become a polling loop: the watch sends at
+    most one request per 30 s, and the phone reuses a stop fetched in the last 30 s (answering
+    *debounced* and resending the snapshot when every stop was). A failure saves nothing to
+    reuse (the phone resends the stored snapshot instead, as for *debounced*). When every stop
+    failed, that outcome answers the next request (a watch's or the widget's) within 30 s, while
+    the stored snapshot is still the one that refresh started from. Watch refreshes and the widget's own
+    refresh cycle take turns, so overlapping ones fetch once.
   - **The phone answers every request** with a typed outcome message, so a tap never silently
     does nothing (principle 2):
     - *refreshed*, with the new snapshot following as a `DataItem`;
@@ -306,9 +312,15 @@ the watch app ships would break pairing between old and new installs.
     snapshot, which stays stamped with its age. An all-failed refresh leaves the persisted
     snapshot unchanged (`WidgetRefresh.refreshedArrivals` returns null), so the outcome message
     is the only way the watch can know.
+  - The phone acknowledges a request the moment it arrives; the watch waits 30 s for that (or the
+    answer), then up to 2 min more once acknowledged, since the phone's work may queue.
+    A later answer to the same request still replaces the out-of-reach notice. The unanswered
+    request is kept on disk, so a watch process killed while waiting still takes its answer.
   - When no answer arrives in time (an unreachable phone), the watch keeps the last snapshot,
     stamped with its age, and says the phone is out of reach. It never shows a blank tile, and
     never passes old times off as live.
+  - Each request carries a random id that its answer echoes, so a late answer to a timed-out
+    request can't settle a newer one. The phone queues a watch's requests and answers each.
 - The phone's existing opt-in **live widget refresh** (D5) keeps the watch fresh too, since
   each cycle pushes. It needs no watch-side setting.
 
@@ -343,7 +355,9 @@ Wear's own APIs solve it without wake-ups:
 
   A new entry opens only where the frame actually changes, so a tick that moves no shown
   countdown, or a row that can't make the tile's lines, costs nothing. A timeline takes at most
-  100 entries. A snapshot busy enough to need more stops at the first
+  100 entries, two of them kept for a refresh notice's changes to split (a pending refresh
+  turns to out of reach at its timeout on the timeline itself, even if the watch process is gone). A snapshot busy enough
+  to need more stops at the first
   instant that doesn't fit: from there one open-ended entry withholds every countdown, and the
   tile asks the system to re-render it at that instant, so a held frame never shows a departed
   service or a frozen countdown as live.
@@ -541,7 +555,7 @@ it before committing to the design.
    - the Data Safety determination.
 5. **Done** (not released). The tile, with the staleness timeline. Its fresh-state **All stops**
    button waits for step 8.
-6. Watch-initiated refresh.
+6. **Done** (not released). Watch-initiated refresh.
 7. The complication.
 8. The small watch app, which adds the tile's **All stops** button, with its foreground ticker
    and its own `*ScreenshotTest` in CI's allow-list.

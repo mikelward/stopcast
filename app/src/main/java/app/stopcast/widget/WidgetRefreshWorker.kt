@@ -21,13 +21,20 @@ import app.stopcast.data.KtorTflClient
 import app.stopcast.data.SharedTflRateLimiter
 import app.stopcast.data.SharedTflRequestPool
 import app.stopcast.data.logAppSettingsWarning
+import app.stopcast.data.WatchRefreshOutcome
 import app.stopcast.domain.AppSettings
+import app.stopcast.domain.DeparturesSnapshot
+import app.stopcast.domain.TflException
 import app.stopcast.domain.WidgetRefresh
 import app.stopcast.ui.ARRIVALS_REUSE
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Unique-work name so each scheduled refresh REPLACEs the previous one — at most one pending. */
@@ -39,7 +46,7 @@ internal const val WIDGET_REFRESH_INTERVAL_MILLIS = 60_000L
 
 /** Ceiling on a one-shot settings read (see [liveWidgetRefreshNow]). Normal reads are instant;
  *  this only bites on a persistent storage error (Codex P2 on #56). */
-private const val SETTINGS_READ_BOUND_MILLIS = 2_000L
+internal const val SETTINGS_READ_BOUND_MILLIS = 2_000L
 
 /**
  * Reads the live-refresh setting once, bounded — for the two *user-facing* one-shot callers that
@@ -197,76 +204,12 @@ class WidgetRefreshWorker(appContext: Context, params: WorkerParameters) :
         // (Codex P2 on #56). A later snapshot save pokes the widget (updateAll → provideGlance →
         // resumeWidgetRefreshIfEnabled), which restarts the chain. A load failure throws and the
         // outer catch turns it into Result.retry().
-        val prior = store.load() ?: return Result.success()
-        // The user's app_key for this refresh, read once here (SPEC D7). A snapshot is enough — the
-        // worker is a one-shot background run — so unlike the app's long-lived clients it needs no
-        // live provider. Keyless (null) when unset; never logged. The client reads this provider
-        // once per request and drives both the app_key and the limiter's budget from that one read
-        // (rateLimiterFor), so a widget-only process needn't wait for the process-wide holder to
-        // warm and the budget always matches the key sent.
-        val userKey = settings.userApiKey().first()
-        // The National Rail key likewise (SPEC *National Rail*): with it, a rail station's National
-        // Rail departures join TfL's, as in the app. Never logged.
-        val railKey = settings.railApiKey().first()
-        try {
-            val http = KtorTflClient.defaultHttpClient()
-            try {
-                val client = RailAwareTflClient(
-                    tfl = KtorTflClient(
-                        http,
-                        appKey = { userKey },
-                        rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
-                        requestPool = SharedTflRequestPool.pool,
-                    ),
-                    rail = KtorDarwinClient(http, apiKey = { railKey }, warn = ::logWidgetSnapshotWarning),
-                    codes = { RailStationCodesStore.load(applicationContext) },
-                    warn = ::logWidgetSnapshotWarning,
-                )
-                val refreshed = WidgetRefresh.refreshedArrivals(
-                    prior,
-                    Instant.now(),
-                    // Skip a stop the app fetched moments ago: same data, same shared rate budget.
-                    reuse = ARRIVALS_REUSE,
-                ) { stopId ->
-                    try {
-                        client.arrivals(stopId)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        // Sanitized: a stop id is a canned identifier, not user data, but the
-                        // message stays a bare fact (SPEC *Privacy* / *Error handling*).
-                        logWidgetSnapshotWarning(
-                            "widget refresh arrivals failed for stop $stopId: ${e::class.simpleName}",
-                        )
-                        null
-                    }
-                }
-                if (refreshed != null) {
-                    // Conditional save: persist and poke the widget only if the stored stop set
-                    // still matches the one this cycle loaded and fetched for. In the seconds
-                    // spent fetching, the app may have persisted a different set (the user
-                    // relocated in-app); an unconditional save would let this slow cycle win last
-                    // and stamp the old location's departures fresh over the new set. On a discard
-                    // the newer in-app snapshot is already stored and has poked the widget itself
-                    // (Codex P1 on #56).
-                    val applied = WidgetSnapshotStore(applicationContext)
-                        .saveIfStopsMatch(refreshed, prior.stops.map { it.stopId })
-                    if (!applied) {
-                        logWidgetSnapshotWarning(
-                            "widget refresh result discarded: stop set changed during fetch",
-                        )
-                    }
-                } else {
-                    // Nothing fetched fresh: re-render so the unchanged snapshot ages honestly.
-                    StopCastWidget().updateAll(applicationContext)
-                }
-            } finally {
-                http.close()
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logWidgetSnapshotWarning("widget refresh cycle failed: ${e::class.simpleName}")
+        // The keys first, outside the lock: a stalled read (storage errors retry forever) then
+        // stalls this background tick alone, never a watch's refresh waiting on the lock.
+        val keys = readRefreshKeys(applicationContext, settings)
+        StoredSnapshotRefresh.lock.withLock {
+            val prior = store.load() ?: return Result.success()
+            StoredSnapshotRefresh.refresh(applicationContext, prior, keys)
         }
         // Reschedule the next tick unless the setting was turned off or the last widget was removed
         // during this cycle. Best-effort even after a failure above, so a transient error doesn't
@@ -276,4 +219,193 @@ class WidgetRefreshWorker(appContext: Context, params: WorkerParameters) :
         }
         return Result.success()
     }
+}
+
+/**
+ * Refreshes of the stored snapshot, whoever asks (the widget's cycle, a watch), one at a time under
+ * [lock]: each reads the snapshot inside it, after the last one saved, so overlapping callers reuse
+ * the stops just fetched rather than fetch them twice (the shared TfL budget, and the radio). A
+ * refresh that saved nothing (every stop failed) leaves nothing to reuse, so its outcome answers
+ * the next caller for a short while instead, as long as the stored snapshot is still the one it
+ * started from: a newer one (the app refreshed, or the stops changed) is refreshed on its own terms.
+ */
+internal object StoredSnapshotRefresh {
+    val lock = Mutex()
+
+    private class Failed(val at: Instant, val outcome: WatchRefreshOutcome, val input: DeparturesSnapshot)
+
+    /** The last refresh, if it saved nothing; guarded by [lock]. */
+    private var lastFailed: Failed? = null
+
+    /** How a refresh went: its [outcome], and whether it [saved] (so the store's watchers publish). */
+    data class Result(val outcome: WatchRefreshOutcome, val saved: Boolean)
+
+    /**
+     * Refreshes [prior], the snapshot stored now, with [keys] ([readRefreshKeys]), which the caller
+     * reads before taking [lock] so a stalled settings read never holds it. The caller holds [lock].
+     */
+    suspend fun refresh(context: Context, prior: DeparturesSnapshot, keys: RefreshKeys?): Result {
+        lastFailed?.let { last ->
+            val age = Duration.between(last.at, Instant.now())
+            if (last.input == prior && WatchRefreshOutcome.answersAgain(last.outcome, age, ARRIVALS_REUSE)) {
+                // Still re-render, as a refresh with nothing fresh does, so the widget ages honestly.
+                try {
+                    StopCastWidget().updateAll(context)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logWidgetSnapshotWarning("widget re-render failed: ${e::class.simpleName}")
+                }
+                return Result(last.outcome, saved = false)
+            }
+        }
+        val report = refreshStoredSnapshot(context, prior, keys)
+        lastFailed = if (report.savedNothing) Failed(Instant.now(), report.outcome, prior) else null
+        return Result(report.outcome, report.saved)
+    }
+}
+
+/**
+ * The user's keys for one refresh (SPEC D7, *National Rail*): the TfL app_key and the National Rail
+ * key, each null when unset (keyless). Never logged, so deliberately not a data class (no toString).
+ */
+internal class RefreshKeys(val tfl: String?, val rail: String?)
+
+/**
+ * Reads [RefreshKeys] once for a refresh (a one-shot background run needs no live provider), within
+ * [boundMillis] when given, for a caller someone is waiting on. Null, logged, when they can't be
+ * read, which the refresh reports as a failure rather than hanging or crashing.
+ */
+internal suspend fun readRefreshKeys(
+    context: Context,
+    settings: AppSettings = DataStoreAppSettings.from(context, warn = ::logAppSettingsWarning),
+    boundMillis: Long? = null,
+): RefreshKeys? {
+    suspend fun read() = RefreshKeys(settings.userApiKey().first(), settings.railApiKey().first())
+    return try {
+        val keys = if (boundMillis == null) read() else withTimeoutOrNull(boundMillis) { read() }
+        keys ?: null.also { logWidgetSnapshotWarning("refresh keys read timed out") }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logWidgetSnapshotWarning("refresh keys unreadable: ${e::class.simpleName}")
+        null
+    }
+}
+
+/** What one refresh of the stored snapshot did: [fetched] stops fetched fresh, [reused] skipped as
+ *  recent, and a [failures] entry for each of the rest; [savedNothing] when it didn't try to save,
+ *  and [saved] when a save went through (so the store changed, and its watchers publish). */
+internal data class SnapshotRefreshReport(
+    val stops: Int,
+    val fetched: Int,
+    val reused: Int,
+    val failures: List<WatchRefreshOutcome.Failure>,
+    val savedNothing: Boolean = false,
+    val saved: Boolean = false,
+) {
+    val outcome: WatchRefreshOutcome get() = WatchRefreshOutcome.of(stops, fetched, reused, failures)
+}
+
+/**
+ * One bounded, location-free refresh of the stored widget snapshot [prior]: its stops' arrivals,
+ * fetched with the user's keys through the shared rate budget, a stop fetched moments ago reused.
+ * The result is saved only if the stored stop set still matches; with nothing fresh, the widget
+ * re-renders so the unchanged snapshot ages honestly. The widget's own refresh cycle and a watch's
+ * refresh request both run it. Never throws but for cancellation; a failure is logged, and a cycle
+ * that failed before fetching, or whose save failed, counts every stop as unreachable; so do
+ * [keys] that couldn't be read (null).
+ */
+internal suspend fun refreshStoredSnapshot(
+    context: Context,
+    prior: DeparturesSnapshot,
+    keys: RefreshKeys?,
+): SnapshotRefreshReport {
+    val attempted = AtomicInteger()
+    val succeeded = AtomicInteger()
+    val failures = java.util.Collections.synchronizedList(mutableListOf<WatchRefreshOutcome.Failure>())
+    var ran = false
+    // Set while the fetched result is being saved: a save that throws leaves the watch and widget on
+    // the old snapshot, so the refresh failed however many stops were fetched.
+    var saving = false
+    var savedNothing = true
+    var saved = false
+    try {
+        // The client reads the key provider once per request and drives both the app_key and the
+        // limiter's budget from that one read (rateLimiterFor), so a widget-only process needn't
+        // wait for the process-wide holder to warm and the budget always matches the key sent.
+        keys ?: throw java.io.IOException("keys unreadable")
+        val userKey = keys.tfl
+        val railKey = keys.rail
+        val http = KtorTflClient.defaultHttpClient()
+        try {
+            val client = RailAwareTflClient(
+                tfl = KtorTflClient(
+                    http,
+                    appKey = { userKey },
+                    rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                    requestPool = SharedTflRequestPool.pool,
+                ),
+                rail = KtorDarwinClient(http, apiKey = { railKey }, warn = ::logWidgetSnapshotWarning),
+                codes = { RailStationCodesStore.load(context) },
+                warn = ::logWidgetSnapshotWarning,
+            )
+            ran = true
+            val refreshed = WidgetRefresh.refreshedArrivals(
+                prior,
+                Instant.now(),
+                // Skip a stop the app fetched moments ago: same data, same shared rate budget.
+                reuse = ARRIVALS_REUSE,
+            ) { stopId ->
+                attempted.incrementAndGet()
+                try {
+                    client.arrivals(stopId).also { succeeded.incrementAndGet() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Sanitized: a stop id is a canned identifier, not user data, but the message
+                    // stays a bare fact (SPEC *Privacy* / *Error handling*).
+                    logWidgetSnapshotWarning("widget refresh arrivals failed for stop $stopId: ${e::class.simpleName}")
+                    failures += if (e is TflException.RateLimited) {
+                        WatchRefreshOutcome.Failure.RATE_LIMITED
+                    } else {
+                        WatchRefreshOutcome.Failure.UNREACHABLE
+                    }
+                    null
+                }
+            }
+            savedNothing = refreshed == null
+            if (refreshed != null) {
+                // Conditional save: persist and poke the widget only if the stored stop set still
+                // matches the one this cycle loaded and fetched for. In the seconds spent fetching,
+                // the app may have persisted a different set (the user relocated in-app); an
+                // unconditional save would let this slow cycle win last and stamp the old location's
+                // departures fresh over the new set. On a discard the newer in-app snapshot is
+                // already stored and has poked the widget itself (Codex P1 on #56).
+                saving = true
+                val applied = WidgetSnapshotStore(context).saveIfStopsMatch(refreshed, prior.stops.map { it.stopId })
+                saving = false
+                saved = applied
+                if (!applied) logWidgetSnapshotWarning("widget refresh result discarded: stop set changed during fetch")
+            } else {
+                // Nothing fetched fresh: re-render so the unchanged snapshot ages honestly.
+                StopCastWidget().updateAll(context)
+            }
+        } finally {
+            http.close()
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logWidgetSnapshotWarning("widget refresh cycle failed: ${e::class.simpleName}")
+    }
+    if (!ran || saving) {
+        return SnapshotRefreshReport(
+            // A save that threw left the store as it was (DataStore writes are atomic), so it saved
+            // nothing: the outcome is cached like any all-failed one, against the unchanged snapshot.
+            prior.stops.size, 0, 0, List(prior.stops.size) { WatchRefreshOutcome.Failure.UNREACHABLE }, savedNothing = true,
+        )
+    }
+    val tried = attempted.get()
+    return SnapshotRefreshReport(prior.stops.size, succeeded.get(), prior.stops.size - tried, failures.toList(), savedNothing, saved)
 }

@@ -68,8 +68,8 @@ StopCast watch app installed, the phone sends it what your home-screen widget sh
 can show it too: the widget's stops (their names and IDs, and the nearby stops each is compared
 against, which are worked out from your phone's last location), their departures, which rows
 you've starred, and which kinds of transport you've hidden. It never sends your coordinates or your API keys, and the watch never contacts TfL,
-National Rail or anything else itself. In the other direction, the watch will send the phone the
-row each StopCast complication shows, and its requests to refresh. This goes through **Google Play
+National Rail or anything else itself. In the other direction, the watch sends the phone its
+requests to refresh, which carry only a random request number, and will send the row each StopCast complication shows. This goes through **Google Play
 services' Wearable Data Layer**: over Bluetooth when the watch is near, but when it isn't (a watch
 on Wi-Fi or mobile data) it may pass **through Google's servers**. Nothing is sent when no paired
 watch has the app. The watch keeps only the latest copy, never backs it up, and doesn't log it.
