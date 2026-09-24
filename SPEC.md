@@ -987,7 +987,9 @@ spells them.
   identically but that needs Android types: the bundled route topology and its loader, so
   both group branching services the same way, and the line-pill color rules (*Line pill
   colors*) as one pure resolver taking the line and the surface color, so a pill is colored
-  the same on the phone and the watch. Compose UI, the widget and the stores stay in `:app`.
+  the same on the phone and the watch. It also holds the stop-header titles and the choice of
+  which rows and headers fit a fixed number of lines, so the watch tile shows what the widget
+  would. Compose UI, the widget and the stores stay in `:app`.
 - A **`:wear` Wear OS app** (a companion: it shows only what the phone sends, over the Wearable
   Data Layer, and never calls TfL). It shares the phone's application ID, so it can't be released
   before the package rename; its release build fails until the maintainer lifts that gate.

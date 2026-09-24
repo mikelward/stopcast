@@ -14,13 +14,8 @@ import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.em
 
-/**
- * The "heading to" arrow a label carries as plain text ("➔ Archway", "Victoria ➔ Warren Street").
- * Labels keep this character so they stay plain, testable strings; [withArrowIcons] draws it as
- * Material's ArrowForward icon, which sits centered on the letters at a lighter weight than any
- * font glyph (maintainer, 2026-09-24).
- */
-internal const val ARROW = "➔"
+// [ARROW] (shared) is drawn here as Material's ArrowForward icon, which sits centered on the
+// letters at a lighter weight than any font glyph (maintainer, 2026-09-24).
 
 private const val ARROW_ID = "arrow"
 

@@ -59,7 +59,7 @@ import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.domain.lineCode
 import app.stopcast.ui.hiddenGroupsLabel
-import app.stopcast.ui.groupHeaderSpoken
+import app.stopcast.ui.BudgetedRows
 import app.stopcast.ui.groupHeaderTitle
 import app.stopcast.ui.lineFillColor
 import app.stopcast.ui.railOperatorColor
@@ -341,64 +341,10 @@ internal fun widgetModel(
     // Only when there's a departure to fit: with none, the empty states ("No upcoming departures",
     // "may be out of date") are the honest message and fit any size.
     val tooSmall = budget < 1 && pinned.isNotEmpty()
-    // Headers cost a line each; a budget too small for a header and a line (the minimum size) drops
-    // them: the next departure matters more than naming its stop, and a lone header would leave no
-    // row — and an empty list reads as "No upcoming departures", a claim the data doesn't make.
-    val headersOn = budget >= 2
-    // Choose which rows fit in PRIORITY order (fresh before stale, starred first — `pinned`), counting
-    // the headers the chosen set will draw; only then group the chosen rows by place for display.
-    // Grouping first would let a place's lower-priority rows (a stale sibling, an unstarred one) take
-    // lines ahead of a fresher or starred row at another place. The grouping itself is the in-app
-    // list's (SPEC D8): a place's rows together, places in the order their first row came, and a
-    // header only where the list shows one — one place with no qualifier stays header-less, so the
-    // common single-stop widget pays nothing for it. warningsLead = false: `pinned` decided the lead.
-    val shownLines = java.util.IdentityHashMap<DepartureRow, List<DestinationGroup>>()
-    val selected = mutableListOf<DepartureRow>()
-    // Each header — whether it shows, and what it says — is judged against every row the widget has
-    // departures for, not just the rows that fit: when the cap leaves one place of several, its rows
-    // still need its name, and a bus place whose second route didn't fit mustn't claim the one shown
-    // route's terminus ("➔ …") as the whole stop's. Group keys are the same in both groupings (place
-    // plus split, read from each row), so a chosen group looks up its full-context twin.
-    val allLines = pinned.map { DepartureRows.destinationLines(it, WIDGET_MAX_TIMES, topology) }
-    val candidates = pinned.filterIndexed { i, _ -> allLines[i].isNotEmpty() }
-    val fullGroups = StopGrouping.groupByStop(candidates, warningsLead = false).associateBy { it.key }
-    fun context(group: StopGroup): StopGroup = fullGroups[group.key] ?: group
-    fun headed(group: StopGroup): Boolean = headersOn && context(group).showHeader
-    fun cost(rows: List<DepartureRow>): Int = grouped(rows).sumOf { group ->
-        (if (headed(group)) 1 else 0) + group.rows.sumOf { shownLines.getValue(it).size }
-    }
-    for ((row, lines) in pinned.zip(allLines)) {
-        if (lines.isEmpty()) continue
-        selected += row
-        shownLines[row] = lines
-        val over = cost(selected) - budget
-        if (over <= 0) continue
-        // Over budget: a branching row may still fit with fewer of its destination lines (each line
-        // dropped saves exactly one); otherwise it's skipped. The scan never stops early: a row that
-        // opens a new group pays for its header too, so a later row of an already-shown group may
-        // still fit after one that couldn't. The rows are few; checking each is cheap.
-        if (lines.size - over >= 1) {
-            shownLines[row] = lines.take(lines.size - over)
-        } else {
-            selected.removeAt(selected.lastIndex)
-            shownLines.remove(row)
-        }
-    }
-    val rows = buildList {
-        for (group in grouped(selected)) {
-            val header = if (headed(group)) {
-                val full = context(group)
-                WidgetHeader(
-                    text = groupHeaderTitle(full.stopName, full.qualifier),
-                    spoken = groupHeaderSpoken(full.qualifier)?.let { "${full.stopName}, $it" } ?: full.stopName,
-                )
-            } else {
-                null
-            }
-            group.rows.forEachIndexed { index, row ->
-                add(WidgetRowModel(row, shownLines.getValue(row), header.takeIf { index == 0 }))
-            }
-        }
+    // The line-budgeted rows and their stop headers, chosen the way every glanceable surface
+    // chooses them (the watch tile too): see [BudgetedRows.select].
+    val rows = BudgetedRows.select(pinned, budget, WIDGET_MAX_TIMES, topology, ::grouped).map {
+        WidgetRowModel(it.row, it.groups, it.header?.let { header -> WidgetHeader(header.text, header.spoken) })
     }
     return WidgetModel(
         hasData = true,
