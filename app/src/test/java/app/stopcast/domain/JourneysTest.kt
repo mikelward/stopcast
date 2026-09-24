@@ -232,6 +232,39 @@ class JourneysTest {
     }
 
     @Test
+    fun `a pole beside the origin boarding another line to the far end is a sibling`() {
+        fun pole(id: String, vararg lines: String, mode: String = "bus") =
+            StopLocation(id, "Park", 51.5, -0.12, lines.map { LineRef(it, it, mode) }, clusterId = "G-PARK", stopLetter = id.takeLast(1))
+        // b3 boards at PARKK, beside the origin PARKN, and runs to Hill; b4 at PARKL runs elsewhere.
+        val b3 = LineSequence(listOf(LineRoute("Park ↔ Hill", listOf("PARKK", "HILLN"))), mapOf("PARKK" to "Park", "HILLN" to "Hill"))
+        val b4 = LineSequence(listOf(LineRoute("Park ↔ Dale", listOf("PARKL", "DALEN"))), mapOf("PARKL" to "Park", "DALEN" to "Dale"))
+        val poles = listOf(
+            pole("PARKN", "b1"),
+            // The way-back pole serves only the origin's line: not looked at.
+            pole("PARKS", "b1"),
+            pole("PARKK", "b3"),
+            pole("PARKL", "b4"),
+            pole("PARKT", "t1", mode = "tram"),
+        )
+        val loading = Journeys.siblingPoles(parkToHill, "PARKN", poles, mapOf("b1" to bus()))
+        assertEquals(setOf("b3", "b4"), loading.pendingLines)
+        val placed = Journeys.siblingPoles(parkToHill, "PARKN", poles, mapOf("b1" to bus(), "b3" to b3, "b4" to b4))
+        assertEquals(listOf("PARKK"), placed.poles.map { it.id })
+        assertTrue(placed.settled)
+        // A line whose route failed leaves its pole undecided, not ruled out.
+        val failed = Journeys.siblingPoles(parkToHill, "PARKN", poles, mapOf("b1" to bus(), "b3" to b3, "b4" to null))
+        assertEquals(setOf("b4"), failed.failedLines)
+        assertFalse(failed.settled)
+        // A line TfL gave no mode is judged by its route, not skipped.
+        assertTrue(Journeys.ofMode(LineRef("b5", "b5", ""), "bus"))
+        assertFalse(Journeys.ofMode(LineRef("t1", "t1", "tram"), "bus"))
+        // Its departures are the card's too.
+        val rows = rowsAt("PARKK", departure("Hill", 60, "b3", "bus"))
+        val trains = Journeys.trains(JourneySegment("PARKK", emptySet()), rows, mapOf("b3" to b3), parkToHill)
+        assertEquals(listOf("b3"), trains.rows.map { it.lineId })
+    }
+
+    @Test
     fun `same place needs the same name start and nearness`() {
         val here = 51.5 to -0.12
         val near = 51.5009 to -0.12

@@ -51,6 +51,16 @@ interface RouteSequenceSource {
     suspend fun routeSequence(lineId: String, direction: String): LineSequence
 }
 
+/**
+ * Reads a stop area's poles from TfL (`/StopPoint/{areaId}`): each pole's id, letter and lines —
+ * how a starred bus journey finds the poles beside its origin that other lines board from (SPEC
+ * *Journeys*). On demand like [RouteSequenceSource], never on the refresh path. Throws a
+ * [TflException] on failure.
+ */
+interface StopAreaSource {
+    suspend fun stopAreaPoles(areaId: String): List<StopLocation>
+}
+
 object RouteStops {
     private val DIRECTIONS = listOf("inbound", "outbound")
 
@@ -175,8 +185,32 @@ object RouteStops {
 class RouteStopsRepository(
     private val source: RouteSequenceSource,
     private val warn: (String) -> Unit = {},
+    // A stop area's poles, for a bus journey's origin (null: none looked up, as in a test).
+    private val areas: StopAreaSource? = source as? StopAreaSource,
 ) {
     private val cache = ConcurrentHashMap<String, LineSequence>()
+    private val areaCache = ConcurrentHashMap<String, List<StopLocation>>()
+
+    /** The poles of stop area [areaId] if already fetched, else null. No IO. */
+    fun cachedPoles(areaId: String): List<StopLocation>? = areaCache[areaId]
+
+    /**
+     * The poles of stop area [areaId], fetched once per process and cached (a stop area's poles
+     * barely change). Empty when no area source is wired. Throws a [TflException] on failure after
+     * logging it (sanitized: the area id and error class).
+     */
+    suspend fun loadPoles(areaId: String): List<StopLocation> {
+        areaCache[areaId]?.let { return it }
+        val areas = areas ?: return emptyList()
+        return try {
+            areas.stopAreaPoles(areaId).also { areaCache[areaId] = it }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: TflException) {
+            warn("stop area fetch failed for $areaId: ${e::class.simpleName}")
+            throw e
+        }
+    }
 
     /**
      * Logs why a fetched sequence gave no stop list for a train on [lineId] at [stopId] — the page

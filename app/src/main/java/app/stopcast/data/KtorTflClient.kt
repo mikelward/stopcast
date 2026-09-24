@@ -5,6 +5,7 @@ import app.stopcast.domain.HubInfo
 import app.stopcast.domain.LineSequence
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.RouteSequenceSource
+import app.stopcast.domain.StopAreaSource
 import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.StopFinder
 import app.stopcast.domain.StopLocation
@@ -62,7 +63,7 @@ class KtorTflClient(
     // Sink for recoverable response oddities (an unparseable disruption date), coarse facts only —
     // a stop id, never a coordinate or key (SPEC *Privacy*). No-op by default (tests, widget).
     private val warn: (String) -> Unit = {},
-) : TflClient, StopFinder, RouteSequenceSource {
+) : TflClient, StopFinder, RouteSequenceSource, StopAreaSource {
     override suspend fun arrivals(stopId: String): List<Departure> =
         tflRequest { key ->
             httpClient.get("$baseUrl/StopPoint/$stopId/Arrivals") {
@@ -105,6 +106,15 @@ class KtorTflClient(
             httpClient.get("$baseUrl/Line/$lineId/Route/Sequence/$direction") {
                 applyAppKey(key)
             }.body<TflRouteSequenceDto>().toLineSequence()
+        }
+
+    override suspend fun stopAreaPoles(areaId: String): List<StopLocation> =
+        tflRequest { key ->
+            val dto = httpClient.get("$baseUrl/StopPoint/$areaId") {
+                applyAppKey(key)
+            }.body<TflStopPointDto>()
+            // The area's leaf stop points (its poles), each with its letter and lines.
+            dto.leaves().mapNotNull { it.toStopLocationOrNull() }
         }
 
     override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {

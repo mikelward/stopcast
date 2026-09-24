@@ -66,6 +66,10 @@ data class WidgetJourneysReport(
     val keys: Set<String>,
     val checks: List<WidgetJourneyCheck>,
     val from: Map<String, String> = emptyMap(),
+    // For a journey whose neighboring poles are known: every boarding key it now has (its own and
+    // one [WidgetJourneys.poleKey] per pole), so a pole's pin that no longer qualifies goes. A
+    // journey absent here keeps its pole pins as they are (its poles are still being looked up).
+    val boarding: Map<String, Set<String>> = emptyMap(),
 )
 
 object WidgetJourneys {
@@ -77,6 +81,12 @@ object WidgetJourneys {
      * origin takes the [origins] copy when that is newer; a journey-only stop no pin starts from
      * goes. Null when nothing is stored and there is nothing to pin.
      */
+    /** The widget pin key for [journeyKey]'s departures from the neighboring pole [poleId]. */
+    fun poleKey(journeyKey: String, poleId: String): String = "$journeyKey@$poleId"
+
+    /** The journey a pin key belongs to: itself, or the journey of a [poleKey]. */
+    fun baseKey(key: String): String = key.substringBefore('@')
+
     fun apply(
         stored: DeparturesSnapshot?,
         report: WidgetJourneysReport,
@@ -85,12 +95,16 @@ object WidgetJourneys {
         val prior = stored?.journeys.orEmpty()
             .filter { it.key.isNotEmpty() }
             // Pinned for the other direction than the one now shown: not this journey's pin now.
-            .filterNot { j -> report.from[j.key]?.let { j.shownFrom.isNotEmpty() && it != j.shownFrom } == true }
+            .filterNot { j -> report.from[baseKey(j.key)]?.let { j.shownFrom.isNotEmpty() && it != j.shownFrom } == true }
+            // A neighboring pole's pin its journey no longer boards from.
+            .filterNot { j -> report.boarding[baseKey(j.key)]?.let { j.key !in it } == true }
             .associateBy { it.key }
+        // A journey's pole pins are starred while the journey is.
+        val keys = (prior.keys + report.checks.map { it.key }).filterTo(HashSet()) { baseKey(it) in report.keys }
         val stops = stored?.stops.orEmpty()
         val storedIds = stops.mapTo(HashSet()) { it.stopId }
         val supplied = origins.associateBy { it.stopId }
-        val journeys = merge(prior, report.keys, report.checks).values
+        val journeys = merge(prior, keys, report.checks).values
             .filter { it.calls.isNotEmpty() && (it.originId in storedIds || it.originId in supplied) }
             .sortedBy { it.key }
         val pinnedOrigins = journeys.mapTo(HashSet()) { it.originId }

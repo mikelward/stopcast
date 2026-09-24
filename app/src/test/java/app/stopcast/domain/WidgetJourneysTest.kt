@@ -1,6 +1,7 @@
 package app.stopcast.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Synthetic stop ids and lines only. */
@@ -73,5 +74,30 @@ class WidgetJourneysTest {
         assertEquals(null, WidgetJourneys.apply(null, report, emptyList()))
         val stored = DeparturesSnapshot(stops = listOf(stop("490000002B")), fetchedAt = now)
         assertEquals(emptyList<WidgetJourney>(), WidgetJourneys.apply(stored, report, emptyList())!!.journeys)
+    }
+
+    @Test
+    fun `a neighboring pole's pin lives with its journey and goes when the pole no longer boards it`() {
+        val poleKey = WidgetJourneys.poleKey("j", "490000002B")
+        val stored = DeparturesSnapshot(
+            stops = listOf(stop("490000001A"), stop("490000002B")),
+            fetchedAt = now,
+            journeys = listOf(WidgetJourney("490000001A", setOf(hill), "j"), WidgetJourney("490000002B", setOf(dale), poleKey)),
+            journeyOnlyStopIds = setOf("490000002B"),
+        )
+        // Poles not looked up yet this session: the pole's pin stays.
+        val waiting = WidgetJourneys.apply(stored, WidgetJourneysReport(setOf("j"), emptyList()), emptyList())!!
+        assertEquals(stored.journeys, waiting.journeys)
+        // Looked up, and the pole no longer boards the journey: its pin and journey-only stop go.
+        val settled = WidgetJourneysReport(setOf("j"), emptyList(), boarding = mapOf("j" to setOf("j")))
+        val after = WidgetJourneys.apply(stored, settled, emptyList())!!
+        assertEquals(listOf("j"), after.journeys.map { it.key })
+        assertEquals(listOf("490000001A"), after.stops.map { it.stopId })
+        // Unstarred: both go.
+        assertTrue(WidgetJourneys.apply(stored, WidgetJourneysReport(emptySet(), emptyList()), emptyList())!!.journeys.isEmpty())
+        // A check for the pole pins it under its own key.
+        val check = WidgetJourneyCheck(poleKey, "490000002B", setOf(town))
+        val pinned = WidgetJourneys.apply(stored, WidgetJourneysReport(setOf("j"), listOf(check)), emptyList())!!
+        assertEquals(setOf(dale, town), pinned.journeys.single { it.key == poleKey }.calls)
     }
 }

@@ -125,6 +125,10 @@ import app.stopcast.domain.Journeys
 import app.stopcast.domain.StopDistance
 import app.stopcast.domain.StopGroup
 import app.stopcast.domain.StopGrouping
+import app.stopcast.domain.StopLocation
+import app.stopcast.domain.JourneySegment
+import app.stopcast.domain.JourneyTrains
+import app.stopcast.domain.WidgetJourneys
 import app.stopcast.domain.TflException
 import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.mutableStateMapOf
@@ -186,7 +190,8 @@ fun MainScreen(
     // The starred journeys' keys and each placed journey's latest check (the departures found to call
     // at its far end), for the widget to pin (it can't load route data itself); reported whenever
     // they change. The ViewModel keeps what they add up to.
-    onWidgetJourneys: (Set<String>, List<WidgetJourneyCheck>, Map<String, String>) -> Unit = { _, _, _ -> },
+    onWidgetJourneys: (Set<String>, List<WidgetJourneyCheck>, Map<String, String>, Map<String, Set<String>>) -> Unit =
+        { _, _, _, _ -> },
     // Whether [journeys] is the saved list yet: until it is, nothing is reported for the widget, so
     // a list still loading isn't taken for "no journeys" and unpins them.
     journeysKnown: Boolean = true,
@@ -270,9 +275,38 @@ fun MainScreen(
     val journeySegments = remember(journeys, starSequences) {
         journeys.associate { j -> j.key to starSequences[j.lineId]?.let { Journeys.segment(j, it) } }
     }
+    // A bus journey's origin stop area (from its starred line's route) and the area's poles, looked
+    // up once per process off the render path: another line may board beside the origin (stop K by
+    // stop L) and reach the far end too (SPEC *Journeys*). A failed lookup is kept as such (null).
+    val journeyAreas = remember(journeys, journeySegments, starSequences) {
+        journeys.filter { it.bus }.mapNotNull { j ->
+            val originId = journeySegments[j.key]?.originId ?: return@mapNotNull null
+            starSequences[j.lineId]?.stopAreas?.get(originId)?.takeIf { it.isNotBlank() }?.let { j.key to it }
+        }.toMap()
+    }
+    val loadedPoles = remember { mutableStateMapOf<String, List<StopLocation>?>() }
+    LaunchedEffect(routeStopsRepository, journeyAreas, journeyRouteRetry) {
+        val repository = routeStopsRepository ?: return@LaunchedEffect
+        for (areaId in journeyAreas.values.distinct()) {
+            if (loadedPoles[areaId] != null) continue
+            loadedPoles.remove(areaId)
+            loadedPoles[areaId] = repository.cachedPoles(areaId) ?: try {
+                repository.loadPoles(areaId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: TflException) {
+                // Logged (sanitized) by the repository; null marks the failure for the card.
+                null
+            }
+        }
+    }
+    // Each bus journey's area poles, by journey key: absent while loading, null when it failed.
+    val journeyPoles: Map<String, List<StopLocation>?> = journeyAreas.mapNotNull { (key, areaId) ->
+        if (areaId in loadedPoles) key to loadedPoles[areaId] else null
+    }.toMap()
     // The stop each journey is fetched from: its resolved origin, or, before its route is in, a
     // station's own id (the same both ways) — a bus waits, since its way-back pole isn't known yet.
-    val journeyOrigins = remember(journeys, journeySegments, starSequences) {
+    val journeyOrigins = remember(journeys, journeySegments, starSequences, journeyPoles) {
         journeys.mapNotNull { j ->
             val id = journeySegments[j.key]?.originId ?: j.from.stopId.takeUnless { j.bus } ?: return@mapNotNull null
             // The starred line, plus every line of its mode the route data lists at the origin (the
@@ -285,20 +319,36 @@ fun MainScreen(
             val mode = j.mode.ifBlank { Connections.knownMode(j.lineId).orEmpty() }
             val served = starSequences[j.lineId]?.stopLines?.get(id).orEmpty()
                 .filter { it.mode.isNotBlank() && it.mode.equals(mode, ignoreCase = true) }
-            StopRef(id, j.from.name, lines = listOf(j.line) + served)
+            // Its pole letter and area, once looked up, so the card heads it like its neighbors.
+            val pole = journeyPoles[j.key]?.firstOrNull { it.id == id }
+            StopRef(
+                id, j.from.name, lines = listOf(j.line) + served,
+                clusterId = pole?.clusterId.orEmpty(), stopLetter = pole?.stopLetter.orEmpty(),
+                bearing = pole?.bearing.orEmpty(), towards = pole?.towards.orEmpty(),
+            )
         }.groupBy { it.id }.map { (id, refs) ->
-            StopRef(id, refs.first().name, lines = refs.flatMap { it.lines }.distinctBy { it.id })
+            refs.first().copy(lines = refs.flatMap { it.lines }.distinctBy { it.id })
         }
     }
-    val reportJourneyOrigins by rememberUpdatedState(onJourneyOrigins)
-    LaunchedEffect(journeyOrigins) { reportJourneyOrigins(journeyOrigins) }
     val originLines = remember(loaded?.stops, journeyOrigins) {
         val ids = journeyOrigins.mapTo(HashSet()) { it.id }
         loaded?.stops.orEmpty().filter { it.stopId in ids }
             .flatMap { stop -> stop.departures.map { it.lineId } + stop.lines.map { it.id } }
     }
-    val journeyLineIds = remember(journeyStarLines, originLines) {
-        (journeyStarLines + originLines).filter { it.isNotBlank() }.distinct()
+    // The lines boarding beside a bus journey's origin (and not at it), so their routes can say
+    // whether they reach the far end ([Journeys.siblingPoles]).
+    val siblingLines = remember(journeys, journeySegments, journeyPoles) {
+        journeys.flatMap { j ->
+            val originId = journeySegments[j.key]?.originId ?: return@flatMap emptyList()
+            val poles = journeyPoles[j.key].orEmpty()
+            val atOrigin = poles.firstOrNull { it.id == originId }?.lines.orEmpty().mapTo(HashSet()) { it.id }
+            poles.filter { it.id != originId }.flatMap { pole ->
+                pole.lines.filter { it.id !in atOrigin && Journeys.ofMode(it, j.mode) }.map { it.id }
+            }
+        }
+    }
+    val journeyLineIds = remember(journeyStarLines, originLines, siblingLines) {
+        (journeyStarLines + originLines + siblingLines).filter { it.isNotBlank() }.distinct()
     }
     LaunchedEffect(routeStopsRepository, journeyLineIds, journeyRouteRetry) {
         val repository = routeStopsRepository ?: return@LaunchedEffect
@@ -316,12 +366,30 @@ fun MainScreen(
         }
     }
     val journeySequences = sequencesFor(journeyLineIds)
+    // The poles beside each bus journey's origin that board a line reaching its far end, fetched
+    // alongside the origin (one arrivals request each) and shown on its card under their letter.
+    val journeySiblings = remember(journeys, journeySegments, journeyPoles, journeySequences) {
+        journeys.mapNotNull { j ->
+            val originId = journeySegments[j.key]?.originId ?: return@mapNotNull null
+            val poles = journeyPoles[j.key] ?: return@mapNotNull null
+            j.key to Journeys.siblingPoles(j, originId, poles, journeySequences)
+        }.toMap()
+    }
+    val siblingOrigins = remember(journeys, journeySiblings) {
+        journeys.flatMap { j ->
+            journeySiblings[j.key]?.poles.orEmpty().map { pole ->
+                pole.toStopRef().copy(lines = pole.lines.filter { Journeys.ofMode(it, j.mode) })
+            }
+        }.distinctBy { it.id }.filter { sibling -> journeyOrigins.none { it.id == sibling.id } }
+    }
+    val reportJourneyOrigins by rememberUpdatedState(onJourneyOrigins)
+    LaunchedEffect(journeyOrigins, siblingOrigins) { reportJourneyOrigins(journeyOrigins + siblingOrigins) }
     // The journey cards: the trains or buses from each journey's origin that call at its far end, on
     // any line, the origin's closure notice if it has one, or why they can't be shown yet (SPEC
     // principle 1).
     val journeyCards = remember(
         loaded?.stops, loaded?.lineStatuses, loaded?.unavailableStopIds, now, journeys, journeySegments,
-        journeySequences, dismissed,
+        journeySequences, dismissed, journeyAreas, journeyPoles, journeySiblings,
     ) {
         val ld = loaded
         // Dismissals apply here as on the list, so an alert dismissed anywhere is gone from the card.
@@ -333,49 +401,84 @@ fun MainScreen(
             val segment = journeySegments[journey.key]
             val originId = segment?.originId ?: journey.from.stopId
             val origin = ld?.stops?.firstOrNull { it.stopId == originId }
-            val closure = across.firstOrNull { it.stopId == originId && it.stopDisruption != null }
+            // Every boarding stop's closure notice: the origin's, and each neighboring pole's.
+            val boardingStops = listOf(originId) + journeySiblings[journey.key]?.poles.orEmpty().map { it.id }
+            val closures = boardingStops.mapNotNull { id -> across.firstOrNull { it.stopId == id && it.stopDisruption != null } }
             // The stop being fetched: known before the route is in for a station (see journeyOrigins).
             val fetchedId = segment?.originId ?: journey.from.stopId.takeUnless { journey.bus }
             val state = when {
                 // Asked for and not come back: the fetch failed with nothing earlier to show.
                 origin == null && fetchedId != null && fetchedId in ld?.unavailableStopIds.orEmpty() ->
-                    JourneyCardState.NotChecked
+                    JourneyCardState.NotChecked()
                 journey.lineId !in journeySequences -> JourneyCardState.Checking
                 journeySequences[journey.lineId] == null -> JourneyCardState.RouteFailed
                 // The route can't place the stops this way round (no single way-back stop).
-                segment == null -> JourneyCardState.NotChecked
+                segment == null -> JourneyCardState.NotChecked()
                 origin == null -> JourneyCardState.Checking
+                // A bus origin's neighboring poles still being looked up, or their lines' routes loading.
+                journey.key in journeyAreas && journey.key !in journeyPoles -> JourneyCardState.Checking
+                journeySiblings[journey.key]?.pendingLines.orEmpty().isNotEmpty() -> JourneyCardState.Checking
                 else -> {
-                    val trains = Journeys.trains(segment, across, journeySequences, journey)
+                    val siblings = journeySiblings[journey.key]?.poles.orEmpty()
+                    val siblingStops = siblings.map { pole -> ld?.stops?.firstOrNull { it.stopId == pole.id } }
+                    // The origin's trains, then each neighboring pole's (matched to the far end the same way).
+                    val parts = listOf(Journeys.trains(segment, across, journeySequences, journey)) +
+                        siblings.map { pole -> Journeys.trains(JourneySegment(pole.id, emptySet()), across, journeySequences, journey) }
+                    val trains = JourneyTrains(
+                        rows = parts.flatMap { it.rows },
+                        pending = parts.any { it.pending },
+                        unresolved = parts.any { it.unresolved },
+                        routeFailed = parts.any { it.routeFailed },
+                    )
+                    // A neighboring pole whose fetch failed, whose lookup did, or whose line's route
+                    // did, may have had a bus.
+                    val polesFailed = journey.key in journeyPoles && journeyPoles[journey.key] == null ||
+                        journeySiblings[journey.key]?.failedLines.orEmpty().isNotEmpty()
+                    val siblingsMissed = siblings.zip(siblingStops).any { (pole, stop) ->
+                        stop == null && pole.id in ld?.unavailableStopIds.orEmpty()
+                    } || polesFailed
                     // "No trains" is only a claim a fresh, current fetch can make: an origin whose last
                     // refresh failed (kept aged) or has gone stale says it couldn't check instead —
                     // and so does one with a departure whose path couldn't be resolved, since it may
                     // well call at the far end. A line whose route is still loading says checking.
-                    val current = origin.arrivalsFresh &&
-                        !Staleness.isStale(Duration.between(origin.fetchedAt, now).toKotlinDuration())
+                    // The same holds for each neighboring pole.
+                    val current = (listOf(origin) + siblingStops.filterNotNull()).all { stop ->
+                        stop.arrivalsFresh && !Staleness.isStale(Duration.between(stop.fetchedAt, now).toKotlinDuration())
+                    }
                     // A line still loading holds the whole card at "checking", so a first line's trains
                     // aren't shown as if they were all; one that couldn't be checked is said so beneath
                     // the rest.
                     when {
                         trains.pending -> JourneyCardState.Checking
+                        // A neighboring pole asked for and not in yet.
+                        siblings.zip(siblingStops).any { (pole, stop) -> stop == null && pole.id !in ld?.unavailableStopIds.orEmpty() } ->
+                            JourneyCardState.Checking
                         trains.rows.isNotEmpty() ->
-                            JourneyCardState.Trains(trains.rows, incomplete = trains.unresolved, retry = trains.routeFailed)
+                            JourneyCardState.Trains(
+                                trains.rows,
+                                incomplete = trains.unresolved || siblingsMissed,
+                                retry = trains.routeFailed || polesFailed,
+                            )
                         // A route that failed to load is the one gap a retry can close.
                         trains.routeFailed -> JourneyCardState.RouteFailed
-                        !current || trains.unresolved -> JourneyCardState.NotChecked
+                        !current || trains.unresolved || siblingsMissed -> JourneyCardState.NotChecked(retry = polesFailed)
                         else -> JourneyCardState.Trains(emptyList())
                     }
                 }
             }
             // A complete check judged every departure at the origin: the widget drops any it now rejects.
+            // Per boarding stop: the origin, then each neighboring pole (pinned separately on the widget).
+            val boardingIds = listOfNotNull(segment?.originId) + journeySiblings[journey.key]?.poles.orEmpty().map { it.id }
             val checked =
-                if (state is JourneyCardState.Trains && !state.incomplete && segment != null) {
-                    across.filter { it.stopId == segment.originId && it.lineId.isNotBlank() }
-                        .flatMapTo(HashSet()) { row -> row.upcoming.map(JourneyCall::of) }
+                if (state is JourneyCardState.Trains && !state.incomplete) {
+                    boardingIds.associateWith { id ->
+                        across.filter { it.stopId == id && it.lineId.isNotBlank() }
+                            .flatMapTo(HashSet()) { row -> row.upcoming.map(JourneyCall::of) }
+                    }
                 } else {
-                    emptySet()
+                    emptyMap()
                 }
-            JourneyCard(journey, state, closure, checked)
+            JourneyCard(journey, state, closures, checked, boardingIds)
         }
     }
     // What each placed journey's card found for the widget (it can't load routes itself): the
@@ -385,18 +488,38 @@ fun MainScreen(
     // The direction each journey is shown in, so a flip reaches the widget even before its route
     // can place the new origin.
     val journeyShownFrom = remember(journeys) { journeys.associate { it.key to it.from.stopId } }
-    val widgetJourneyChecks = remember(journeyCards, journeySegments) {
-        journeyCards.mapNotNull { card ->
-            val originId = journeySegments[card.journey.key]?.originId ?: return@mapNotNull null
-            val confirmed = (card.state as? JourneyCardState.Trains)?.rows
-                ?.flatMapTo(HashSet()) { row -> row.upcoming.map(JourneyCall::of) }
-                .orEmpty()
-            WidgetJourneyCheck(card.journey.key, originId, confirmed, card.checked, card.journey.from.stopId)
+    // One check per boarding stop: the origin under the journey's key, a neighboring pole under its
+    // [WidgetJourneys.poleKey], each pinned on the widget from its own stop.
+    val widgetJourneyChecks = remember(journeyCards) {
+        journeyCards.flatMap { card ->
+            val key = card.journey.key
+            val rows = (card.state as? JourneyCardState.Trains)?.rows.orEmpty()
+            card.boardingIds.mapIndexed { i, id ->
+                WidgetJourneyCheck(
+                    if (i == 0) key else WidgetJourneys.poleKey(key, id),
+                    id,
+                    rows.filter { it.stopId == id }.flatMapTo(HashSet()) { row -> row.upcoming.map(JourneyCall::of) },
+                    card.checked[id].orEmpty(),
+                    card.journey.from.stopId,
+                )
+            }
+        }
+    }
+    // The boarding keys of each journey whose neighboring poles are settled (none to look up, or
+    // looked up and judged), so a pole that no longer qualifies loses its widget pin.
+    val widgetJourneyBoarding = remember(journeyCards, journeyAreas, journeyPoles, journeySiblings) {
+        journeyCards.filter { card ->
+            val key = card.journey.key
+            card.boardingIds.isNotEmpty() &&
+                (key !in journeyAreas || journeyPoles[key] != null && journeySiblings[key]?.settled == true)
+        }.associate { card ->
+            val key = card.journey.key
+            key to card.boardingIds.mapIndexedTo(HashSet()) { i, id -> if (i == 0) key else WidgetJourneys.poleKey(key, id) }
         }
     }
     val reportWidgetJourneys by rememberUpdatedState(onWidgetJourneys)
-    LaunchedEffect(journeysKnown, journeyKeys, widgetJourneyChecks, journeyShownFrom) {
-        if (journeysKnown) reportWidgetJourneys(journeyKeys, widgetJourneyChecks, journeyShownFrom)
+    LaunchedEffect(journeysKnown, journeyKeys, widgetJourneyChecks, journeyShownFrom, widgetJourneyBoarding) {
+        if (journeysKnown) reportWidgetJourneys(journeyKeys, widgetJourneyChecks, journeyShownFrom, widgetJourneyBoarding)
     }
     val rows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, starred, dismissed) {
         val ld = loaded ?: return@remember emptyList()
@@ -1143,8 +1266,8 @@ private fun DepartureList(
             }
             // The origin's closure notice rides the journey card: a farther origin isn't on the near-me
             // list, so without it the trains below would read as catchable at a closed station.
-            card.closure?.let { closure ->
-                item(key = "journey-closure|${card.journey.key}") {
+            card.closures.forEach { closure ->
+                item(key = "journey-closure|${card.journey.key}|${closure.stopId}") {
                     StopClosureCard(closure, onDismiss = { onDismissAlert(closure) })
                 }
             }
@@ -1159,7 +1282,16 @@ private fun DepartureList(
                         )
                     }
                 } else {
+                    // Any bus boarding elsewhere than the origin (a pole beside it), even when it's the
+                    // only one: each stop's buses go under its own heading and pole letter, so none
+                    // reads as leaving from the stop the rider is at.
+                    val severalStops = state.rows.any { it.stopId != card.boardingIds.firstOrNull() }
                     StopGrouping.groupByStop(state.rows, warningsLead = false).forEach { group ->
+                        if (severalStops) {
+                            item(key = "journey-stop|${card.journey.key}|${group.key}") {
+                                StopGroupHeader(group.stopName, group.qualifier, distanceLabel = null, firstOnScreen = false)
+                            }
+                        }
                         item(key = "journey-card|${card.journey.key}|${group.key}") {
                             StopGroupCard(
                                 group,
@@ -1185,9 +1317,10 @@ private fun DepartureList(
                         stringResource(if (card.journey.bus) R.string.journey_checking_bus else R.string.journey_checking),
                     )
                 }
-                JourneyCardState.NotChecked -> item(key = "journey-note|${card.journey.key}") {
+                is JourneyCardState.NotChecked -> item(key = "journey-note|${card.journey.key}") {
                     JourneyNote(
                         stringResource(if (card.journey.bus) R.string.journey_not_checked_bus else R.string.journey_not_checked),
+                        onRetry = onRetryJourneyRoutes.takeIf { state.retry },
                     )
                 }
                 JourneyCardState.RouteFailed -> item(key = "journey-note|${card.journey.key}") {
@@ -1446,10 +1579,12 @@ private fun StopClosureCard(row: DepartureRow, onDismiss: () -> Unit) {
 internal data class JourneyCard(
     val journey: StarredJourney,
     val state: JourneyCardState,
-    // The origin's (undismissed) closure notice, shown on the card whatever the trains' state.
-    val closure: DepartureRow? = null,
-    // Every departure at the origin a complete check judged (empty otherwise), for the widget.
-    val checked: Set<JourneyCall> = emptySet(),
+    // Each boarding stop's (undismissed) closure notice, shown on the card whatever the trains' state.
+    val closures: List<DepartureRow> = emptyList(),
+    // Every departure a complete check judged (empty otherwise), for the widget, by boarding stop.
+    val checked: Map<String, Set<JourneyCall>> = emptyMap(),
+    // The stops it boards from: its origin, then any neighboring poles (empty until placed).
+    val boardingIds: List<String> = emptyList(),
 )
 
 /** What a journey card can say about its trains. */
@@ -1460,8 +1595,11 @@ internal sealed interface JourneyCardState {
     /** The line's route couldn't be loaded, so which trains call at the far end is unknown. */
     data object RouteFailed : JourneyCardState
 
-    /** The origin's last refresh failed or has gone stale, and there's nothing current to show. */
-    data object NotChecked : JourneyCardState
+    /**
+     * The origin's last refresh failed or has gone stale, and there's nothing current to show. [retry]
+     * when a lookup a retry can redo failed (the poles beside a bus journey's origin).
+     */
+    data class NotChecked(val retry: Boolean = false) : JourneyCardState
 
     /**
      * The trains that call at the far end — empty only from a fresh, current fetch. [incomplete]
