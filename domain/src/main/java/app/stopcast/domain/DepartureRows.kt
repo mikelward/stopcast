@@ -224,6 +224,30 @@ object DepartureRows {
         // Keep every row from the nearest stop for its key, so two platforms of one service
         // at a single stop both survive; a farther stop's same-service row is dropped.
         val kept = lineRows.filter { nearestStopByKey[dedupeKeyOf(it)] == it.stopId }
+        return (foldedStopStatus(stopStatus, ::distanceOf) + kept).sortedWith(rowOrder)
+    }
+
+    /**
+     * [rows] with each stop disruption notice kept once **per place** ([nearbyDeduped]'s fold), and
+     * every other row as it was, in order. For a list without distances — a searched station's page,
+     * the watched list — where a hub-wide notice (a lift out at King's Cross St. Pancras) would
+     * otherwise repeat once per member stop; the card kept is the first member's, with the whole
+     * group's dismissal windows. The line rows aren't deduped: a station's page shows every stop.
+     */
+    fun stopStatusFolded(rows: List<DepartureRow>): List<DepartureRow> {
+        val groups = rows.filter { it.stopDisruption != null }.groupBy { stopPlaceKey(it) to it.stopDisruption }
+        val emitted = HashSet<Pair<String, String?>>()
+        return rows.mapNotNull { row ->
+            if (row.stopDisruption == null) return@mapNotNull row
+            val key = stopPlaceKey(row) to row.stopDisruption
+            if (!emitted.add(key)) return@mapNotNull null
+            val windows = foldedWindows(groups.getValue(key))
+            if (windows == row.stopDisruptionWindows) row else row.copy(stopDisruptionWindows = windows)
+        }
+    }
+
+    /** [stopStatus] folded to one card per (place, notice), on the member nearest by [distanceOf]. */
+    private fun foldedStopStatus(stopStatus: List<DepartureRow>, distanceOf: (String) -> Double): List<DepartureRow> {
         // Fold each disruption notice to one card **per place**, on the nearest member: TfL reports
         // one notice against several stop points — a hub-wide lift outage against every member of an
         // interchange, or a closed bus stop against each pole of one junction. Keying on the coarsest
@@ -249,7 +273,7 @@ object DepartureRows {
             // Shared with the dismissal key so fold and dismiss agree on what "one place" is.
             statusByPlaceNotice.getOrPut(stopPlaceKey(row) to text) { mutableListOf() }.add(row)
         }
-        val keptStatus = statusByPlaceNotice.values.map { group ->
+        return statusByPlaceNotice.values.map { group ->
             val nearest = group.minWith(compareBy({ distanceOf(it.stopId) }, { it.stopId }))
             // The folded card's dismissal windows are the whole group's, not the nearest member's:
             // members can carry slightly different windows for one notice, and which member is
@@ -257,7 +281,6 @@ object DepartureRows {
             val windows = foldedWindows(group)
             if (windows == nearest.stopDisruptionWindows) nearest else nearest.copy(stopDisruptionWindows = windows)
         }
-        return (keptStatus + kept).sortedWith(rowOrder)
     }
 
     /**
