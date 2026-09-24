@@ -1380,24 +1380,42 @@ Builds on Phase 1's minimal line-status marking.
       an opt-in request and an explicit denied-state behavior — don't run the worker (burning
       battery and TfL quota) while every alert is invisible — with the permission behavior
       recorded in SPEC.
-- [ ] (Later, open call) **National Rail / Thameslink departures** (recorded 2026-09-19;
-      the maintainer asked to note it and not build it now). TfL's Unified API arrivals
-      cover tube, Overground, Elizabeth line, DLR, tram, bus and river bus only — **not**
-      National Rail or Thameslink heavy-rail services. Showing those means a **second,
-      separate data source** (National Rail's Darwin feed), which is a new external
-      dependency **and** a Play Data Safety change (a new off-device request), so it's a
-      distribution + product-scope decision, not an implementation detail. The fitting
-      interface is **OpenLDBWS** — request/response, so it slots into stopcast's existing
-      poll-on-demand snapshot/refresh model (D5) with no extra runtime cost beyond the
-      request itself. **Cost: £0** — OpenLDBWS is free with registration (National Rail
-      open data), rate-limited. Reliability: a new point of failure and added latency vs.
-      TfL alone, and a separate token to keep valid. (The **Darwin push port** streams
-      continuously and does **not** fit this model — it would need an always-connected
-      on-device consumer, with its own wakeup/battery cost, or a relay service, with
-      hosting cost, another dependency, and added privacy exposure; so it is not the £0
-      path and not the default here.) Awaiting the maintainer's go-ahead before any build
-      work; confirm the current OpenLDBWS registration terms and limits when it's picked
-      up.
+- [ ] (Later, open call) **National Rail departures** (recorded 2026-09-19; detailed
+      2026-09-24 after a maintainer report from a National Rail interchange). The maintainer
+      asked to record it, not build it yet.
+  - **The gap.** TfL's Unified API arrivals cover tube, Overground, Elizabeth line, DLR, tram,
+    bus and river bus only. A National Rail station (`910G…`) comes back with its operators'
+    line statuses and no predictions. At a shared interchange, a disrupted Great Northern or
+    Thameslink service shows only as its status row, and one in good service isn't listed at
+    all. Until this lands that row says "No data" rather than a dash that read as an empty
+    result (maintainer, 2026-09-24).
+  - **Source.** National Rail's Darwin, through its request/response departure-board service
+    (OpenLDBWS, `GetDepBoardWithDetails`). It fits the poll-on-demand snapshot/refresh model
+    (D5) as-is. The Darwin push port streams continuously and doesn't fit: it needs an
+    always-connected on-device consumer (wakeups, battery) or a relay service (hosting,
+    another dependency, more privacy exposure). Third-party JSON proxies over Darwin add a
+    dependency and are out. Confirm the current registration route and terms when picked up:
+    the service has been moving to the Rail Data Marketplace.
+  - **Cost and reliability.** £0: free with registration, rate-limited per token. It adds a
+    second point of failure and some latency beside TfL. A rail station's board fails on its
+    own, like any other stop (SPEC principle 2), and never blanks the TfL rows beside it.
+  - **Token.** Either one app token built into the APK, where it can be extracted and a
+    shared rate limit applies, or a user-supplied token in settings, as with the TfL
+    `app_key`. This is a maintainer decision.
+  - **Privacy and Play.** A new endpoint receives the station code and the device's IP, so
+    Data Safety and `docs/PRIVACY.md` need updating before it ships. No location is sent.
+  - **Mapping.** Darwin boards are keyed by CRS code (`KGX`-style). Map TfL's `910G…` station
+    id to its CRS code, from a bundled table or a lookup, to be settled when built. Map each
+    Darwin operator to the existing National Rail pill codes and colors.
+  - **Rendering.** A board row has a scheduled and an expected time ("On time", a time,
+    "Delayed", "Cancelled") plus platform and destination. Countdowns come from the expected
+    time. "Delayed" with no estimate withholds the number ("?"), and a cancellation shows as
+    such rather than dropping out (principle 1). Rows group by destination like TfL rows, and
+    the widget reads them from the same snapshot (D4 staleness applies unchanged).
+  - **Budget.** One board request per rail station in reach, per refresh. Rail stations are
+    few, but the far-stop refresh cadence applies to them too.
+  - **Tests.** Recorded Darwin fixtures (on time, delayed, cancelled, no platform), the CRS
+    mapping, and a screenshot of a mixed TfL and National Rail station.
 
 ## Phase 4 — Widget
 
