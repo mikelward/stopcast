@@ -70,12 +70,18 @@
     <string name="alert_collapse">Show less</string>
     <!-- The dismiss (×) button on a stop-closure alert: hides the card until the notice changes. -->
     <string name="alert_dismiss">Dismiss alert</string>
-    <!-- On a status row: a disrupted line TfL returns no predictions for — a suspended
-         line, or a disrupted National Rail service TfL's arrivals feed doesn't carry. Sits where a
-         countdown would, distinct from the "?" a stale timed row shows for a withheld
-         countdown. The chip beside it names any disruption. Says "No data" rather than a dash,
-         which read as an empty result (maintainer, 2026-09-24). -->
-    <string name="status_no_departures">No data</string>
+    <!-- On a status row (a disrupted line with no predictions), where a countdown would sit. A
+         dash when the line's source answered with no trains; a screen reader hears the
+         description instead, since a bare dash could read as missing data. -->
+    <string name="status_no_departures">–</string>
+    <string name="status_no_departures_description">No departures</string>
+    <!-- Instead of the dash when no source answered for the line: a National Rail line whose board
+         failed, or that no board covers (maintainer, 2026-09-24). -->
+    <string name="status_no_data">No data</string>
+    <!-- Instead of the dash on a National Rail line when no National Rail key is set, so a key
+         would give its times; tapping it opens Settings. -->
+    <string name="status_no_rail_key">No key</string>
+    <string name="status_no_rail_key_action">Add a National Rail key</string>
     <!-- A timed row's destination line when TfL gives neither destination nor towards but
          did give a direction; used only when even the direction is missing. -->
     <string name="destination_unknown">Unknown destination</string>

@@ -54,6 +54,21 @@ class SnapshotTest {
     )
 
     @Test
+    fun `a stop's National Rail feed comes with its arrivals, kept with the prior when they are`() {
+        val fresh = Snapshot.mergeStop(
+            "910GEXAMPLE", "Example", "", emptyList(), emptyList(), emptyList(), prior = null, now = now,
+            freshRailFeed = RailFeed.NO_KEY,
+        )
+        assertEquals(RailFeed.NO_KEY, fresh?.railFeed)
+        // Arrivals failed: the prior departures and the feed they came with stand together.
+        val kept = Snapshot.mergeStop(
+            "910GEXAMPLE", "Example", "", emptyList(), null, emptyList(), prior = fresh, now = now,
+            freshRailFeed = null,
+        )
+        assertEquals(RailFeed.NO_KEY, kept?.railFeed)
+    }
+
+    @Test
     fun `fresh arrivals and disruptions are stamped now`() {
         val result = merge(
             freshDepartures = listOf(departure("victoria", 120)),

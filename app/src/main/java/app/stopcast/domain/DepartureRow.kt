@@ -78,6 +78,9 @@ data class DepartureRow(
     val status: LineStatus? = null,
     val statusDismissed: Boolean = false,
     val stopDisruption: String? = null,
+    // For a National Rail line's status row, where its station's National Rail times stand (see
+    // [NoTimes]); null otherwise (SPEC *National Rail*).
+    val railFeed: RailFeed? = null,
     // The TfL windows of the notices behind [stopDisruption] ("from..to", ISO instants, blank for an
     // open bound), sorted and joined; blank when none is dated. Part of the dismissal identity, so a
     // dismissed closure whose window TfL extends or moves shows again (SPEC *Disruptions*).

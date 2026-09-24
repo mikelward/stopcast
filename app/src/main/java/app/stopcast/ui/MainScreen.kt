@@ -105,6 +105,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.isTraversalGroup
@@ -125,6 +126,7 @@ import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DestinationAbbreviations
 import app.stopcast.domain.DismissedAlert
+import app.stopcast.domain.NoTimes
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
@@ -1063,6 +1065,7 @@ fun MainScreen(
                         detailDestination = focus?.destination
                         detailBranch = focus?.branch
                     },
+                    onOpenSettings = onOpenSettings,
                     dismissed = dismissed,
                     onDismissAlert = onDismissAlert,
                 )
@@ -1098,6 +1101,7 @@ fun MainScreen(
                         detailDestination = focus?.destination
                         detailBranch = focus?.branch
                     },
+                    onOpenSettings = onOpenSettings,
                     dismissed = dismissed,
                     onDismissAlert = onDismissAlert,
                     // The full list and a whole-station view drill down to a platform; inside a platform
@@ -1239,6 +1243,8 @@ private fun LoadedContent(
     onReveal: (String) -> Unit = {},
     // Open the full-screen route detail for a tapped card; the caller holds the open-route state.
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit = { _, _ -> },
+    // Opens Settings from a National Rail line's "No key".
+    onOpenSettings: () -> Unit = {},
     dismissed: Set<DismissedAlert> = emptySet(),
     onDismissAlert: (DepartureRow) -> Unit = {},
     // Drill into one group's platform/pole; null disables the tap.
@@ -1328,6 +1334,7 @@ private fun LoadedContent(
                     rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
                     revealableModes, onReveal,
                     listState = listState,
+                    onOpenSettings = onOpenSettings,
                     onOpenDetail = onOpenDetail,
                     onDismissAlert = onDismissAlert,
                     onOpenPlatform = onOpenPlatform,
@@ -1439,6 +1446,8 @@ private fun DepartureList(
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
     listState: LazyListState,
     onDismissAlert: (DepartureRow) -> Unit = {},
+    // Opens Settings from a National Rail line's "No key" (SPEC *National Rail*).
+    onOpenSettings: () -> Unit = {},
     onOpenPlatform: ((StopGroup) -> Unit)? = null,
     onOpenStation: ((StopGroup) -> Unit)? = null,
     onOpenStopMap: ((String, String) -> Unit)? = null,
@@ -1551,7 +1560,7 @@ private fun DepartureList(
                                 )
                             }
                         }
-                        journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail)
+                        journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail, onOpenSettings)
                         if (state.incomplete) {
                             item(key = "journey-note|${card.journey.key}") {
                                 JourneyNote(
@@ -1588,6 +1597,7 @@ private fun DepartureList(
                                     onToggleStar = onToggleStar,
                                     starringAvailable = starringAvailable,
                                     onOpenDetail = onOpenDetail,
+                                    onOpenSettings = onOpenSettings,
                                 )
                             }
                         }
@@ -1597,7 +1607,7 @@ private fun DepartureList(
                                 JourneyNote(stringResource(R.string.journey_none_direct, card.journey.to.name))
                             }
                         }
-                        journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail)
+                        journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail, onOpenSettings)
                         if (state.incomplete) {
                             item(key = "journey-note|${card.journey.key}") {
                                 JourneyNote(
@@ -1685,6 +1695,7 @@ private fun DepartureList(
                     onToggleStar = onToggleStar,
                     starringAvailable = starringAvailable,
                     onOpenDetail = onOpenDetail,
+                    onOpenSettings = onOpenSettings,
                 )
             }
         }
@@ -1983,6 +1994,7 @@ private fun LazyListScope.journeyChanges(
     onToggleStar: (DepartureRow) -> Unit,
     starringAvailable: Boolean,
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     state.changes.groupBy { it.stopId }.forEach { (stopId, changes) ->
         item(key = "journey-change|${card.journey.key}|$stopId") {
@@ -2009,6 +2021,7 @@ private fun LazyListScope.journeyChanges(
                     onToggleStar = onToggleStar,
                     starringAvailable = starringAvailable,
                     onOpenDetail = onOpenDetail,
+                    onOpenSettings = onOpenSettings,
                 )
             }
         }
@@ -2163,6 +2176,7 @@ private fun StopGroupCard(
     onToggleStar: (DepartureRow) -> Unit,
     starringAvailable: Boolean,
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
+    onOpenSettings: () -> Unit = {},
 ) {
     // Cap the line pill at half the card's inner width, so a long name at a large font scale
     // ellipsizes rather than consuming the card and starving the countdown, which must stay one line
@@ -2193,17 +2207,49 @@ private fun StopGroupCard(
                     ) {
                         LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
                         // The reason chip lives in the weighted slack so it absorbs the shrink (and
-                        // ellipsizes) when space is tight; "No data" is unweighted, so the Row
+                        // ellipsizes) when space is tight; the status text is unweighted, so the Row
                         // reserves its width — the status can't be squeezed to zero.
                         Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                             row.status?.let { status -> DisruptionChip(status.description) }
                         }
+                        // A dash when the line's source answered with no trains; "No data" when no
+                        // source did; "No key" (a tap away in Settings) for a National Rail line a
+                        // key would give times.
+                        val noTimes = NoTimes.of(row)
+                        val noKey = noTimes == NoTimes.NO_KEY
+                        val noTrains = stringResource(R.string.status_no_departures_description)
                         Text(
-                            text = stringResource(R.string.status_no_departures),
+                            text = stringResource(
+                                when (noTimes) {
+                                    NoTimes.NO_TRAINS -> R.string.status_no_departures
+                                    NoTimes.NO_KEY -> R.string.status_no_rail_key
+                                    NoTimes.NO_DATA -> R.string.status_no_data
+                                },
+                            ),
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (noKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
-                            modifier = Modifier.padding(start = 12.dp),
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .then(
+                                    // The dash alone could be heard as missing data; say "No departures".
+                                    if (noTimes == NoTimes.NO_TRAINS) {
+                                        Modifier.semantics { contentDescription = noTrains }
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .then(
+                                    if (noKey) {
+                                        Modifier.clickable(
+                                            onClickLabel = stringResource(R.string.status_no_rail_key_action),
+                                            role = Role.Button,
+                                            onClick = onOpenSettings,
+                                        )
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                         )
                     }
                     return@forEach

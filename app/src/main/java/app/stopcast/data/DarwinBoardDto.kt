@@ -1,6 +1,7 @@
 package app.stopcast.data
 
 import app.stopcast.domain.Departure
+import app.stopcast.domain.NATIONAL_RAIL_MODE
 import app.stopcast.domain.TFL_RUN_OPERATORS
 import app.stopcast.domain.cleanStopName
 import app.stopcast.domain.railLineId
@@ -94,7 +95,7 @@ fun DarwinBoardDto.toDepartures(warn: (String) -> Unit = {}): List<Departure> {
             destination = cleanStopName(destination.joinToString(" & ")),
             platform = service.platform?.trim()?.ifBlank { null }?.let { "Platform $it" },
             expectedArrival = at,
-            mode = "national-rail",
+            mode = NATIONAL_RAIL_MODE,
         )
     }
     if (unreadable > 0) {

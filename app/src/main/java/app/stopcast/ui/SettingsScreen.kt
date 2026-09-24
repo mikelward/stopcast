@@ -160,7 +160,7 @@ fun SettingsScreen(
                     tagPrefix = "apiKey",
                 )
                 // The optional National Rail key (SPEC *National Rail*): without it, National Rail
-                // lines show "No data"; with it, their live times from National Rail's own feed.
+                // lines say "No key"; with it, their live times from National Rail's own feed.
                 ApiKeyRow(
                     apiKey = railApiKey,
                     loaded = railApiKeyLoaded,

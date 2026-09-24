@@ -48,6 +48,7 @@ import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.JourneyEnd
 import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.LineRef
+import app.stopcast.domain.RailFeed
 import app.stopcast.domain.StopAreaSource
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.LineStatus
@@ -187,10 +188,12 @@ class MainScreenScreenshotTest {
         // The disrupted Victoria line's timed rows carry the inline ⚠ (SPEC D3) — the full status
         // wording is the glyph's content description, no longer a visible chip on a timed row.
         composeRule.onNodeWithContentDescription("Severe Delays").assertExists()
-        // Circle is suspended with no arrivals, so it surfaces as a status row — "No data" where
-        // a countdown would sit (the "Suspended" chip carries the reason).
+        // Circle is suspended and TfL answered with no Circle trains, so it surfaces as a status row
+        // with a dash where a countdown would sit, heard as "No departures" (the "Suspended" chip
+        // carries the reason).
         composeRule.onNodeWithText("Suspended").assertExists()
-        composeRule.onNodeWithText("No data").assertExists()
+        composeRule.onNodeWithContentDescription("No departures").assertExists()
+        composeRule.onNodeWithText("No data").assertDoesNotExist()
         // Oxford Circus has a stop-level disruption, shown as a stop-status row.
         composeRule.onNodeWithText("Station closed until further notice").assertExists()
         // Each group gets one combined title-case header, the place name repeated per platform (SPEC
@@ -198,6 +201,31 @@ class MainScreenScreenshotTest {
         // into its two platforms.
         composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().assertExists()
         composeRule.onAllNodesWithText("Oxford Circus").onFirst().assertExists()
+    }
+
+    @Test
+    fun `a National Rail line with no key says so and opens Settings`() {
+        val stop = StopArrivals(
+            "910GEXAMPLE",
+            "Example",
+            departures = emptyList(),
+            fetchedAt = now.minusSeconds(30),
+            lines = listOf(LineRef("great-northern", "Great Northern", "national-rail")),
+            railFeed = RailFeed.NO_KEY,
+        )
+        val statuses = mapOf("great-northern" to LineStatus("great-northern", severity = 6, description = "Severe Delays"))
+        var openedSettings = false
+        capture("main-rail-no-key.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(30), lineStatuses = statuses),
+                now,
+                {},
+                onOpenSettings = { openedSettings = true },
+            )
+        }
+        composeRule.onNodeWithText("No data").assertDoesNotExist()
+        composeRule.onNodeWithText("No key").performClick()
+        assertTrue(openedSettings)
     }
 
     // The busiest interchange on the network: King's Cross St. Pancras, six Underground lines both

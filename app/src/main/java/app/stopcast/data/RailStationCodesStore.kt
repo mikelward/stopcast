@@ -11,7 +11,7 @@ import kotlinx.serialization.json.Json
  * Loads the bundled National Rail station codes (`stations/crs_codes.json`, built from NaPTAN by
  * `scripts/build_crs_index.py`) once per process. Called on the request path, off the main thread.
  * Fails safe to [RailStationCodes.EMPTY]: a missing, corrupt or newer-format asset means no National
- * Rail times ("No data" as before), never a crash.
+ * Rail times ("No data"), never a crash.
  */
 object RailStationCodesStore {
     private const val ASSET = "stations/crs_codes.json"
