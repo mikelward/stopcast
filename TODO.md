@@ -734,22 +734,25 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       opens that station's live departures: its departure-bearing stops from `/StopPoint/{id}`
       (a hub's stations, a station, a bus stop area's poles), fed through a `MainViewModel` of
       its own with no snapshot store, so the widget keeps the near-me set. A look, not a pin.
-  - [ ] **Fuzzy find, abbreviations and ids** (maintainer, 2026-09-24). "KC", "KGX" and "KX"
-        should all find King's Cross; a station or hub id ("HUBKGX", "940GZZLUKSX") should match
-        too. TfL's search is server-side and word-based, so this likely needs a local index of
-        stations/hubs (names, ids, CRS/hub codes, aliases) — a bundled asset like the route
-        topology, or one built from lookups — ranked locally, with TfL's search as a fallback for
-        bus stops the index lacks. Port TypeLauncher's matcher (`AppLaunchStatsStore.kt`,
-        `launcherMatchTier`): tiers Prefix > Anchored (first letter at a word start, skips only
-        to word starts — "kc" → "King's Cross") > Substring > Fuzzy (anchored first letter, then a
-        subsequence), best tier across several fields (name, aliases/codes, ids — the way it
-        scores package names), ties broken by usage then alphabetically. Add normalization it
-        lacks (drop apostrophes/punctuation, fold diacritics) so "kings" is a prefix of "King's
-        Cross". **No hand-kept alias list** (maintainer, 2026-09-24): derive abbreviations by
-        rule, word "Cross" → "X", so "King's Cross" also reads "King's X" / "KX" and "Charing
-        Cross" reads "CX", matched as an extra field through the same tiers. "KGX" comes from
-        the id match ("HUBKGX"), not an alias. Weigh extracting the matcher into a shared
-        `mikelward/*` library instead of a second copy.
+  - [x] **Fuzzy find, abbreviations and ids** (maintainer, 2026-09-24). A bundled station index
+        (`assets/stations/station_index.json`, built from TfL by `scripts/build_station_index.py`
+        in the `station-index` workflow) searched on the device with TypeLauncher's tiers (prefix >
+        anchored word starts > substring > fuzzy), normalized (apostrophes, punctuation, accents),
+        with generated abbreviations ("Cross" → "X") and TfL codes (`HUBKGX` → "KGX"); TfL's
+        search merged in after the pause for bus stops. A station inside a matched hub folds into it.
+    - [ ] **Consider a "Searching bus stops…" line** (maintainer, 2026-09-24, undecided): the
+          bundled stations show at once and TfL's bus stops follow the pause, with only the thin
+          progress bar hinting more is coming. A line at the foot of the list while TfL's search
+          runs (turning into "Bus stops not searched" on failure) would say so; weigh it against
+          the extra flicker as results settle.
+    - [ ] **Rank by use**: TypeLauncher breaks ties by how often each item is opened. Here that
+          would store which stations a user looks at (user data, on device, riding backup), so it
+          waits for a decision and a *Privacy* line.
+    - [ ] **Refresh the station list on a schedule**: the workflow runs only when a PR changes
+          the builder. A scheduled run would need its own branch-and-PR step (the shared
+          commit workflow pushes to an existing PR branch).
+    - [ ] **Extract the matcher into a shared `mikelward/*` library**, with TypeLauncher's copy,
+          rather than keep two.
   - [ ] **Set the near-me origin to a station** (maintainer, 2026-09-24): use a searched
         station in place of the current location, for planning from somewhere else.
   - [x] **Find a station from the location gate**: a *Find a station* button under the gate's

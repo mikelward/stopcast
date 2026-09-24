@@ -4,13 +4,16 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.stopcast.domain.StationFinder
+import app.stopcast.domain.StationIndex
 import app.stopcast.domain.StationMatch
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.TflException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +38,9 @@ class StationSearchViewModel(
     // restored search (or Back from a restored station) finds the query and searches it again. The
     // saved state stays on the device.
     private val savedState: SavedStateHandle = SavedStateHandle(),
+    // The bundled station index, searched on the device as the user types (read off the main
+    // thread, once). Empty by default, which leaves the search on TfL's matching alone.
+    loadIndex: suspend () -> StationIndex = { StationIndex.EMPTY },
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val debounceMillis: Long = DEBOUNCE_MILLIS,
     private val warn: (String) -> Unit = {},
@@ -48,7 +54,14 @@ class StationSearchViewModel(
     sealed interface Result {
         /** Nothing searched yet: the query is too short. */
         data object Idle : Result
-        data class Matches(val matches: List<StationMatch>) : Result
+        /**
+         * [remoteFailure] is set when TfL's search failed but the bundled index still matched: its
+         * matches stand, and the screen says TfL's (bus stops) couldn't be added, with a retry.
+         */
+        data class Matches(
+            val matches: List<StationMatch>,
+            val remoteFailure: DeparturesUiState.Error.Kind? = null,
+        ) : Result
         /** TfL answered, with no match. */
         data object NoMatches : Result
         data class Failed(val kind: DeparturesUiState.Error.Kind) : Result
@@ -58,6 +71,9 @@ class StationSearchViewModel(
     val state: StateFlow<State> = _state.asStateFlow()
 
     private var search: Job? = null
+
+    // Loaded once, on first use, so opening the search never waits on the asset read.
+    private val index = viewModelScope.async(io, start = CoroutineStart.LAZY) { loadIndex() }
 
     init {
         // A restored query is searched again at once; a fresh one is empty and searches nothing.
@@ -95,15 +111,22 @@ class StationSearchViewModel(
         // read as the answer to what's now typed.
         _state.update { it.copy(searching = true) }
         search = viewModelScope.launch {
+            // The bundled index answers at once — an abbreviation or code finds its station before
+            // the typing pause is over. TfL's search (for what the index doesn't hold, like bus
+            // stops) follows the pause, and the two are merged and ranked together.
+            val stations = index.await()
+            val local = withContext(io) { stations.search(trimmed) }
+            if (local.isNotEmpty()) _state.update { it.copy(result = Result.Matches(local), searching = true) }
             if (debounce) delay(debounceMillis)
             val result = try {
-                val matches = withContext(io) { finder.searchStations(trimmed) }
-                if (matches.isEmpty()) Result.NoMatches else Result.Matches(matches)
+                val remote = withContext(io) { finder.searchStations(trimmed) }
+                val merged = stations.rank(trimmed, local, remote)
+                if (merged.isEmpty()) Result.NoMatches else Result.Matches(merged)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TflException) {
                 warn("station search failed: ${e.message}")
-                Result.Failed(errorKindOf(e))
+                if (local.isEmpty()) Result.Failed(errorKindOf(e)) else Result.Matches(local, remoteFailure = errorKindOf(e))
             }
             _state.update { it.copy(result = result, searching = false) }
         }

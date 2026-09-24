@@ -117,6 +117,25 @@ fun StationSearchScreen(
                         MatchRow(match, onClick = { onOpenStation(match) })
                         HorizontalDivider()
                     }
+                    // The bundled stations matched but TfL's search (bus stops) failed: say so under
+                    // the matches rather than show them as the whole answer.
+                    result.remoteFailure?.let { kind ->
+                        item(key = "remote-failure") {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(stringResource(R.string.station_search_bus_stops_missing), textAlign = TextAlign.Center)
+                                Text(
+                                    stringResource(errorMessage(kind)),
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                TextButton(onClick = onRetry) { Text(stringResource(R.string.route_stops_retry)) }
+                            }
+                        }
+                    }
                 }
             }
         }
