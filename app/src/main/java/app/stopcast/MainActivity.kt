@@ -112,6 +112,8 @@ import app.stopcast.ui.LINE_STATUS_REUSE
 import app.stopcast.ui.MainViewModel
 import app.stopcast.ui.NearbyStopsViewModel
 import app.stopcast.domain.NearbySelection
+import app.stopcast.domain.SnapshotStore
+import app.stopcast.domain.FixedLocation
 import app.stopcast.ui.hereTripTiers
 import app.stopcast.ui.HereTripTiers
 import app.stopcast.ui.SettingsScreen
@@ -213,6 +215,24 @@ private fun rememberStoredKey(
 }
 
 class MainActivity : ComponentActivity() {
+    // The nearby-stops lookup, shared by the near-me gate and a searched station's page (From…).
+    // Reuses a recent lookup made close by (in memory, process-wide), so reopening the app near
+    // where it was last used skips a request and a round trip.
+    private val nearbyTflClient by lazy {
+        KtorTflClient(
+            httpClient,
+            appKey = { UserApiKeySetting.current },
+            rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+            requestPool = SharedTflRequestPool.pool,
+        )
+    }
+    private val nearbyStopFinder by lazy { CachingStopFinder(nearbyTflClient, nearbyStopsCache(applicationContext)) }
+
+    // A searched station's surroundings (From…) are looked up the same way but cached apart, in
+    // memory only: they aren't places near the rider, so they mustn't show in the search as stops
+    // the app has shown them nearby, or push the rider's own nearby lookups out of that cache.
+    private val stationAreaStopFinder by lazy { CachingStopFinder(nearbyTflClient, stationAreaStopsCache) }
+
     // The location gate: resolves the nearby stops (an on-demand, location-sending action)
     // before the departures view, which then refreshes those stops location-free.
     private val nearbyViewModel: NearbyStopsViewModel by viewModels {
@@ -222,15 +242,7 @@ class MainActivity : ComponentActivity() {
                     location = AndroidLocationProvider(applicationContext, warn = ::logLocationWarning),
                     // Reuses a recent lookup made close by (in memory, process-wide), so reopening
                     // the app near where it was last used skips a request and a round trip.
-                    finder = CachingStopFinder(
-                        KtorTflClient(
-                            httpClient,
-                            appKey = { UserApiKeySetting.current },
-                            rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
-                            requestPool = SharedTflRequestPool.pool,
-                        ),
-                        nearbyStopsCache(applicationContext),
-                    ),
+                    finder = nearbyStopFinder,
                     warn = ::logLocationWarning,
                     // Waits for the stored set on a cold start, so the first pick already leaves out
                     // what the user hid rather than fetching it until the next re-locate.
@@ -845,6 +857,18 @@ class MainActivity : ComponentActivity() {
         // The departures list's scroll position, hoisted by the caller so it survives the overlays.
         listState: LazyListState = rememberLazyListState(),
         farReveal: FarRevealState? = null,
+        // A searched station's page (From…) is this same list around the station: its own retained
+        // models ([storesKey]), never the widget's list ([forWidget] false), titled with the station
+        // and closed by back ([stationTitle], [onCloseStation]).
+        storesKey: String? = null,
+        // Re-picks the set from the same place after the hidden modes change ("Show all", a mode
+        // shown again): the near-me gate's by default, a station's own for its page.
+        refilter: (onSameSet: (NearbyStopsViewModel.State.Ready) -> Unit) -> Unit = { onSameSet ->
+            nearbyViewModel.refilter(onSameSet)
+        },
+        forWidget: Boolean = true,
+        stationTitle: String? = null,
+        onCloseStation: () -> Unit = {},
     ) {
         // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
         // the set changes (the user moved and re-located) rather than left keyed in the
@@ -867,8 +891,8 @@ class MainActivity : ComponentActivity() {
         // the eager/more boundary while all stay in range, keeps the same key and so the same
         // ViewModel — preserving a revealed "More" expansion, which a rebuild would drop.
         val stopsKey = remember(ready) { ready.clusterSetKey }
-        val stores: NearbyDeparturesStores = viewModel()
-        val storeOwner = remember(stopsKey) { stores.ownerFor(stopsKey) }
+        val stores: NearbyDeparturesStores = if (storesKey == null) viewModel() else viewModel(key = storesKey)
+        val storeOwner = remember(stores, stopsKey) { stores.ownerFor(stopsKey) }
         // Shared with a searched station's page, so a write failure there surfaces here too.
         val writeFailures = viewModel<WriteFailuresHolder>().failures
         CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
@@ -884,7 +908,9 @@ class MainActivity : ComponentActivity() {
                             // the widget to render, but this nearby set is not restored in-app
                             // (its load() returns null) — a previous location's stops must not
                             // resurface under a newly-resolved set.
-                            snapshotStore = WidgetSnapshotStore(applicationContext),
+                            snapshotStore = if (forWidget) WidgetSnapshotStore(applicationContext) else SnapshotStore.NONE,
+                            // A station's list isn't the widget's: the near-me model keeps the journey pins.
+                            ownsWidgetJourneys = forWidget,
                             // Starring is persisted per row across every nearby set (it's keyed
                             // by row identity, not tied to this stop set), so the store is the
                             // shared process-wide one, not scoped to this ViewModel's key.
@@ -1035,7 +1061,7 @@ class MainActivity : ComponentActivity() {
                 cancelFetch = viewModel::cancelFetch,
                 relocate = { onSameSet ->
                     HiddenModesSetting.showAll()
-                    nearbyViewModel.refilter(onSameSet)
+                    refilter(onSameSet)
                 },
                 reconcile = reconcileSameSet,
             )
@@ -1047,7 +1073,7 @@ class MainActivity : ComponentActivity() {
                         cancelFetch = viewModel::cancelFetch,
                         relocate = { onSameSet ->
                             HiddenModesSetting.setGroupHidden(group, hidden = false)
-                            nearbyViewModel.refilter(onSameSet)
+                            refilter(onSameSet)
                         },
                         reconcile = reconcileSameSet,
                     )()
@@ -1166,6 +1192,8 @@ class MainActivity : ComponentActivity() {
                     onOpenLicenses = onOpenLicenses,
                     onOpenSettings = onOpenSettings,
                     onFindStation = onFindStation,
+                    stationTitle = stationTitle,
+                    onCloseStation = onCloseStation,
                     // Offered only while some nearby stop could start a trip (not every mode hidden).
                     onPlanTo = if (
                         hereOriginIds(ready.eagerStops, ready.nearbyStops, ready.distanceMeters, hiddenModes).isEmpty()
@@ -1242,55 +1270,17 @@ class MainActivity : ComponentActivity() {
             },
         )
         val stores: NearbyDeparturesStores = viewModel(key = "station-stores")
-        // The To… destination's stop lookup, retained apart from the station's own store (whose
-        // [NearbyDeparturesStores.ownerFor] keeps a single key).
-        val tripStores: NearbyDeparturesStores = viewModel(key = "trip-to-stores")
-        // The destination search, apart from the station search, so back from it finds that as it was.
-        // A destination isn't an opened station: it isn't added to Recent, so nothing of a trip is
-        // kept once it's closed.
-        val toSearch: StationSearchViewModel = viewModel(
-            key = "trip-to-search",
-            factory = viewModelFactory {
-                initializer {
-                    StationSearchViewModel(
-                        stationFinder,
-                        createSavedStateHandle(),
-                        loadIndex = { StationIndexStore.load(appContext) },
-                        loadYours = { loadYourStops(appContext) },
-                        recordOpen = {},
-                        warn = ::logDepartureWarning,
-                    )
-                }
-            },
-        )
-        // The near-me list's write-failure flags: a star or dismiss that fails after this page has
-        // closed (the write outlives it) is shown on the next list instead of lost with the page.
-        val writeFailures = viewModel<WriteFailuresHolder>().failures
+        // Leaving the search, or a station, drops the station's retained models (its stops, the
+        // nearby set around it, its list and any trip from it), so their fetches stop with the
+        // page and reopening it looks everything up afresh.
         val closeSearch = {
             stores.clearAll()
-            tripStores.clearAll()
             search.clear()
-            toSearch.clear()
             onCloseSearch()
         }
-        // Leaving a station drops its retained models, so its departures don't outlive the page
-        // and reopening it fetches afresh rather than showing what was loaded before.
         val closeStation = {
             stores.clearAll()
-            tripStores.clearAll()
-            toSearch.clear()
             onCloseStation()
-        }
-        // Back from a To… list returns to the whole station.
-        val clearTo = {
-            tripStores.clearAll()
-            toSearch.clear()
-            onClearTo()
-        }
-        // The destination search's query is dropped with the picker, so nothing of it is kept.
-        val closePicker = {
-            toSearch.clear()
-            onClosePicker()
         }
         if (stationId == null) {
             val state by search.state.collectAsStateWithLifecycle()
@@ -1308,43 +1298,6 @@ class MainActivity : ComponentActivity() {
             )
             return
         }
-        if (tripPicking) {
-            val state by toSearch.state.collectAsStateWithLifecycle()
-            LaunchedEffect(Unit) { toSearch.refreshYours() }
-            StationSearchScreen(
-                state = state,
-                onQueryChange = toSearch::onQueryChange,
-                onOpenStation = { match ->
-                    tripStores.clearAll()
-                    toSearch.clear()
-                    onPickTo(match)
-                },
-                onRetry = toSearch::retry,
-                onBack = closePicker,
-                hint = stringResource(R.string.station_search_to_hint),
-            )
-            return
-        }
-        // The To… destination's stops, looked up once when picked (null while none is).
-        val tripTo = tripToId?.let { toId ->
-            val owner = remember(toId) { tripStores.ownerFor(toId) }
-            val model: StationStopsViewModel = viewModel(
-                viewModelStoreOwner = owner,
-                factory = viewModelFactory {
-                    initializer { StationStopsViewModel(stationFinder, toId, warn = ::logDepartureWarning) }
-                },
-            )
-            model to model.state.collectAsStateWithLifecycle().value
-        }
-        if (tripTo != null && tripTo.second !is StationStopsViewModel.State.Ready) {
-            StationPlaceholderScreen(
-                title = stringResource(R.string.journey_title, stationName, tripToName),
-                state = tripTo.second,
-                onRetry = tripTo.first::retry,
-                onBack = clearTo,
-            )
-            return
-        }
         val storeOwner = remember(stationId) { stores.ownerFor(stationId) }
         CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
             val stopsModel: StationStopsViewModel = viewModel(
@@ -1354,24 +1307,179 @@ class MainActivity : ComponentActivity() {
             )
             val stops by stopsModel.state.collectAsStateWithLifecycle()
             val ready = stops as? StationStopsViewModel.State.Ready
-            if (ready == null) {
-                StationPlaceholderScreen(
-                    title = stationName,
-                    state = stops,
-                    onRetry = stopsModel::retry,
-                    onBack = closeStation,
-                )
+            val center = ready?.center
+            if (ready == null || center == null) {
+                // No stops yet (or none TfL placed, so nowhere to stand): the station's own page.
+                if (ready == null) {
+                    StationPlaceholderScreen(title = stationName, state = stops, onRetry = stopsModel::retry, onBack = closeStation)
+                } else {
+                    LookDepartures(
+                        stops = ready.stops,
+                        title = stationName,
+                        onClose = closeStation,
+                        onPlanTo = null,
+                        destination = null,
+                        destinationName = "",
+                        onClearDestination = null,
+                        writeFailures = viewModel<WriteFailuresHolder>().failures,
+                    )
+                }
                 return@CompositionLocalProvider
             }
-            LookDepartures(
-                stops = ready.stops,
-                title = if (tripTo == null) stationName else stringResource(R.string.journey_title, stationName, tripToName),
+            FromStationArea(
+                stationName = stationName,
+                center = center,
+                stationStopIds = ready.stops.mapTo(HashSet()) { it.id },
                 onClose = closeStation,
+                tripPicking = tripPicking,
+                tripToId = tripToId,
+                tripToName = tripToName,
                 onPlanTo = onPlanTo,
-                destination = (tripTo?.second as? StationStopsViewModel.State.Ready)?.stops,
-                destinationName = tripToName,
-                onClearDestination = clearTo,
-                writeFailures = writeFailures,
+                onPickTo = onPickTo,
+                onClosePicker = onClosePicker,
+                onClearTo = onClearTo,
+            )
+        }
+    }
+
+    /**
+     * A searched station's page (SPEC *Finding stops → From… To…*): the near-me list as if the rider
+     * stood at the station — its own stops and the others around it, with distances from it — and
+     * **To…** from there works as it does from the near-me list. The station's position stands in
+     * for the device's ([FixedLocation]), so the same nearby resolve, list and trip serve it; its
+     * departures are never the widget's, and a refresh re-picks from the same place. Its models live
+     * in the station's store (the caller's), so leaving the station drops them all.
+     */
+    @Composable
+    private fun FromStationArea(
+        stationName: String,
+        center: Coordinates,
+        stationStopIds: Set<String>,
+        onClose: () -> Unit,
+        tripPicking: Boolean,
+        tripToId: String?,
+        tripToName: String,
+        onPlanTo: () -> Unit,
+        onPickTo: (StationMatch) -> Unit,
+        onClosePicker: () -> Unit,
+        onClearTo: () -> Unit,
+    ) {
+        val fromNearby: NearbyStopsViewModel = viewModel(
+            key = "from-nearby",
+            factory = viewModelFactory {
+                initializer {
+                    NearbyStopsViewModel(
+                        location = FixedLocation(center),
+                        finder = stationAreaStopFinder,
+                        warn = ::logLocationWarning,
+                        hiddenModes = { HiddenModesSetting.loaded() },
+                        anchorStopIds = stationStopIds,
+                    ).also { it.locate() }
+                }
+            },
+        )
+        val state by fromNearby.state.collectAsStateWithLifecycle()
+        val hidden by HiddenModesSetting.changes.collectAsStateWithLifecycle()
+        // Showing a mode here changes the setting for every list, so the near-me set re-picks too,
+        // and its retained list is dropped so it's rebuilt from that set on the way back.
+        val nearMeStores: NearbyDeparturesStores = viewModel(viewModelStoreOwner = this@MainActivity)
+        val nearMeRefilter = {
+            nearMeStores.clearAll()
+            nearbyViewModel.refilter()
+        }
+        // A return to the foreground refreshes the page, as it does the near-me list: here by
+        // re-picking from the same place (nothing moves), then refreshing a same-set page.
+        var returnPending by rememberSaveable { mutableStateOf(false) }
+        ForegroundReturnLatcher(
+            isReady = { fromNearby.state.value is NearbyStopsViewModel.State.Ready },
+            isBusy = { fromNearby.relocating.value },
+            onReturn = { returnPending = true },
+        )
+        val closeTrip = {
+            onClosePicker()
+            onClearTo()
+        }
+        val ready = state as? NearbyStopsViewModel.State.Ready
+        if (ready == null) {
+            // Nothing to show from yet (or the lookup failed): the station's placeholder, whose
+            // retry looks again. Any list or trip kept from before is dropped, so a recovered page
+            // fetches afresh rather than showing what was loaded before the failure.
+            val listStores: NearbyDeparturesStores = viewModel(key = "from-list-stores")
+            val tripStores: NearbyDeparturesStores = viewModel(key = "from-trip-stores")
+            DisposableEffect(Unit) {
+                listStores.clearAll()
+                tripStores.clearAll()
+                onDispose {}
+            }
+            StationPlaceholderScreen(
+                title = stationName,
+                state = when (val s = state) {
+                    is NearbyStopsViewModel.State.Failed -> StationStopsViewModel.State.Failed(s.kind)
+                    is NearbyStopsViewModel.State.Empty, NearbyStopsViewModel.State.NoLocation ->
+                        StationStopsViewModel.State.NoStops
+                    else -> StationStopsViewModel.State.Loading
+                },
+                onRetry = fromNearby::locate,
+                onBack = onClose,
+            )
+            return
+        }
+        if (tripPicking || tripToId != null) {
+            HereTripArea(
+                origin = remember(ready, hidden) {
+                    val byId = ready.nearbyStops.associateBy { it.id }
+                    hereOriginIds(ready.eagerStops, ready.nearbyStops, ready.distanceMeters, hidden)
+                        .mapNotNull { byId[it] }
+                },
+                distanceMeters = ready.distanceMeters,
+                clusters = ready.eager + ready.more,
+                hiddenModes = hidden,
+                picking = tripPicking,
+                toId = tripToId,
+                toName = tripToName,
+                onPlanTo = onPlanTo,
+                onPickTo = onPickTo,
+                onClosePicker = { if (tripToId == null) closeTrip() else onClosePicker() },
+                onClose = closeTrip,
+                foregroundReturnPending = returnPending,
+                onForegroundReturnConsumed = { returnPending = false },
+                isRelocating = { fromNearby.relocating.value },
+                relocate = { fromNearby.relocate() },
+                showAllModes = {
+                    HiddenModesSetting.showAll()
+                    fromNearby.refilter()
+                    nearMeRefilter()
+                },
+                relocating = fromNearby.relocating,
+                repicked = fromNearby.repicked,
+                locationBanner = fromNearby.locationBanner,
+                keyPrefix = "from",
+                fromName = stationName,
+            )
+        } else {
+            DeparturesForStops(
+                ready = ready,
+                relocate = { onSameSet -> fromNearby.relocate(onSameSet) },
+                relocating = fromNearby.relocating,
+                locationBanner = fromNearby.locationBanner,
+                // The station page has no overflow (back and To… are in its bar).
+                onOpenLicenses = {},
+                onOpenSettings = {},
+                onFindStation = {},
+                onPlanTo = onPlanTo,
+                updateAvailable = false,
+                onOpenAppListing = {},
+                onSendBugReport = {},
+                foregroundReturnPending = returnPending,
+                onForegroundReturnConsumed = { returnPending = false },
+                storesKey = "from-list-stores",
+                refilter = { onSameSet ->
+                    fromNearby.refilter(onSameSet)
+                    nearMeRefilter()
+                },
+                forWidget = false,
+                stationTitle = stationName,
+                onCloseStation = onClose,
             )
         }
     }
@@ -1410,6 +1518,10 @@ class MainActivity : ComponentActivity() {
         // approximate fix): shown over the trip as over the list, so its departures never read as
         // from where the rider is now when the location couldn't be confirmed.
         locationBanner: StateFlow<LocationBanner?>,
+        // Keys this trip's retained models apart from another's: the near-me list's ("here"), or a
+        // searched station's (From…), whose trip is titled "‹station› ➔ ‹to›" by [fromName].
+        keyPrefix: String = "here",
+        fromName: String? = null,
     ) {
         val appContext = applicationContext
         val originKey = remember(origin) { origin.map { it.id }.sorted().joinToString(",") }
@@ -1421,7 +1533,7 @@ class MainActivity : ComponentActivity() {
             onRelocate = relocate,
         )
         val search: StationSearchViewModel = viewModel(
-            key = "here-to-search",
+            key = "$keyPrefix-to-search",
             factory = viewModelFactory {
                 initializer {
                     StationSearchViewModel(
@@ -1435,8 +1547,8 @@ class MainActivity : ComponentActivity() {
                 }
             },
         )
-        val stores: NearbyDeparturesStores = viewModel(key = "here-trip-stores")
-        val toStores: NearbyDeparturesStores = viewModel(key = "here-to-stores")
+        val stores: NearbyDeparturesStores = viewModel(key = "$keyPrefix-trip-stores")
+        val toStores: NearbyDeparturesStores = viewModel(key = "$keyPrefix-to-stores")
         val writeFailures = viewModel<WriteFailuresHolder>().failures
         val close = {
             stores.clearAll()
@@ -1470,7 +1582,11 @@ class MainActivity : ComponentActivity() {
             )
             return
         }
-        val title = stringResource(R.string.trip_title_here, toName)
+        val title = if (fromName == null) {
+            stringResource(R.string.trip_title_here, toName)
+        } else {
+            stringResource(R.string.journey_title, fromName, toName)
+        }
         val toOwner = remember(toId) { toStores.ownerFor(toId) }
         val toModel: StationStopsViewModel = viewModel(
             viewModelStoreOwner = toOwner,
@@ -1531,7 +1647,8 @@ class MainActivity : ComponentActivity() {
         stops: List<StopRef>,
         title: String,
         onClose: () -> Unit,
-        onPlanTo: () -> Unit,
+        // Null hides To… (a station page with nowhere to stand).
+        onPlanTo: (() -> Unit)?,
         destination: List<StopRef>?,
         destinationName: String,
         onClearDestination: (() -> Unit)?,
@@ -1667,7 +1784,7 @@ class MainActivity : ComponentActivity() {
                 onDismissWriteFailureShown = viewModel::dismissWriteFailureShown,
                 stationTitle = title,
                 onCloseStation = if (trip == null || onClearDestination == null) onClose else onClearDestination,
-                onPlanTo = { onPlanTo() },
+                onPlanTo = onPlanTo?.let { planTo -> { planTo() } },
                 tripNotice = trip?.notice,
                 emptyMessage = trip?.emptyMessage,
             )
@@ -2194,6 +2311,9 @@ private fun logRouteStopsWarning(message: String) = StopcastDebugLog.warning("ro
  */
 private val nearbyStopsCacheLock = Any()
 private var nearbyStopsCacheInstance: NearbyStopsCache? = null
+
+/** The in-memory cache of searched stations' surroundings (From…), apart from the rider's own. */
+private val stationAreaStopsCache = NearbyStopsCache()
 
 private fun nearbyStopsCache(context: Context): NearbyStopsCache = synchronized(nearbyStopsCacheLock) {
     nearbyStopsCacheInstance ?: NearbyStopsCache(

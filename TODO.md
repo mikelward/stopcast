@@ -808,8 +808,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         leading their tier.
     - [ ] **Clear or remove a recent entry**: the list only ages out past eight; a long-press to
           remove one (or a "Clear" on the heading) if it proves wanted.
-  - [ ] **Set the near-me origin to a station** (maintainer, 2026-09-24): use a searched
-        station in place of the current location, for planning from somewhere else.
+  - [x] **Set the near-me origin to a station** (maintainer, 2026-09-24): *From…* now opens the
+        near-me list as if standing at the searched station (its position as a fixed location), so
+        its page and its *To…* share the near-me code.
   - [x] **From… To…, direct only** (maintainer, 2026-09-24): the overflow's *Find a station* is
         now *From…*, and a station's page has *To…*, which keeps only the departures whose own
         line's route calls at the picked destination (`DirectTrips.filter`), flagging any it
@@ -1906,6 +1907,12 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
       before implementation, per *Cost and reliability*.
 
 ## Decisions needing review
+
+- **From… stands at the middle of the station's stops (autopilot, 2026-09-24).** The maintainer
+  asked for From… to be "like setting your location to there"; the point used is the mean of the
+  station's placed stops, and the near-me list's picking (nearest of each mode within a mile, the
+  0.2 mi ring for To…) runs from it unchanged. *Alternatives:* the hub's own coordinate, or the
+  nearest entrance. **Reversible:** `FixedLocation.centerOf`.
 
 - **To… is a look with no Star button (autopilot, 2026-09-24).** Picking a destination narrows
   the departures to those that call there; nothing is saved. *Alternative:* star the trip straight
