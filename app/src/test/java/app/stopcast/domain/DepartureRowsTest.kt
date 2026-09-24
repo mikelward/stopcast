@@ -356,6 +356,25 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `a service ending at a nearer place is hidden, and an expired onward one doesn't bring its line back as No departures`() {
+        // An onward Victoria train that has just left, and a later one terminating at the rider's
+        // nearest station: nothing live helps, but the line has departures, so no status row.
+        val expired = departure("victoria", "Victoria", "outbound", "Brixton", -30)
+        val endsNearby = departure("victoria", "Victoria", "outbound", "Oxford Circus", 120).copy(destinationId = "940GZZLUOXC")
+        val onward = departure("northern", "Northern", "outbound", "Morden", 180)
+        val stop = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            departures = listOf(expired, endsNearby, onward),
+            fetchedAt = now,
+            lines = listOf(LineRef("victoria", "Victoria", "tube"), LineRef("northern", "Northern", "tube")),
+            nearer = Terminating.Nearer(ids = setOf("940GZZLUOXC")),
+        )
+        val statuses = mapOf("victoria" to LineStatus("victoria", 6, "Severe Delays"))
+        assertEquals(listOf("northern"), DepartureRows.across(listOf(stop), now, statuses).map { it.lineId })
+    }
+
+    @Test
     fun `a disrupted declared line with no predictions becomes a status row, sorted first`() {
         val victoria = departure("victoria", "Victoria", "outbound", "Brixton", 120)
         val stop = StopArrivals(

@@ -25,6 +25,9 @@ import java.time.Instant
  * line in its own color, a bus in London-bus red — without re-deriving the mode from
  * the line id. Empty when TfL omits it.
  *
+ * [destinationId] is TfL's `destinationNaptanId`, the terminus stop's id (blank when TfL gives
+ * none), so a service ending where the rider already is can be recognized ([Terminating]).
+ *
  * [branch] is the "via" branch TfL names in its `towards` field — normalized to one short
  * label per trunk (`Bank`, `Charing X` on the Northern line), the form its platform boards
  * show to tell a line's two central trunks apart (a rider picks the train by it, not just
@@ -42,4 +45,5 @@ data class Departure(
     val expectedArrival: Instant,
     val mode: String,
     val branch: String? = null,
+    val destinationId: String = "",
 )

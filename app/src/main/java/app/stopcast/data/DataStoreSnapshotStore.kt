@@ -10,6 +10,7 @@ import androidx.datastore.dataStoreFile
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.SnapshotStore
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.Terminating
 import app.stopcast.domain.WidgetJourneys
 import app.stopcast.domain.WidgetJourneysReport
 import java.io.InputStream
@@ -53,15 +54,37 @@ class DataStoreSnapshotStore internal constructor(
         // re-run it on a write conflict.
         // The widget's journeys are the app's to change, never this caller's: a match keeps the
         // stored ones, so a slow worker can't restore a pin the app has since dropped or changed.
-        val written = dataStore.updateData { current ->
-            if (current != null && current.matchesStops(expectedStopIds)) {
-                desired.copy(journeys = current.journeys, journeyOnlyStopIds = current.journeyOnlyStopIds)
-            } else {
-                current
-            }
+        // So are each stop's nearer places ([app.stopcast.domain.Terminating]): they follow the
+        // rider's location, which only the app knows, so a worker that loaded an older location's
+        // snapshot can't restore its places over the app's newer ones.
+        fun keepingAppsOwn(current: PersistedSnapshot): PersistedSnapshot {
+            val nearerById = current.stops.associate { it.stopId to (it.nearerIds to it.nearerNames) }
+            return desired.copy(
+                journeys = current.journeys,
+                journeyOnlyStopIds = current.journeyOnlyStopIds,
+                stops = desired.stops.map { stop ->
+                    nearerById[stop.stopId]?.let { (ids, names) -> stop.copy(nearerIds = ids, nearerNames = names) } ?: stop
+                },
+            )
         }
-        return written != null &&
-            written == desired.copy(journeys = written.journeys, journeyOnlyStopIds = written.journeyOnlyStopIds)
+        val written = dataStore.updateData { current ->
+            if (current != null && current.matchesStops(expectedStopIds)) keepingAppsOwn(current) else current
+        }
+        return written != null && written == keepingAppsOwn(written)
+    }
+
+    override suspend fun updateNearer(nearer: Map<String, Terminating.Nearer>) {
+        if (nearer.isEmpty()) return
+        // A pure function of `current` and the immutable map, atomic under the write lock like
+        // [pruneStops].
+        dataStore.updateData { current ->
+            if (current == null) return@updateData null
+            val stops = current.stops.map { stop ->
+                val n = nearer[stop.stopId] ?: return@map stop
+                stop.copy(nearerIds = n.ids.sorted(), nearerNames = n.names.sorted())
+            }
+            if (stops == current.stops) current else current.copy(stops = stops)
+        }
     }
 
     override suspend fun pruneStops(departedStopIds: Collection<String>) {

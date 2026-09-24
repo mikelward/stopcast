@@ -37,6 +37,17 @@ class WidgetRefreshTest {
         DeparturesSnapshot(stops = stops.toList(), fetchedAt = stops.maxOf { it.fetchedAt })
 
     @Test
+    fun `a refreshed stop keeps its nearer places, so the widget hides the same services`() = runTest {
+        val nearer = Terminating.Nearer(ids = setOf("940GZZLUBXN"))
+        val prior = snapshot(stop("A", emptyList()).copy(nearer = nearer))
+        val endsHere = departure("Brixton").copy(destinationId = "940GZZLUBXN")
+        val onward = departure("Walthamstow Central").copy(destinationId = "940GZZLUWWL")
+        val refreshed = WidgetRefresh.refreshedArrivals(prior, t1) { listOf(endsHere, onward) }!!
+        assertEquals(nearer, refreshed.stops.single().nearer)
+        assertEquals(listOf("Walthamstow Central"), DepartureRows.across(refreshed.stops, t1).map { it.destination })
+    }
+
+    @Test
     fun `a stop fetched moments ago is carried over, not fetched again`() = runTest {
         val recent = stop("A", listOf(departure("Brixton")), fetchedAt = t1.minusSeconds(10))
         val prior = snapshot(recent, stop("B", listOf(departure("Walthamstow"))))
