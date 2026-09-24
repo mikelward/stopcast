@@ -93,6 +93,7 @@ import app.stopcast.ui.FontSizeSetting
 import app.stopcast.ui.LocalRouteStops
 import app.stopcast.ui.LocalRouteTopology
 import app.stopcast.ui.LicensesScreen
+import app.stopcast.telemetry.TelemetryConsent
 import app.stopcast.ui.FarRevealState
 import app.stopcast.ui.LocationBanner
 import app.stopcast.ui.LocationGate
@@ -363,6 +364,7 @@ class MainActivity : ComponentActivity() {
                 // (persisted) skips straight to the share sheet (SPEC *Privacy*).
                 val skipBugReportConsent: Boolean by settings.skipBugReportConsent()
                     .collectAsStateWithLifecycle(initialValue = false)
+                val telemetryOptIn: Boolean? by TelemetryConsent.state.collectAsStateWithLifecycle()
 
                 // The user's TfL app_key for the Settings field. Read from the store (the source of
                 // truth), so an external change — a restore, or the warmed holder's own write —
@@ -455,6 +457,10 @@ class MainActivity : ComponentActivity() {
                                 railApiKey = railApiKeyValue.orEmpty(),
                                 railApiKeyLoaded = railApiKeyLoaded,
                                 onRailApiKeyChange = { key -> RailApiKeySetting.set(key) },
+                                // Crash reports and usage stats, off until the user opts in here
+                                // (SPEC *Privacy*); the holder applies it at once, the gate follows.
+                                telemetryOptIn = telemetryOptIn,
+                                onTelemetryOptInChange = TelemetryConsent::set,
                                 onBack = { settingsOpen = false },
                             )
                         }

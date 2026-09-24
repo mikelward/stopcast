@@ -5,6 +5,38 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Firebase (Crashlytics + Analytics) activates per build: these plugins wire the config and the
+// mapping upload only when the untracked google-services.json is present, so fresh clones and CI's
+// test lanes build with Firebase dormant (dev-docs/firebase.md). Collection is then still off until
+// the user opts in (SPEC *Privacy*). Mirrors mikelward/simmo.
+if (file("google-services.json").exists()) {
+    apply(plugin = libs.plugins.google.services.get().pluginId)
+    apply(plugin = libs.plugins.firebase.crashlytics.get().pluginId)
+    // The debug variant never gets Firebase: a build nobody installs has no business filing crashes
+    // or analytics beside real data, and the test suites run against it. Disabling the tasks isn't
+    // enough — Gradle keeps a disabled task's earlier output — so the generated resources are
+    // purged ahead of the merge too, or an old google_app_id would still start Firebase.
+    val purgeDebugFirebaseResources = tasks.register<Delete>("purgeDebugGoogleServicesResources") {
+        description = "Deletes Firebase resources generated for the debug variant, which ships without them."
+        delete(
+            layout.buildDirectory.dir("generated/res/processDebugGoogleServices"),
+            layout.buildDirectory.dir("generated/res/google-services/debug"),
+        )
+    }
+    afterEvaluate {
+        tasks.matching {
+            it.name in setOf(
+                "processDebugGoogleServices",
+                "injectCrashlyticsMappingFileIdDebug",
+                "uploadCrashlyticsMappingFileDebug",
+            )
+        }.configureEach { enabled = false }
+        tasks.matching { it.name == "mergeDebugResources" }.configureEach {
+            dependsOn(purgeDebugFirebaseResources)
+        }
+    }
+}
+
 fun gitOutput(vararg args: String, fallback: String): String =
     try {
         // No isIgnoreExitValue: a nonzero exit — a source archive with no .git,
@@ -247,6 +279,11 @@ dependencies {
     // and the value rules.
     implementation(libs.androidlog.logging.core)
     implementation(libs.androidlog.logging.android)
+    // Crash reporting and usage analytics, compiled in but inert unless the build had a
+    // google-services.json (Firebase never initializes otherwise) and the user has opted in.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics)
 
     // TfL client: Ktor with the OkHttp engine + kotlinx.serialization content
     // negotiation, mirroring clothescast. MockEngine (below) tests the client

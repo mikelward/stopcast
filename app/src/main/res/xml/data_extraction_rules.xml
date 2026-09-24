@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cloud backup and device-to-device transfer (API 31+): as backup_rules.xml — everything but
+     the telemetry opt-in and the Firebase SDKs' collection flags, so consent never carries over
+     to another install. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="telemetry.xml" />
+        <exclude domain="sharedpref" path="com.google.firebase.crashlytics.xml" />
+        <exclude domain="sharedpref" path="com.google.android.gms.measurement.prefs.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="telemetry.xml" />
+        <exclude domain="sharedpref" path="com.google.firebase.crashlytics.xml" />
+        <exclude domain="sharedpref" path="com.google.android.gms.measurement.prefs.xml" />
+    </device-transfer>
+</data-extraction-rules>

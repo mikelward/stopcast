@@ -7,14 +7,26 @@ import app.stopcast.data.DataStoreAppSettings
 import app.stopcast.data.RailApiKeySetting
 import app.stopcast.data.UserApiKeySetting
 import app.stopcast.data.logAppSettingsWarning
+import app.stopcast.telemetry.CrashlyticsLogSink
+import app.stopcast.telemetry.FilePendingMarker
+import app.stopcast.telemetry.FirebaseTelemetryBackend
+import app.stopcast.telemetry.NoPendingMarker
+import app.stopcast.telemetry.PrefsConsentStore
+import app.stopcast.telemetry.TelemetryConsent
+import app.stopcast.telemetry.TelemetryGate
+import app.stopcast.telemetry.startTelemetry
 import com.mikelward.androidlog.DebugLog
 import com.mikelward.androidlog.android.DebugFileSink
 import com.mikelward.androidlog.android.LogcatSink
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 private const val LOGCAT_TAG = "StopCast"
+
+// How long a fatal crash waits for queued breadcrumbs to reach Crashlytics before it is reported.
+private const val FATAL_DRAIN_MILLIS = 500L
 
 /**
  * Registers the diagnostic log's DEVICE sinks on [log]: the developer-facing [LogcatSink] and
@@ -48,7 +60,8 @@ internal fun installDiagnosticSinks(
  *
  * The persisted file is **on-device only** (`cacheDir`, excluded from backup) and is not shared
  * from here; a user-shareable export with travel data redacted is a later change
- * (`docs/PRIVACY.md`, `TODO.md`). No off-device sink is registered.
+ * (`docs/PRIVACY.md`, `TODO.md`). The one off-device sink is Crashlytics, registered only in a
+ * build with a Firebase config and fed only while the user has opted in ([installTelemetry]).
  */
 open class StopcastApp : Application() {
     /**
@@ -70,10 +83,79 @@ open class StopcastApp : Application() {
      */
     val applicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    // Whether a fatal crash reaches Crashlytics only redacted; telemetry doesn't start without it.
+    private var crashRedacted = false
+
+    // The Crashlytics log sink once registered, for the fatal-crash path to flush.
+    @Volatile
+    private var crashlyticsSink: CrashlyticsLogSink? = null
+
     override fun onCreate() {
         super.onCreate()
+        // First, so the diagnostic log's crash handler chains onto the redacting one: its on-device
+        // file keeps the full crash, Crashlytics gets the redacted copy.
+        installCrashRedaction()
         installDiagnosticLog()
         warmSharedState()
+        installTelemetry()
+    }
+
+    /**
+     * Crash reporting and usage stats, off until the user opts in (SPEC *Privacy*). Reads the stored
+     * choice, keeps both SDKs in step with it ([TelemetryGate]), and mirrors the log's redacted
+     * off-device lines into crash reports ([CrashlyticsLogSink]). A build with no Firebase config —
+     * every debug build, and any build without google-services.json — skips all of it.
+     *
+     * `open` so the test [Application] skips it. Guarded like the log: telemetry failing to start is
+     * a lost diagnostic, never a reason to take the app down, and it fails closed ([startTelemetry]).
+     */
+    /**
+     * Makes a fatal crash reach Crashlytics only as the log redacts an off-device throwable (types
+     * and frames, no messages — a request URL in a message carries coordinates and the `app_key`).
+     * `open` so the test [Application] skips it. If it fails, [installTelemetry] switches the SDKs
+     * off rather than let an unredacted crash be sent.
+     */
+    protected open fun installCrashRedaction() {
+        crashRedacted = try {
+            FirebaseTelemetryBackend.installCrashRedaction(
+                this,
+                StopcastDebugLog::offDeviceThrowable,
+                beforeReport = { crashlyticsSink?.drain(FATAL_DRAIN_MILLIS) },
+            )
+        } catch (e: Exception) {
+            Log.w(LOGCAT_TAG, "crash redaction failed: ${e::class.simpleName}")
+            false
+        }
+    }
+
+    protected open fun installTelemetry() {
+        startTelemetry(
+            createBackend = { FirebaseTelemetryBackend.orNull(this) },
+            registerSink = {
+                // Fails closed through startTelemetry: without redaction, the SDKs are switched off.
+                check(crashRedacted) { "crash redaction not installed" }
+                val sink = CrashlyticsLogSink { TelemetryConsent.optedIn }
+                StopcastDebugLog.addSink(sink, DebugLog.Destination.OFF_DEVICE)
+                crashlyticsSink = sink
+            },
+            startLoad = { backend ->
+                // The stored choice is a small prefs read, but still disk I/O: off the main thread.
+                // The Settings switch stays disabled until it lands.
+                applicationScope.launch(Dispatchers.IO) {
+                    var gate: TelemetryGate? = null
+                    try {
+                        val store = PrefsConsentStore(this@StopcastApp)
+                        gate = backend?.let { TelemetryGate(it, FilePendingMarker(this@StopcastApp)) }
+                        TelemetryConsent.load(store, gate)
+                    } catch (e: Exception) {
+                        // Fail closed: SDKs off and the switch shown off, so an earlier opt-in can't
+                        // keep collecting with the switch stuck disabled.
+                        Log.w(LOGCAT_TAG, "telemetry consent load failed: ${e::class.simpleName}")
+                        TelemetryConsent.loadFailed(gate ?: backend?.let { TelemetryGate(it, NoPendingMarker) })
+                    }
+                }
+            },
+        )
     }
 
     /**

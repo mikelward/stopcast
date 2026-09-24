@@ -8,20 +8,20 @@ truth those answers are built from.
 
 ## What leaves the device
 
-StopCast is a **client-only** app. It makes network calls to just two places, plus a third
-only if you add a National Rail key: **Transport for London's Unified API**, the calls that
+StopCast is a **client-only** app. By default it makes network calls to just two places, plus a
+third only if you add a National Rail key: **Transport for London's Unified API**, the calls that
 *are* the product; — on a release build only — **Google Play**, to ask whether an app update is
-available (detailed below; it carries nothing about you); and, with a National Rail key,
-**National Rail's live departure boards** (the Rail Data Marketplace, detailed below).
-Everything stopcast sends that says anything about **you** goes only to TfL, or with a National
-Rail key also to National Rail, and only ever what a request needs to answer your question
-about departures: the
-details of what you're looking up (your location for "near me
-now" — **precise** if you grant precise and a precise fix is available, otherwise approximate
-(if you grant only approximate, or if no precise fix can be obtained) — or the
-stop or line you're after) and, if you've set an optional TfL API key
-(`app_key`), that key as your own credential, sent with your own TfL calls and nowhere
-else. Location is used **only on demand**, never in the background.
+available (detailed below; it carries nothing about you); and, with a National Rail key, **National
+Rail's live departure boards** (the Rail Data Marketplace, detailed below). **Firebase** is added
+only if you turn on *Help make StopCast better* (off by default; see *Crash reports and usage stats*
+below). Your **location, the stops and lines you look up, and your API keys** go only to TfL, or
+with a National Rail key also to National Rail (if you opt in, Firebase sees only the rough region
+Google infers from your IP address), and only ever what a request needs to answer your question
+about departures: the details of what you're looking up (your location for "near me now" —
+**precise** if you grant precise and a precise fix is available, otherwise approximate (if you grant
+only approximate, or if no precise fix can be obtained) — or the stop or line you're after) and, if
+you've set an optional TfL API key (`app_key`), that key as your own credential, sent with your own
+TfL calls and nowhere else. Location is used **only on demand**, never in the background.
 
 **National Rail times (optional).** If you paste a National Rail API key (from the Rail Data
 Marketplace) in Settings, stopcast also asks **National Rail's live departure boards** for the
@@ -31,8 +31,9 @@ key is your own credential, sent only with those requests, never logged. Without
 request goes there. The station codes themselves come bundled with the app, built from NaPTAN,
 the Department for Transport's public stop list.
 
-Nothing else leaves the device *to stopcast*: no analytics, no crash reporter, no
-third-party tracker, and no server of stopcast's own.
+Nothing else leaves the device *to stopcast* unless you turn on **Help make StopCast better**
+in Settings, which is **off by default** (see *Crash reports and usage stats* below): no
+third-party tracker, no ads, and no server of stopcast's own.
 
 On a release build, stopcast makes **one** other kind of network call — to **Google
 Play**, asking whether an app update is available (this drives the "update available" dot
@@ -42,19 +43,23 @@ travel — so it adds no new Play Data Safety category beyond Google Play's exis
 the app's distributor. It is free, runs release-only (a debug build isn't a Play app), and
 silently does nothing if Play is unavailable.
 
-Two channels other than a TfL or National Rail request can carry **user data** off the device, and both are
-under your control rather than stopcast's. The first is **your own Android backup and
-device-to-device transfer**, if you have it enabled: like any app's data, your saved stopcast
+Three channels other than a TfL or National Rail request can carry **user data** off the device,
+and all three are under your control rather than stopcast's. The first is the **crash reports and
+usage stats** you can opt in to (see below): off unless you turn them on, they send Firebase crash
+details, app interactions, device details and identifiers, and the approximate region Google
+derives from your IP address, but never your location, stops or journeys. The second is **your
+own Android backup and device-to-device transfer**, if you have it enabled: like any app's data, your saved stopcast
 data (your settings and its last-good departures snapshot) rides it, so a phone swap keeps your
-setup. That is Android's channel, tied to your Google account — not something stopcast sends.
-The second is a **bug report you choose to send** (see *Sending a bug report* below): it hands
+setup — all but the crash-report opt-in, which stays with the install. That is Android's channel, tied to your Google account — not something stopcast sends.
+The third is a **bug report you choose to send** (see *Sending a bug report* below): it hands
 the app you pick a diagnostic report that, unlike everything else here, **includes your exact
 location and a screenshot of the screen you sent it from** — but only after a consent screen
 that says so, and then to your clipboard and the app you pick (the clipboard copy happens as
 soon as you confirm — detailed below).
-So the guarantee is precise rather than absolute: **the only user data stopcast itself sends
-off the device goes in its TfL requests, and its National Rail requests if you've added a key**
-(the Play update check carries none); Android's backup
+So the guarantee is precise rather than absolute: **without your opt-in, the only user data
+stopcast itself sends off the device goes in its TfL requests, and its National Rail requests if
+you've added a key** (the Play update check carries none); with it, the crash reports and usage
+stats above go to Firebase too. Android's backup
 carries your saved data under your control, and a bug report carries what you consent to share.
 
 **Find a station** sends the name you type to TfL's stop search, once you pause typing, and
@@ -86,6 +91,40 @@ TfL again. They are TfL's public network data, but which ones are there says whi
 looked at, so they stay in the app's cache directory too: never backed up, logged, or sent
 anywhere, and an entry older than a day is deleted the next time the app starts or looks up a
 route or stop area.
+
+## Crash reports and usage stats (opt-in)
+
+If — and only while — you turn on **Help make StopCast better** in Settings, stopcast sends crash
+reports to **Firebase Crashlytics** and usage statistics to **Google Analytics for Firebase**
+(Google). It is **off by default**: nothing is collected until you turn it on, and a crash from
+before you did is discarded rather than sent (if one is waiting, reporting starts the next time you
+open the app).
+
+What it sends:
+
+- **Crash reports** — the error type and where in the code it happened, your device model, Android
+  version and the app version, plus the last few lines of the diagnostic log (below). Log lines
+  go through the log's off-device filter first, so a stop ID, line ID or coordinate in them is
+  replaced by `•••`, and an error's message text is dropped (its type and code location stay).
+  Errors the app catches and survives are reported the same way, and so is a crash that closes
+  the app: its message text is dropped before Crashlytics sees it.
+- **Usage statistics** — that the app was opened, for how long and on which screen, your device
+  model, Android version and app version, and the **country, region and city** Google infers from
+  your IP address, under a **random app-instance ID** Firebase generates on the device and replaces
+  whenever you turn this off. Crash reports carry Crashlytics' own random installation ID, which
+  isn't replaced. Neither is your name, your account or your advertising ID.
+
+What it never sends: your location (coordinates), the stops or stations near you, your starred
+rows or journeys, what you searched for, or your TfL API key. stopcast strips the advertising-ID
+permission, so the advertising ID isn't collected either.
+
+Turning it **off** stops collection at once, discards any crash report not yet sent, and resets the
+Analytics app-instance ID. The choice is kept on this device only: restored onto a new phone from a
+backup, it starts off again until you turn it back on. Development (debug) builds never send
+anything. Firebase is free at stopcast's scale; uploads are batched by the SDKs, with no extra
+wakeups or location requests. For the Play Data Safety form this adds **Crash logs**,
+**Diagnostics**, **App interactions**, **Device or other IDs** and **Approximate location** (the
+region Analytics infers from your IP address), all optional (user-controlled).
 
 ## The on-device diagnostic log
 
@@ -120,10 +159,9 @@ These diagnostics are written to Android's **Logcat** (visible to a developer wi
 device connected) **and to a persisted log file on the device** — a small rotating file in
 the app's private cache (excluded from backup), kept so that a crash or a silent process
 kill still leaves a record of the last thing the app saw. The persisted log **stays on the
-device**: stopcast registers no off-device destination for it, so nothing here is sent
-anywhere. (A Crashlytics-style crash/breadcrumb reporter is a possible future addition — a
-new off-device channel that would be disclosed here, and in the Play Data Safety answers,
-before it ships.) The logging runs through one shared on-device buffer
+device**. The one off-device destination is Crashlytics, and only while you've opted in (above):
+it receives the log's **off-device** rendering, with every stop ID, line ID and coordinate
+replaced by `•••` before it leaves the app. The logging runs through one shared on-device buffer
 (`mikelward/androidlog`), wired incrementally: a feature whose warning seam isn't connected
 yet is discarded rather than recorded.
 

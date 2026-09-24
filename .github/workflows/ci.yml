@@ -556,6 +556,7 @@ jobs:
     environment: production
     env:
       HAS_RELEASE_KEYSTORE_SECRET: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+      HAS_GOOGLE_SERVICES: ${{ secrets.GOOGLE_SERVICES_JSON != '' }}
     outputs:
       # Whether a signed AAB was actually produced. `deploy` gates its publish
       # steps on this: they used to read `env.RELEASE_KEYSTORE_FILE`, which the
@@ -631,6 +632,23 @@ jobs:
             exit 1
           fi
           echo "RELEASE_KEYSTORE_FILE=${RUNNER_TEMP}/release.keystore" >> "${GITHUB_ENV}"
+
+      - name: Materialize google-services.json
+        # Activates the google-services + crashlytics plugins (app/build.gradle.kts) so the
+        # released AAB carries Firebase — still collecting nothing until the user opts in
+        # (SPEC *Privacy*). Skipped when the secret isn't set: the build still finishes, with
+        # Firebase dormant (dev-docs/firebase.md).
+        if: env.HAS_GOOGLE_SERVICES == 'true'
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          printf '%s' "${GOOGLE_SERVICES_JSON}" > app/google-services.json
+          # Fail here on a wrong-file or truncated paste, not as a plugin parse error later.
+          if ! grep -q '"project_info"' app/google-services.json || \
+             ! grep -q '"client"'       app/google-services.json; then
+            echo "::error::GOOGLE_SERVICES_JSON is missing project_info / client keys — not a valid Firebase config JSON, or the paste was truncated."
+            exit 1
+          fi
 
       - name: Build release AAB
         # Gated only on the keystore being present — a signed AAB is useful

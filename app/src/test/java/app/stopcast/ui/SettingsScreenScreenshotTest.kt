@@ -13,6 +13,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
@@ -174,6 +176,33 @@ class SettingsScreenScreenshotTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("liveWidgetSwitch").assertIsOn()
+    }
+
+    /**
+     * Crash reports and usage stats wait for the user (SPEC *Privacy*): the switch is off by
+     * default, disabled until the stored choice is read, and a tap on its row reports the opt-in.
+     */
+    @Test
+    fun telemetry_isOffByDefault_disabledUntilRead_andATapOptsIn() {
+        var telemetry by mutableStateOf<Boolean?>(null)
+        var latest: Boolean? = null
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    telemetryOptIn = telemetry,
+                    onTelemetryOptInChange = { latest = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("telemetrySwitch").assertIsNotEnabled()
+        telemetry = false
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("telemetrySwitch").assertIsOff()
+        composeRule.onNodeWithText("Help make StopCast better").performClick()
+        composeRule.runOnIdle { assert(latest == true) }
     }
 
     @Test

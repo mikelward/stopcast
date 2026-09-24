@@ -149,8 +149,11 @@ revises these forms periodically).
   - **The typed stop-name or line query → TfL**, for stop/line search (Phase 2).
   - **An optional user-supplied TfL `app_key`**, if the user sets one, sent as
     their own credential with their own TfL calls and nowhere else.
-  - **Nothing else leaves the device to stopcast**: no Firebase, no analytics, no
-    crash reporter, no third-party tracker, no server of stopcast's own. (The
+  - **Nothing else leaves the device to stopcast** unless the user opts in to *Help
+    make StopCast better* (off by default): then crash reports and usage stats go to
+    Firebase, with the Data Safety categories listed in `docs/PRIVACY.md` and
+    `dev-docs/firebase.md`. Otherwise no Firebase, no analytics, no crash reporter, no
+    third-party tracker, no server of stopcast's own. (The
     user's own Android backup / device-to-device transfer carries their saved
     config; that is a platform feature under the user's control, not data
     stopcast collects or transmits — no Data Safety change, `docs/PRIVACY.md`.)
