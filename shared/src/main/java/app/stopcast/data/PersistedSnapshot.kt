@@ -19,15 +19,17 @@ import kotlinx.serialization.Serializable
  * across app versions and time zones. `version` lets a future format change be detected and
  * discarded rather than mis-read; an unknown version reads as "no snapshot".
  *
- * These are a private persistence detail — this code opens no off-device channel of its own,
- * so the field set can change with a `version` bump, and only the fields the restore actually
- * needs are carried (the transient refresh-cycle flags are not persisted; see
- * [DeparturesSnapshot]). The file itself is not strictly device-local: it rides Android backup
- * and device-to-device transfer like the rest of the app's data (SPEC §12), a platform path
- * the user controls — see [DataStoreSnapshotStore].
+ * [PersistedStop] is also the Wear OS envelope's stop model ([WatchEnvelope]), so the watch
+ * renders from exactly the widget's inputs: a field added here reaches the user's watch too, so
+ * check it against the watch-sync disclosure (docs/PRIVACY.md). Otherwise the field set can
+ * change with a `version` bump, and only the fields the restore actually needs are carried (the
+ * transient refresh-cycle flags are not persisted; see [DeparturesSnapshot]). The file itself is
+ * not strictly device-local: it rides Android backup and device-to-device transfer like the rest
+ * of the app's data (SPEC §12), a platform path the user controls — see the app's
+ * `DataStoreSnapshotStore`.
  */
 @Serializable
-internal data class PersistedSnapshot(
+data class PersistedSnapshot(
     val version: Int = CURRENT_VERSION,
     val stops: List<PersistedStop> = emptyList(),
     val fetchedAtMillis: Long = 0L,
@@ -50,7 +52,7 @@ internal data class PersistedSnapshot(
 }
 
 @Serializable
-internal data class PersistedStop(
+data class PersistedStop(
     val stopId: String,
     val stopName: String,
     val departures: List<PersistedDeparture> = emptyList(),
@@ -86,7 +88,7 @@ internal data class PersistedStop(
 // restore a stop carries no disruptions; the immediate refresh re-establishes them.
 
 @Serializable
-internal data class PersistedWidgetJourney(
+data class PersistedWidgetJourney(
     val originId: String,
     val calls: List<PersistedJourneyCall> = emptyList(),
     val key: String = "",
@@ -94,14 +96,14 @@ internal data class PersistedWidgetJourney(
 )
 
 @Serializable
-internal data class PersistedJourneyCall(
+data class PersistedJourneyCall(
     val lineId: String,
     val destination: String,
     val branch: String? = null,
 )
 
 @Serializable
-internal data class PersistedDeparture(
+data class PersistedDeparture(
     val lineId: String,
     val lineName: String,
     val direction: String,
@@ -119,16 +121,16 @@ internal data class PersistedDeparture(
 )
 
 @Serializable
-internal data class PersistedLine(
+data class PersistedLine(
     val id: String,
     val name: String,
     val mode: String,
 )
 
-internal fun WidgetJourney.toPersisted(): PersistedWidgetJourney =
+fun WidgetJourney.toPersisted(): PersistedWidgetJourney =
     PersistedWidgetJourney(originId, calls.map { PersistedJourneyCall(it.lineId, it.destination, it.branch) }, key, shownFrom)
 
-internal fun DeparturesSnapshot.toPersisted(): PersistedSnapshot =
+fun DeparturesSnapshot.toPersisted(): PersistedSnapshot =
     PersistedSnapshot(
         stops = stops.map { it.toPersisted() },
         fetchedAtMillis = fetchedAt.toEpochMilli(),
@@ -145,7 +147,7 @@ internal fun DeparturesSnapshot.toPersisted(): PersistedSnapshot =
  * — discarded rather than mis-read, so a forward-incompatible change fails safe to "no
  * last-good".
  */
-internal fun PersistedSnapshot.toDomain(): DeparturesSnapshot? {
+fun PersistedSnapshot.toDomain(): DeparturesSnapshot? {
     if (version !in PersistedSnapshot.READABLE_VERSIONS) return null
     return DeparturesSnapshot(
         stops = stops.map { it.toDomain() },
@@ -159,7 +161,7 @@ internal fun PersistedSnapshot.toDomain(): DeparturesSnapshot? {
     )
 }
 
-internal fun StopArrivals.toPersisted(): PersistedStop =
+fun StopArrivals.toPersisted(): PersistedStop =
     PersistedStop(
         stopId = stopId,
         stopName = stopName,
@@ -177,7 +179,7 @@ internal fun StopArrivals.toPersisted(): PersistedStop =
         railFeed = railFeed?.name,
     )
 
-private fun PersistedStop.toDomain(): StopArrivals =
+fun PersistedStop.toDomain(): StopArrivals =
     StopArrivals(
         stopId = stopId,
         stopName = stopName,

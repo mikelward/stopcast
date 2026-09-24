@@ -20,6 +20,7 @@
 /build
 /domain/build
 /shared/build
+/wear/build
 /captures
 local.properties
 app/build

@@ -1,0 +1,279 @@
+package app.stopcast.data
+
+import app.stopcast.domain.Departure
+import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.DeparturesSnapshot
+import app.stopcast.domain.LineRef
+import app.stopcast.domain.LineStatus
+import app.stopcast.domain.NoTimes
+import app.stopcast.domain.RailFeed
+import app.stopcast.domain.StarredRow
+import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.Terminating
+import java.time.Instant
+import kotlin.time.Duration.Companion.minutes
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** The phone-to-watch envelope (dev-docs/wear-os.md): synthetic stops only, no user data. */
+class WatchEnvelopeTest {
+    private val now: Instant = Instant.parse("2026-09-24T08:00:00Z")
+
+    private fun departure(
+        min: Long,
+        line: String = "victoria",
+        destination: String = "Brixton",
+        direction: String = "inbound",
+        platform: String? = null,
+        mode: String = "tube",
+    ) = Departure(
+        lineId = line,
+        lineName = line.replaceFirstChar { it.uppercase() },
+        direction = direction,
+        destination = destination,
+        platform = platform,
+        expectedArrival = now.plusSeconds(min * 60),
+        mode = mode,
+    )
+
+    private fun stop(id: String, departures: List<Departure>, fetchedAt: Instant = now) = StopArrivals(
+        stopId = id,
+        stopName = "Stop $id",
+        departures = departures,
+        fetchedAt = fetchedAt,
+        lines = departures.map { LineRef(it.lineId, it.lineName, it.mode) }.distinct(),
+    )
+
+    private fun decoded(payload: WatchPayload): WatchEnvelope =
+        (WatchEnvelopes.decode(payload.bytes) as WatchDecode.Ok).envelope
+
+    @Test
+    fun `round trips to the same stops, and the same rows the widget builds`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                stop("940GEXAMPLE1", listOf(departure(1), departure(3), departure(4, destination = "Walthamstow Central", direction = "outbound"))),
+                stop("490000EXAMPLE", listOf(departure(2, line = "24", destination = "Pimlico", mode = "bus")))
+                    .copy(stopLetter = "K", towards = "Victoria", clusterId = "cluster-1"),
+            ),
+            fetchedAt = now,
+        )
+        val envelope = decoded(WatchEnvelopes.build(snapshot, starred = emptySet(), now = now))
+
+        assertEquals(snapshot.stops.map { it.toPersisted() }, envelope.stops)
+        assertEquals(
+            DepartureRows.across(snapshot.stops, now),
+            DepartureRows.across(envelope.stops.map { it.toDomain() }, now),
+        )
+    }
+
+    @Test
+    fun `terminating inputs and every rail feed state survive the trip`() {
+        for (feed in RailFeed.entries) {
+            val withNearer = stop("910GEXAMPLE", emptyList())
+                .copy(nearer = Terminating.Nearer(setOf("940GNEARER"), setOf("Nearer")), railFeed = feed)
+            val snapshot = DeparturesSnapshot(stops = listOf(withNearer), fetchedAt = now)
+            val back = decoded(WatchEnvelopes.build(snapshot, emptySet(), now = now)).stops.single().toDomain()
+            assertEquals(feed, back.railFeed)
+            assertEquals(withNearer.nearer, back.nearer)
+        }
+    }
+
+    @Test
+    fun `starred keys use the resolved direction key, so blank-direction siblings stay apart`() {
+        val byPlatform = StarredRow("940GEXAMPLE1", "victoria", "Platform 1")
+        val byOtherPlatform = StarredRow("940GEXAMPLE1", "victoria", "Platform 2")
+        val snapshot = DeparturesSnapshot(stops = listOf(stop("940GEXAMPLE1", listOf(departure(2)))), fetchedAt = now)
+        val envelope = decoded(WatchEnvelopes.build(snapshot, setOf(byPlatform, byOtherPlatform), now = now))
+        assertEquals(setOf(byPlatform, byOtherPlatform), envelope.starred.mapTo(HashSet()) { it.toDomain() })
+    }
+
+    @Test
+    fun `journey-only stops are left out`() {
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(stop("940GNEARBY", listOf(departure(2))), stop("940GJOURNEYONLY", listOf(departure(3)))),
+            fetchedAt = now,
+            journeyOnlyStopIds = setOf("940GJOURNEYONLY"),
+        )
+        assertEquals(listOf("940GNEARBY"), decoded(WatchEnvelopes.build(snapshot, emptySet(), now = now)).stops.map { it.stopId })
+    }
+
+    @Test
+    fun `the trim keeps the whole freshness window, plus a full countdown list past it`() {
+        // Every 30 s inside the 5-minute window, then far more after it than any renderer shows.
+        val inWindow = (0 until 10).map { departure(0).copy(expectedArrival = now.plusSeconds(30L * it + 15)) }
+        val after = (6..20L).map { departure(it) }
+        val otherGroup = (6..20L).map { departure(it, destination = "Walthamstow Central", direction = "outbound") }
+        val snapshot = DeparturesSnapshot(stops = listOf(stop("940GEXAMPLE1", inWindow + after + otherGroup)), fetchedAt = now)
+
+        val kept = decoded(WatchEnvelopes.build(snapshot, emptySet(), now = now)).stops.single().departures
+        val boundary = now.plusSeconds(5 * 60).toEpochMilli()
+        assertEquals(10, kept.count { it.expectedArrivalMillis < boundary })
+        assertEquals(3, kept.count { it.expectedArrivalMillis >= boundary && it.destination == "Brixton" })
+        assertEquals(3, kept.count { it.expectedArrivalMillis >= boundary && it.destination == "Walthamstow Central" })
+    }
+
+    @Test
+    fun `a fresh stop whose next departures are all past the boundary keeps the full countdown list`() {
+        val snapshot = DeparturesSnapshot(stops = listOf(stop("940GEXAMPLE1", listOf(departure(6), departure(8), departure(10)))), fetchedAt = now)
+        assertEquals(3, decoded(WatchEnvelopes.build(snapshot, emptySet(), now = now)).stops.single().departures.size)
+    }
+
+    @Test
+    fun `each stop trims to its own boundary`() {
+        val older = stop("940GOLDER", listOf(departure(-2), departure(1), departure(2), departure(3), departure(4)), fetchedAt = now.minusSeconds(4 * 60))
+        val snapshot = DeparturesSnapshot(stops = listOf(older), fetchedAt = now)
+        // The older stop's boundary is 1 min from now: what's still to come before it (not the one
+        // that has gone), then three after.
+        val kept = decoded(WatchEnvelopes.build(snapshot, emptySet(), threshold = 5.minutes, now = now)).stops.single().departures
+        assertEquals(listOf(1L, 2L, 3L).map { now.plusSeconds(it * 60).toEpochMilli() }, kept.map { it.expectedArrivalMillis })
+    }
+
+    @Test
+    fun `a busy interchange fits a data item`() {
+        val busy = (1..25).map { g -> (0 until 10).map { departure(it.toLong() / 2, line = "l$g", destination = "Destination $g") } }.flatten()
+        val payload = WatchEnvelopes.build(DeparturesSnapshot(stops = listOf(stop("940GBUSY", busy)), fetchedAt = now), emptySet(), now = now)
+        assertFalse(payload.asAsset)
+        assertTrue(payload.bytes.size <= WatchEnvelopes.DATA_ITEM_BUDGET_BYTES)
+    }
+
+    @Test
+    fun `a watched set over the data item budget goes whole, as an asset`() {
+        val stops = (1..10).map { stop("940GSTOP$it", listOf(departure(2))) }
+        val payload = WatchEnvelopes.build(DeparturesSnapshot(stops = stops, fetchedAt = now), emptySet(), dataItemBudget = 500, now = now)
+        assertTrue(payload.asAsset)
+        assertEquals(10, decoded(payload).stops.size)
+        assertEquals(0, decoded(payload).omittedStops)
+    }
+
+    @Test
+    fun `past the transfer ceiling, the last unstarred stops go first and are counted`() {
+        val stops = (1..10).map { stop("940GSTOP$it", listOf(departure(2))) }
+        val starred = StarredRow("940GSTOP10", "victoria", "inbound")
+        val selected = StarredRow("940GSTOP9", "victoria", "inbound")
+        val full = WatchEnvelopes.build(DeparturesSnapshot(stops = stops, fetchedAt = now), setOf(starred), now = now).bytes.size
+        val payload = WatchEnvelopes.build(
+            DeparturesSnapshot(stops = stops, fetchedAt = now),
+            starred = setOf(starred),
+            selected = setOf(selected),
+            dataItemBudget = 100,
+            transferCeiling = full / 2, now = now)
+        val envelope = decoded(payload)
+        assertTrue(payload.bytes.size <= full / 2)
+        assertTrue(envelope.stops.any { it.stopId == "940GSTOP10" })
+        assertTrue(envelope.stops.any { it.stopId == "940GSTOP9" })
+        assertTrue(envelope.stops.any { it.stopId == "940GSTOP1" })
+        assertEquals(10 - envelope.stops.size, envelope.omittedStops)
+        assertTrue(envelope.omittedStops > 0)
+    }
+
+    @Test
+    fun `an envelope from a newer phone is refused, not misread`() {
+        val newer = """{"version":${WatchEnvelope.CURRENT_VERSION + 1},"stops":[{"somethingNew":1}]}"""
+        assertEquals(WatchDecode.UnsupportedVersion(WatchEnvelope.CURRENT_VERSION + 1), WatchEnvelopes.decode(newer.encodeToByteArray()))
+        val garbled = WatchEnvelopes.decode("not json".encodeToByteArray())
+        assertTrue(garbled is WatchDecode.Unreadable)
+        // The reason names the failure, never the payload.
+        assertFalse("not json" in (garbled as WatchDecode.Unreadable).reason)
+        assertEquals(WatchDecode.Unreadable("no version"), WatchEnvelopes.decode("{}".encodeToByteArray()))
+    }
+
+    @Test
+    fun `the wire format has no coordinate or key field`() {
+        val names = buildList {
+            for (d in listOf(WatchEnvelope.serializer().descriptor, PersistedStop.serializer().descriptor, PersistedDeparture.serializer().descriptor)) {
+                for (i in 0 until d.elementsCount) add(d.getElementName(i).lowercase())
+            }
+        }
+        val forbidden = setOf("lat", "lon", "lng", "latitude", "longitude", "coordinate", "coordinates", "location", "appkey", "app_key", "apikey", "key")
+        assertTrue(names.toString(), names.none { it in forbidden || it.startsWith("lat") || it.startsWith("lon") })
+    }
+
+    @Test
+    fun `each via branch keeps its own countdown list past the boundary`() {
+        val bank = (6..12L).map { departure(it, line = "northern", destination = "Edgware").copy(branch = "Bank") }
+        val charingX = listOf(departure(20, line = "northern", destination = "Edgware").copy(branch = "Charing X"))
+        val snapshot = DeparturesSnapshot(stops = listOf(stop("940GEXAMPLE1", bank + charingX)), fetchedAt = now)
+        val kept = decoded(WatchEnvelopes.build(snapshot, emptySet(), now = now)).stops.single().departures
+        assertEquals(3, kept.count { it.branch == "Bank" })
+        assertEquals(1, kept.count { it.branch == "Charing X" })
+    }
+
+    @Test
+    fun `past the ceiling, the stop the widget ranks lowest goes first, not the last stored`() {
+        val soon = stop("940GSOON", listOf(departure(1)))
+        val later = stop("940GLATER", listOf(departure(20, line = "central", destination = "Ealing")))
+        // Stored with the lower-priority stop first.
+        val snapshot = DeparturesSnapshot(stops = listOf(later, soon), fetchedAt = now)
+        val full = WatchEnvelopes.build(snapshot, emptySet(), now = now).bytes.size
+        val envelope = decoded(
+            WatchEnvelopes.build(snapshot, emptySet(), dataItemBudget = 10, transferCeiling = full - 1, now = now),
+        )
+        assertEquals(listOf("940GSOON"), envelope.stops.map { it.stopId })
+        assertEquals(1, envelope.omittedStops)
+    }
+
+    @Test
+    fun `the ceiling holds even when every stop is starred`() {
+        val stops = (1..6).map { stop("940GSTOP$it", listOf(departure(it.toLong()))) }
+        val stars = stops.mapTo(HashSet()) { StarredRow(it.stopId, "victoria", "inbound") }
+        val snapshot = DeparturesSnapshot(stops = stops, fetchedAt = now)
+        val full = WatchEnvelopes.build(snapshot, stars, now = now).bytes.size
+        val payload = WatchEnvelopes.build(snapshot, stars, dataItemBudget = 10, transferCeiling = full / 2, now = now)
+        assertTrue(payload.bytes.size <= full / 2)
+        assertTrue(decoded(payload).omittedStops > 0)
+        // The soonest (highest-ranked) starred stop is kept.
+        assertTrue(decoded(payload).stops.any { it.stopId == "940GSTOP1" })
+    }
+
+    @Test
+    fun `only stars for stops it carries travel, so the ceiling holds whatever is starred`() {
+        val snapshot = DeparturesSnapshot(stops = listOf(stop("940GEXAMPLE1", listOf(departure(2)))), fetchedAt = now)
+        val here = StarredRow("940GEXAMPLE1", "victoria", "inbound")
+        // Thousands of stars at stops the snapshot doesn't hold.
+        val elsewhere = (1..5_000).mapTo(HashSet()) { StarredRow("940GELSEWHERE$it", "victoria", "inbound") }
+        val envelope = decoded(WatchEnvelopes.build(snapshot, elsewhere + here, now = now))
+        assertEquals(listOf(WatchStarKey.of(here)), envelope.starred)
+
+        val payload = WatchEnvelopes.build(snapshot, elsewhere + here, dataItemBudget = 10, transferCeiling = 200, now = now)
+        assertTrue(payload.bytes.size <= 200)
+    }
+
+    @Test
+    fun `a decoded rail stop renders its feed state once a line status asks for a row`() {
+        // A status row (a line with nothing to count) needs a disrupted line status, which the
+        // snapshot doesn't carry yet (TODO Phase 4); given one, the decoded stop says "No key".
+        val rail = StopArrivals(
+            "910GEXAMPLE", "Example", emptyList(), now,
+            lines = listOf(LineRef("southern", "Southern", "national-rail")),
+            railFeed = RailFeed.NO_KEY,
+        )
+        val decodedStops = decoded(WatchEnvelopes.build(DeparturesSnapshot(listOf(rail), now), emptySet(), now = now))
+            .stops.map { it.toDomain() }
+        val statuses = mapOf("southern" to LineStatus("southern", severity = 6, description = "Severe delays"))
+        val row = DepartureRows.across(decodedStops, now, lineStatuses = statuses).single()
+        assertEquals(NoTimes.NO_KEY, NoTimes.of(row))
+    }
+
+    @Test
+    fun `departed predictions can't spend the cap past a stale stop's boundary`() {
+        // Carried forward: fetched 10 min ago, so its boundary passed 5 min ago.
+        val stale = stop(
+            "940GSTALE",
+            listOf(departure(-4), departure(-3), departure(-2), departure(5)),
+            fetchedAt = now.minusSeconds(600),
+        ).copy(arrivalsFresh = false)
+        val kept = decoded(WatchEnvelopes.build(DeparturesSnapshot(listOf(stale), now), emptySet(), now = now)).stops.single().departures
+        assertEquals(listOf(now.plusSeconds(300).toEpochMilli()), kept.map { it.expectedArrivalMillis })
+    }
+
+    @Test
+    fun `same-named termini with different IDs keep their own lists`() {
+        val nearer = (6..8L).map { departure(it, destination = "Walthamstow Central").copy(destinationId = "940GNEARER") }
+        val farther = listOf(departure(20, destination = "Walthamstow Central").copy(destinationId = "940GFARTHER"))
+        val kept = decoded(WatchEnvelopes.build(DeparturesSnapshot(listOf(stop("940GEXAMPLE1", nearer + farther)), now), emptySet(), now = now))
+            .stops.single().departures
+        assertEquals(1, kept.count { it.destinationId == "940GFARTHER" })
+    }
+}

@@ -176,9 +176,11 @@ the watch app ships would break pairing between old and new installs.
   - if it's over, sends the **whole envelope** as a Data Layer `Asset` referenced from the
     `DataItem`. The widget's stop set is never cut to fit the `DataItem`;
   - only past a hard **transfer ceiling** (a sanity bound on transfer and watch battery, far
-    above any realistic watched set) does it drop whole stops, lowest priority (below) first,
-    never starred or complication-selected ones. That truncation is visible: the watch app ends
-    with a "More stops on phone" line, so it's never silent.
+    above any realistic watched set) does it drop whole stops, lowest-ranked first by the
+    widget's render order, holding back starred and complication-selected ones until nothing
+    else is left. The ceiling is hard: in the pathological case where those alone exceed it,
+    they go too, lowest-ranked first, with their star keys. That truncation is visible: the
+    watch app ends with a "More stops on phone" line, so it's never silent.
 
   Tests:
   - A synthetic busy interchange stays under the budget.
@@ -188,8 +190,7 @@ the watch app ships would break pairing between old and new installs.
   - Every destination group survives the trim, with its full display cap of countdowns even
     when all of them fall past the boundary.
 
-  **Rows the watch depends on are always inside the ceiling.** The phone fills the envelope in
-  priority order:
+  **Rows the watch depends on come first.** The phone fills the envelope in priority order:
   1. every **starred** row;
   2. every row a **complication is set to**. The watch syncs its complication selections to the
      phone as a small `DataItem` of row keys, so the phone knows them.
@@ -198,6 +199,13 @@ the watch app ships would break pairing between old and new installs.
   So a row the user picked can't fall out of later envelopes when departures reorder. If a
   picked row has no departures at all, its stop is still sent, and the complication shows its
   empty or stale form, never a missing row.
+
+  **The one exception is the transfer ceiling.** If the starred and selected stops alone exceed
+  it (far past any realistic set), the lowest-ranked of them are dropped too. A complication whose
+  stop was dropped this way treats it like a stop that left the widget's scope (below): it falls
+  back to the default row, or *no data*, never the old row frozen, and it keeps its selection, so
+  the row returns when a later envelope fits. The watch app's "More stops on phone" line says
+  stops are missing.
 
   **A picked stop that leaves the widget's scope** (for example, the widget's nearby set moves
   with you and `SnapshotStore.pruneStops` drops it) is no longer in any envelope, since the
