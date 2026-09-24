@@ -202,6 +202,8 @@
     <!-- Heads a journey card's trains on another branch: from the origin to the stop to change
          at, for the far end ("King's Cross ➔ Camden Town (for High Barnet)"). -->
     <string name="journey_change_at">%1$s ➔ %2$s (for %3$s)</string>
+    <!-- The heading above as a screen reader hears it, the arrow read as "to". -->
+    <string name="journey_change_at_spoken">%1$s to %2$s, for %3$s</string>
     <string name="journey_not_checked">Couldn\'t check trains</string>
     <!-- The same journey-card notes for a bus journey. -->
     <string name="journey_checking_bus">Checking buses…</string>
