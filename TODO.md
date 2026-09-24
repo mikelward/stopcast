@@ -1442,6 +1442,18 @@ Builds on Phase 1's minimal line-status marking.
   - [x] **Say why a rail line has no times** (maintainer, 2026-09-24): a status row says "No key"
         (opening Settings) with no key set, "No data" when the board failed or none covers it,
         and a dash when its source answered with no trains — TfL lines included.
+  - [ ] **Decide how every user gets National Rail times** (maintainer's call, 2026-09-24). Today
+        each user pastes their own key, which is free but a chore most won't do. First read the Rail
+        Data Marketplace license for the Live Departure Board product: its request quota, and
+        whether it allows showing the data to the public and sharing one key. Then pick:
+        - **Keep per-user keys**: £0, no server; low uptake.
+        - **Ship one key in the app**: £0, but anyone can extract it from the APK, every user
+          shares one quota (roughly 900 users at ~200 board requests a day each, if the quota is
+          ~5M per four weeks), and one abuser gets it revoked for all; the license may forbid it.
+        - **A small caching server holding the key**, serving each station's board for ~30 s:
+          hosting at a few pounds a month, a service to run, and a privacy and Play Data Safety
+          change (it sees station codes and IP addresses); its load grows with busy stations, not
+          users. The recommended shape if the license allows public use.
   - [ ] **Route pages and journeys for National Rail**: the stop list and journey matching use
         TfL's route data, which National Rail services may lack.
 
