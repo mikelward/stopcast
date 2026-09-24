@@ -174,7 +174,7 @@ The app finds stops two ways:
   not yet validated on a device** — whether either wants tuning at a real interchange lives in
   `TODO.md`; what is durable is the two-tier shape and the constraints above. **The near-me list is ordered
   closest stop first**, with soonest-first breaking a same-stop tie (a stop's several services
-  are equidistant). **A line-status alert (a suspended line's "No departures" row) rides with its
+  are equidistant). **A line-status alert (a suspended line's "No data" row) rides with its
   stop and gets no special order** — it is not hoisted above a closer stop, nor lifted within its
   own stop's section; it simply trails that stop's departures, so a nearer stop is never pushed
   below a farther one for carrying an alert. Starred rows are still pinned to the top. (Stop
@@ -1103,7 +1103,11 @@ Mirrors the sibling fleet:
 - **Journey planning / routing** (the TfL Journey API). StopCast answers "what's next
   from here", not "how do I get there".
 - **Non-TfL operators** outside the Unified API (National Rail services TfL doesn't
-  carry, coach, etc.).
+  carry, coach, etc.). TfL gives no times for them, so a National Rail line TfL reports
+  disrupted at a station shows only as its status row, saying "No data" where times would be
+  rather than a dash that read as an empty result (maintainer, 2026-09-24); one in good
+  service isn't listed. Its departures from National Rail's own feed are an open call in
+  `TODO.md`.
 - **Ticketing**, Oyster/contactless balances, and service maps.
 - **Writing to TfL.** StopCast is read-only.
 - **Continuous background location / geofencing.** Location is used on demand in the

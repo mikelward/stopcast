@@ -186,12 +186,10 @@ class MainScreenScreenshotTest {
         // The disrupted Victoria line's timed rows carry the inline ⚠ (SPEC D3) — the full status
         // wording is the glyph's content description, no longer a visible chip on a timed row.
         composeRule.onNodeWithContentDescription("Severe Delays").assertExists()
-        // Circle is suspended with no arrivals, so it surfaces as a status row — a dash
-        // ("none") where a countdown would sit (the "Suspended" chip carries the reason).
+        // Circle is suspended with no arrivals, so it surfaces as a status row — "No data" where
+        // a countdown would sit (the "Suspended" chip carries the reason).
         composeRule.onNodeWithText("Suspended").assertExists()
-        composeRule.onNodeWithText("–").assertExists()
-        // The dash announces "No departures" to a screen reader rather than a bare glyph.
-        composeRule.onNodeWithContentDescription("No departures").assertExists()
+        composeRule.onNodeWithText("No data").assertExists()
         // Oxford Circus has a stop-level disruption, shown as a stop-status row.
         composeRule.onNodeWithText("Station closed until further notice").assertExists()
         // Each group gets one combined title-case header, the place name repeated per platform (SPEC
