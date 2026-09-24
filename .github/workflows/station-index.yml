@@ -2,8 +2,8 @@ name: station-index
 
 # Builds the bundled station index (app/src/main/assets/stations/station_index.json) from TfL
 # and commits it to the pull request's branch — the list "Find a station" searches on the device
-# (SPEC *Finding stops*). It runs when a pull request changes the builder or this workflow; to
-# refresh the list from TfL, change the builder (even a comment) in a pull request.
+# (SPEC *Finding stops*). It runs when a pull request changes the builder or this workflow. The
+# weekly refresh from TfL is station-index-refresh.yml, which opens a pull request of its own.
 #
 # Split like ci.yml's screenshot sync: the build job runs PR code (the script) with a read-only
 # token, and the shared ci-commit-artifact workflow does the commit with its own credential,

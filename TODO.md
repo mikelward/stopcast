@@ -751,9 +751,14 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
     - [ ] **Rank by use**: TypeLauncher breaks ties by how often each item is opened. Here that
           would store which stations a user looks at (user data, on device, riding backup), so it
           waits for a decision and a *Privacy* line.
-    - [ ] **Refresh the station list on a schedule**: the workflow runs only when a PR changes
-          the builder. A scheduled run would need its own branch-and-PR step (the shared
-          commit workflow pushes to an existing PR branch).
+    - [x] **Refresh the station list on a schedule** (maintainer, 2026-09-24: separate, not riding
+          the dependency batch): `station-index-refresh.yml` rebuilds it every Sunday and, when it
+          changed, opens or updates a pull request from `station-index/refresh` with the batch's
+          `GRADLE_UPDATE_PAT`, so CI and review run on it. A failed build fails the run (emailed)
+          and keeps the committed list.
+      - [ ] **One shared `UPDATE_PAT`** (maintainer, 2026-09-24): the refresh borrows the
+            dependency batch's `GRADLE_UPDATE_PAT` for now; replace the per-purpose tokens with
+            a single `UPDATE_PAT` (Contents and Pull requests: read and write) that both use.
     - [ ] **Extract the matcher into a shared `mikelward/*` library**, with TypeLauncher's copy,
           rather than keep two.
   - [x] **The user's own stops, without TfL** (maintainer, 2026-09-24): before typing, the

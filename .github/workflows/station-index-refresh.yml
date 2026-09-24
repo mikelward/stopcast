@@ -1,0 +1,134 @@
+name: station-index-refresh
+
+# Rebuilds the bundled station list (app/src/main/assets/stations/station_index.json) from TfL
+# once a week and, when it changed, opens (or updates) a pull request with the new list, so "Find
+# a station" keeps up with TfL without anyone touching the builder. station-index.yml still
+# rebuilds it on a pull request that changes the builder; this is the scheduled refresh.
+#
+# Split like the others: the build job fetches from TfL and runs the builder with a read-only
+# token; the publish job runs nothing from TfL or any pull request — it only commits the built
+# file and opens the pull request. It uses the weekly dependency batch's GRADLE_UPDATE_PAT from
+# the `gradle-update` environment (Contents and Pull requests: read and write, this repository
+# only), because a pull request opened or pushed with the default token starts no CI on it.
+# Borrowed for now; TODO.md tracks moving both to one shared UPDATE_PAT.
+#
+# Cost and reliability (AGENTS.md): 0 pounds — a dozen keyless TfL requests and a couple of
+# minutes of Actions time a week; nothing the app sends, so no Play Data Safety or battery change.
+# If TfL is down or answers short (a missing mode, a missing interchange, under 200 stations),
+# the builder refuses to write, this scheduled run fails — GitHub emails the owner — and the
+# committed list stays as it was. An unchanged list opens nothing.
+on:
+  schedule:
+    - cron: '43 5 * * 0'   # Sundays, off the top of the hour and a day after the dependency batch
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: station-index-refresh
+  cancel-in-progress: false
+env:
+  INDEX: app/src/main/assets/stations/station_index.json
+  BRANCH: station-index/refresh
+jobs:
+  build:
+    name: build station index
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+      sha: ${{ steps.base.outputs.sha }}
+      tip: ${{ steps.base.outputs.tip }}
+    steps:
+      # main, whatever ref a manual run was started from: the refresh is proposed against main.
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      # The exact commit the list is built from, so the publish job commits onto that same one even
+      # if main moves in between; and the refresh branch's tip as the run starts (blank if it
+      # doesn't exist), which the publish job's push leases on, so anything pushed there during the
+      # run makes the push fail rather than be overwritten.
+      - name: Record the base commit and the refresh branch's tip
+        id: base
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tip=$(git ls-remote "$REPO_URL" "refs/heads/$BRANCH" | cut -f1)" >> "$GITHUB_OUTPUT"
+      - name: Test the index builder
+        run: python3 scripts/build_station_index_test.py
+      - name: Build the index from TfL
+        run: python3 scripts/build_station_index.py --out "$INDEX"
+      - name: Compare with the committed list
+        id: diff
+        run: |
+          if git diff --quiet -- "$INDEX"; then
+            echo "The list is unchanged; nothing to open."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --stat -- "$INDEX"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload the index
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-index
+          path: ${{ env.INDEX }}
+          if-no-files-found: error
+
+  publish:
+    name: open the refresh pull request
+    needs: [build]
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment: gradle-update
+    permissions:
+      contents: read
+    steps:
+      # The commit the build job built from, not whatever main is now.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          persist-credentials: false
+      - name: Download the index
+        uses: actions/download-artifact@v4
+        with:
+          name: station-index
+          path: build/station-index
+      - name: Commit it to the refresh branch
+        env:
+          TOKEN: ${{ secrets.GRADLE_UPDATE_PAT }}
+          REPO: ${{ github.repository }}
+          TIP: ${{ needs.build.outputs.tip }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::GRADLE_UPDATE_PAT is not set in the gradle-update environment."
+            exit 1
+          fi
+          cp build/station-index/station_index.json "$INDEX"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add -- "$INDEX"
+          git commit -m "Refresh the list of stations search finds"
+          # The branch is this workflow's own: each week's list replaces the last one's. Leased on
+          # the tip the build job saw as the run started (or on its absence), so a change someone
+          # else pushed there since fails this run rather than being overwritten.
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git -c "http.extraheader=AUTHORIZATION: basic $auth" \
+            push --force-with-lease="refs/heads/$BRANCH:$TIP" "https://github.com/$REPO.git" "HEAD:refs/heads/$BRANCH"
+      - name: Open the pull request if none is open
+        env:
+          GH_TOKEN: ${{ secrets.GRADLE_UPDATE_PAT }}
+        run: |
+          # This repository's own branch only: a fork's same-named branch isn't the refresh.
+          open=$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository | not)] | length')
+          if [ "$open" != "0" ]; then
+            echo "A refresh pull request is already open; the push above updated it."
+            exit 0
+          fi
+          gh pr create --base main --head "$BRANCH" \
+            --title "Refresh the list of stations search finds" \
+            --body "The weekly rebuild of the bundled station list from TfL (station-index-refresh.yml) found changes. Review the diff of \`$INDEX\` for anything odd (a mode or interchange gone missing) before merging; the builder already refuses a list under 200 stations or missing a required mode or interchange."
