@@ -753,6 +753,13 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           commit workflow pushes to an existing PR branch).
     - [ ] **Extract the matcher into a shared `mikelward/*` library**, with TypeLauncher's copy,
           rather than keep two.
+  - [x] **The user's own stops, without TfL** (maintainer, 2026-09-24): before typing, the
+        search lists *Starred* (journey ends, places holding a starred row) and *Recent* (last
+        eight opened, kept in no-backup storage); as the user types, those and the places lately
+        shown near them (widget snapshot, nearby-lookup cache) match on the device, the user's own
+        leading their tier.
+    - [ ] **Clear or remove a recent entry**: the list only ages out past eight; a long-press to
+          remove one (or a "Clear" on the heading) if it proves wanted.
   - [ ] **Set the near-me origin to a station** (maintainer, 2026-09-24): use a searched
         station in place of the current location, for planning from somewhere else.
   - [x] **Find a station from the location gate**: a *Find a station* button under the gate's

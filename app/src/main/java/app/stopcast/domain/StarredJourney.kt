@@ -10,6 +10,10 @@ data class JourneyEnd(
     val name: String,
     val latitude: Double? = null,
     val longitude: Double? = null,
+    // The stop area the end's pole belongs to (TfL `stationId` from the route sequence), where
+    // known: "Find a station" lists and opens the end as that area, whose page holds all its poles.
+    // Blank for an end starred before it was recorded, or where TfL gave none.
+    val areaId: String = "",
 )
 
 /**

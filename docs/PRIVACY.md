@@ -47,7 +47,13 @@ carries your saved data under your control, and a bug report carries what you co
 
 **Find a station** sends the name you type to TfL's stop search, once you pause typing, and
 then the chosen station's id to look up its stops and departures. The name isn't saved,
-logged or sent anywhere else, and the station you look at isn't remembered once you leave it.
+logged or sent anywhere else. The last eight stations you open from it are remembered on the
+device to list under *Recent*, in app storage that Android never backs up or transfers; they are
+never logged or sent anywhere, and clearing the app's data removes them. So that a starred stop
+can be listed by name there, the place each starred row belongs to (its stop area or station, as
+TfL names it) is kept the same way, and forgotten once you unstar it. The search also lists
+and matches your starred stops and the stops the app has lately shown you, all read on the
+device; none of that is sent anywhere either.
 
 **Starred journeys** (two stops you travel between) are kept on the device with your other
 settings and stars, so they ride your own Android backup like the rest (above); they are never

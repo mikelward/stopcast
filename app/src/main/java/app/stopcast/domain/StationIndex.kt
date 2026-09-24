@@ -18,7 +18,12 @@ data class IndexedStation(
  * types, so an abbreviation or a station code ("kx", "kgx") finds its station with no request and
  * no wait. TfL's own search still covers what the index doesn't (bus stops); [rank] orders both.
  */
-class StationIndex(val stations: List<IndexedStation>) {
+class StationIndex(
+    val stations: List<IndexedStation>,
+    // The user's own stops (starred or opened, [YourStops.ownIds]): each leads its tier, and so does
+    // the interchange it folds into, so a starred stop ranks above an equally good stranger.
+    own: Set<String> = emptySet(),
+) {
     /**
      * The stations matching [query], best first ([rank]), at most [limit]. A station whose
      * interchange also matches is left out: the interchange's page already holds it, and listing
@@ -31,7 +36,9 @@ class StationIndex(val stations: List<IndexedStation>) {
         val matchedIds = scored.mapTo(HashSet()) { it.first.id }
         return scored
             .filter { (station, _) -> station.hubId.isBlank() || station.hubId !in matchedIds }
-            .sortedWith(compareBy({ it.second }, { !it.first.isHub }, { it.first.name.length }, { it.first.name }))
+            .sortedWith(
+                compareBy({ it.second }, { it.first.id !in leads }, { !it.first.isHub }, { it.first.name.length }, { it.first.name }),
+            )
             .take(limit)
             .map { (station, _) -> StationMatch(station.id, station.name, station.modes) }
     }
@@ -46,9 +53,9 @@ class StationIndex(val stations: List<IndexedStation>) {
     fun rank(query: String, local: List<StationMatch>, remote: List<StationMatch>, limit: Int = DEFAULT_LIMIT): List<StationMatch> {
         val candidates = (local + remote).distinctBy { it.id }
         val matchedIds = candidates.mapTo(HashSet()) { it.id }
-        // One ranking over both sources, by the same rules as [search] — tier, interchange first,
-        // shorter name, then name — so a TfL bus stop that matches as well as a bundled station
-        // sorts among them rather than after all of them. Source order only breaks an exact tie.
+        // One ranking over both sources, by the same rules as [search] — tier, the user's own stops
+        // first, then interchanges, shorter name, then name — so a TfL bus stop that matches as well
+        // as a bundled station sorts among them rather than after all of them. Source order only breaks an exact tie.
         // A match the matcher can't place (TfL found it by a rule this one doesn't share) goes last.
         return candidates
             .filter { hubOf[it.id]?.let { hub -> hub in matchedIds } != true }
@@ -56,6 +63,7 @@ class StationIndex(val stations: List<IndexedStation>) {
             .sortedWith(
                 compareBy(
                     { StationMatcher.tier(query, it.value.name, it.value.id, hubOf[it.value.id].orEmpty())?.ordinal ?: StationMatchTier.entries.size },
+                    { it.value.id !in leads },
                     { !it.value.id.startsWith("HUB", ignoreCase = true) },
                     { it.value.name.length },
                     { it.value.name },
@@ -69,6 +77,25 @@ class StationIndex(val stations: List<IndexedStation>) {
     // Each indexed station's interchange, for folding TfL's matches the way [search] folds its own.
     private val hubOf: Map<String, String> =
         stations.filter { it.hubId.isNotBlank() }.associate { it.id to it.hubId }
+
+    private val leads: Set<String> = own + own.mapNotNull { hubOf[it] }
+
+    private val byId: Map<String, IndexedStation> by lazy { stations.associateBy { it.id } }
+
+    /** The listed station with [id], as a match, or null for one the list doesn't hold. */
+    fun station(id: String): StationMatch? = byId[id]?.let { StationMatch(it.id, it.name, it.modes) }
+
+    /**
+     * This index with [yours] added (SPEC *Finding stops → Find a station*): the user's starred,
+     * opened and lately shown stops that the bundled list lacks — bus stops, mostly — so they match
+     * as the user types instead of after TfL's search, and the user's own stops lead their tier.
+     */
+    fun withYours(yours: YourStops): StationIndex {
+        if (yours.all.isEmpty()) return this
+        val indexed = stations.mapTo(HashSet()) { it.id }
+        val extra = yours.all.filter { it.id !in indexed }.map { IndexedStation(it.id, it.name, it.modes) }
+        return StationIndex(stations + extra, yours.ownIds)
+    }
 
     companion object {
         const val DEFAULT_LIMIT = 20

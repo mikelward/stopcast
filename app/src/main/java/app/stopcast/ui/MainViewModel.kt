@@ -174,6 +174,10 @@ class MainViewModel(
     // page, so a write that fails after the station page has closed (the write outlives it — see
     // [toggleStar]) still surfaces on the next list shown rather than on a model no screen reads.
     writeFailures: WriteFailures = WriteFailures(),
+    // Told of each saved star toggle, with its row, inside the same must-finish write: the app
+    // records the row's place so "Find a station" can list the star by name later (SPEC *Finding
+    // stops*). Handles its own failures; nothing by default.
+    private val onStarToggled: suspend (DepartureRow) -> Unit = {},
 ) : ViewModel() {
     // The near-me tiers, updatable IN PLACE so a relocation that keeps the same nearby set can
     // reconcile them without rebuilding this ViewModel (which would drop a revealed expansion —
@@ -1464,6 +1468,7 @@ class MainViewModel(
                     _starWriteFailed.value = true
                     return@withContext
                 }
+                onStarToggled(row)
                 // The pin is persisted and the in-app list has already re-ordered off [starred].
                 // The widget redraw is a separate, secondary surface: re-render it now so the star
                 // change shows without waiting for the next fetch (it pins starred rows from the
