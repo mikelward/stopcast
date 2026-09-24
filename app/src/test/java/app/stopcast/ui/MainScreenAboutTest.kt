@@ -63,6 +63,26 @@ class MainScreenAboutTest {
     }
 
     @Test
+    fun aboutDialog_creditsTheDataSources() {
+        composeRule.setContent {
+            StopCastTheme {
+                MainScreen(state = DeparturesUiState.Loading, now = now, onRefresh = {})
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("More options").performClick()
+        composeRule.onNodeWithText("About").performClick()
+
+        // Required credits (SPEC *About and open-source licenses*): the Rail Data Marketplace
+        // license for the live National Rail times names "National Rail", and NaPTAN's the OGL.
+        composeRule.onNodeWithText("TfL and National Rail", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "Contains public sector information licensed under the Open Government Licence v3.0.",
+            substring = true,
+        ).assertIsDisplayed()
+    }
+
+    @Test
     fun aboutDialog_closeDismissesWithoutNavigating() {
         var licensesOpened = false
         composeRule.setContent {
