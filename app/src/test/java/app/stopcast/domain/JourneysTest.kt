@@ -416,4 +416,72 @@ class JourneysTest {
         assertEquals(LineRef("example", "Example", "tube"), named.line)
         assertEquals(named.line, named.reversed().line)
     }
+
+    @Test
+    fun `a journey is near within a mile of either end and far beyond, by its nearer end`() {
+        // Synthetic ends ~2.2 km apart on one meridian; the rider's position is synthetic too.
+        // At one end: near.
+        assertNull(Journeys.farMeters(journey, 51.51, -0.12))
+        // Between the ends, ~1.1 km from each: near.
+        assertNull(Journeys.farMeters(journey, 51.50, -0.12))
+        // ~2.2 km beyond the far end: far, by the distance to that nearer end.
+        val far = Journeys.farMeters(journey, 51.47, -0.12)!!
+        assertTrue(far in 2000.0..2400.0)
+    }
+
+    @Test
+    fun `a journey with no position or no end coordinates counts as near`() {
+        assertNull(Journeys.farMeters(journey, null, null))
+        val unplaced = journey.copy(to = JourneyEnd("MID", "Mid"))
+        assertNull(Journeys.farMeters(unplaced, 52.5, -0.12))
+    }
+
+    @Test
+    fun `only a confirmed fix holds a far journey back`() {
+        val far = Journeys.farJourneys(listOf(journey), 51.47, -0.12, fixConfirmed = true)
+        assertEquals(setOf(journey.key), far.keys)
+        // An approximate or unrefreshed fix may be where the rider was: show everything.
+        assertTrue(Journeys.farJourneys(listOf(journey), 51.47, -0.12, fixConfirmed = false).isEmpty())
+        // A near journey is never held back.
+        assertTrue(Journeys.farJourneys(listOf(journey), 51.51, -0.12, fixConfirmed = true).isEmpty())
+    }
+
+    @Test
+    fun `a held-back journey's stops stop being fetched unless another journey needs them`() {
+        val byJourney = mapOf("far" to setOf("A", "B"), "near" to setOf("B", "C"))
+        assertEquals(setOf("A"), Journeys.heldBackStopIds(byJourney, setOf("far")))
+        assertEquals(emptySet<String>(), Journeys.heldBackStopIds(byJourney, emptySet()))
+    }
+
+    @Test
+    fun `a relocate holds a far journey's stops back only on a confirmed fix, unrevealed`() {
+        val stops = mapOf(journey.key to setOf("ORIGIN"))
+        fun hold(fixConfirmed: Boolean, revealed: Boolean) =
+            Journeys.stopIdsToHoldBack(listOf(journey), 51.47, -0.12, fixConfirmed, revealed, stops)
+        assertEquals(setOf("ORIGIN"), hold(fixConfirmed = true, revealed = false))
+        // A retained or last-known fix may be where the rider was: keep fetching.
+        assertEquals(emptySet<String>(), hold(fixConfirmed = false, revealed = false))
+        assertEquals(emptySet<String>(), hold(fixConfirmed = true, revealed = true))
+        // Its own view is open: the screen keeps it, so keep fetching it.
+        assertEquals(
+            emptySet<String>(),
+            Journeys.stopIdsToHoldBack(listOf(journey), 51.47, -0.12, true, false, stops, openJourneyKey = journey.key),
+        )
+        // A near journey is never held back.
+        assertEquals(
+            emptySet<String>(),
+            Journeys.stopIdsToHoldBack(listOf(journey), 51.51, -0.12, true, false, stops),
+        )
+    }
+
+    @Test
+    fun `a relocate releases a held journey within a mile, or on an unconfirmed fix`() {
+        val held = setOf(journey.key)
+        assertTrue(Journeys.releasesHeldJourney(listOf(journey), 51.51, -0.12, true, held))
+        // An unconfirmed fix holds nothing back, so the screen shows it again.
+        assertTrue(Journeys.releasesHeldJourney(listOf(journey), 51.47, -0.12, false, held))
+        // Still far on a confirmed fix, or not held (already shown): nothing to wait for.
+        assertFalse(Journeys.releasesHeldJourney(listOf(journey), 51.47, -0.12, true, held))
+        assertFalse(Journeys.releasesHeldJourney(listOf(journey), 51.51, -0.12, true, emptySet()))
+    }
 }

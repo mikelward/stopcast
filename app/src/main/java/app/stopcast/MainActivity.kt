@@ -75,6 +75,7 @@ import app.stopcast.domain.BugReport
 import java.io.IOException
 import app.stopcast.domain.Journeys
 import app.stopcast.data.DataStoreStarredJourneysStore
+import app.stopcast.ui.rememberFarReveal
 import app.stopcast.ui.rememberListStateFor
 import app.stopcast.domain.StarredJourney
 import app.stopcast.domain.CachingStopFinder
@@ -87,6 +88,7 @@ import app.stopcast.ui.FontSizeSetting
 import app.stopcast.ui.LocalRouteStops
 import app.stopcast.ui.LocalRouteTopology
 import app.stopcast.ui.LicensesScreen
+import app.stopcast.ui.FarRevealState
 import app.stopcast.ui.LocationBanner
 import app.stopcast.ui.LocationGate
 import app.stopcast.ui.MainScreen
@@ -365,6 +367,8 @@ class MainActivity : ComponentActivity() {
                 val departuresListState = rememberListStateFor(
                     (nearby as? NearbyStopsViewModel.State.Ready)?.clusterSetKey,
                 )
+                // The Faraway favorites tap, held here for the same reason and following the same set.
+                val farReveal = rememberFarReveal((nearby as? NearbyStopsViewModel.State.Ready)?.clusterSetKey)
                 val bugReportConsent: BugReportConsentViewModel = viewModel()
                 val requestBugReport = {
                     if (skipBugReportConsent) shareBugReport(bugReportRequestFor(nearby))
@@ -453,6 +457,7 @@ class MainActivity : ComponentActivity() {
                                     foregroundReturnPending = returnLatch.pending,
                                     onForegroundReturnConsumed = { returnLatch.pending = false },
                                     listState = departuresListState,
+                                    farReveal = farReveal,
                                 )
                             else -> {
                                 // While the gate is up (a failed/empty relocate, or a retry), drop
@@ -698,6 +703,7 @@ class MainActivity : ComponentActivity() {
         onForegroundReturnConsumed: () -> Unit,
         // The departures list's scroll position, hoisted by the caller so it survives the overlays.
         listState: LazyListState = rememberLazyListState(),
+        farReveal: FarRevealState? = null,
     ) {
         // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
         // the set changes (the user moved and re-located) rather than left keyed in the
@@ -801,6 +807,17 @@ class MainActivity : ComponentActivity() {
                     if (journey.key in flippedJourneys) oriented.reversed() else oriented
                 }
             }
+            // Journeys more than a mile from both ends wait behind the Faraway favorites button,
+            // unfetched (SPEC *Journeys*). Only a confirmed fix holds one back: without a fix, or on
+            // an approximate or unrefreshed one (a banner is up), every journey shows in full.
+            val farJourneyMeters = remember(shownJourneys, ready.location, locationBannerNow) {
+                Journeys.farJourneys(
+                    shownJourneys,
+                    ready.location.latitude,
+                    ready.location.longitude,
+                    fixConfirmed = locationBannerNow == null,
+                )
+            }
             val journeyScope = rememberCoroutineScope()
             var journeyWriteFailed by rememberSaveable { mutableStateOf(false) }
             // The route page's journey tip: hidden (true) until the setting is read, so it never
@@ -828,10 +845,47 @@ class MainActivity : ComponentActivity() {
             // timer stays departures-only, it doesn't relocate. The cancel-then-relocate-then-
             // reconcile composition is factored into [relocateAction] so a regression back to a
             // departures-only refresh is caught by a unit test.
+            val shownFarReveal = farReveal ?: rememberFarReveal(stopsKey)
+            // Each shown journey's fetched stops, as the screen last reported them; read by a relocate.
+            val journeyStopIds = remember { mutableStateOf(emptyMap<String, Set<String>>()) }
+            val openJourneyKey = remember { mutableStateOf<String?>(null) }
             val onRelocate: () -> Unit = relocateAction(
                 cancelFetch = viewModel::cancelFetch,
                 relocate = relocate,
-                reconcile = { fresh -> viewModel.reconcile(fresh.eager, fresh.more, fresh.distanceMeters) },
+                reconcile = { fresh ->
+                    // A journey the fresh fix puts over a mile away is held back from this refresh
+                    // too, not just from the next one once the screen catches up (Codex). Relocate
+                    // sets the banner before calling here, so a retained or last-known fix (banner
+                    // up) holds nothing back, as on the screen.
+                    val fixConfirmed = locationBanner.value == null
+                    val drop = Journeys.stopIdsToHoldBack(
+                        savedJourneys.orEmpty(),
+                        fresh.location.latitude,
+                        fresh.location.longitude,
+                        fixConfirmed = fixConfirmed,
+                        revealed = shownFarReveal.revealed,
+                        stopIdsByJourney = journeyStopIds.value,
+                        openJourneyKey = openJourneyKey.value,
+                    )
+                    // One the fix releases (back in range, or an unconfirmed fix that holds nothing
+                    // back) waits for the screen to report its stops, so the refresh runs once with
+                    // them (its new card always changes that report). One the screen already shows
+                    // (revealed, or its own view open) isn't waited on.
+                    val await = Journeys.releasesHeldJourney(
+                        savedJourneys.orEmpty(),
+                        fresh.location.latitude,
+                        fresh.location.longitude,
+                        fixConfirmed = fixConfirmed,
+                        heldNow = farJourneyMeters.keys - journeyStopIds.value.keys,
+                    )
+                    viewModel.reconcile(
+                        fresh.eager,
+                        fresh.more,
+                        fresh.distanceMeters,
+                        dropJourneyStopIds = drop,
+                        awaitJourneyStops = await,
+                    )
+                },
             )
             // Consume a latched foreground return (set by the activity-level observer above the
             // overlay switch). Because the latch lives above this view, it survives this view being
@@ -865,8 +919,16 @@ class MainActivity : ComponentActivity() {
                     // (a watched-stops view), which is shown as-is.
                     stopDistanceMeters = ready.distanceMeters,
                     journeys = shownJourneys,
+                    farJourneyMeters = farJourneyMeters,
+                    nearbyKey = stopsKey,
+                    farReveal = shownFarReveal,
                     // The journeys' origins (this way round) are fetched alongside the near-me stops.
                     onJourneyOrigins = viewModel::setJourneyStops,
+                    onJourneyStopIds = { stopIds, openKey ->
+                        journeyStopIds.value = stopIds
+                        openJourneyKey.value = openKey
+                        viewModel.journeyStopsReported()
+                    },
                     onJourneyDestinations = viewModel::setJourneyDestinations,
                     journeyDestinationStops = journeyDestinationStops,
                     journeyDestinationsUnknown = journeyDestinationsUnknown,

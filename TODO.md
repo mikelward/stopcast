@@ -1029,6 +1029,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           origin (Northern line trains to Edgware, none to High Barnet), a train on it that leaves
           before the next direct one shows under "Change at Camden Town", the last stop it shares
           with the route to the far end. Rail only; the widget stays direct-only.
+    - [x] **Hold back faraway journeys** (maintainer, 2026-09-24). A journey more than a mile
+          from both ends of a confirmed fix waits behind a "Faraway favorites" button at the foot
+          of the list, unfetched until tapped for that nearby set; the widget never pins one.
   - [ ] **Home and work, with routing** — the eventual goal: star two places, not two stations,
         and show how to get between them. Needs journey planning, a SPEC non-goal today and a
         separate product + privacy decision (it would send both places to TfL's Journey Planner).
