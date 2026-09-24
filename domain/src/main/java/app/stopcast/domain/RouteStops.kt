@@ -31,6 +31,10 @@ data class LineSequence(
     val stopPositions: Map<String, Pair<Double, Double>> = emptyMap(),
     // Each stop's stop area (TfL `stationId`), where given: opposite bus stops often share one.
     val stopAreas: Map<String, String> = emptyMap(),
+    // Each stop's interchange (TfL `topMostParentId`, e.g. `HUBKGX`), where it has one other than
+    // itself: how a departure listed under one of a station's stop ids finds the sibling id the
+    // route calls at (see [callingAt]).
+    val stopHubs: Map<String, String> = emptyMap(),
 ) {
     operator fun plus(other: LineSequence) =
         LineSequence(
@@ -39,7 +43,47 @@ data class LineSequence(
             stopLines + other.stopLines,
             stopPositions + other.stopPositions,
             stopAreas + other.stopAreas,
+            stopHubs + other.stopHubs,
         )
+
+    /**
+     * This sequence as seen from [stopId], a stop departures or a journey end are listed under. TfL can list a station's
+     * departures under one stop id and route the line through a sibling: St Pancras's Thameslink
+     * trains depart under its domestic-platforms id, while the sequence calls at its main and
+     * low-level ids. When no route calls at [stopId], every stop in the same interchange ([hubId])
+     * that is the same station by name ([stopName], or it plus a platform qualifier like "LL")
+     * becomes [stopId] — so the route page, a journey starred from it, and that journey's trains all
+     * work from the id the departures carry. The name keeps another station in the hub (King's Cross
+     * beside St Pancras) out, which would otherwise make the path ambiguous or wrong. Unchanged when
+     * a route calls at [stopId] or no sibling matches.
+     */
+    fun callingAt(stopId: String, hubId: String, stopName: String): LineSequence {
+        val onRoute = routes.flatMapTo(HashSet()) { it.stopIds }
+        if (stopId in onRoute) return this
+        val name = cleanStopName(stopName)
+        if (hubId.isBlank() || name.isBlank()) return this
+        val siblings = onRoute.filterTo(LinkedHashSet()) { id ->
+            stopHubs[id] == hubId && sameStation(name, stopNames[id].orEmpty())
+        }
+        if (siblings.isEmpty()) return this
+        fun <T> firstOf(map: Map<String, T>): T? = siblings.firstNotNullOfOrNull { map[it] }
+        return copy(
+            routes = routes.map { route -> route.copy(stopIds = route.stopIds.map { if (it in siblings) stopId else it }) },
+            stopNames = stopNames + (stopId to name),
+            stopLines = stopLines + (stopId to siblings.flatMap { stopLines[it].orEmpty() }.distinct()),
+            stopPositions = firstOf(stopPositions)?.let { stopPositions + (stopId to it) } ?: stopPositions,
+            stopAreas = firstOf(stopAreas)?.let { stopAreas + (stopId to it) } ?: stopAreas,
+            stopHubs = stopHubs + (stopId to hubId),
+        )
+    }
+}
+
+// "St Pancras International" and "St Pancras International LL" are one station; "King's Cross" is
+// not. Either name may carry the qualifier, as TfL's ids don't say which one is the main.
+private fun sameStation(a: String, b: String): Boolean {
+    if (a.isBlank() || b.isBlank()) return false
+    val (short, long) = if (a.length <= b.length) a to b else b to a
+    return long.equals(short, ignoreCase = true) || long.startsWith("$short ", ignoreCase = true)
 }
 
 /**

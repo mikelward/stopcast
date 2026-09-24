@@ -94,8 +94,10 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
     // stop still gets the bus rule (and a stop list to star from).
     val mode = row.mode.ifBlank { row.upcoming.firstOrNull { it.mode.isNotBlank() }?.mode.orEmpty() }
     val bus = mode.equals("bus", ignoreCase = true)
-    fun resolve(sequence: LineSequence): RouteStopsUi =
-        when (val resolution = RouteStops.resolve(sequence, row.stopId, destination, next.branch, row.lineId, bus)) {
+    // A station whose departures TfL lists under an id its routes don't call at boards at its sibling.
+    fun resolve(fetched: LineSequence): RouteStopsUi {
+        val sequence = fetched.callingAt(row.stopId, row.hubId, row.stopName)
+        return when (val resolution = RouteStops.resolve(sequence, row.stopId, destination, next.branch, row.lineId, bus)) {
             is RouteStops.Resolution.Found -> RouteStopsUi.Loaded(
                 resolution.stops,
                 resolution.stops.mapNotNull { stop -> sequence.stopPositions[stop.id]?.let { stop.id to it } }.toMap(),
@@ -103,10 +105,11 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
             )
             else -> RouteStopsUi.Unavailable(resolution)
         }
+    }
     // Keyed by the followed train (and the mode, which changes the matching rule), so a change of
     // soonest train (a refresh, or one departing) discards the old state outright: the first frame
     // for the new train is its cached list or Loading, never the previous train's stops.
-    return key(repository, row.lineId, row.direction, row.stopId, destination, next.branch, bus) {
+    return key(repository, row.lineId, row.direction, row.stopId, row.hubId, row.stopName, destination, next.branch, bus) {
         val initial = remember { repository.cached(row.lineId, row.direction)?.let(::resolve) ?: RouteStopsUi.Loading }
         val state by produceState(initial, retry) {
             if (value !is RouteStopsUi.Loading && value !is RouteStopsUi.Failed) return@produceState

@@ -162,6 +162,24 @@ class PersistedSnapshotTest {
     }
 
     @Test
+    fun `the stop's interchange survives the round trip`() {
+        // A restored row's route page boards at a sibling stop id through it, before the refresh.
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(
+                StopArrivals(
+                    stopId = "910GSTPADOM",
+                    stopName = "London St Pancras International",
+                    departures = emptyList(),
+                    fetchedAt = now,
+                    hubId = "HUBKGX",
+                ),
+            ),
+            fetchedAt = now,
+        )
+        assertEquals("HUBKGX", snapshot.toPersisted().toDomain()!!.stops.single().hubId)
+    }
+
+    @Test
     fun `restoring normalizes an older build's raw branch spelling`() {
         // A snapshot a previous build wrote can carry TfL's raw "Charing Cross" / "Bank Branch";
         // restore folds them to the canonical short label so a row never shows two spellings for

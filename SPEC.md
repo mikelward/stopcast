@@ -493,7 +493,11 @@ destination names neither a stop ahead nor the route: a bus blind shows an area 
 its last stop's name, so matching by name alone left most buses with no list. A
 bus short-working whose label *does* name a stop ahead still ends there, and two variants that part
 ways ahead are still unavailable. Rail keeps the strict name match — its destinations are stations,
-so a miss there is a working the sequence doesn't model. Whenever the list is unavailable, the
+so a miss there is a working the sequence doesn't model. **A station TfL lists under one id and routes
+under another** (St Pancras's Thameslink departures, whose route calls at the station's low-level
+platforms) boards at the same-named station in the same interchange — never a different station
+in it, like King's Cross beside St Pancras. A journey starred there keeps the id the departures
+carry, and its card places it the same way. Whenever the list is unavailable, the
 debug log records why (principle 2). The list follows one predicted train, so
 it is **withheld while the row is stale** — that prediction may no longer be the next train — and
 returns with the next refresh (D4). Each station carries a **line pill per connection** — the

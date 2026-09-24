@@ -1,0 +1,2267 @@
+{
+ "lineId": "thameslink",
+ "direction": "inbound",
+ "orderedLineRoutes": [
+  {
+   "name": "Brighton  &harr;  Cambridge ",
+   "naptanIds": [
+    "910GBRGHTN",
+    "910GPRSP",
+    "910GHASOCKS",
+    "910GBURGESH",
+    "910GWVLSFLD",
+    "910GHYWRDSH",
+    "910GBALCOMB",
+    "910GTHBDGS",
+    "910GGTWK",
+    "910GHORLEY",
+    "910GSALFDS",
+    "910GEARLSWD",
+    "910GREDHILL",
+    "910GMERSTHM",
+    "910GCOLSDNS",
+    "910GPURLEY",
+    "910GSCROYDN",
+    "910GECROYDN",
+    "910GNORWDJ",
+    "910GLNDNBDC",
+    "910GBLFR",
+    "910GCTMSLNK",
+    "910GFRNDNLT",
+    "910GSTPXBOX",
+    "910GFNPK",
+    "910GHRGY",
+    "910GALEXNDP",
+    "910GNEWSGAT",
+    "910GOKLGHPK",
+    "910GNBARNET",
+    "910GHADLYWD",
+    "910GPOTRSBR",
+    "910GHATFILD",
+    "910GWLWYNGC",
+    "910GWLWYNN",
+    "910GKNEBWTH",
+    "910GSTEVNGE",
+    "910GHITCHIN",
+    "910GLTCE",
+    "910GBALDOCK",
+    "910GASHWELC",
+    "910GROYSTON",
+    "910GMELDRTH",
+    "910GSHPRTH",
+    "910GFOXTON",
+    "910GCAMBDGE"
+   ]
+  },
+  {
+   "name": "Brighton  &harr;  Bedford ",
+   "naptanIds": [
+    "910GBRGHTN",
+    "910GPRSP",
+    "910GHASOCKS",
+    "910GBURGESH",
+    "910GWVLSFLD",
+    "910GHYWRDSH",
+    "910GBALCOMB",
+    "910GTHBDGS",
+    "910GGTWK",
+    "910GHORLEY",
+    "910GSALFDS",
+    "910GEARLSWD",
+    "910GREDHILL",
+    "910GMERSTHM",
+    "910GCOLSDNS",
+    "910GPURLEY",
+    "910GSCROYDN",
+    "910GECROYDN",
+    "910GNORWDJ",
+    "910GLNDNBDC",
+    "910GBLFR",
+    "910GCTMSLNK",
+    "910GFRNDNLT",
+    "910GSTPXBOX",
+    "910GKNTSHTN",
+    "910GWHMPSTM",
+    "910GCRKLWD",
+    "910GBRENTX",
+    "910GHDON",
+    "910GMLHB",
+    "910GELTR",
+    "910GRADLETT",
+    "910GSTALBCY",
+    "910GHRPNDN",
+    "910GLUTOAPY",
+    "910GLUTON",
+    "910GLEAGRVE",
+    "910GHRLG",
+    "910GFLITWCK",
+    "910GBEDFDM"
+   ]
+  },
+  {
+   "name": "London King's Cross  &harr;  Cambridge ",
+   "naptanIds": [
+    "910GKNGX",
+    "910GFNPK",
+    "910GHRGY",
+    "910GALEXNDP",
+    "910GNEWSGAT",
+    "910GOKLGHPK",
+    "910GNBARNET",
+    "910GHADLYWD",
+    "910GPOTRSBR",
+    "910GHATFILD",
+    "910GWLWYNGC",
+    "910GWLWYNN",
+    "910GKNEBWTH",
+    "910GSTEVNGE",
+    "910GHITCHIN",
+    "910GLTCE",
+    "910GBALDOCK",
+    "910GASHWELC",
+    "910GROYSTON",
+    "910GMELDRTH",
+    "910GSHPRTH",
+    "910GFOXTON",
+    "910GCAMBDGE"
+   ]
+  }
+ ],
+ "stopPointSequences": [
+  {
+   "stopPoint": [
+    {
+     "id": "910GBRGHTN",
+     "name": "Brighton Rail Station",
+     "topMostParentId": "910GBRGHTN",
+     "stationId": "910GBRGHTN",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GPRSP",
+     "name": "Preston Park Rail Station",
+     "topMostParentId": "910GPRSP",
+     "stationId": "910GPRSP",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHASOCKS",
+     "name": "Hassocks Rail Station",
+     "topMostParentId": "910GHASOCKS",
+     "stationId": "910GHASOCKS",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GBURGESH",
+     "name": "Burgess Hill Rail Station",
+     "topMostParentId": "910GBURGESH",
+     "stationId": "910GBURGESH",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GWVLSFLD",
+     "name": "Wivelsfield Rail Station",
+     "topMostParentId": "910GWVLSFLD",
+     "stationId": "910GWVLSFLD",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHYWRDSH",
+     "name": "Haywards Heath Rail Station",
+     "topMostParentId": "910GHYWRDSH",
+     "stationId": "910GHYWRDSH",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GBALCOMB",
+     "name": "Balcombe Rail Station",
+     "topMostParentId": "910GBALCOMB",
+     "stationId": "910GBALCOMB",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GTHBDGS",
+     "name": "Three Bridges Rail Station",
+     "topMostParentId": "910GTHBDGS",
+     "stationId": "910GTHBDGS",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GGTWK",
+     "name": "Gatwick Airport Rail Station",
+     "topMostParentId": "920GLGW0",
+     "stationId": "910GGTWK",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHORLEY",
+     "name": "Horley Rail Station",
+     "topMostParentId": "910GHORLEY",
+     "stationId": "910GHORLEY",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GPURLEY",
+     "name": "Purley Rail Station",
+     "topMostParentId": "910GPURLEY",
+     "stationId": "910GPURLEY",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GSCROYDN",
+     "name": "South Croydon Rail Station",
+     "topMostParentId": "910GSCROYDN",
+     "stationId": "910GSCROYDN",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GECROYDN",
+     "name": "East Croydon Rail Station",
+     "topMostParentId": "HUBECY",
+     "stationId": "910GECROYDN",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GNORWDJ",
+     "name": "Norwood Junction Rail Station",
+     "topMostParentId": "HUBNWD",
+     "stationId": "910GNORWDJ",
+     "modes": [
+      "national-rail",
+      "overground"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GLNDNBDC",
+     "name": "London Bridge Rail Station",
+     "topMostParentId": "HUBLBG",
+     "stationId": "910GLNDNBDC",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GBLFR",
+     "name": "London Blackfriars Rail Station",
+     "topMostParentId": "HUBBFR",
+     "stationId": "910GBLFR",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GCTMSLNK",
+     "name": "City Thameslink Rail Station",
+     "topMostParentId": "910GCTMSLNK",
+     "stationId": "910GCTMSLNK",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GFRNDNLT",
+     "name": "Farringdon Rail Station",
+     "topMostParentId": "HUBZFD",
+     "stationId": "910GFRNDNLT",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GSTPXBOX",
+     "name": "London St Pancras International LL Rail Station",
+     "topMostParentId": "HUBKGX",
+     "stationId": "910GSTPXBOX",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GKNTSHTN",
+     "name": "Kentish Town Rail Station",
+     "topMostParentId": "HUBKTN",
+     "stationId": "910GKNTSHTN",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GWHMPSTM",
+     "name": "West Hampstead Thameslink Rail Station",
+     "topMostParentId": "HUBWHD",
+     "stationId": "910GWHMPSTM",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GCRKLWD",
+     "name": "Cricklewood Rail Station",
+     "topMostParentId": "910GCRKLWD",
+     "stationId": "910GCRKLWD",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GBRENTX",
+     "name": "Brent Cross West Station",
+     "topMostParentId": "910GBRENTX",
+     "stationId": "910GBRENTX",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHDON",
+     "name": "Hendon Rail Station",
+     "topMostParentId": "910GHDON",
+     "stationId": "910GHDON",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GMLHB",
+     "name": "Mill Hill Broadway Rail Station",
+     "topMostParentId": "910GMLHB",
+     "stationId": "910GMLHB",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GELTR",
+     "name": "Elstree & Borehamwood Rail Station",
+     "topMostParentId": "910GELTR",
+     "stationId": "910GELTR",
+     "modes": [
+      "national-rail",
+      "bus"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GRADLETT",
+     "name": "Radlett Rail Station",
+     "topMostParentId": "910GRADLETT",
+     "stationId": "910GRADLETT",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GSTALBCY",
+     "name": "St Albans City Rail Station",
+     "topMostParentId": "910GSTALBCY",
+     "stationId": "910GSTALBCY",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHRPNDN",
+     "name": "Harpenden Rail Station",
+     "topMostParentId": "910GHRPNDN",
+     "stationId": "910GHRPNDN",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GLUTOAPY",
+     "name": "Luton Airport Parkway Rail Station",
+     "topMostParentId": "910GLUTOAPY",
+     "stationId": "910GLUTOAPY",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GLUTON",
+     "name": "Luton Rail Station",
+     "topMostParentId": "910GLUTON",
+     "stationId": "910GLUTON",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GLEAGRVE",
+     "name": "Leagrave Rail Station",
+     "topMostParentId": "910GLEAGRVE",
+     "stationId": "910GLEAGRVE",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHRLG",
+     "name": "Harlington (Beds) Rail Station",
+     "topMostParentId": "910GHRLG",
+     "stationId": "910GHRLG",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GFLITWCK",
+     "name": "Flitwick Rail Station",
+     "topMostParentId": "910GFLITWCK",
+     "stationId": "910GFLITWCK",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GBEDFDM",
+     "name": "Bedford Rail Station",
+     "topMostParentId": "910GBEDFDM",
+     "stationId": "910GBEDFDM",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GSALFDS",
+     "name": "Salfords (Surrey) Rail Station",
+     "topMostParentId": "910GSALFDS",
+     "stationId": "910GSALFDS",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GEARLSWD",
+     "name": "Earlswood (Surrey) Rail Station",
+     "topMostParentId": "910GEARLSWD",
+     "stationId": "910GEARLSWD",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GREDHILL",
+     "name": "Redhill Rail Station",
+     "topMostParentId": "910GREDHILL",
+     "stationId": "910GREDHILL",
+     "modes": [
+      "national-rail",
+      "bus"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GMERSTHM",
+     "name": "Merstham Rail Station",
+     "topMostParentId": "910GMERSTHM",
+     "stationId": "910GMERSTHM",
+     "modes": [
+      "national-rail",
+      "bus"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GCOLSDNS",
+     "name": "Coulsdon South Rail Station",
+     "topMostParentId": "910GCOLSDNS",
+     "stationId": "910GCOLSDNS",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GFNPK",
+     "name": "Finsbury Park Rail Station",
+     "topMostParentId": "HUBFPK",
+     "stationId": "910GFNPK",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHRGY",
+     "name": "Harringay Rail Station",
+     "topMostParentId": "910GHRGY",
+     "stationId": "910GHRGY",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GALEXNDP",
+     "name": "Alexandra Palace Rail Station",
+     "topMostParentId": "910GALEXNDP",
+     "stationId": "910GALEXNDP",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GNEWSGAT",
+     "name": "New Southgate Rail Station",
+     "topMostParentId": "910GNEWSGAT",
+     "stationId": "910GNEWSGAT",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GOKLGHPK",
+     "name": "Oakleigh Park Rail Station",
+     "topMostParentId": "910GOKLGHPK",
+     "stationId": "910GOKLGHPK",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GNBARNET",
+     "name": "New Barnet Rail Station",
+     "topMostParentId": "910GNBARNET",
+     "stationId": "910GNBARNET",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHADLYWD",
+     "name": "Hadley Wood Rail Station",
+     "topMostParentId": "910GHADLYWD",
+     "stationId": "910GHADLYWD",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GPOTRSBR",
+     "name": "Potters Bar Rail Station",
+     "topMostParentId": "910GPOTRSBR",
+     "stationId": "910GPOTRSBR",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHATFILD",
+     "name": "Hatfield (Herts) Rail Station",
+     "topMostParentId": "910GHATFILD",
+     "stationId": "910GHATFILD",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GWLWYNGC",
+     "name": "Welwyn Garden City Rail Station",
+     "topMostParentId": "910GWLWYNGC",
+     "stationId": "910GWLWYNGC",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GWLWYNN",
+     "name": "Welwyn North Rail Station",
+     "topMostParentId": "910GWLWYNN",
+     "stationId": "910GWLWYNN",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GKNEBWTH",
+     "name": "Knebworth Rail Station",
+     "topMostParentId": "910GKNEBWTH",
+     "stationId": "910GKNEBWTH",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GSTEVNGE",
+     "name": "Stevenage Rail Station",
+     "topMostParentId": "910GSTEVNGE",
+     "stationId": "910GSTEVNGE",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GHITCHIN",
+     "name": "Hitchin Rail Station",
+     "topMostParentId": "910GHITCHIN",
+     "stationId": "910GHITCHIN",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GLTCE",
+     "name": "Letchworth Garden City Rail Station",
+     "topMostParentId": "910GLTCE",
+     "stationId": "910GLTCE",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GBALDOCK",
+     "name": "Baldock Rail Station",
+     "topMostParentId": "910GBALDOCK",
+     "stationId": "910GBALDOCK",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GASHWELC",
+     "name": "Ashwell & Morden Rail Station",
+     "topMostParentId": "910GASHWELC",
+     "stationId": "910GASHWELC",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GROYSTON",
+     "name": "Royston Rail Station",
+     "topMostParentId": "910GROYSTON",
+     "stationId": "910GROYSTON",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GMELDRTH",
+     "name": "Meldreth Rail Station",
+     "topMostParentId": "910GMELDRTH",
+     "stationId": "910GMELDRTH",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GSHPRTH",
+     "name": "Shepreth Rail Station",
+     "topMostParentId": "910GSHPRTH",
+     "stationId": "910GSHPRTH",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GFOXTON",
+     "name": "Foxton Rail Station",
+     "topMostParentId": "910GFOXTON",
+     "stationId": "910GFOXTON",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GCAMBDGE",
+     "name": "Cambridge Rail Station",
+     "topMostParentId": "910GCAMBDGE",
+     "stationId": "910GCAMBDGE",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    },
+    {
+     "id": "910GKNGX",
+     "name": "London King's Cross Rail Station",
+     "topMostParentId": "HUBKGX",
+     "stationId": "910GKNGX",
+     "modes": [
+      "national-rail"
+     ],
+     "lines": [
+      {
+       "id": "great-northern",
+       "name": "Great Northern"
+      },
+      {
+       "id": "thameslink",
+       "name": "Thameslink"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "stations": [
+  {
+   "id": "910GALEXNDP",
+   "name": "Alexandra Palace Rail Station",
+   "topMostParentId": "910GALEXNDP",
+   "stationId": "910GALEXNDP",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GASHWELC",
+   "name": "Ashwell & Morden Rail Station",
+   "topMostParentId": "910GASHWELC",
+   "stationId": "910GASHWELC",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GBALCOMB",
+   "name": "Balcombe Rail Station",
+   "topMostParentId": "910GBALCOMB",
+   "stationId": "910GBALCOMB",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GBALDOCK",
+   "name": "Baldock Rail Station",
+   "topMostParentId": "910GBALDOCK",
+   "stationId": "910GBALDOCK",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GBEDFDM",
+   "name": "Bedford Rail Station",
+   "topMostParentId": "910GBEDFDM",
+   "stationId": "910GBEDFDM",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GBRENTX",
+   "name": "Brent Cross West Station",
+   "topMostParentId": "910GBRENTX",
+   "stationId": "910GBRENTX",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GBRGHTN",
+   "name": "Brighton Rail Station",
+   "topMostParentId": "910GBRGHTN",
+   "stationId": "910GBRGHTN",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GBURGESH",
+   "name": "Burgess Hill Rail Station",
+   "topMostParentId": "910GBURGESH",
+   "stationId": "910GBURGESH",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GCAMBDGE",
+   "name": "Cambridge Rail Station",
+   "topMostParentId": "910GCAMBDGE",
+   "stationId": "910GCAMBDGE",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GCOLSDNS",
+   "name": "Coulsdon South Rail Station",
+   "topMostParentId": "910GCOLSDNS",
+   "stationId": "910GCOLSDNS",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GCRKLWD",
+   "name": "Cricklewood Rail Station",
+   "topMostParentId": "910GCRKLWD",
+   "stationId": "910GCRKLWD",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GCTMSLNK",
+   "name": "City Thameslink Rail Station",
+   "topMostParentId": "910GCTMSLNK",
+   "stationId": "910GCTMSLNK",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GEARLSWD",
+   "name": "Earlswood (Surrey) Rail Station",
+   "topMostParentId": "910GEARLSWD",
+   "stationId": "910GEARLSWD",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GELTR",
+   "name": "Elstree & Borehamwood Rail Station",
+   "topMostParentId": "910GELTR",
+   "stationId": "910GELTR",
+   "modes": [
+    "national-rail",
+    "bus"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GFLITWCK",
+   "name": "Flitwick Rail Station",
+   "topMostParentId": "910GFLITWCK",
+   "stationId": "910GFLITWCK",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GFOXTON",
+   "name": "Foxton Rail Station",
+   "topMostParentId": "910GFOXTON",
+   "stationId": "910GFOXTON",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHADLYWD",
+   "name": "Hadley Wood Rail Station",
+   "topMostParentId": "910GHADLYWD",
+   "stationId": "910GHADLYWD",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHASOCKS",
+   "name": "Hassocks Rail Station",
+   "topMostParentId": "910GHASOCKS",
+   "stationId": "910GHASOCKS",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHATFILD",
+   "name": "Hatfield (Herts) Rail Station",
+   "topMostParentId": "910GHATFILD",
+   "stationId": "910GHATFILD",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHDON",
+   "name": "Hendon Rail Station",
+   "topMostParentId": "910GHDON",
+   "stationId": "910GHDON",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHITCHIN",
+   "name": "Hitchin Rail Station",
+   "topMostParentId": "910GHITCHIN",
+   "stationId": "910GHITCHIN",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHORLEY",
+   "name": "Horley Rail Station",
+   "topMostParentId": "910GHORLEY",
+   "stationId": "910GHORLEY",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHRGY",
+   "name": "Harringay Rail Station",
+   "topMostParentId": "910GHRGY",
+   "stationId": "910GHRGY",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHRLG",
+   "name": "Harlington (Beds) Rail Station",
+   "topMostParentId": "910GHRLG",
+   "stationId": "910GHRLG",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHRPNDN",
+   "name": "Harpenden Rail Station",
+   "topMostParentId": "910GHRPNDN",
+   "stationId": "910GHRPNDN",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GHYWRDSH",
+   "name": "Haywards Heath Rail Station",
+   "topMostParentId": "910GHYWRDSH",
+   "stationId": "910GHYWRDSH",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GKNEBWTH",
+   "name": "Knebworth Rail Station",
+   "topMostParentId": "910GKNEBWTH",
+   "stationId": "910GKNEBWTH",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GLEAGRVE",
+   "name": "Leagrave Rail Station",
+   "topMostParentId": "910GLEAGRVE",
+   "stationId": "910GLEAGRVE",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GLTCE",
+   "name": "Letchworth Garden City Rail Station",
+   "topMostParentId": "910GLTCE",
+   "stationId": "910GLTCE",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GLUTOAPY",
+   "name": "Luton Airport Parkway Rail Station",
+   "topMostParentId": "910GLUTOAPY",
+   "stationId": "910GLUTOAPY",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GLUTON",
+   "name": "Luton Rail Station",
+   "topMostParentId": "910GLUTON",
+   "stationId": "910GLUTON",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GMELDRTH",
+   "name": "Meldreth Rail Station",
+   "topMostParentId": "910GMELDRTH",
+   "stationId": "910GMELDRTH",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GMERSTHM",
+   "name": "Merstham Rail Station",
+   "topMostParentId": "910GMERSTHM",
+   "stationId": "910GMERSTHM",
+   "modes": [
+    "national-rail",
+    "bus"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GMLHB",
+   "name": "Mill Hill Broadway Rail Station",
+   "topMostParentId": "910GMLHB",
+   "stationId": "910GMLHB",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GNBARNET",
+   "name": "New Barnet Rail Station",
+   "topMostParentId": "910GNBARNET",
+   "stationId": "910GNBARNET",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GNEWSGAT",
+   "name": "New Southgate Rail Station",
+   "topMostParentId": "910GNEWSGAT",
+   "stationId": "910GNEWSGAT",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GOKLGHPK",
+   "name": "Oakleigh Park Rail Station",
+   "topMostParentId": "910GOKLGHPK",
+   "stationId": "910GOKLGHPK",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GPOTRSBR",
+   "name": "Potters Bar Rail Station",
+   "topMostParentId": "910GPOTRSBR",
+   "stationId": "910GPOTRSBR",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GPRSP",
+   "name": "Preston Park Rail Station",
+   "topMostParentId": "910GPRSP",
+   "stationId": "910GPRSP",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GPURLEY",
+   "name": "Purley Rail Station",
+   "topMostParentId": "910GPURLEY",
+   "stationId": "910GPURLEY",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GRADLETT",
+   "name": "Radlett Rail Station",
+   "topMostParentId": "910GRADLETT",
+   "stationId": "910GRADLETT",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GREDHILL",
+   "name": "Redhill Rail Station",
+   "topMostParentId": "910GREDHILL",
+   "stationId": "910GREDHILL",
+   "modes": [
+    "national-rail",
+    "bus"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GROYSTON",
+   "name": "Royston Rail Station",
+   "topMostParentId": "910GROYSTON",
+   "stationId": "910GROYSTON",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GSALFDS",
+   "name": "Salfords (Surrey) Rail Station",
+   "topMostParentId": "910GSALFDS",
+   "stationId": "910GSALFDS",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GSCROYDN",
+   "name": "South Croydon Rail Station",
+   "topMostParentId": "910GSCROYDN",
+   "stationId": "910GSCROYDN",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GSHPRTH",
+   "name": "Shepreth Rail Station",
+   "topMostParentId": "910GSHPRTH",
+   "stationId": "910GSHPRTH",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GSTALBCY",
+   "name": "St Albans City Rail Station",
+   "topMostParentId": "910GSTALBCY",
+   "stationId": "910GSTALBCY",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GSTEVNGE",
+   "name": "Stevenage Rail Station",
+   "topMostParentId": "910GSTEVNGE",
+   "stationId": "910GSTEVNGE",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GTHBDGS",
+   "name": "Three Bridges Rail Station",
+   "topMostParentId": "910GTHBDGS",
+   "stationId": "910GTHBDGS",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GWLWYNGC",
+   "name": "Welwyn Garden City Rail Station",
+   "topMostParentId": "910GWLWYNGC",
+   "stationId": "910GWLWYNGC",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GWLWYNN",
+   "name": "Welwyn North Rail Station",
+   "topMostParentId": "910GWLWYNN",
+   "stationId": "910GWLWYNN",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "910GWVLSFLD",
+   "name": "Wivelsfield Rail Station",
+   "topMostParentId": "910GWVLSFLD",
+   "stationId": "910GWVLSFLD",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "920GLGW0",
+   "name": "London Gatwick Airport",
+   "topMostParentId": "920GLGW0",
+   "stationId": "920GLGW0",
+   "modes": [
+    "national-rail"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "HUBBFR",
+   "name": "Blackfriars",
+   "modes": [
+    "bus",
+    "national-rail",
+    "tube"
+   ],
+   "lines": [
+    {
+     "id": "circle",
+     "name": "Circle"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "HUBECY",
+   "name": "East Croydon",
+   "modes": [
+    "bus",
+    "national-rail",
+    "tram"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "HUBFPK",
+   "name": "Finsbury Park",
+   "modes": [
+    "bus",
+    "national-rail",
+    "tube"
+   ],
+   "lines": [
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "piccadilly",
+     "name": "Piccadilly"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    },
+    {
+     "id": "victoria",
+     "name": "Victoria"
+    }
+   ]
+  },
+  {
+   "id": "HUBKGX",
+   "name": "King's Cross & St Pancras International",
+   "modes": [
+    "bus",
+    "international-rail",
+    "national-rail",
+    "tube"
+   ],
+   "lines": [
+    {
+     "id": "circle",
+     "name": "Circle"
+    },
+    {
+     "id": "great-northern",
+     "name": "Great Northern"
+    },
+    {
+     "id": "hammersmith-city",
+     "name": "Hammersmith & City"
+    },
+    {
+     "id": "metropolitan",
+     "name": "Metropolitan"
+    },
+    {
+     "id": "northern",
+     "name": "Northern"
+    },
+    {
+     "id": "piccadilly",
+     "name": "Piccadilly"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    },
+    {
+     "id": "victoria",
+     "name": "Victoria"
+    }
+   ]
+  },
+  {
+   "id": "HUBKTN",
+   "name": "Kentish Town",
+   "modes": [
+    "bus",
+    "national-rail",
+    "tube"
+   ],
+   "lines": [
+    {
+     "id": "northern",
+     "name": "Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "HUBLBG",
+   "name": "London Bridge",
+   "modes": [
+    "bus",
+    "national-rail",
+    "tube"
+   ],
+   "lines": [
+    {
+     "id": "northern",
+     "name": "Northern"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "HUBNWD",
+   "name": "Norwood Junction",
+   "modes": [
+    "bus",
+    "national-rail",
+    "overground"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "HUBWHD",
+   "name": "West Hampstead",
+   "modes": [
+    "bus",
+    "national-rail",
+    "overground",
+    "tube"
+   ],
+   "lines": [
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  },
+  {
+   "id": "HUBZFD",
+   "name": "Farringdon",
+   "modes": [
+    "bus",
+    "elizabeth-line",
+    "national-rail",
+    "tube"
+   ],
+   "lines": [
+    {
+     "id": "circle",
+     "name": "Circle"
+    },
+    {
+     "id": "elizabeth",
+     "name": "Elizabeth line"
+    },
+    {
+     "id": "hammersmith-city",
+     "name": "Hammersmith & City"
+    },
+    {
+     "id": "metropolitan",
+     "name": "Metropolitan"
+    },
+    {
+     "id": "thameslink",
+     "name": "Thameslink"
+    }
+   ]
+  }
+ ]
+}
