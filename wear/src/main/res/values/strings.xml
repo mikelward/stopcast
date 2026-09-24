@@ -17,6 +17,8 @@
     <string name="tile_no_departures">No departures</string>
     <!-- A stop with no departures to show whose last refresh failed, so it may have some. -->
     <string name="tile_may_be_out_of_date">May be out of date</string>
+    <!-- Every departure there is belongs to a mode hidden on the phone. -->
+    <string name="tile_only_hidden">Nothing else to show with modes hidden</string>
     <!-- When no stop has a row: a stop's name, then its empty form ("No departures"). -->
     <string name="tile_stop_empty">%1$s · %2$s</string>
     <!-- Stops left out because the snapshot was too big to send. -->

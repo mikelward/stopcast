@@ -1182,7 +1182,7 @@ failed Play update check's exception class — never a raw coordinate or the use
 **The Wear OS watch sync** (dev-docs/wear-os.md; maintainer, 2026-09-24): when a paired watch has
 the StopCast watch app, the phone sends it the widget's snapshot — its stops' names and IDs, their
 departures, the nearer-stop lists the terminating filter compares against (location-derived place
-data), and the starred-row keys — never a coordinate or a key. The watch sends back the rows its
+data), the starred-row keys and the hidden modes — never a coordinate or a key. The watch sends back the rows its
 complications show and its refresh requests. It goes over Google Play services' Wearable Data Layer,
 which may relay through Google's servers when the watch isn't on Bluetooth; that relay is accepted,
 with this disclosure. Nothing is sent when no paired watch has the app. `docs/PRIVACY.md` carries

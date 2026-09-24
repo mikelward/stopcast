@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import app.stopcast.StopcastDebugLog
 import app.stopcast.data.DataStoreSnapshotStore
 import app.stopcast.data.DataStoreStarredRowsStore
+import app.stopcast.data.HiddenModesSetting
 import app.stopcast.data.WatchPayload
 import app.stopcast.data.WatchSyncContract
 import app.stopcast.domain.DeparturesSnapshot
@@ -118,7 +119,7 @@ object WatchSync {
 
     /**
      * Publishes what is stored now, read under the process-wide publish lock, so whichever of the
-     * collector and the worker runs last sends the newest snapshot and stars.
+     * collector and the worker runs last sends the newest snapshot, stars and hidden modes.
      */
     suspend fun publishCurrent(context: Context, force: Boolean): WatchPublisher.Outcome {
         val appContext = context.applicationContext
@@ -132,7 +133,8 @@ object WatchSync {
                 StopcastDebugLog.warning("watch: stored state unreadable: %s", e::class.simpleName)
                 return@withLock WatchPublisher.Outcome.Failed
             }
-            publisher(appContext).publish(snapshot, stars, force)
+            // The same in-process setting the widget reads, so the watch leaves out what it does.
+            publisher(appContext).publish(snapshot, stars, HiddenModesSetting.loaded(), force = force)
         }
     }
 
@@ -151,7 +153,7 @@ object WatchSync {
         scope.launch(Dispatchers.IO) {
             try {
                 // Each settled change is a cue; the publish itself reads the latest stored state.
-                WatchPublisher.requests(snapshots(appContext), starred(appContext)).collect {
+                WatchPublisher.requests(snapshots(appContext), starred(appContext), HiddenModesSetting.changes).collect {
                     if (publishCurrent(appContext, force = false) == WatchPublisher.Outcome.Failed) {
                         WatchPublishWorker.enqueue(appContext, force = false)
                     }

@@ -236,4 +236,28 @@ class TileTimelineTest {
         val headers = (TileTimeline.frame(envelope(a, b), fetched) as TileFrame.Rows).lines.filterIsInstance<TileLine.Header>()
         assertTrue(headers.all { it.spoken.isNotBlank() })
     }
+
+    @Test
+    fun `a mode hidden on the phone is left out, as on the widget`() {
+        val bus = Departure("73", "73", "outbound", "Oxford Circus", null, fetched.plusSeconds(120), "bus")
+        val tube = departure(180)
+        val env = envelope(stop("940GA", listOf(bus, tube))).copy(hiddenModes = listOf("bus"))
+        assertEquals(listOf("victoria"), rows(TileTimeline.frame(env, fetched)).map { it.lineId })
+    }
+
+    @Test
+    fun `when every row is of a hidden mode the tile says so, not "No departures"`() {
+        val bus = Departure("73", "73", "outbound", "Oxford Circus", null, fetched.plusSeconds(120), "bus")
+        val env = envelope(stop("940GA", listOf(bus), line = "73")).copy(hiddenModes = listOf("bus"))
+        assertEquals(listOf(TileLine.OnlyHidden), (TileTimeline.frame(env, fetched) as TileFrame.Rows).lines)
+    }
+
+    @Test
+    fun `a busy hidden mode doesn't spend the entry budget`() {
+        val buses = (1..150L).map { Departure("73", "73", "outbound", "Oxford Circus", null, fetched.plusSeconds(it * 2), "bus") }
+        val env = envelope(stop("940GA", buses + departure(200))).copy(hiddenModes = listOf("bus"))
+        val schedule = TileTimeline.schedule(env, fetched)
+        assertNull(schedule.refreshAt)
+        assertTrue(schedule.entries.size < TileTimeline.MAX_ENTRIES)
+    }
 }

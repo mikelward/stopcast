@@ -5,6 +5,7 @@ import app.stopcast.data.toDomain
 import app.stopcast.domain.Countdown
 import app.stopcast.domain.DepartureLabels
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.HiddenModes
 import app.stopcast.domain.RouteTopology
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
@@ -38,6 +39,10 @@ sealed interface TileLine {
 
     /** A stop with no rows, listed when no stop has any: its name and the empty form it's owed. */
     data class EmptyStop(val stopName: String, val uncertain: Boolean) : TileLine
+
+    /** Every row there is belongs to a mode hidden on the phone: said so, as on the widget, never
+     *  "No departures". */
+    data object OnlyHidden : TileLine
 }
 
 /** What the tile shows at one instant. */
@@ -144,7 +149,9 @@ object TileTimeline {
         // Fresh rows ahead of stale ones (as the widget orders its cap), then favorites first.
         val ordered = DepartureRows.across(stops, now, splitPlatforms = false)
             .sortedBy { if (staleStop[it.stopId] == true) 1 else 0 }
-        val pinned = DepartureRows.pinStarred(ordered, starred)
+        // Less the modes hidden from the near-me list, as the widget leaves them out.
+        val shown = HiddenModes.rows(ordered, envelope.hiddenModes.toSet())
+        val pinned = DepartureRows.pinStarred(shown, starred)
         val lines = buildList {
             for (chosen in BudgetedRows.select(pinned, budget, MAX_TIMES, topology)) {
                 chosen.header?.let { add(TileLine.Header(it.text, it.spoken)) }
@@ -160,6 +167,8 @@ object TileTimeline {
                 }
             }
         }.ifEmpty {
+            // Rows, but all of a hidden mode: the widget's "nothing else to show" state.
+            if (shown.isEmpty() && ordered.isNotEmpty()) return@ifEmpty listOf(TileLine.OnlyHidden)
             // No rows anywhere: each stop with its own empty form, "No departures" or, for arrivals
             // carried from a failed refresh or past their boundary (an absence from expired data
             // isn't current), "may be out of date" (dev-docs/wear-os.md *Stops but no rows*).
@@ -208,6 +217,8 @@ object TileTimeline {
         fun add(at: Instant) {
             if (at > now && at < horizon) breaks += at
         }
+        // A hidden mode's departures never show, so they mustn't spend the entry budget either.
+        val hidden = envelope.hiddenModes.toSet()
         for (stop in stops) {
             add(stop.fetchedAt.plus(threshold))
             // Each minute of this stop's age, from the first one after now.
@@ -219,6 +230,7 @@ object TileTimeline {
                 minute = minute.plusSeconds(60)
             }
             for (departure in stop.departures) {
+                if (HiddenModes.isHidden(departure.mode, hidden)) continue
                 val arrival = departure.expectedArrival
                 if (arrival <= now) continue
                 // It drops off the moment it departs; before that, its minute count goes down just
