@@ -897,6 +897,15 @@ adds **no new Play Data Safety surface**. If Play is unavailable the feature sil
 (dot hidden). A failed check logs the exception's class name only (PII-free) — see
 `docs/PRIVACY.md`.
 
+### Language
+
+The app's users are in the UK, so **British English (en-GB) is first-tier**: a phone set to
+English (United Kingdom) reads "Faraway favourites", "licences", "per cent". The strings are
+written in US English (en-US) as the base — for tooling and parity with the sibling repos — and
+every one whose British spelling or usage differs carries an en-GB override (maintainer,
+2026-09-24); any other English locale reads the base. TfL's own line and place names stay as TfL
+spells them.
+
 ## Architecture
 
 - **Kotlin + Jetpack Compose**, a single `:app` module (mirroring simmo and Type

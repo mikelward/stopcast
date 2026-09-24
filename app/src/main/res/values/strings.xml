@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<!-- The en-US base (tools:locale): en-GB overrides only what differs, in values-en-rGB. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="en">
     <string name="app_name">StopDash</string>
 
     <!-- Freshness stamp in the top bar. %1$s is "just now" / "3 min ago". -->

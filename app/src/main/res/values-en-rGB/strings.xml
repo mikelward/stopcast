@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- British English (en-GB), the app's primary audience: every user-facing string whose spelling or
+     usage differs from the en-US base (values/strings.xml) is overridden here; the rest fall back to
+     the base. EnGbStringsTest fails a base string with a US spelling that has no override here. -->
+<resources>
+    <string name="settings_text_size_content_description">Text size, %1$d per cent</string>
+    <string name="settings_licenses_title">Open source licences</string>
+    <string name="journeys_faraway">Faraway favourites</string>
+    <string name="licenses_link_failed">No app to open the licence page</string>
+</resources>
