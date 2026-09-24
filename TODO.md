@@ -969,6 +969,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
     - [x] **Journeys lead the widget too** (maintainer, 2026-09-23). The app saves each origin
           and its far-end-calling departures (line, destination, branch) with the widget snapshot;
           the widget pins them and hides a journey-only stop's other rows.
+    - [x] **One copy of the widget's pins.** Each check is applied to the stored pins in one step
+          and the app's saves never write them, replacing the per-screen copy (and its restore,
+          re-save and ordering machinery) that kept racing other writers.
     - [ ] **Other poles in the origin's stop area.** A journey boards at one pole, so a line that
           serves the segment from a sibling pole (same stop area, e.g. stop K beside stop L) isn't
           fetched or shown. Needs the area's poles and their lines (a `/StopPoint` lookup per
