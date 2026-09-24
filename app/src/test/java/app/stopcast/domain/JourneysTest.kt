@@ -206,6 +206,11 @@ class JourneysTest {
         val rows = rowsAt("PARKN", departure("Dale", 60, "b2", "bus"))
         fun shown(line: LineSequence) = Journeys.trains(segment, rows, mapOf("b1" to bus(), "b2" to line), parkToHill).rows
         assertEquals(listOf("b2"), shown(b2(51.5109 to -0.12)).map { it.lineId })
+        // The far-end stop it actually reaches is reported, so that stop's closure is checked too.
+        assertEquals(
+            setOf("HIGHN"),
+            Journeys.trains(segment, rows, mapOf("b1" to bus(), "b2" to b2(51.5109 to -0.12)), parkToHill).reachedIds,
+        )
         // The same name further off is another place; a stop as close by another name is too.
         assertTrue(shown(b2(51.5125 to -0.12)).isEmpty())
         assertTrue(shown(b2(51.5109 to -0.12, "Ridge")).isEmpty())
@@ -262,6 +267,24 @@ class JourneysTest {
         val rows = rowsAt("PARKK", departure("Hill", 60, "b3", "bus"))
         val trains = Journeys.trains(JourneySegment("PARKK", emptySet()), rows, mapOf("b3" to b3), parkToHill)
         assertEquals(listOf("b3"), trains.rows.map { it.lineId })
+    }
+
+    @Test
+    fun `a suspended line kept for its warning reports the far-end stop it serves`() {
+        val segment = Journeys.segment(parkToHill, bus())!!
+        val b2 = LineSequence(
+            routes = listOf(LineRoute("Park ↔ Hill", listOf("PARKN", "HILLN2"))),
+            stopNames = mapOf("PARKN" to "Park", "HILLN2" to "Hill"),
+        )
+        val suspended = LineStatus("b2", 6, "Suspended")
+        val rows = DepartureRows.across(
+            listOf(StopArrivals("PARKN", "Park", emptyList(), now, lines = listOf(LineRef("b2", "B2", "bus")))),
+            now,
+            mapOf("b2" to suspended),
+        )
+        val trains = Journeys.trains(segment, rows, mapOf("b1" to bus(), "b2" to b2), parkToHill)
+        assertEquals(listOf("b2"), trains.rows.map { it.lineId })
+        assertTrue("HILLN2" in trains.reachedIds)
     }
 
     @Test

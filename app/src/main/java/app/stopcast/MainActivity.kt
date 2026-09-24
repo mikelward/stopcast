@@ -747,6 +747,8 @@ class MainActivity : ComponentActivity() {
                 },
             )
             val state by viewModel.state.collectAsStateWithLifecycle()
+            val journeyDestinationStops by viewModel.journeyDestinationStops.collectAsStateWithLifecycle()
+            val journeyDestinationsUnknown by viewModel.journeyDestinationsUnknown.collectAsStateWithLifecycle()
             val departuresRefreshing by viewModel.refreshing.collectAsStateWithLifecycle()
             // A relocate holds the indicator on for the whole fresh fix, not just the departures
             // fetch that follows a same-set confirmation.
@@ -837,6 +839,9 @@ class MainActivity : ComponentActivity() {
                     journeys = shownJourneys,
                     // The journeys' origins (this way round) are fetched alongside the near-me stops.
                     onJourneyOrigins = viewModel::setJourneyStops,
+                    onJourneyDestinations = viewModel::setJourneyDestinations,
+                    journeyDestinationStops = journeyDestinationStops,
+                    journeyDestinationsUnknown = journeyDestinationsUnknown,
                     onWidgetJourneys = viewModel::setWidgetJourneys,
                     journeysKnown = savedJourneys != null,
                     journeysLoading = journeysRead == null,

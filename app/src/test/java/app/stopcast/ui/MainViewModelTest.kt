@@ -2782,8 +2782,12 @@ class MainViewModelTest {
             return statuses.filter { it.lineId in lineIds }
         }
 
+        // Held open while set, so a test can act with a closure check in flight.
+        var disruptionsGate: CompletableDeferred<Unit>? = null
+
         override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
             disruptionCalls.merge(stopId, 1) { a, b -> a + b }
+            disruptionsGate?.await()
             if (stopId in failingDisruptions) throw TflException.RateLimited(null)
             return closures[stopId].orEmpty()
         }
@@ -2791,6 +2795,190 @@ class MainViewModelTest {
 
     private val oxcId = "940GZZLUOXC"
     private val ksxId = "940GZZLUKSX"
+
+    @Test
+    fun `a destination the refresh also fetches is checked once`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(
+            client, listOf(seeds.first()), clock = { now }, io = dispatcher, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+        // One journey's far end is another's origin, fetched with the near-me stops.
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        vm.setJourneyDestinations(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+        assertEquals(1, client.disruptionCalls[ksxId])
+    }
+
+    @Test
+    fun `a destination added mid-check doesn't re-ask the ones in flight`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(
+            client, listOf(seeds.first()), clock = { now }, io = dispatcher, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        client.disruptionsGate = gate
+        vm.setJourneyDestinations(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        runCurrent()
+        // A second route comes in while the first check is waiting on TfL.
+        vm.setJourneyDestinations(listOf(StopRef(ksxId, "King's Cross St. Pancras"), StopRef(oxcId, "Oxford Circus")))
+        runCurrent()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, client.disruptionCalls[ksxId])
+        assertEquals(1, client.disruptionCalls[oxcId])
+        assertEquals(setOf(ksxId, oxcId), vm.journeyDestinationStops.value.mapTo(HashSet()) { it.stopId })
+    }
+
+    @Test
+    fun `a refresh during a destination check waits on its request rather than ask again`() =
+        refreshDuringDestinationCheck(failing = false)
+
+    @Test
+    fun `a destination request the refresh waited on that fails isn't asked again at once`() =
+        refreshDuringDestinationCheck(failing = true)
+
+    private fun refreshDuringDestinationCheck(failing: Boolean) = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        if (failing) client.failingDisruptions += ksxId
+        val vm = MainViewModel(
+            client, listOf(seeds.first()), clock = { now }, io = dispatcher, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        client.disruptionsGate = gate
+        vm.setJourneyDestinations(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        runCurrent()
+        // The same stop becomes a journey's origin, fetched by the refresh, while its check waits on TfL.
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        runCurrent()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, client.disruptionCalls[ksxId])
+    }
+
+    @Test
+    fun `an abandoned destination check's failure is still logged`() = runTest(dispatcher) {
+        val warnings = mutableListOf<String>()
+        val client = ReuseCountingClient()
+        client.failingDisruptions += ksxId
+        val vm = MainViewModel(
+            client, listOf(seeds.first()), clock = { now }, io = dispatcher, warn = { warnings += it },
+        )
+        advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        client.disruptionsGate = gate
+        vm.setJourneyDestinations(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        runCurrent()
+        // The journey is unstarred while its check is in flight.
+        vm.setJourneyDestinations(emptyList())
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, warnings.count { it.startsWith("destination disruption fetch failed for stop $ksxId") })
+    }
+
+    @Test
+    fun `a destination the refresh failed to check isn't asked again at once`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        client.failingDisruptions += ksxId
+        val vm = MainViewModel(
+            client, listOf(seeds.first()), clock = { now }, io = dispatcher, disruptionReuse = DISRUPTION_REUSE,
+        )
+        advanceUntilIdle()
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        vm.setJourneyDestinations(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+        // One attempt, the refresh's, and the card says it couldn't check.
+        assertEquals(1, client.disruptionCalls[ksxId])
+        assertEquals(setOf(ksxId), vm.journeyDestinationsUnknown.value)
+    }
+
+    @Test
+    fun `a destination whose first check fails is unknown, and a cleared closure's dismissal is forgotten`() =
+        runTest(dispatcher) {
+            val backing = MutableStateFlow<Set<DismissedAlert>>(emptySet())
+            val store = object : DismissedAlertsStore {
+                override fun dismissed() = backing
+                override suspend fun dismiss(alert: DismissedAlert) {
+                    backing.value = Dismissed.dismiss(backing.value, alert)
+                }
+                override suspend fun reconcile(live: Set<DismissedAlert>, checkedPlaces: Set<String>) {
+                    backing.value = Dismissed.reconcile(backing.value, live, checkedPlaces)
+                }
+            }
+            // A closure dismissed elsewhere in a stop area the destination check never covers.
+            val elsewhere = DismissedAlert(alertKey = "490G00000001", contentSignature = "Bus Stop Closed")
+            backing.value = setOf(elsewhere)
+            val client = ReuseCountingClient()
+            client.failingDisruptions += ksxId
+            val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, dismissedStore = store)
+            advanceUntilIdle()
+            val destination = StopRef(ksxId, "King's Cross St. Pancras")
+            vm.setJourneyDestinations(listOf(destination))
+            advanceUntilIdle()
+            // Nothing known: unknown, not passed off as open.
+            assertEquals(setOf(ksxId), vm.journeyDestinationsUnknown.value)
+            assertTrue(vm.journeyDestinationStops.value.isEmpty())
+
+            // It comes back closed; the user dismisses it.
+            client.failingDisruptions -= ksxId
+            client.closures[ksxId] = listOf(StopDisruption("Station closed"))
+            vm.refresh()
+            advanceUntilIdle()
+            assertTrue(vm.journeyDestinationsUnknown.value.isEmpty())
+            val closure = DepartureRows.across(vm.journeyDestinationStops.value, now).single { it.stopDisruption != null }
+            vm.dismissAlert(closure)
+            advanceUntilIdle()
+            assertEquals(2, backing.value.size)
+
+            // It clears: the dismissal is forgotten, so the same notice recurring later shows again; the
+            // unchecked area's dismissal is left alone.
+            client.closures.remove(ksxId)
+            vm.refresh()
+            advanceUntilIdle()
+            assertEquals(setOf(elsewhere), backing.value)
+        }
+
+    @Test
+    fun `a journey's destination is checked for a closure, reused within the window, and kept through a failure`() =
+        runTest(dispatcher) {
+            var current = now
+            val client = ReuseCountingClient()
+            client.closures[ksxId] = listOf(StopDisruption("Station closed"))
+            val vm = MainViewModel(
+                client, listOf(seeds.first()), clock = { current }, io = dispatcher,
+                disruptionReuse = DISRUPTION_REUSE,
+            )
+            advanceUntilIdle()
+            vm.setJourneyDestinations(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+            advanceUntilIdle()
+            val checked = vm.journeyDestinationStops.value.single()
+            assertEquals(ksxId, checked.stopId)
+            assertEquals(listOf(StopDisruption("Station closed")), checked.disruptions)
+            // Only its closure is asked for, never its departures.
+            assertEquals(null, client.arrivalCalls[ksxId])
+            assertEquals(1, client.disruptionCalls[ksxId])
+
+            // A refresh within the reuse window asks again for nothing.
+            vm.refresh()
+            advanceUntilIdle()
+            assertEquals(1, client.disruptionCalls[ksxId])
+
+            // Past it, a failed check keeps the last known closure rather than dropping it.
+            current = now.plus(DISRUPTION_REUSE).plusSeconds(1)
+            client.failingDisruptions += ksxId
+            vm.refresh()
+            advanceUntilIdle()
+            assertEquals(2, client.disruptionCalls[ksxId])
+            assertEquals(listOf(StopDisruption("Station closed")), vm.journeyDestinationStops.value.single().disruptions)
+            // And it's unknown now: that closure may be out of date.
+            assertEquals(setOf(ksxId), vm.journeyDestinationsUnknown.value)
+
+            // Unstarred: no destination, nothing kept.
+            vm.setJourneyDestinations(emptyList())
+            assertTrue(vm.journeyDestinationStops.value.isEmpty())
+        }
 
     @Test
     fun `a quick retry after a rate-limited refresh refetches only the stops still missing`() =

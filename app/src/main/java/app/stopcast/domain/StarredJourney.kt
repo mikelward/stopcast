@@ -77,6 +77,9 @@ data class JourneyTrains(
     val unresolved: Boolean,
     // Some line's route failed to load (a cause of [unresolved] a retry can fix).
     val routeFailed: Boolean = false,
+    // The far-end stops the kept departures actually call at (a line may reach another pole there),
+    // whose closure the card checks.
+    val reachedIds: Set<String> = emptySet(),
 )
 
 object Journeys {
@@ -183,6 +186,7 @@ object Journeys {
         var pending = false
         var unresolved = false
         var routeFailed = false
+        val reached = HashSet<String>()
         val atOrigin = rows.filter { it.stopId == segment.originId && it.stopDisruption == null }
         // A departure TfL gave no line id can't be checked against any route: it may well call there.
         if (atOrigin.any { it.lineId.isBlank() && it.upcoming.isNotEmpty() }) unresolved = true
@@ -206,7 +210,10 @@ object Journeys {
                 val destinations = segment.destinationIds +
                     (journey?.let { destinationsOn(it.to, segment.originId, sequence, maxTier(it, row.lineId)) }.orEmpty())
                 if (row.upcoming.isEmpty()) {
-                    return@mapNotNull row.takeIf { it.status != null && serves(sequence, segment.originId, destinations) }
+                    val served = servedDestinations(sequence, segment.originId, destinations)
+                    if (row.status == null || served.isEmpty()) return@mapNotNull null
+                    reached += served
+                    return@mapNotNull row
                 }
                 // The mode from any departure when TfL left it off the soonest one.
                 val mode = row.mode.ifBlank { row.upcoming.firstOrNull { it.mode.isNotBlank() }?.mode.orEmpty() }
@@ -214,11 +221,13 @@ object Journeys {
                 val calling = row.upcoming.filter { departure ->
                     val path = RouteStops.ahead(sequence, segment.originId, departure.destination, departure.branch, row.lineId, bus)
                     if (path == null) unresolved = true
-                    path?.any { it.id in destinations } == true
+                    val hits = path?.filter { it.id in destinations }.orEmpty()
+                    hits.mapTo(reached) { it.id }
+                    hits.isNotEmpty()
                 }
                 if (calling.isEmpty()) null else row.copy(upcoming = calling, destination = calling.first().destination)
             }
-        return JourneyTrains(kept, pending, unresolved, routeFailed)
+        return JourneyTrains(kept, pending, unresolved, routeFailed, reached)
     }
 
     /**
@@ -280,10 +289,11 @@ object Journeys {
         if (journey.bus && lineId == journey.lineId) 3 else 2
 
     /** Whether some route of [sequence] calls at [originId] and then one of [destinations]. */
-    private fun serves(sequence: LineSequence, originId: String, destinations: Set<String>): Boolean =
-        sequence.routes.any { route ->
+    /** The stops of [destinations] some route of [sequence] calls at after [originId]. */
+    private fun servedDestinations(sequence: LineSequence, originId: String, destinations: Set<String>): Set<String> =
+        sequence.routes.flatMapTo(HashSet()) { route ->
             val i = route.stopIds.indexOf(originId)
-            i >= 0 && route.stopIds.drop(i + 1).any { it in destinations }
+            if (i < 0) emptyList() else route.stopIds.drop(i + 1).filter { it in destinations }
         }
 
     /**

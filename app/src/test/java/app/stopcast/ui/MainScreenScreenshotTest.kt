@@ -1287,6 +1287,44 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `a journey card shows a closure at its destination`() {
+        val origin = StopArrivals(
+            "940GZZLUVIC", "Victoria",
+            listOf(Departure("victoria", "Victoria", "outbound", "Walthamstow Central", null, now.plusSeconds(120), "tube")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        val closed = StopArrivals(
+            "940GZZLUWRR", "Warren Street", emptyList(), now.minusSeconds(60),
+            disruptions = listOf(StopDisruption("Station Closed")),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(
+                        LocalRouteStops provides RouteStopsRepository(
+                            object : RouteSequenceSource {
+                                override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+                            },
+                        ),
+                    ) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse(), origin), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(victoriaToWarrenStreet),
+                            journeyDestinationStops = listOf(closed),
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Station Closed", substring = true).assertExists()
+        captureSnapshot("main-journey-card-destination-closed.png")
+    }
+
+    @Test
     fun `journey cards still show when nothing nearby has departures`() {
         val origin = StopArrivals(
             "940GZZLUVIC",
