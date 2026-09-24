@@ -953,9 +953,8 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       station on a route page's stop list; cards atop the near-me list show that line's trains from
       the nearer end that call at the other, a tap on the heading flips direction. Direct and rail
       only (SPEC *Journeys*).
-  - [ ] **A discoverable way to star a journey.** Tapping a station on the stop list is an unmarked
-        tap target; the maintainer accepted it for the MVP. Consider an explicit "Star journey…"
-        action on the route page that asks for the other end.
+  - [x] **A discoverable way to star a journey.** A dismissible tip atop a starrable stop list
+        says a stop can be tapped to star the journey there (maintainer, 2026-09-24).
   - [x] **Bus journeys, and a journey as a segment on any line** (maintainer, 2026-09-23: "really
         I'd like to star the segment", e.g. two stops shared by the 43 and the 134). A journey is two
         stops, not a line; the card shows every line from the origin that calls at the far end. The

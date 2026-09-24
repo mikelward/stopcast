@@ -564,8 +564,10 @@ adds one arrivals request per refresh (free; well within TfL's keyless budget fo
 the same kind of request the app already makes for it — no new data leaves the device.
 
 **Direct only, for now.** A journey that needs a change is routing — the eventual goal is starring
-home and work, which needs it, and it stays a non-goal until then. The tap-a-stop entry point is an
-MVP; it isn't discoverable, and a clearer one is a `TODO.md` follow-up. Starred journeys are
+home and work, which needs it, and it stays a non-goal until then. The tap-a-stop entry point has no
+cue of its own, so a starrable stop list opens with a one-line tip ("Tap a stop to star the journey
+there") until the user dismisses it (maintainer, 2026-09-24); the dismissal is kept with the app's
+settings. Starred journeys are
 kept on the device with the rest of the user's config and never logged (*Privacy*).
 
 ### Disruptions

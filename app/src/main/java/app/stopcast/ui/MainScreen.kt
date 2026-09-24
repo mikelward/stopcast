@@ -172,6 +172,8 @@ fun MainScreen(
     // rider: shown as cards atop the near-me list, and starrable from a route page's stop list.
     journeys: List<StarredJourney> = emptyList(),
     onToggleJourney: ((StarredJourney) -> Unit)? = null,
+    // Dismisses the route page's tip on starring a journey; null (dismissed, or not read yet) hides it.
+    onDismissJourneyTip: (() -> Unit)? = null,
     // Shows the other direction of a journey card (a tap on its header).
     onFlipJourney: (StarredJourney) -> Unit = {},
     // True while a journey-star write has failed and not yet been surfaced: the same acknowledged
@@ -611,6 +613,7 @@ fun MainScreen(
             },
             journeys = journeys,
             onToggleJourney = onToggleJourney,
+            onDismissJourneyTip = onDismissJourneyTip,
         )
         return
     }
@@ -1931,6 +1934,8 @@ internal fun RouteDetailScreen(
     // leaves from another pole, or a caller without journeys) leaves the stations inert.
     journeys: List<StarredJourney> = emptyList(),
     onToggleJourney: ((StarredJourney) -> Unit)? = null,
+    // Dismisses the tip on starring a journey from the stop list; null shows none.
+    onDismissJourneyTip: (() -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
     val followed = followedDeparture(row, focus, LocalRouteTopology.current)
@@ -2162,6 +2167,7 @@ internal fun RouteDetailScreen(
                 // between two shared stops are one journey, and so is its way back from the poles
                 // across the road — so any of those pages shows (and toggles) the same star.
                 starredStopIds = journeysHere.values.flatMapTo(mutableSetOf()) { it },
+                onDismissJourneyTip = onDismissJourneyTip,
                 onToggleJourneyTo = onToggleJourney
                     ?.takeIf { row.lineId.isNotBlank() && (Connections.isRail(rowMode, row.lineId) || rowMode.equals("bus", ignoreCase = true)) }
                     ?.let { toggle ->

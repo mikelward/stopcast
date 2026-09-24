@@ -70,6 +70,13 @@ class DataStoreAppSettings internal constructor(
         dataStore.updateData { (it ?: PersistedSettings()).copy(skipBugReportConsent = enabled) }
     }
 
+    override fun journeyTipDismissed(): Flow<Boolean> =
+        persisted().map { it?.journeyTipDismissed ?: false }
+
+    override suspend fun setJourneyTipDismissed(dismissed: Boolean) {
+        dataStore.updateData { (it ?: PersistedSettings()).copy(journeyTipDismissed = dismissed) }
+    }
+
     // Blank is normalized to null on read too, so a stored empty string (from an older build or a
     // hand-edited file) reads as keyless rather than sending an empty app_key that TfL rejects.
     override fun userApiKey(): Flow<String?> =
@@ -160,6 +167,8 @@ data class PersistedSettings(
     val fontScale: Float = DEFAULT_FONT_SCALE,
     val pinchEnabled: Boolean = DataStoreAppSettings.DEFAULT_PINCH_ENABLED,
     val skipBugReportConsent: Boolean = DataStoreAppSettings.DEFAULT_SKIP_BUG_REPORT_CONSENT,
+    // Whether the route page's journey tip was dismissed. Defaulted, so an older file reads it unseen.
+    val journeyTipDismissed: Boolean = false,
     // The user's own TfL app_key (SPEC D7), or null when keyless. The one persisted setting that is
     // a credential; it is sent only with the user's own TfL requests (its purpose) and rides Android
     // backup like the rest of their settings, and is never logged or put in any other off-device
