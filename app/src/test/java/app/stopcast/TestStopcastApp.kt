@@ -25,6 +25,11 @@ class TestStopcastApp : StopcastApp() {
         // to chain; RedactingCrashHandlerTest covers the handler.
     }
 
+    override fun installWatchSync() {
+        // Intentionally empty — no Data Layer in the test suite; WatchPublisherTest drives the
+        // publisher with fakes.
+    }
+
     override fun installTelemetry() {
         // Intentionally empty — no Firebase in the test suite, and the consent holder and gate are
         // driven directly by their own tests.

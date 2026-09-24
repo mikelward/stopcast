@@ -274,6 +274,9 @@ dependencies {
     // drive the overflow "update available" dot. Free, no runtime cost on any hot path (a
     // background Play `Task`, release-only), and it degrades to "no update" if Play is absent.
     implementation(libs.play.app.update)
+    // The Wear OS sync (dev-docs/wear-os.md): the Data Layer, and awaiting its Tasks.
+    implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     // The shared on-device debug log, mikelward/androidlog — resolved from the
     // Maven repository declared in settings.gradle.kts. `logging-android`

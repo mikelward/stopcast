@@ -58,9 +58,25 @@ that says so, and then to your clipboard and the app you pick (the clipboard cop
 soon as you confirm — detailed below).
 So the guarantee is precise rather than absolute: **without your opt-in, the only user data
 stopcast itself sends off the device goes in its TfL requests, and its National Rail requests if
-you've added a key** (the Play update check carries none); with it, the crash reports and usage
+you've added a key** (the Play update check carries none), **plus, if a paired watch has the
+StopCast watch app, the widget's stops and departures to that watch** (above); with it, the crash reports and usage
 stats above go to Firebase too. Android's backup
 carries your saved data under your control, and a bug report carries what you consent to share.
+
+**Your Wear OS watch (optional; not released yet).** If a watch paired with your phone has the
+StopCast watch app installed, the phone sends it what your home-screen widget shows, so the watch
+can show it too: the widget's stops (their names and IDs, and the nearby stops each is compared
+against, which are worked out from your phone's last location), their departures, and which rows
+you've starred. It never sends your coordinates or your API keys, and the watch never contacts TfL,
+National Rail or anything else itself. In the other direction, the watch will send the phone the
+row each StopCast complication shows, and its requests to refresh. This goes through **Google Play
+services' Wearable Data Layer**: over Bluetooth when the watch is near, but when it isn't (a watch
+on Wi-Fi or mobile data) it may pass **through Google's servers**. Nothing is sent when no paired
+watch has the app. The watch keeps only the latest copy, never backs it up, and doesn't log it.
+For Play's Data Safety form, the determination is that this moves your own data between your own
+devices and stopcast never receives it, so it adds no data type *collected* by the developer; the
+relay's handling by Google (its encryption and retention) is to be confirmed against Google's
+documentation, and the form re-checked, before the watch app is released.
 
 **Find a station** (the menu's *From…*, and a station's *To…*) sends the name you type to TfL's
 stop search, once you pause typing, and then the chosen station's id to look up its stops and

@@ -5,9 +5,9 @@ Conventions for AI agents working in this repository.
 `CLAUDE.md` and `GEMINI.md` are symlinks to this file, so every agent reads the same
 conventions. Edit `AGENTS.md`.
 
-StopCast is an Android app (Kotlin + Compose; `:app`, a pure-Kotlin `:domain`, and
-`:shared`) that shows live TfL departures for watched stops on the lock screen, the home
-screen, and in the app.
+StopCast is an Android app (Kotlin + Compose; `:app`, a pure-Kotlin `:domain`, `:shared`,
+and a Wear OS `:wear`) that shows live TfL departures for watched stops on the lock screen,
+the home screen, the watch, and in the app.
 Product and architecture decisions live in `SPEC.md`; the phased plan lives in
 `TODO.md`. This repo mirrors the engineering conventions of the sibling Android repos —
 `mikelward/simmo`, `mikelward/snoozemo`, and `mikelward/typelauncher`; when a convention

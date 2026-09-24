@@ -15,7 +15,9 @@ import app.stopcast.domain.WidgetJourneys
 import app.stopcast.domain.WidgetJourneysReport
 import java.io.InputStream
 import java.io.OutputStream
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 
 /**
@@ -36,6 +38,9 @@ class DataStoreSnapshotStore internal constructor(
 ) : SnapshotStore {
 
     override suspend fun load(): DeparturesSnapshot? = dataStore.data.first()?.toDomain()
+
+    /** Every stored snapshot as it's written, from any writer (the app, the widget's worker). */
+    fun snapshots(): Flow<DeparturesSnapshot?> = dataStore.data.map { it?.toDomain() }
 
     override suspend fun save(snapshot: DeparturesSnapshot) {
         dataStore.updateData { snapshot.toPersisted() }

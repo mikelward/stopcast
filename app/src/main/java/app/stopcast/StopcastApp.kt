@@ -17,6 +17,7 @@ import app.stopcast.telemetry.PrefsConsentStore
 import app.stopcast.telemetry.TelemetryConsent
 import app.stopcast.telemetry.TelemetryGate
 import app.stopcast.telemetry.startTelemetry
+import app.stopcast.watch.WatchSync
 import app.stopcast.widget.StopCastWidget
 import com.mikelward.androidlog.DebugLog
 import com.mikelward.androidlog.android.DebugFileSink
@@ -103,6 +104,20 @@ open class StopcastApp : Application() {
         installDiagnosticLog()
         warmSharedState()
         installTelemetry()
+        installWatchSync()
+    }
+
+    /**
+     * Publishes the widget's snapshot to a paired Wear OS watch that has the app (dev-docs/wear-os.md).
+     * Nothing is sent when no watch has it. `open` so the test [Application] skips it; guarded, since
+     * a sync that can't start is a lost convenience, never a reason to take the app down.
+     */
+    protected open fun installWatchSync() {
+        try {
+            WatchSync.start(this, applicationScope)
+        } catch (e: Exception) {
+            StopcastDebugLog.warning("watch: sync start failed: %s", e::class.simpleName)
+        }
     }
 
     /**

@@ -1,9 +1,10 @@
 # Wear OS support
 
-**Status: planned, not started.** A developer-facing plan for putting StopCast's departures
-on a Wear OS watch, so the design and its open questions aren't re-derived each time. The
-work is tracked in `TODO.md` (*Phase 6 — Wear OS*), which points here. Nothing below is built
-yet; the open questions at the end are the maintainer's calls and come before any code.
+**Status: in progress, not released.** A developer-facing plan for putting StopCast's
+departures on a Wear OS watch, so the design and its open questions aren't re-derived each time.
+The work is tracked in `TODO.md` (*Phase 6 — Wear OS*), which points here. *Suggested order*
+marks which steps are built; the rest of this document describes the design, built or not. The
+watch app can't be released until the release gate (*Distribution*) is lifted.
 
 ## Why a watch
 
@@ -515,17 +516,18 @@ it before committing to the design.
 
 1. The package rename, a prerequisite for **releasing** the watch app (the release gate in
    *Distribution* enforces it); the code can be built before it.
-2. Extract `:domain` into its own module, and move the route topology asset and loader into the
-   shared Android library module (refactor only).
+2. **Done.** Extract `:domain` into its own module, and move the route topology asset and
+   loader into the shared Android library module (refactor only).
 
    Disruptions on the watch additionally wait on the widget's age-stamped status item in
    `TODO.md`. The steps below ship without disruptions until it lands. The widget's
    refresh-failure / incompleteness item, by contrast, is a **hard prerequisite of step 4**,
    because the watch mustn't present an incomplete refresh as complete.
-3. Move the snapshot format into shared code, versioned and carrying the starred-row keys, with
-   the round-trip and no-location tests.
-4. Add the `:wear` skeleton and the phone-side publish over the Data Layer. Gate it on the watch
-   app being installed on a paired watch, **connected or not**. The same PR includes:
+3. **Done.** Move the snapshot format into shared code, versioned and carrying the starred-row
+   keys, with the round-trip and no-location tests.
+4. **Done** (not released). Add the `:wear` skeleton and the phone-side publish over the Data
+   Layer. Gate it on the watch app being installed on a paired watch, **connected or not**. The
+   same PR includes:
    - the republish on reconnect;
    - the watch paragraph in SPEC *Privacy* and `docs/PRIVACY.md` (the sync may pass through
      Google's servers);

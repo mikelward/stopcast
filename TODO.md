@@ -1779,10 +1779,10 @@ and these carry the rest as their own PRs:
       The doc's remaining open questions (starred journeys, crash reports on the watch, a
       tile-only first release) can be settled as each step comes up.
       Steps, one PR each:
-  - [ ] **Release gate (lands with the `:wear` module):** `:wear`'s release tasks fail
+  - [x] **Release gate (lands with the `:wear` module):** `:wear`'s release tasks fail
         unless the build is run with `-Pstopcast.wearRelease=approved`, and fail anyway while its
-        application ID is still `app.stopcast`. CI's root `bundleRelease` never passes the flag,
-        so a deploy can't ship the watch app by accident, and a CI step asserts that
+        application ID is still `app.stopcast`. CI builds only `:app`'s release and never passes
+        the flag, so a deploy can't ship the watch app by accident, and a CI step asserts that
         `:wear:bundleRelease` fails without it. Lift it only after the rename and the launch
         decision, in the same PR as the Play step below.
   - [x] Extract `app.stopcast.domain` into a pure-Kotlin `:domain` module (refactor only; the
@@ -1814,7 +1814,7 @@ and these carry the rest as their own PRs:
           `directionKey`, not TfL's raw direction, so blank-direction siblings stay distinct.
         - Test the round trip (blank-direction siblings included), and pin that it carries no
           coordinate or key.
-  - [ ] Add a `:wear` module skeleton, plus the phone publishing its widget snapshot over the
+  - [x] Add a `:wear` module skeleton, plus the phone publishing its widget snapshot over the
         Data Layer. **Prerequisite:** *Persist a refresh-failure kind / incompleteness for the
         widget* (Phase 4), so the envelope carries the expected stop set and the watch never
         shows an incomplete refresh as complete. The phone publishes whenever the watch app is
