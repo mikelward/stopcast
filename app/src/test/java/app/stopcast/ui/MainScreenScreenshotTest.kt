@@ -220,6 +220,43 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `a station's To… page is titled by the trip and says what it couldn't check`() {
+        var planned = false
+        capture("main-station-trip.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(stops(now.minusSeconds(30)), now.minusSeconds(30), lineStatuses = statuses()),
+                now,
+                {},
+                stationTitle = "Oxford Circus ➔ Brixton",
+                onPlanTo = { planned = true },
+                tripNotice = "Some routes couldn't be checked",
+            )
+        }
+        composeRule.onNodeWithText("Oxford Circus ➔ Brixton").assertExists()
+        composeRule.onNodeWithText("Some routes couldn't be checked").assertExists()
+        composeRule.onNodeWithText("To…").performClick()
+        assertTrue(planned)
+    }
+
+    @Test
+    fun `an empty To… page says nothing goes there directly`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                MainScreen(
+                    DeparturesUiState.Loaded(emptyList(), now.minusSeconds(30)),
+                    now,
+                    {},
+                    stationTitle = "Oxford Circus ➔ Brixton",
+                    emptyMessage = "No direct trips to Brixton soon",
+                )
+            }
+        }
+        composeRule.onNodeWithText("No direct trips to Brixton soon").assertExists()
+        // No To… action without a handler.
+        composeRule.onNodeWithText("To…").assertDoesNotExist()
+    }
+
+    @Test
     fun `a hidden mode's rows are left out under a banner that shows them again`() {
         var shownAll = false
         capture("main-modes-hidden.png") {

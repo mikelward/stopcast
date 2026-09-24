@@ -160,6 +160,15 @@
     <!-- Location-screen button that opens the station search; spelled out, since "From…" alone
          reads as nothing under a location message. -->
     <string name="menu_find_station">Find a station</string>
+    <!-- A searched station's app-bar action: pick a destination, then keep only the departures that
+         go there (SPEC *Finding stops → From… To…*). -->
+    <string name="menu_to">To…</string>
+    <!-- Placeholder in the destination search opened by "To…". -->
+    <string name="station_search_to_hint">To station or stop</string>
+    <!-- Over a To… list while lines' routes are still loading. -->
+    <string name="trip_checking">Checking routes…</string>
+    <!-- A To… list with nothing that goes there directly. %1$s is the destination. -->
+    <string name="trip_none">No direct trips to %1$s soon</string>
     <!-- Placeholder in the station search field. -->
     <string name="station_search_hint">Station or stop name</string>
     <!-- Shown under the empty search field. -->

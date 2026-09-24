@@ -21,7 +21,7 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * "Find a station" (SPEC *Finding stops*): the search with matches, before a query (with and
- * without the user's own stops), and after a failure, plus a station page still loading its stops. UI-only, so it renders with no network.
+ * without the user's own stops, and as the To… destination search), and after a failure, plus a station page still loading its stops. UI-only, so it renders with no network.
  * Public station names only, no user data.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -71,6 +71,26 @@ class StationSearchScreenshotTest {
         show(StationSearchViewModel.State(yoursRead = true))
         composeRule.onNodeWithText("Type a name to search").assertIsDisplayed()
         captureSnapshot("station-search-prompt.png")
+    }
+
+    @Test
+    fun station_search_to() {
+        composeRule.setContent {
+            StopCastTheme {
+                StationSearchScreen(
+                    state = StationSearchViewModel.State(yoursRead = true),
+                    onQueryChange = {},
+                    onOpenStation = {},
+                    onRetry = {},
+                    onBack = {},
+                    autoFocus = false,
+                    hint = "To station or stop",
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("To station or stop").assertIsDisplayed()
+        captureSnapshot("station-search-to.png")
     }
 
     @Test

@@ -63,6 +63,8 @@ fun StationSearchScreen(
     onBack: () -> Unit,
     // Off in the screenshot test, where a focused field would add a blinking cursor.
     autoFocus: Boolean = true,
+    // The field's placeholder: "To station or stop" when picking a To… destination.
+    hint: String? = null,
 ) {
     BackHandler(onBack = onBack)
     val focus = remember { FocusRequester() }
@@ -80,7 +82,7 @@ fun StationSearchScreen(
                     TextField(
                         value = state.query,
                         onValueChange = onQueryChange,
-                        placeholder = { Text(stringResource(R.string.station_search_hint)) },
+                        placeholder = { Text(hint ?: stringResource(R.string.station_search_hint)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),

@@ -810,6 +810,18 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           remove one (or a "Clear" on the heading) if it proves wanted.
   - [ ] **Set the near-me origin to a station** (maintainer, 2026-09-24): use a searched
         station in place of the current location, for planning from somewhere else.
+  - [x] **From… To…, direct only** (maintainer, 2026-09-24): the overflow's *Find a station* is
+        now *From…*, and a station's page has *To…*, which keeps only the departures whose own
+        line's route calls at the picked destination (`DirectTrips.filter`), flagging any it
+        couldn't check.
+    - [ ] **Journey planning** (maintainer, 2026-09-24): trips with a change, the eventual goal
+          behind *To…* (TfL Journey API or our own route data). SPEC *Non-goals* lifts when this
+          starts; cost and privacy to be stated then (a Journey request per trip is keyless-free
+          but sends both ends).
+    - [ ] **Star a From… To… trip as a journey**: the trip has no single starred line, which
+          `StarredJourney` places its ends on, so it needs a line-free journey first.
+    - [ ] **To… from the near-me list** ("from here"): filter the nearby stops' departures by a
+          destination, without picking a *From…* station first.
   - [x] **Find a station from the location gate**: a *Find a station* button under the gate's
         own action, since the search needs no location and helps most a user who denied it (Codex).
 - [ ] **Search for a stop by name or line, and pin it.** Beyond nearby discovery, let the
@@ -1891,6 +1903,15 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
 
 ## Decisions needing review
 
+- **To… is a look with no Star button, and lives on the station page only (autopilot,
+  2026-09-24).** Picking From… then To… narrows the station's page to the departures that call at
+  the destination; nothing is saved. *Alternatives:* star the trip straight away (needs a line-free
+  journey — `StarredJourney` places its ends on one starred line's route), or a *To…* on the near-me
+  list ("from here"). Both are logged under *Find a station* above. **Reversible:** the To… state is
+  three saved UI values in `MainActivity`; the filter is a pure `DirectTrips` function either
+  option can reuse.
+- **To… reads "No direct trips to ‹place› soon" and "Checking routes…" (autopilot, 2026-09-24).**
+  Provisional copy (with "To station or stop" in the search field); strings only, not translated.
 - **The "More" reveal widget mirrors the app's *current* view, not eager-only (autopilot,
   2026-09-21).** The reveal follow-up had to decide whether a revealed expansion reaches the
   persisted snapshot — which the widget renders and its background worker keeps polling — or
