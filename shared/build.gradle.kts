@@ -1,6 +1,7 @@
 // Android code the phone app and the Wear OS app (dev-docs/wear-os.md) share: the bundled route
-// topology and its loader, so both group branching services the same way, and the line-pill
-// color rules, so both color a service the same way. Pure product logic stays in :domain.
+// topology and its loader, so both group branching services the same way, the line-pill color
+// rules, so both color a service the same way, and the stop headers and line-budgeted rows the
+// widget and the watch tile share. Pure product logic stays in :domain.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
