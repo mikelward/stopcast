@@ -1996,22 +1996,17 @@ private fun StopGroupCard(
                     ) {
                         LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
                         // The reason chip lives in the weighted slack so it absorbs the shrink (and
-                        // ellipsizes) when space is tight; "No departures" is unweighted, so the Row
+                        // ellipsizes) when space is tight; "No data" is unweighted, so the Row
                         // reserves its width — the status can't be squeezed to zero.
                         Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                             row.status?.let { status -> DisruptionChip(status.description) }
                         }
-                        val noDepartures = stringResource(R.string.status_no_departures_description)
                         Text(
                             text = stringResource(R.string.status_no_departures),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
-                            // The visible glyph is a compact dash; a screen reader hears the explicit
-                            // "No departures" so a bare dash isn't heard as missing data.
-                            modifier = Modifier
-                                .padding(start = 12.dp)
-                                .semantics { contentDescription = noDepartures },
+                            modifier = Modifier.padding(start = 12.dp),
                         )
                     }
                     return@forEach
