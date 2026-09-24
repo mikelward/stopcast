@@ -340,6 +340,13 @@ Wear's own APIs solve it without wake-ups:
   in-scope stop is past its threshold, and shows the stale treatment (`?`, "tap to
   refresh"). This is the watch
   counterpart of `WidgetStalenessRedraw`, with no alarm needed.
+
+  A new entry opens only where the frame actually changes, so a tick that moves no shown
+  countdown, or a row that can't make the tile's lines, costs nothing. A timeline takes at most
+  100 entries. A snapshot busy enough to need more stops at the first
+  instant that doesn't fit: from there one open-ended entry withholds every countdown, and the
+  tile asks the system to re-render it at that instant, so a held frame never shows a departed
+  service or a frozen countdown as live.
 - **Complication:** a **timeline** too, with one entry per upcoming departure of the chosen row.
   - If the chosen stop was **carried forward** after a failed refresh (`arrivalsFresh = false`),
     every timed entry carries an explicit **uncertainty marker**, the same one the app puts on a
@@ -532,7 +539,8 @@ it before committing to the design.
    - the watch paragraph in SPEC *Privacy* and `docs/PRIVACY.md` (the sync may pass through
      Google's servers);
    - the Data Safety determination.
-5. The tile, with the staleness timeline. Its fresh-state **All stops** button waits for step 8.
+5. **Done** (not released). The tile, with the staleness timeline. Its fresh-state **All stops**
+   button waits for step 8.
 6. Watch-initiated refresh.
 7. The complication.
 8. The small watch app, which adds the tile's **All stops** button, with its foreground ticker

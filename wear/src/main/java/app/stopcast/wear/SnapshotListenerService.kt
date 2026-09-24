@@ -21,8 +21,10 @@ import java.util.concurrent.ExecutionException
 class SnapshotListenerService : WearableListenerService() {
     override fun onDataChanged(events: DataEventBuffer) {
         val store = WatchEnvelopeStore.from(this)
-        events.filter { it.type == DataEvent.TYPE_CHANGED && it.dataItem.uri.path == WatchSyncContract.SNAPSHOT_PATH }
-            .forEach { event -> envelopeBytesRetrying(this, event.dataItem)?.let(store::ingest) }
+        val ingested = events
+            .filter { it.type == DataEvent.TYPE_CHANGED && it.dataItem.uri.path == WatchSyncContract.SNAPSHOT_PATH }
+            .count { event -> envelopeBytesRetrying(this, event.dataItem)?.let(store::ingest) == true }
+        if (ingested > 0) StopCastTileService.requestUpdate(this)
     }
 
     private companion object {
@@ -47,7 +49,6 @@ class SnapshotListenerService : WearableListenerService() {
         return null
     }
 }
-
 
 /**
  * The envelope carried by [item]: inline, or read from its `Asset` when it was too big for one.
