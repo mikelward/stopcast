@@ -104,7 +104,7 @@ class JourneysTest {
     private val kingToNorth = StarredJourney(JourneyEnd("KING", "King"), JourneyEnd("NORTH", "North End"), "example")
 
     @Test
-    fun `a train on the other branch is offered with where to change, only when it leaves first`() {
+    fun `a train on the other branch is offered with where to change, only when no direct one is due`() {
         val segment = Journeys.segment(kingToNorth, forked)!!
         val rows = rowsAt(
             "KING",
@@ -116,13 +116,16 @@ class JourneysTest {
         assertEquals("FORK" to "Fork", change.stopId to change.stopName)
         assertEquals(listOf(60L, 480L), change.row.upcoming.map { it.expectedArrival.epochSecond - now.epochSecond })
         assertFalse("a change isn't an unresolved train", trains.unresolved)
-        // Only the West End train leaving before the first direct one is worth changing from.
-        val offered = Journeys.changesBefore(trains.rows, trains.changes).single()
-        assertEquals(listOf(60L), offered.row.upcoming.map { it.expectedArrival.epochSecond - now.epochSecond })
+        // A direct train is due, so none is offered, even the one leaving sooner.
+        assertTrue(Journeys.changesWithoutDirect(trains.rows, trains.changes).isEmpty())
         // With no direct train at all, every change-train is offered.
         val noDirect = Journeys.trains(segment, rowsAt("KING", departure("West End", 60), departure("West End", 480)), mapOf("example" to forked), kingToNorth)
         assertTrue(noDirect.rows.isEmpty())
-        assertEquals(2, Journeys.changesBefore(noDirect.rows, noDirect.changes).single().row.upcoming.size)
+        assertEquals(2, Journeys.changesWithoutDirect(noDirect.rows, noDirect.changes).single().row.upcoming.size)
+        // A suspended direct line's status-only row is no direct train due: changes are still offered.
+        val suspended = trains.rows.single().copy(upcoming = emptyList())
+        assertFalse(Journeys.directDue(listOf(suspended)))
+        assertEquals(1, Journeys.changesWithoutDirect(listOf(suspended), noDirect.changes).size)
     }
 
     @Test

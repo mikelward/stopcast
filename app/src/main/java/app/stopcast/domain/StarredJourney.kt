@@ -85,7 +85,7 @@ data class JourneyTrains(
     // whose closure the card checks.
     val reachedIds: Set<String> = emptySet(),
     // Trains that don't reach the far end but share its route as far as a stop where one that does
-    // can be caught ([JourneyChange]); [Journeys.changesBefore] picks those worth showing.
+    // can be caught ([JourneyChange]); [Journeys.changesWithoutDirect] says when to show them.
     val changes: List<JourneyChange> = emptyList(),
 )
 
@@ -370,17 +370,16 @@ object Journeys {
     }
 
     /**
-     * The [changes] worth offering beside the direct trains in [rows]: only departures that leave
-     * before the first direct one (any, when there's none) — a later change-train is never the quicker
-     * way. Each change keeps just those departures; one left with none is dropped.
+     * The [changes] to offer: all of them when no direct train is due in [rows] (a suspended line's
+     * status row carries none), else none (maintainer, 2026-09-24). While a direct train runs, changing
+     * mostly lands the rider on that same train at the fork, and the connection's time isn't known to
+     * show otherwise.
      */
-    fun changesBefore(rows: List<DepartureRow>, changes: List<JourneyChange>): List<JourneyChange> {
-        val firstDirect = rows.flatMap { it.upcoming }.minOfOrNull { it.expectedArrival }
-        return changes.mapNotNull { change ->
-            val sooner = change.row.upcoming.filter { firstDirect == null || it.expectedArrival < firstDirect }
-            if (sooner.isEmpty()) null else change.copy(row = change.row.copy(upcoming = sooner, destination = sooner.first().destination))
-        }
-    }
+    fun changesWithoutDirect(rows: List<DepartureRow>, changes: List<JourneyChange>): List<JourneyChange> =
+        if (directDue(rows)) emptyList() else changes
+
+    /** Whether any of a journey card's direct [rows] has a train due: a status-only row has none. */
+    fun directDue(rows: List<DepartureRow>): Boolean = rows.any { it.upcoming.isNotEmpty() }
 
     /**
      * The other poles of [originId]'s stop area ([poles], its lookup) that board a line reaching

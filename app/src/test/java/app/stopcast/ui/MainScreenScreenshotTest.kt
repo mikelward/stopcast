@@ -1432,15 +1432,19 @@ class MainScreenScreenshotTest {
     }
 
     // A line forking past a shared trunk (synthetic stops): from King both branches run via Fork,
-    // then one to West End and the other to North End.
+    // then one to West End and the other via North Park to North End. The journey ends at North Park,
+    // short of its branch's terminus, so the heading's "(for …)" is the journey's end, not the route's.
     private val forkedLine = LineSequence(
         routes = listOf(
             LineRoute("King ↔ West End", listOf("KING", "MID", "FORK", "WEST")),
-            LineRoute("King ↔ North End", listOf("KING", "MID", "FORK", "NORTH")),
+            LineRoute("King ↔ North End", listOf("KING", "MID", "FORK", "NPARK", "NORTH")),
         ),
-        stopNames = mapOf("KING" to "King", "MID" to "Mid", "FORK" to "Fork", "WEST" to "West End", "NORTH" to "North End"),
+        stopNames = mapOf(
+            "KING" to "King", "MID" to "Mid", "FORK" to "Fork", "WEST" to "West End", "NPARK" to "North Park",
+            "NORTH" to "North End",
+        ),
     )
-    private val kingToNorthEnd = StarredJourney(JourneyEnd("KING", "King"), JourneyEnd("NORTH", "North End"), "northern")
+    private val kingToNorthEnd = StarredJourney(JourneyEnd("KING", "King"), JourneyEnd("NPARK", "North Park"), "northern")
 
     private fun forkedOrigin(vararg departures: Pair<String, Long>) = StopArrivals(
         "KING", "King",
@@ -1455,40 +1459,39 @@ class MainScreenScreenshotTest {
     }
 
     @Test
-    fun `a train on the other branch leaving first is shown with where to change`() {
-        journeyScreen(forkedOrigin("West End" to 60, "North End" to 600, "West End" to 900), forkedSource, kingToNorthEnd)
-        composeRule.onNodeWithText("King ➔ North End").assertExists()
-        composeRule.onNodeWithText("King ➔ Fork (for North End)").assertExists()
-        // The direct train, and the one West End train leaving before it; the later one isn't offered.
-        composeRule.onNodeWithText("North End").assertExists()
-        composeRule.onNodeWithText("West End").assertExists()
-        composeRule.onAllNodesWithText("15 min", substring = true).assertCountEquals(0)
-        captureSnapshot("main-journey-card-change.png")
-    }
-
-    @Test
-    fun `a tapped train to change from opens its own route, not the direct one beside it`() {
+    fun `with a direct train due, a train on the other branch isn't offered`() {
         journeyScreen(forkedOrigin("West End" to 60, "North End" to 600), forkedSource, kingToNorthEnd)
-        composeRule.onNodeWithText("West End").performClick()
-        composeRule.waitForIdle()
-        // The West End train's page: its stops run to West End, and nothing names North End.
-        composeRule.onAllNodesWithText("West End", substring = true).assertCountEquals(2)
-        composeRule.onAllNodesWithText("North End", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithText("King ➔ North Park").assertExists()
+        composeRule.onNodeWithText("North End").assertExists()
+        composeRule.onAllNodesWithText("(for North Park)", substring = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("West End").assertCountEquals(0)
     }
 
     @Test
     fun `with no direct train soon the card says so above the trains to change from`() {
         journeyScreen(forkedOrigin("West End" to 60, "West End" to 480), forkedSource, kingToNorthEnd)
-        composeRule.onNodeWithText("No direct trains to North End soon").assertExists()
-        composeRule.onNodeWithText("King ➔ Fork (for North End)").assertExists()
+        composeRule.onNodeWithText("No direct trains to North Park soon").assertExists()
+        // The journey's own end in the brackets, not the branch's terminus.
+        composeRule.onNodeWithText("King ➔ Fork (for North Park)").assertExists()
         composeRule.onNodeWithText("1 · 8 min").assertExists()
+        captureSnapshot("main-journey-card-change.png")
+    }
+
+    @Test
+    fun `a tapped train to change from opens its own route`() {
+        journeyScreen(forkedOrigin("West End" to 60), forkedSource, kingToNorthEnd)
+        composeRule.onNodeWithText("West End").performClick()
+        composeRule.waitForIdle()
+        // The West End train's page: its stops run to West End, and nothing names the north branch.
+        composeRule.onAllNodesWithText("West End", substring = true).assertCountEquals(2)
+        composeRule.onAllNodesWithText("North", substring = true).assertCountEquals(0)
     }
 
     @Test
     fun `with a train that couldn't be checked the card doesn't claim there's no direct one`() {
         // "Nowhere" matches no stop or route end, so that train might yet be a direct one.
         journeyScreen(forkedOrigin("West End" to 60, "Nowhere" to 120), forkedSource, kingToNorthEnd)
-        composeRule.onNodeWithText("King ➔ Fork (for North End)").assertExists()
+        composeRule.onNodeWithText("King ➔ Fork (for North Park)").assertExists()
         composeRule.onNodeWithText("Some routes couldn't be checked").assertExists()
         composeRule.onAllNodesWithText("No direct trains", substring = true).assertCountEquals(0)
     }
