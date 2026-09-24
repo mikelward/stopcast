@@ -1473,6 +1473,8 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("No direct trains to North Park soon").assertExists()
         // The journey's own end in the brackets, not the branch's terminus.
         composeRule.onNodeWithText("King ➔ Fork (for North Park)").assertExists()
+        // A screen reader hears "to", not the drawn arrow.
+        composeRule.onNodeWithContentDescription("King to Fork, for North Park").assertExists()
         composeRule.onNodeWithText("1 · 8 min").assertExists()
         captureSnapshot("main-journey-card-change.png")
     }

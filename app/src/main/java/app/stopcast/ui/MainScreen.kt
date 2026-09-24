@@ -1784,6 +1784,9 @@ private fun StopGroupHeader(
     onDistanceClick: (() -> Unit)? = null,
     // A place name stays one line; a journey's change heading wraps rather than lose its "(for …)".
     nameMaxLines: Int = 1,
+    // What a screen reader hears for [name] when it differs ("King's Cross to Camden Town, for High
+    // Barnet", never the drawn arrow). Null reads [name].
+    spokenName: String? = null,
 ) {
     val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
     val openLabel = stringResource(R.string.action_show_platform)
@@ -1792,9 +1795,9 @@ private fun StopGroupHeader(
     val label = remember(qualifier) { groupHeaderLabel(qualifier) }
     // The full spoken label: the place name, the spoken qualifier (direction/towards kept), then the
     // distance — read as one, so a screen reader hears the whole header rather than three fragments.
-    val spoken = remember(name, qualifier, distanceLabel) {
+    val spoken = remember(name, spokenName, qualifier, distanceLabel) {
         buildString {
-            append(name)
+            append(spokenName ?: name)
             groupHeaderSpoken(qualifier)?.let { append(", ").append(it) }
             distanceLabel?.let { append(", ").append(it) }
         }
@@ -1989,6 +1992,12 @@ private fun LazyListScope.journeyChanges(
                 distanceLabel = null,
                 firstOnScreen = false,
                 nameMaxLines = 2,
+                spokenName = stringResource(
+                    R.string.journey_change_at_spoken,
+                    card.journey.from.name,
+                    changes.first().stopName,
+                    card.journey.to.name,
+                ),
             )
         }
         StopGrouping.groupByStop(changes.map { it.row }, warningsLead = false).forEach { group ->
