@@ -149,3 +149,7 @@ fun TflStopPointDto.toStopLocationOrNull(): StopLocation? {
         towards = towards().trim(),
     )
 }
+
+/** The stop points at the bottom of this tree (a stop area's poles); this one when it has none. */
+fun TflStopPointDto.leaves(): List<TflStopPointDto> =
+    if (children.isEmpty()) listOf(this) else children.flatMap { it.leaves() }

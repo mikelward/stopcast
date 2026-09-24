@@ -646,6 +646,31 @@ class KtorTflClientTest {
         """.trimIndent()
 
     @Test
+    fun `reads a stop area's poles with their letters and lines`() = runTest {
+        // Synthetic ids: a stop area with two poles.
+        val area = """
+            {
+              "naptanId": "490G00000001", "commonName": "Hill", "lat": 51.5, "lon": -0.12,
+              "stopType": "NaptanOnstreetBusCoachStopPair", "modes": ["bus"],
+              "children": [
+                { "naptanId": "490000001K", "commonName": "Hill", "stopLetter": "K", "lat": 51.5, "lon": -0.12,
+                  "modes": ["bus"], "stationNaptan": "490G00000001", "lines": [{ "id": "b1", "name": "B1" }] },
+                { "naptanId": "490000001L", "commonName": "Hill", "stopLetter": "L", "lat": 51.5001, "lon": -0.12,
+                  "modes": ["bus"], "stationNaptan": "490G00000001", "lines": [{ "id": "b2", "name": "B2" }] }
+              ]
+            }
+        """.trimIndent()
+        var captured: HttpRequestData? = null
+        val poles = client(area, capture = { captured = it }).stopAreaPoles("490G00000001")
+        assertEquals("/StopPoint/490G00000001", checkNotNull(captured).url.encodedPath)
+        assertEquals(listOf("490000001K", "490000001L"), poles.map { it.id })
+        assertEquals(listOf("K", "L"), poles.map { it.stopLetter })
+        assertEquals(listOf("b2"), poles[1].lines.map { it.id })
+        assertEquals("bus", poles[1].lines.single().mode)
+        assertEquals("490G00000001", poles[1].clusterId)
+    }
+
+    @Test
     fun `resolves a hub display name, cleaned of its type suffix`() = runTest {
         var captured: HttpRequestData? = null
         val info = client(hubJson, capture = { captured = it }).hubInfo("HUBKGX")

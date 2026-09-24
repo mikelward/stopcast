@@ -53,6 +53,20 @@ data class StarredJourney(
 data class JourneySegment(val originId: String, val destinationIds: Set<String>)
 
 /**
+ * The poles beside a journey's origin that board a line reaching its far end ([poles]), the lines
+ * whose route must load before the rest can be judged ([pendingLines]), and those whose route
+ * failed to load ([failedLines]) — a pole of theirs is undecided, not ruled out.
+ */
+data class SiblingPoles(
+    val poles: List<StopLocation>,
+    val pendingLines: Set<String>,
+    val failedLines: Set<String> = emptySet(),
+) {
+    /** Whether every neighboring pole has been judged, so one not in [poles] truly doesn't qualify. */
+    val settled: Boolean get() = pendingLines.isEmpty() && failedLines.isEmpty()
+}
+
+/**
  * The trains or buses a journey card can show ([rows]), plus why an empty list may not mean "none":
  * a line's route still loading ([pending]), or a departure whose path couldn't be resolved or whose
  * route failed to load ([unresolved]) — either could call at the far end (SPEC principle 1).
@@ -206,6 +220,56 @@ object Journeys {
             }
         return JourneyTrains(kept, pending, unresolved, routeFailed)
     }
+
+    /**
+     * The other poles of [originId]'s stop area ([poles], its lookup) that board a line reaching
+     * [journey]'s far end — a bus leaving from stop K beside the journey's stop L — and, among each
+     * such pole's lines, those whose route isn't in [sequences] yet ([SiblingPoles.pendingLines]; a
+     * line at the origin itself is left to the origin's own check). A pole qualifies once one of its
+     * lines' routes calls there and then at the far end, matched as [trains] matches it. Only a pole
+     * of the journey's mode: another mode's stop in the area is a different journey.
+     */
+    fun siblingPoles(
+        journey: StarredJourney,
+        originId: String,
+        poles: List<StopLocation>,
+        sequences: Map<String, LineSequence?>,
+    ): SiblingPoles {
+        val mode = journey.mode
+        val originLines = poles.firstOrNull { it.id == originId }?.lines.orEmpty().mapTo(HashSet()) { it.id }
+        val pending = HashSet<String>()
+        val failed = HashSet<String>()
+        val serving = poles.filter { pole ->
+            if (pole.id == originId) return@filter false
+            val lines = pole.lines.filter { ofMode(it, mode) }
+            if (lines.isEmpty()) return@filter false
+            lines.any { line ->
+                if (line.id in originLines) {
+                    // Served at the origin too (the way-back pole's lines, usually): the origin's
+                    // check covers it, and its route isn't loaded for nothing.
+                    false
+                } else if (line.id !in sequences) {
+                    pending += line.id
+                    false
+                } else {
+                    // A route that failed to load can't say either way: undecided, never a "no".
+                    val sequence = sequences[line.id] ?: run {
+                        failed += line.id
+                        return@any false
+                    }
+                    destinationsOn(journey.to, pole.id, sequence, maxTier(journey, line.id)).isNotEmpty()
+                }
+            }
+        }
+        return SiblingPoles(serving, pending, failed)
+    }
+
+    /**
+     * Whether a neighboring pole's [line] may serve a journey of [mode]: the same mode, or either
+     * unknown (TfL leaves a line's mode off at times) — judged by its route rather than excluded.
+     */
+    fun ofMode(line: LineRef, mode: String): Boolean =
+        mode.isBlank() || line.mode.isBlank() || line.mode.equals(mode, ignoreCase = true)
 
     /**
      * The loosest match [segment] may use on [lineId]'s route: by distance only for a bus journey on

@@ -250,8 +250,10 @@ class MainViewModel(
         keys: Set<String>,
         checks: List<WidgetJourneyCheck>,
         shownFrom: Map<String, String> = emptyMap(),
+        // Each settled journey's boarding keys, its own and its neighboring poles' ([WidgetJourneysReport.boarding]).
+        boarding: Map<String, Set<String>> = emptyMap(),
     ) {
-        val report = WidgetJourneysReport(keys, checks, shownFrom)
+        val report = WidgetJourneysReport(keys, checks, shownFrom, boarding)
         if (report == widgetJourneysReport) return
         widgetJourneysReport = report
         writeWidgetJourneys()

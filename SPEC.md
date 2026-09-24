@@ -543,8 +543,14 @@ than guess one. Another line counts as reaching the far end when it stops at the
 there, even where TfL files that stop under another stop area and name (maintainer, 2026-09-24): a
 stop whose name starts the same ("Hill Station", "Hill Station / High Road") within
 150 m. Both are needed — a name alone would join same-named stops across town, a distance alone a
-road that merely passes by — and it applies to the far end only; the origin stays the exact stop
-whose departures are shown. The origin's departures are fetched alongside the near-me stops (one request, none
+road that merely passes by — and it applies to the far end only. At the near end a bus journey
+also boards from the **poles beside its origin** (maintainer, 2026-09-24): a pole in the same TfL
+stop area whose line — one the origin itself doesn't serve — reaches the far end on its route (a bus
+from stop K beside the starred bus's stop L). Its buses join the card under their pole's own heading,
+and the widget pins them from that pole. It costs one lookup of the stop area's poles per process,
+the routes of lines found only at those poles, and one more arrivals request per qualifying pole
+per refresh. A pole is dropped only once it has been judged: while its lookup or a line's route is
+loading or has failed, the card says so and the widget keeps what it had. The origin's departures are fetched alongside the near-me stops (one request, none
 when it's already near) and stay out of the near-me list; each line's route is the same lookup the
 route page makes (one per line at the origin, per process). Until they are in, the card says it's
 checking rather than claim there are none.

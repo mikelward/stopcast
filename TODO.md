@@ -969,10 +969,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
     - [x] **One copy of the widget's pins.** Each check is applied to the stored pins in one step
           and the app's saves never write them, replacing the per-screen copy (and its restore,
           re-save and ordering machinery) that kept racing other writers.
-    - [ ] **Other poles in the origin's stop area.** A journey boards at one pole, so a line that
-          serves the segment from a sibling pole (same stop area, e.g. stop K beside stop L) isn't
-          fetched or shown. Needs the area's poles and their lines (a `/StopPoint` lookup per
-          origin, one more request) and a card that says which pole each departure leaves from.
+    - [x] **Other poles in the origin's stop area.** A bus journey also boards from a pole beside
+          its origin (same stop area) whose line reaches the far end; its buses show under that
+          pole's heading and the widget pins them from it.
   - [ ] **Home and work, with routing** — the eventual goal: star two places, not two stations,
         and show how to get between them. Needs journey planning, a SPEC non-goal today and a
         separate product + privacy decision (it would send both places to TfL's Journey Planner).

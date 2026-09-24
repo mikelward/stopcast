@@ -40,6 +40,8 @@ import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.JourneyEnd
 import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.LineRef
+import app.stopcast.domain.StopAreaSource
+import app.stopcast.domain.StopLocation
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.RoutePattern
 import app.stopcast.domain.RouteTopology
@@ -1281,6 +1283,62 @@ class MainScreenScreenshotTest {
         assertEquals(listOf("b1", "b2"), origins.single().lines.map { it.id })
         // A bus journey's card talks about buses.
         composeRule.onNodeWithText("Checking buses…").assertExists()
+    }
+
+    @Test
+    fun `a bus journey shows buses from the stop beside its origin under that stop's letter`() {
+        // Synthetic ids: the journey boards b1 at stop L; b3 leaves stop K beside it, for Hill too.
+        val b1 = LineSequence(
+            routes = listOf(LineRoute("Park ↔ Hill", listOf("490000001L", "490000002N"))),
+            stopNames = mapOf("490000001L" to "Park", "490000002N" to "Hill"),
+            stopAreas = mapOf("490000001L" to "490G1"),
+        )
+        val b3 = LineSequence(
+            routes = listOf(LineRoute("Park ↔ Hill", listOf("490000001K", "490000002N"))),
+            stopNames = mapOf("490000001K" to "Park", "490000002N" to "Hill"),
+        )
+        val source = object : RouteSequenceSource, StopAreaSource {
+            override suspend fun routeSequence(lineId: String, direction: String) = if (lineId == "b3") b3 else b1
+            override suspend fun stopAreaPoles(areaId: String) = listOf(
+                StopLocation("490000001L", "Park", 51.5, -0.12, listOf(LineRef("b1", "B1", "bus")), "490G1", stopLetter = "L"),
+                StopLocation("490000001K", "Park", 51.5, -0.12, listOf(LineRef("b3", "B3", "bus")), "490G1", stopLetter = "K"),
+            )
+        }
+        fun pole(id: String, letter: String, line: String, inSeconds: Long) = StopArrivals(
+            id, "Park",
+            listOf(Departure(line, line.uppercase(), "outbound", "Hill", null, now.plusSeconds(inSeconds), "bus")),
+            fetchedAt = now.minusSeconds(60), clusterId = "490G1", stopLetter = letter,
+        )
+        val parkToHill = StarredJourney(JourneyEnd("490000001L", "Park"), JourneyEnd("490000002N", "Hill"), "b1", "B1", "bus")
+        var origins: List<StopRef> = emptyList()
+        var stops by mutableStateOf(listOf(manorHouse(), pole("490000001L", "L", "b1", 120), pole("490000001K", "K", "b3", 240)))
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(LocalRouteStops provides RouteStopsRepository(source)) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(stops, now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(parkToHill),
+                            onJourneyOrigins = { origins = it },
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // The stop beside the origin is fetched too, and its bus shows under its own letter.
+        assertEquals(setOf("490000001L", "490000001K"), origins.mapTo(HashSet()) { it.id })
+        composeRule.onNodeWithText("Stop K", substring = true).assertExists()
+        composeRule.onNodeWithText("Stop L", substring = true).assertExists()
+        captureSnapshot("main-journey-card-sibling-pole.png")
+
+        // Only the neighboring stop has a bus: it still shows under its own letter.
+        stops = listOf(manorHouse(), pole("490000001L", "L", "b1", 120).copy(departures = emptyList()), pole("490000001K", "K", "b3", 240))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Stop K", substring = true).assertExists()
     }
 
     @Test
