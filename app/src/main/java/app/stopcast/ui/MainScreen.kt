@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -83,6 +85,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -173,6 +177,9 @@ fun MainScreen(
     now: Instant,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
+    // The full list's scroll position. Hoisted by the caller above the route page and the overlays,
+    // which take this screen (or its list) out of composition, so a return lands where it was.
+    listState: LazyListState = rememberLazyListState(),
     refreshing: Boolean = false,
     // From "near me now" (`stopId` → meters): collapse a line served by several adjacent
     // nearby stops to its nearest stop. Empty for a location-free list, shown unchanged.
@@ -725,6 +732,14 @@ fun MainScreen(
     // rather than spin forever (Codex).
     val journeyViewOpen = journeyViewKey != null && (journeyViewCard != null || journeysLoading)
     BackHandler(enabled = journeyViewOpen) { journeyViewKey = null }
+    // A platform, station or journey view scrolls on its own, from the top when first opened. Each
+    // open view keeps its own place — across a route page opened from it, a rotation, and a platform
+    // opened from a station and backed out of (the station's place is still there) (Codex) — until
+    // the full list is back; the full list keeps [listState].
+    val drillScroll = rememberSaveable(saver = DrillScrollStates.Saver) { DrillScrollStates() }
+    val drillOpen = platformStopIds != null || journeyViewKey != null
+    val drillListState = drillScroll.stateFor("$journeyViewKey|$platformStopIds|$platformKey|$platformIsStation")
+    LaunchedEffect(drillOpen) { if (!drillOpen) drillScroll.clear() }
 
     // The route whose detail is open, held by its stable row identity rather than the row object: a
     // saveable String survives a configuration change (the page stays open on rotation) and resets on
@@ -992,6 +1007,7 @@ fun MainScreen(
                 // Swap and Unstar. Rendered from the same snapshot as the list (SPEC D4).
                 LoadedContent(
                     state, now, onRefresh, refreshing, content, rows = emptyList(),
+                    listState = drillListState,
                     journeyCards = listOf(journeyViewCard),
                     journeyView = true,
                     onFlipJourney = onFlipJourney,
@@ -1011,6 +1027,7 @@ fun MainScreen(
             } else {
                 LoadedContent(
                     state, now, onRefresh, refreshing, content, shownRows,
+                    listState = if (platformRows != null) drillListState else listState,
                     // The platform view is one place: no distances (its header would only repeat the
                     // title) and no "More" paging of farther clusters.
                     stopDistanceMeters = if (platformRows != null) emptyMap() else stopDistanceMeters,
@@ -1151,6 +1168,7 @@ private fun LoadedContent(
     // The rows to render, computed once by the caller so the list and the route-detail page share
     // the same grouping/ordering (SPEC D4 / D8).
     rows: List<DepartureRow>,
+    listState: LazyListState = rememberLazyListState(),
     stopDistanceMeters: Map<String, Double> = emptyMap(),
     onOpenStopMap: ((String, String) -> Unit)? = null,
     journeyCards: List<JourneyCard> = emptyList(),
@@ -1256,6 +1274,7 @@ private fun LoadedContent(
                 DepartureList(
                     rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
                     revealableModes, onReveal,
+                    listState = listState,
                     onOpenDetail = onOpenDetail,
                     onDismissAlert = onDismissAlert,
                     onOpenPlatform = onOpenPlatform,
@@ -1362,6 +1381,7 @@ private fun DepartureList(
     revealableModes: Set<String>,
     onReveal: (String) -> Unit,
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
+    listState: LazyListState,
     onDismissAlert: (DepartureRow) -> Unit = {},
     onOpenPlatform: ((StopGroup) -> Unit)? = null,
     onOpenStation: ((StopGroup) -> Unit)? = null,
@@ -1415,6 +1435,7 @@ private fun DepartureList(
     }
     LazyColumn(
         modifier = modifier,
+        state = listState,
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -2886,3 +2907,31 @@ private const val MAX_TIMES = 3
 // read as "none," which is a different thing (that's the no-departures status). The stamp
 // up top ("Tap to refresh") says why.
 private const val WITHHELD = "?"
+
+/**
+ * The scroll positions of the drill-down views open from the full list (a station, a platform in
+ * it, a journey), one per view identity, saved across rotation. Held in a plain map — it is read
+ * only to hand a view its [LazyListState], never observed — and cleared when the full list is back.
+ */
+internal class DrillScrollStates(private val states: HashMap<String, LazyListState> = HashMap()) {
+    fun stateFor(key: String): LazyListState = states.getOrPut(key) { LazyListState() }
+
+    fun clear() = states.clear()
+
+    companion object {
+        val Saver: Saver<DrillScrollStates, Any> = listSaver(
+            save = { holder ->
+                holder.states.flatMap { (key, state) ->
+                    listOf(key, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
+                }
+            },
+            restore = { saved ->
+                DrillScrollStates(
+                    saved.chunked(3).associateTo(HashMap()) { (key, index, offset) ->
+                        key as String to LazyListState(index as Int, offset as Int)
+                    },
+                )
+            },
+        )
+    }
+}

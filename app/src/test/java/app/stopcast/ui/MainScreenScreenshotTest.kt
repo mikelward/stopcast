@@ -1,6 +1,13 @@
 package app.stopcast.ui
 
 import android.graphics.Bitmap
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.junit4.StateRestorationTester
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.semantics.SemanticsProperties
 import android.graphics.Canvas
@@ -365,6 +372,80 @@ class MainScreenScreenshotTest {
         // Both poles' cards render under that one header.
         composeRule.onNodeWithText("Palmers Green").assertExists()
         composeRule.onNodeWithText("London Bridge").assertExists()
+    }
+
+    @Test
+    fun `the list keeps its scroll position across a route page and an overlay`() {
+        // Enough places to scroll. Synthetic stops and lines; no user data.
+        val stops = (1..12).map { i ->
+            StopArrivals(
+                "S$i", "Stop $i",
+                listOf(dep("l$i", "L$i", "outbound", "Dest $i", 60L + i * 10, "", mode = "bus")),
+                fetchedAt = now.minusSeconds(60),
+            )
+        }
+        // The list state held above the screen, as MainActivity does, and a stand-in for the
+        // Settings overlay that takes the screen out of composition.
+        lateinit var listState: LazyListState
+        var overlayOpen by mutableStateOf(false)
+        composeRule.setContent {
+            listState = rememberLazyListState()
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    if (!overlayOpen) {
+                        MainScreen(DeparturesUiState.Loaded(stops, now.minusSeconds(60)), now, {}, listState = listState)
+                    }
+                }
+            }
+        }
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(12)
+        composeRule.waitForIdle()
+        val scrolled = composeRule.runOnIdle { listState.firstVisibleItemIndex }
+        assertTrue(scrolled > 0)
+
+        // Out to a route page and back.
+        composeRule.onNodeWithText("Dest 9").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Back").performClick()
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertEquals(scrolled, listState.firstVisibleItemIndex) }
+
+        // Out to an overlay (the screen leaves composition) and back.
+        overlayOpen = true
+        composeRule.waitForIdle()
+        overlayOpen = false
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertEquals(scrolled, listState.firstVisibleItemIndex) }
+    }
+
+    @Test
+    fun `a platform view keeps its scroll position across a rotation`() {
+        // One platform with enough lines to scroll (synthetic lines; a public station as the example).
+        val station = StopArrivals(
+            "940GZZLUMRH", "Manor House",
+            (1..30).map { i -> dep("l$i", "L$i", "westbound", "Dest $i", 60L + i * 10, "Westbound - Platform 2") },
+            fetchedAt = now.minusSeconds(60),
+        )
+        val restoration = StateRestorationTester(composeRule)
+        restoration.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(DeparturesUiState.Loaded(listOf(station, turnpikeLaneSouth()), now.minusSeconds(60)), now, {})
+                }
+            }
+        }
+        composeRule.onNodeWithContentDescription("Platform 2, Westbound", substring = true).performClick()
+        composeRule.waitForIdle()
+        // The one platform is one tall card, so scroll by a drag rather than to an item.
+        composeRule.onNode(hasScrollToIndexAction()).performTouchInput { swipeUp() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Dest 1").assertIsNotDisplayed()
+
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.waitForIdle()
+        // Still the platform view, still scrolled past the first line.
+        composeRule.onNodeWithContentDescription("Back").assertExists()
+        composeRule.onNodeWithText("Dest 1").assertIsNotDisplayed()
     }
 
     @Test
