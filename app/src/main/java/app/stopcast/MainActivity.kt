@@ -69,6 +69,11 @@ import app.stopcast.data.StationIndexStore
 import app.stopcast.domain.RouteStopsRepository
 import app.stopcast.data.SharedTflRateLimiter
 import app.stopcast.data.SharedTflRequestPool
+import app.stopcast.data.RailApiKeySetting
+import app.stopcast.domain.TflClient
+import app.stopcast.domain.RailAwareTflClient
+import app.stopcast.data.RailStationCodesStore
+import app.stopcast.data.KtorDarwinClient
 import app.stopcast.data.UserApiKeySetting
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.BugReport
@@ -122,6 +127,7 @@ import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -157,6 +163,42 @@ internal fun bugReportScreenshotUri(file: File, log: DebugLog, mint: (File) -> U
 private sealed interface ApiKeyLoad {
     data object Loading : ApiKeyLoad
     data class Loaded(val key: String?) : ApiKeyLoad
+}
+
+/**
+ * A stored key ([read] from [settings]) for its Settings field, and whether it has been read yet:
+ * [ApiKeyLoad] rather than a bare nullable, since a key is itself nullable (none), so a bare
+ * `null` couldn't tell "not read yet" from "loaded, no key", and the field must stay disabled
+ * until it's really loaded, so a slow read can't present an empty field the user edits over a key
+ * that then arrives and resets the draft (Codex P2, mirroring the live-widget switch).
+ *
+ * Loading is a first-open concern, not a per-rotation one: the collection restarts at Loading on
+ * every configuration change, and letting the field flash back through "not loaded"/empty would
+ * re-seed and drop an unsaved edit (Codex). So the last loaded key and the loaded flag are retained
+ * across recreation (saved under [name]), and after a rotation the field keeps the real key.
+ */
+@Composable
+private fun rememberStoredKey(
+    settings: AppSettings,
+    name: String,
+    read: (AppSettings) -> Flow<String?>,
+): Pair<String?, Boolean> {
+    val loadFlow = remember(settings) { read(settings).map<String?, ApiKeyLoad> { ApiKeyLoad.Loaded(it) } }
+    val load: ApiKeyLoad by loadFlow.collectAsStateWithLifecycle(initialValue = ApiKeyLoad.Loading)
+    var lastLoadedKey by rememberSaveable(key = "$name-key") { mutableStateOf<String?>(null) }
+    var everLoaded by rememberSaveable(key = "$name-loaded") { mutableStateOf(false) }
+    LaunchedEffect(load) {
+        (load as? ApiKeyLoad.Loaded)?.let {
+            lastLoadedKey = it.key
+            everLoaded = true
+        }
+    }
+    // Loaded(null) is no key: keep it null, don't fall back to the retained key.
+    val value = when (val current = load) {
+        is ApiKeyLoad.Loaded -> current.key
+        ApiKeyLoad.Loading -> lastLoadedKey
+    }
+    return value to (load is ApiKeyLoad.Loaded || everLoaded)
 }
 
 class MainActivity : ComponentActivity() {
@@ -324,35 +366,10 @@ class MainActivity : ComponentActivity() {
 
                 // The user's TfL app_key for the Settings field. Read from the store (the source of
                 // truth), so an external change — a restore, or the warmed holder's own write —
-                // reflects in the field. Wrapped in a load marker because the stored value is itself
-                // nullable (null = keyless), so a bare `null` couldn't tell "not read yet" from
-                // "loaded, no key" — and the field must stay disabled until it's really loaded, so a
-                // slow read can't present an empty field the user edits over a key that then arrives
-                // and resets the draft (Codex P2, mirroring the live-widget switch).
-                val apiKeyLoadFlow = remember(settings) {
-                    settings.userApiKey().map<String?, ApiKeyLoad> { ApiKeyLoad.Loaded(it) }
-                }
-                val apiKeyLoad: ApiKeyLoad by apiKeyLoadFlow
-                    .collectAsStateWithLifecycle(initialValue = ApiKeyLoad.Loading)
-                // Loading is a first-open concern, not a per-rotation one: the collection restarts at
-                // Loading on every configuration change, and letting the field flash back through
-                // "not loaded"/empty would re-seed and drop an unsaved edit the user was making
-                // (Codex). Retain the last loaded key and the loaded flag across recreation, so after
-                // a rotation the field keeps the real key (and stays enabled) with no transient.
-                var lastLoadedKey by rememberSaveable { mutableStateOf<String?>(null) }
-                var apiKeyEverLoaded by rememberSaveable { mutableStateOf(false) }
-                LaunchedEffect(apiKeyLoad) {
-                    (apiKeyLoad as? ApiKeyLoad.Loaded)?.let {
-                        lastLoadedKey = it.key
-                        apiKeyEverLoaded = true
-                    }
-                }
-                val apiKeyLoaded = apiKeyLoad is ApiKeyLoad.Loaded || apiKeyEverLoaded
-                // Loaded(null) is keyless — keep it null, don't fall back to the retained key.
-                val userApiKeyValue = when (val load = apiKeyLoad) {
-                    is ApiKeyLoad.Loaded -> load.key
-                    ApiKeyLoad.Loading -> lastLoadedKey
-                }
+                // reflects in the field; disabled until read ([rememberStoredKey]).
+                val (userApiKeyValue, apiKeyLoaded) = rememberStoredKey(settings, "tfl") { it.userApiKey() }
+                // The National Rail key, read the same way.
+                val (railApiKeyValue, railApiKeyLoaded) = rememberStoredKey(settings, "rail") { it.railApiKey() }
                 // Whether the consent dialog is open is held in a retained ViewModel, not the saved
                 // bundle: it survives a configuration change (rotation) so the open dialog isn't
                 // discarded with the Send (Codex P2 on #86), but resets on process death — where the
@@ -434,6 +451,10 @@ class MainActivity : ComponentActivity() {
                                 userApiKey = userApiKeyValue.orEmpty(),
                                 userApiKeyLoaded = apiKeyLoaded,
                                 onUserApiKeyChange = { key -> UserApiKeySetting.set(key) },
+                                // The National Rail key, handled the same way (SPEC *National Rail*).
+                                railApiKey = railApiKeyValue.orEmpty(),
+                                railApiKeyLoaded = railApiKeyLoaded,
+                                onRailApiKeyChange = { key -> RailApiKeySetting.set(key) },
                                 onBack = { settingsOpen = false },
                             )
                         }
@@ -735,13 +756,8 @@ class MainActivity : ComponentActivity() {
                 factory = viewModelFactory {
                     initializer {
                         MainViewModel(
-                            client = KtorTflClient(
-                                httpClient,
-                                appKey = { UserApiKeySetting.current },
-                                rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
-                                requestPool = SharedTflRequestPool.pool,
-                                warn = ::logDepartureWarning,
-                            ),
+                            client = departuresClient(appContext),
+                            departureSourceChanges = RailApiKeySetting.changes,
                             seedStops = ready.eagerStops,
                             initialMore = ready.more,
                             // Save-only snapshot store: the app writes each fresh snapshot for
@@ -1100,13 +1116,8 @@ class MainActivity : ComponentActivity() {
                 factory = viewModelFactory {
                     initializer {
                         MainViewModel(
-                            client = KtorTflClient(
-                                httpClient,
-                                appKey = { UserApiKeySetting.current },
-                                rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
-                                requestPool = SharedTflRequestPool.pool,
-                                warn = ::logDepartureWarning,
-                            ),
+                            client = departuresClient(appContext),
+                            departureSourceChanges = RailApiKeySetting.changes,
                             seedStops = ready.stops,
                             // Stars and dismissals are per row/place across every view, so a star
                             // set here shows on the near-me list too, and the other way round.
@@ -1228,6 +1239,22 @@ class MainActivity : ComponentActivity() {
         // single long-lived client is OkHttp's own recommended shape; it lives for the
         // process and dies with it.
         private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
+
+        // A departures list's client: TfL's, plus National Rail's own live departures at a rail
+        // station once the user has pasted a National Rail key (SPEC *National Rail*). The key and
+        // the bundled station codes are read per request, so a paste applies on the next refresh.
+        private fun departuresClient(context: Context): TflClient = RailAwareTflClient(
+            tfl = KtorTflClient(
+                httpClient,
+                appKey = { UserApiKeySetting.current },
+                rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                requestPool = SharedTflRequestPool.pool,
+                warn = ::logDepartureWarning,
+            ),
+            rail = KtorDarwinClient(httpClient, apiKey = { RailApiKeySetting.current }, warn = ::logDepartureWarning),
+            codes = { RailStationCodesStore.load(context.applicationContext) },
+            warn = ::logDepartureWarning,
+        )
 
         // "Find a station": the name search and a station's stop lookup, both on demand from the
         // search screen, never on the refresh path. The typed query goes to TfL only (SPEC *Privacy*).

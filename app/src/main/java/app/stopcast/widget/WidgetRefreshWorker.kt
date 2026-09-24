@@ -1,5 +1,8 @@
 package app.stopcast.widget
 
+import app.stopcast.data.KtorDarwinClient
+import app.stopcast.data.RailStationCodesStore
+import app.stopcast.domain.RailAwareTflClient
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.updateAll
@@ -202,14 +205,22 @@ class WidgetRefreshWorker(appContext: Context, params: WorkerParameters) :
         // (rateLimiterFor), so a widget-only process needn't wait for the process-wide holder to
         // warm and the budget always matches the key sent.
         val userKey = settings.userApiKey().first()
+        // The National Rail key likewise (SPEC *National Rail*): with it, a rail station's National
+        // Rail departures join TfL's, as in the app. Never logged.
+        val railKey = settings.railApiKey().first()
         try {
             val http = KtorTflClient.defaultHttpClient()
             try {
-                val client = KtorTflClient(
-                    http,
-                    appKey = { userKey },
-                    rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
-                    requestPool = SharedTflRequestPool.pool,
+                val client = RailAwareTflClient(
+                    tfl = KtorTflClient(
+                        http,
+                        appKey = { userKey },
+                        rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                        requestPool = SharedTflRequestPool.pool,
+                    ),
+                    rail = KtorDarwinClient(http, apiKey = { railKey }, warn = ::logWidgetSnapshotWarning),
+                    codes = { RailStationCodesStore.load(applicationContext) },
+                    warn = ::logWidgetSnapshotWarning,
                 )
                 val refreshed = WidgetRefresh.refreshedArrivals(
                     prior,

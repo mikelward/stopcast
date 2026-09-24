@@ -1398,42 +1398,23 @@ Builds on Phase 1's minimal line-status marking.
       an opt-in request and an explicit denied-state behavior — don't run the worker (burning
       battery and TfL quota) while every alert is invisible — with the permission behavior
       recorded in SPEC.
-- [ ] (Later, open call) **National Rail departures** (recorded 2026-09-19; detailed
-      2026-09-24 after a maintainer report from a National Rail interchange). The maintainer
-      asked to record it, not build it yet.
-  - **The gap.** TfL's Unified API arrivals cover tube, Overground, Elizabeth line, DLR, tram,
-    bus and river bus only. A National Rail station (`910G…`) comes back with its operators'
-    line statuses and no predictions. At a shared interchange, a disrupted Great Northern or
-    Thameslink service shows only as its status row, and one in good service isn't listed at
-    all. Until this lands that row says "No data" rather than a dash that read as an empty
-    result (maintainer, 2026-09-24).
-  - **Source.** National Rail's Darwin, through its request/response departure-board service
-    (OpenLDBWS, `GetDepBoardWithDetails`). It fits the poll-on-demand snapshot/refresh model
-    (D5) as-is. The Darwin push port streams continuously and doesn't fit: it needs an
-    always-connected on-device consumer (wakeups, battery) or a relay service (hosting,
-    another dependency, more privacy exposure). Third-party JSON proxies over Darwin add a
-    dependency and are out. Confirm the current registration route and terms when picked up:
-    the service has been moving to the Rail Data Marketplace.
-  - **Cost and reliability.** £0: free with registration, rate-limited per token. It adds a
-    second point of failure and some latency beside TfL. A rail station's board fails on its
-    own, like any other stop (SPEC principle 2), and never blanks the TfL rows beside it.
-  - **Token.** Either one app token built into the APK, where it can be extracted and a
-    shared rate limit applies, or a user-supplied token in settings, as with the TfL
-    `app_key`. This is a maintainer decision.
-  - **Privacy and Play.** A new endpoint receives the station code and the device's IP, so
-    Data Safety and `docs/PRIVACY.md` need updating before it ships. No location is sent.
-  - **Mapping.** Darwin boards are keyed by CRS code (`KGX`-style). Map TfL's `910G…` station
-    id to its CRS code, from a bundled table or a lookup, to be settled when built. Map each
-    Darwin operator to the existing National Rail pill codes and colors.
-  - **Rendering.** A board row has a scheduled and an expected time ("On time", a time,
-    "Delayed", "Cancelled") plus platform and destination. Countdowns come from the expected
-    time. "Delayed" with no estimate withholds the number ("?"), and a cancellation shows as
-    such rather than dropping out (principle 1). Rows group by destination like TfL rows, and
-    the widget reads them from the same snapshot (D4 staleness applies unchanged).
-  - **Budget.** One board request per rail station in reach, per refresh. Rail stations are
-    few, but the far-stop refresh cadence applies to them too.
-  - **Tests.** Recorded Darwin fixtures (on time, delayed, cancelled, no platform), the CRS
-    mapping, and a screenshot of a mixed TfL and National Rail station.
+- [x] **National Rail departures, first cut** (maintainer, 2026-09-24). With the user's own Rail
+      Data Marketplace key (pasted in Settings, like the TfL key), a rail station's departures
+      also come from Darwin's `GetDepartureBoard`, looked up by CRS from a NaPTAN-built
+      TIPLOC->CRS table bundled with the app and rebuilt weekly with the station list (an exact
+      join on TfL's `910G` id; OGL v3, credited in About). Cancelled and "Delayed"-without-estimate
+      trains are left out; TfL-run services come from TfL only; a failed board keeps the TfL rows.
+      App and widget. Built against the documented response shape, not yet checked live.
+  - [ ] **Re-check Play Data Safety before the release that ships this**: no new data type
+        expected (SPEC *Data source*), but confirm the form and the privacy-policy link.
+  - [ ] **Check the board parser against a live response** and record a real fixture (a public
+        station, no key in the fixture); confirm the product URL in `KtorDarwinClient`.
+  - [ ] **Show delays and cancellations honestly**: a "Delayed" train with no estimate as "?",
+        a cancelled one as cancelled, rather than leaving them out.
+  - [ ] **Say when the board failed**: today a failed board leaves the rail lines at "No data";
+        distinguish "couldn't check National Rail" (a bad key, rate limit) from no key at all.
+  - [ ] **Route pages and journeys for National Rail**: the stop list and journey matching use
+        TfL's route data, which National Rail services may lack.
 
 ## Phase 4 — Widget
 

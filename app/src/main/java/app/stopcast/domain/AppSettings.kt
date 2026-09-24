@@ -76,6 +76,17 @@ interface AppSettings {
      */
     suspend fun setUserApiKey(key: String?)
 
+    /**
+     * The user's own Rail Data Marketplace key for National Rail's live departures (SPEC *National
+     * Rail*), or null: without one, National Rail lines show "No data" as before. A credential like
+     * [userApiKey]: sent only with the user's own National Rail requests, persisted privately, never
+     * logged or placed in any other off-device artifact. Blank reads as null.
+     */
+    fun railApiKey(): Flow<String?> = flowOf(null)
+
+    /** Set [railApiKey]; a null or blank value clears it. Suspending, off the main thread. */
+    suspend fun setRailApiKey(key: String?) {}
+
     companion object {
         /** A store that persists nothing and always reads the defaults — the default for tests
          *  and a build with no wired DataStore, so the app runs identically minus persistence. */
