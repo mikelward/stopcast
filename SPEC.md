@@ -548,8 +548,11 @@ snapshot, each origin and the departures it found to call at the far end (by lin
 branch); the widget pins those and shows nothing else from an origin that isn't nearby. A
 destination the app hasn't seen yet is left out until the app next works the journey out; one a
 complete check finds no longer calls there is dropped, while a check that can't finish (a route
-loading or failed, a restart) keeps what was last saved. The widget's stamp and live refresh count
-an origin only once its journey is saved. With live refresh on, each saved origin that isn't nearby
+loading or failed, a restart) keeps what was last saved. The saved pins are the one copy: each
+check the screen reports is applied to them where they're stored, in one step, and the app's
+ordinary saves leave them alone — so no screen, restart or relocation can write an older copy over
+a newer one. An origin is kept (and counted by the widget's stamp and live refresh) only while a
+pin starts from it. With live refresh on, each saved origin that isn't nearby
 adds one arrivals request per refresh (free; well within TfL's keyless budget for a few journeys),
 the same kind of request the app already makes for it — no new data leaves the device.
 

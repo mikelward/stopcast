@@ -56,7 +56,61 @@ data class WidgetJourneyCheck(
     val shownFrom: String = "",
 )
 
+/**
+ * What the app's screen reports for the widget's journey pins: the starred journeys' [keys] (all of
+ * them — a key missing is an unstar), each placed card's latest [checks], and the stop each journey
+ * is shown [from] (its direction), so a flip drops the old direction's pin even before the new
+ * direction's route can be checked.
+ */
+data class WidgetJourneysReport(
+    val keys: Set<String>,
+    val checks: List<WidgetJourneyCheck>,
+    val from: Map<String, String> = emptyMap(),
+)
+
 object WidgetJourneys {
+    /**
+     * [stored] with its journey pins updated by [report] — the one place the pins change, applied
+     * atomically to the stored snapshot, so every report builds on what is stored rather than on a
+     * copy held elsewhere. A journey whose origin [stored] doesn't hold joins with the copy in
+     * [origins] (as a journey-only stop); one with neither can't be shown, so isn't kept. A stored
+     * origin takes the [origins] copy when that is newer; a journey-only stop no pin starts from
+     * goes. Null when nothing is stored and there is nothing to pin.
+     */
+    fun apply(
+        stored: DeparturesSnapshot?,
+        report: WidgetJourneysReport,
+        origins: List<StopArrivals>,
+    ): DeparturesSnapshot? {
+        val prior = stored?.journeys.orEmpty()
+            .filter { it.key.isNotEmpty() }
+            // Pinned for the other direction than the one now shown: not this journey's pin now.
+            .filterNot { j -> report.from[j.key]?.let { j.shownFrom.isNotEmpty() && it != j.shownFrom } == true }
+            .associateBy { it.key }
+        val stops = stored?.stops.orEmpty()
+        val storedIds = stops.mapTo(HashSet()) { it.stopId }
+        val supplied = origins.associateBy { it.stopId }
+        val journeys = merge(prior, report.keys, report.checks).values
+            .filter { it.calls.isNotEmpty() && (it.originId in storedIds || it.originId in supplied) }
+            .sortedBy { it.key }
+        val pinnedOrigins = journeys.mapTo(HashSet()) { it.originId }
+        val journeyOnly = stored?.journeyOnlyStopIds.orEmpty()
+        val added = pinnedOrigins.filter { it !in storedIds }.sorted()
+        val next = stops
+            .filter { it.stopId !in journeyOnly || it.stopId in pinnedOrigins }
+            .map { stop ->
+                supplied[stop.stopId]?.takeIf { stop.stopId in pinnedOrigins && it.fetchedAt > stop.fetchedAt } ?: stop
+            } + added.map { supplied.getValue(it) }
+        if (stored == null && next.isEmpty()) return null
+        val nextIds = next.mapTo(HashSet()) { it.stopId }
+        return DeparturesSnapshot(
+            stops = next,
+            fetchedAt = next.maxOfOrNull { it.fetchedAt } ?: stored!!.fetchedAt,
+            journeys = journeys,
+            journeyOnlyStopIds = journeyOnly.filterTo(HashSet()) { it in nextIds } + added,
+        )
+    }
+
     /**
      * [memory] after the latest [checks], keeping only the starred [keys]. A journey keeps what it
      * last knew through a check that couldn't finish (a route loading or failed), so a reload

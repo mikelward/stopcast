@@ -5,6 +5,8 @@ import app.stopcast.domain.Departure
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.JourneyCall
 import app.stopcast.domain.WidgetJourney
+import app.stopcast.domain.WidgetJourneyCheck
+import app.stopcast.domain.WidgetJourneysReport
 import app.stopcast.domain.StopArrivals
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +32,10 @@ class DataStoreSnapshotStoreTest {
             transform: suspend (t: PersistedSnapshot?) -> PersistedSnapshot?,
         ): PersistedSnapshot? = transform(state.value).also { state.value = it }
     }
+
+    /** A report pinning [pin] as a check at its origin confirms it. */
+    private fun pinning(pin: WidgetJourney) =
+        WidgetJourneysReport(setOf(pin.key), listOf(WidgetJourneyCheck(pin.key, pin.originId, pin.calls)))
 
     private fun snapshot() = DeparturesSnapshot(
         stops = listOf(
@@ -68,13 +74,12 @@ class DataStoreSnapshotStoreTest {
         )
         store.save(withJourneys)
         assertEquals(withJourneys, store.load())
-        assertEquals(withJourneys, store.loadForWidget())
     }
 
     @Test
     fun `an unstarred journey is dropped from the stored snapshot, with its journey-only stop`() = runTest {
         val store = DataStoreSnapshotStore(FakeDataStore(null))
-        val kept = WidgetJourney("940GZZLUOXC", setOf(JourneyCall("victoria", "Brixton", null)), "keep")
+        val kept = WidgetJourney("940GZZLUOXC", setOf(JourneyCall("victoria", "Brixton", null)), "keep", "940GZZLUOXC")
         val gone = WidgetJourney("490000009Z", setOf(JourneyCall("b1", "Hill", null)), "gone")
         val base = snapshot()
         val origin = base.stops.first().copy(stopId = "490000009Z")
@@ -85,11 +90,11 @@ class DataStoreSnapshotStoreTest {
                 journeyOnlyStopIds = setOf("490000009Z"),
             ),
         )
-        store.retainWidgetJourneys(setOf("keep"))
+        store.updateWidgetJourneys(WidgetJourneysReport(setOf("keep"), emptyList()), emptyList())
         val after = store.load()!!
         assertEquals(listOf(kept), after.journeys)
-        // A flipped journey (same key, another origin) is dropped too.
-        store.retainWidgetJourneys(setOf("keep"), mapOf("keep" to "940GZZLUKSX"))
+        // A flipped journey (now shown from another stop) is dropped too.
+        store.updateWidgetJourneys(WidgetJourneysReport(setOf("keep"), emptyList(), mapOf("keep" to "940GZZLUKSX")), emptyList())
         assertTrue(store.load()!!.journeys.isEmpty())
         assertTrue(after.journeyOnlyStopIds.isEmpty())
         assertEquals(base.stops.map { it.stopId }, after.stops.map { it.stopId })
@@ -133,13 +138,17 @@ class DataStoreSnapshotStoreTest {
     }
 
     @Test
-    fun `replaceWidgetJourneys swaps the journeys and leaves the stops`() = runTest {
-        val old = WidgetJourney("940GZZLUOXC", setOf(JourneyCall("victoria", "Brixton", null)), "k")
+    fun `updateWidgetJourneys applies a complete check and leaves the stops`() = runTest {
+        val brixton = JourneyCall("victoria", "Brixton", null)
+        val old = WidgetJourney("940GZZLUOXC", setOf(brixton), "k")
         val store = DataStoreSnapshotStore(FakeDataStore(snapshot().copy(journeys = listOf(old)).toPersisted()))
-        val new = old.copy(calls = setOf(JourneyCall("victoria", "Walthamstow Central", null)))
-        store.replaceWidgetJourneys(listOf(new, WidgetJourney("940GZZLUKSX", emptySet(), "other")))
+        val walthamstow = JourneyCall("victoria", "Walthamstow Central", null)
+        val check = WidgetJourneyCheck("k", "940GZZLUOXC", setOf(walthamstow), setOf(brixton, walthamstow))
+        // A journey with nothing confirmed isn't pinned.
+        val none = WidgetJourneyCheck("other", "940GZZLUOXC", emptySet())
+        store.updateWidgetJourneys(WidgetJourneysReport(setOf("k", "other"), listOf(check, none)), emptyList())
         val after = store.load()!!
-        assertEquals(listOf(new), after.journeys)
+        assertEquals(listOf(old.copy(calls = setOf(walthamstow))), after.journeys)
         assertEquals(snapshot().stops, after.stops)
     }
 
@@ -167,11 +176,11 @@ class DataStoreSnapshotStoreTest {
     }
 
     @Test
-    fun `replaceWidgetJourneys adds a supplied origin the store doesn't hold`() = runTest {
+    fun `updateWidgetJourneys adds a supplied origin the store doesn't hold`() = runTest {
         val store = DataStoreSnapshotStore(FakeDataStore(snapshot().toPersisted()))
         val origin = snapshot().stops.first().copy(stopId = "490000009Z")
         val pin = WidgetJourney("490000009Z", setOf(JourneyCall("b1", "Hill", null)), "k")
-        store.replaceWidgetJourneys(listOf(pin), listOf(origin))
+        store.updateWidgetJourneys(pinning(pin), listOf(origin))
         val after = store.load()!!
         assertEquals(listOf(pin), after.journeys)
         assertEquals(setOf("490000009Z"), after.journeyOnlyStopIds)
@@ -179,15 +188,15 @@ class DataStoreSnapshotStoreTest {
     }
 
     @Test
-    fun `replaceWidgetJourneys refreshes a stored origin only with newer arrivals`() = runTest {
+    fun `updateWidgetJourneys refreshes a stored origin only with newer arrivals`() = runTest {
         val stored = snapshot().stops.first()
         val pin = WidgetJourney(stored.stopId, setOf(JourneyCall("b1", "Hill", null)), "k")
         val store = DataStoreSnapshotStore(FakeDataStore(snapshot().toPersisted()))
         val older = stored.copy(fetchedAt = stored.fetchedAt.minusSeconds(60), departures = emptyList())
-        store.replaceWidgetJourneys(listOf(pin), listOf(older))
+        store.updateWidgetJourneys(pinning(pin), listOf(older))
         assertEquals(listOf(stored), store.load()!!.stops)
         val newer = stored.copy(fetchedAt = stored.fetchedAt.plusSeconds(60), departures = emptyList())
-        store.replaceWidgetJourneys(listOf(pin), listOf(newer))
+        store.updateWidgetJourneys(pinning(pin), listOf(newer))
         val after = store.load()!!
         assertEquals(listOf(newer), after.stops)
         assertEquals(newer.fetchedAt, after.fetchedAt)
@@ -196,11 +205,11 @@ class DataStoreSnapshotStoreTest {
     }
 
     @Test
-    fun `replaceWidgetJourneys starts a snapshot when nothing is stored`() = runTest {
+    fun `updateWidgetJourneys starts a snapshot when nothing is stored`() = runTest {
         val store = DataStoreSnapshotStore(FakeDataStore(null))
         val origin = snapshot().stops.first().copy(stopId = "490000009Z")
         val pin = WidgetJourney("490000009Z", setOf(JourneyCall("b1", "Hill", null)), "k")
-        store.replaceWidgetJourneys(listOf(pin), listOf(origin))
+        store.updateWidgetJourneys(pinning(pin), listOf(origin))
         val after = store.load()!!
         assertEquals(listOf(pin), after.journeys)
         assertEquals(listOf(origin), after.stops)
@@ -208,7 +217,7 @@ class DataStoreSnapshotStoreTest {
         assertEquals(origin.fetchedAt, after.fetchedAt)
         // No pin, nothing stored: still nothing.
         val empty = DataStoreSnapshotStore(FakeDataStore(null))
-        empty.replaceWidgetJourneys(emptyList(), emptyList())
+        empty.updateWidgetJourneys(WidgetJourneysReport(emptySet(), emptyList()), emptyList())
         assertNull(empty.load())
     }
 
@@ -218,11 +227,11 @@ class DataStoreSnapshotStoreTest {
         val origin = snapshot().stops.first().copy(stopId = "490000009Z")
         val pin = WidgetJourney("490000009Z", setOf(JourneyCall("b1", "Hill", null)), "k")
         val replaced = FakeDataStore(v1)
-        DataStoreSnapshotStore(replaced).replaceWidgetJourneys(listOf(pin), listOf(origin))
+        DataStoreSnapshotStore(replaced).updateWidgetJourneys(pinning(pin), listOf(origin))
         assertEquals(PersistedSnapshot.CURRENT_VERSION, replaced.state.value!!.version)
         val pinned = snapshot().copy(journeys = listOf(pin.copy(originId = "940GZZLUOXC"))).toPersisted().copy(version = 1)
         val retained = FakeDataStore(pinned)
-        DataStoreSnapshotStore(retained).retainWidgetJourneys(emptySet())
+        DataStoreSnapshotStore(retained).updateWidgetJourneys(WidgetJourneysReport(emptySet(), emptyList()), emptyList())
         assertEquals(PersistedSnapshot.CURRENT_VERSION, retained.state.value!!.version)
         val pruned = FakeDataStore(pinned)
         DataStoreSnapshotStore(pruned).pruneStops(listOf("940GZZLUOXC"))
@@ -254,24 +263,39 @@ class DataStoreSnapshotStoreTest {
     }
 
     @Test
-    fun `saveKeepingFresher keeps a stop's newer stored arrivals`() = runTest {
+    fun `saveKeepingJourneys keeps a stop's newer stored arrivals, and never writes the pins`() = runTest {
+        val journeys = listOf(WidgetJourney("940GZZLUOXC", setOf(JourneyCall("victoria", "Brixton", null)), "k"))
         val newer = snapshot().let { s ->
-            s.copy(stops = s.stops.map { it.copy(fetchedAt = now.plusSeconds(120)) }, fetchedAt = now.plusSeconds(120))
+            s.copy(stops = s.stops.map { it.copy(fetchedAt = now.plusSeconds(120)) }, fetchedAt = now.plusSeconds(120), journeys = journeys)
         }
         val store = DataStoreSnapshotStore(FakeDataStore(newer.toPersisted()))
-        val journeys = listOf(WidgetJourney("940GZZLUOXC", setOf(JourneyCall("victoria", "Brixton", null)), "k"))
-        // The app's older copy, re-saved with a journey change.
-        store.saveKeepingFresher(snapshot().copy(journeys = journeys))
+        // The app's older copy, saved with pins of its own.
+        store.saveKeepingJourneys(snapshot().copy(journeys = emptyList()))
         val after = store.load()!!
         assertEquals(newer.stops, after.stops)
         assertEquals(journeys, after.journeys)
     }
 
     @Test
-    fun `saveKeepingFresher keeps a same-age stop the store marks as failed`() = runTest {
+    fun `saveKeepingJourneys leaves out a journey-only stop no pin starts from`() = runTest {
+        val store = DataStoreSnapshotStore(FakeDataStore(snapshot().toPersisted()))
+        val origin = snapshot().stops.first().copy(stopId = "490000009Z")
+        // Fetched later than the nearby stop: it mustn't stamp the snapshot once it's left out.
+        val later = origin.copy(fetchedAt = now.plusSeconds(60))
+        store.saveKeepingJourneys(
+            snapshot().copy(stops = snapshot().stops + later, fetchedAt = later.fetchedAt, journeyOnlyStopIds = setOf("490000009Z")),
+        )
+        val after = store.load()!!
+        assertEquals(snapshot().stops, after.stops)
+        assertTrue(after.journeyOnlyStopIds.isEmpty())
+        assertEquals(now, after.fetchedAt)
+    }
+
+    @Test
+    fun `saveKeepingJourneys keeps a same-age stop the store marks as failed`() = runTest {
         val failed = snapshot().let { s -> s.copy(stops = s.stops.map { it.copy(arrivalsFresh = false) }) }
         val store = DataStoreSnapshotStore(FakeDataStore(failed.toPersisted()))
-        store.saveKeepingFresher(snapshot())
+        store.saveKeepingJourneys(snapshot())
         assertEquals(failed.stops, store.load()!!.stops)
     }
 

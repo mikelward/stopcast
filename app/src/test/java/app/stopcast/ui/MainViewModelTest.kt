@@ -20,6 +20,8 @@ import app.stopcast.domain.TflClient
 import app.stopcast.domain.TflException
 import app.stopcast.domain.WidgetJourney
 import app.stopcast.domain.WidgetJourneyCheck
+import app.stopcast.domain.WidgetJourneys
+import app.stopcast.domain.WidgetJourneysReport
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
@@ -109,23 +111,26 @@ class MainViewModelTest {
         // When > 0, the next this-many save() calls throw instead of storing — to exercise a
         // shrink-save that fails so the pending-persist is retried, not dropped (Codex, PR #87).
         var failSaves: Int = 0
-        val retained = mutableListOf<Set<String>>()
         override suspend fun load(): DeparturesSnapshot? = stored
-        val retainedOrigins = mutableListOf<Map<String, String>>()
-        val replaced = mutableListOf<List<WidgetJourney>>()
-        val keptJourneysSaves = mutableListOf<DeparturesSnapshot>()
+        // Every widget-journeys report written, with the origins it came with.
+        val reports = mutableListOf<WidgetJourneysReport>()
+        val reportOrigins = mutableListOf<List<StopArrivals>>()
+        // When > 0, the next this-many journeys writes throw.
+        var failJourneyWrites: Int = 0
+        override suspend fun updateWidgetJourneys(report: WidgetJourneysReport, origins: List<StopArrivals>) {
+            if (failJourneyWrites > 0) {
+                failJourneyWrites--
+                throw RuntimeException("journeys write failed")
+            }
+            reports += report
+            reportOrigins += origins
+            stored = WidgetJourneys.apply(stored, report, origins)
+        }
+        // The app's saves: recorded as given, stored with the pins kept as they are.
         override suspend fun saveKeepingJourneys(snapshot: DeparturesSnapshot) {
-            keptJourneysSaves += snapshot
+            val journeys = stored?.journeys.orEmpty()
             save(snapshot)
-        }
-        val replacedOrigins = mutableListOf<List<StopArrivals>>()
-        override suspend fun replaceWidgetJourneys(journeys: List<WidgetJourney>, origins: List<StopArrivals>) {
-            replaced += journeys
-            replacedOrigins += origins
-        }
-        override suspend fun retainWidgetJourneys(keys: Set<String>, origins: Map<String, String>) {
-            retained += keys
-            retainedOrigins += origins
+            stored = snapshot.copy(journeys = journeys)
         }
         override suspend fun save(snapshot: DeparturesSnapshot) {
             if (failSaves > 0) {
@@ -2814,466 +2819,124 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `a journey origin joins the widget as journey-only once its journey is worked out`() =
-        runTest(dispatcher) {
-            val store = FakeStore()
-            val client = ReuseCountingClient()
-            val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-            advanceUntilIdle()
+    fun `a worked-out journey is pinned in the store with its fetched origin`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+        // The fetch saves the origin as journey-only, and never writes pins itself.
+        val saved = store.saves.last()
+        assertEquals(setOf(ksxId), saved.journeyOnlyStopIds)
+        assertTrue(saved.journeys.isEmpty())
 
-            vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
-            advanceUntilIdle()
+        val call = JourneyCall("victoria", "Victoria", null)
+        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(call))))
+        advanceUntilIdle()
+        assertEquals(1, client.arrivalCalls[ksxId])
+        assertEquals(listOf(ksxId), store.reportOrigins.last().map { it.stopId })
+        assertEquals(listOf(WidgetJourney(ksxId, setOf(call), "j")), store.stored!!.journeys)
 
-            assertEquals(1, client.arrivalCalls[ksxId])
-            val shown = (vm.state.value as DeparturesUiState.Loaded).stops.map { it.stopId }
-            assertTrue(ksxId in shown)
-            // Not worked out yet: the widget can't show it, so it isn't saved (nor polled by the widget).
-            val saved = store.saves.last()
-            assertEquals(setOf(oxcId), saved.stops.mapTo(HashSet()) { it.stopId })
-            assertTrue(saved.journeys.isEmpty())
-
-            // The screen works the journey out: the last save is re-saved with it, no refetch.
-            val call = JourneyCall("victoria", "Victoria", null)
-            vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(call))))
-            advanceUntilIdle()
-            assertEquals(1, client.arrivalCalls[ksxId])
-            val resaved = store.saves.last()
-            assertEquals(setOf(oxcId, ksxId), resaved.stops.mapTo(HashSet()) { it.stopId })
-            assertEquals(setOf(ksxId), resaved.journeyOnlyStopIds)
-            assertEquals(listOf(WidgetJourney(ksxId, setOf(call), "j")), resaved.journeys)
-        }
+        // A later save keeps the pin.
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf(WidgetJourney(ksxId, setOf(call), "j")), store.stored!!.journeys)
+    }
 
     @Test
-    fun `an unstar reaches the stored widget snapshot even with no save this session`() = runTest(dispatcher) {
-        val store = FakeStore()
+    fun `an unstar reaches the stored pins even when nothing refreshes`() = runTest(dispatcher) {
+        val call = JourneyCall("victoria", "Victoria", null)
+        val pinned = DeparturesSnapshot(
+            stops = listOf(stopArrivals(ksxId, "King's Cross St. Pancras", 600, now.minusSeconds(120))),
+            fetchedAt = now.minusSeconds(120),
+            journeys = listOf(WidgetJourney(ksxId, setOf(call), "j")),
+            journeyOnlyStopIds = setOf(ksxId),
+        )
+        val store = FakeStore(pinned)
         val client = ReuseCountingClient()
         client.failingArrivals += oxcId
         val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
         advanceUntilIdle()
         assertTrue(store.saves.isEmpty())
-        vm.setWidgetJourneys(setOf("a", "b"), emptyList())
+        // Still starred, not checked yet: the stored pin stays.
+        vm.setWidgetJourneys(setOf("j"), emptyList())
         advanceUntilIdle()
-        vm.setWidgetJourneys(setOf("a"), emptyList())
+        assertEquals(pinned.journeys, store.stored!!.journeys)
+        vm.setWidgetJourneys(emptySet(), emptyList())
         advanceUntilIdle()
-        assertEquals(setOf("a"), store.retained.last())
-
-        // A flip the route can't place yet (no check) drops the old pin from the store.
-        vm.setWidgetJourneys(setOf("a"), emptyList(), mapOf("a" to oxcId))
-        vm.setWidgetJourneys(setOf("a"), emptyList(), mapOf("a" to ksxId))
-        advanceUntilIdle()
-        assertEquals(emptySet<String>(), store.retained.last())
-
-        // A flip (same key, new origin) reaches the store too.
-        vm.setWidgetJourneys(setOf("a"), listOf(WidgetJourneyCheck("a", oxcId, setOf(JourneyCall("victoria", "Victoria", null)))))
-        vm.setWidgetJourneys(setOf("a"), listOf(WidgetJourneyCheck("a", ksxId, emptySet())))
-        advanceUntilIdle()
-        assertEquals(mapOf("a" to ksxId), store.retainedOrigins.last())
+        assertTrue(store.stored!!.journeys.isEmpty())
+        assertTrue(store.stored!!.stops.isEmpty())
     }
 
     @Test
-    fun `a journey change during an in-flight journeys re-save is saved after it`() = runTest(dispatcher) {
-        val gate = CompletableDeferred<Unit>()
-        val fake = FakeStore()
-        var hold = false
-        val store = object : SnapshotStore by fake {
-            override suspend fun saveKeepingFresher(snapshot: DeparturesSnapshot) {
-                if (hold) gate.await()
-                fake.save(snapshot)
-            }
-        }
-        val client = ReuseCountingClient()
-        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
-        advanceUntilIdle()
-        val first = JourneyCall("victoria", "Victoria", null)
-        val second = JourneyCall("victoria", "Brixton", null)
-        hold = true
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(first))))
-        advanceUntilIdle()
-        // A complete check replaces the first while its re-save is held.
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(second), setOf(first, second))))
-        hold = false
-        gate.complete(Unit)
-        advanceUntilIdle()
-        assertEquals(listOf(WidgetJourney(ksxId, setOf(second), "j")), fake.saves.last().journeys)
-    }
-
-    @Test
-    fun `a journey worked out while a save is in flight is saved after it`() = runTest(dispatcher) {
-        val gate = CompletableDeferred<Unit>()
-        val fake = FakeStore()
-        var holdSaves = false
-        val store = object : SnapshotStore by fake {
-            override suspend fun save(snapshot: DeparturesSnapshot) {
-                if (holdSaves) gate.await()
-                fake.save(snapshot)
-            }
-            // The app's refresh saves go through here too.
-            override suspend fun saveKeepingFresher(snapshot: DeparturesSnapshot) = save(snapshot)
-        }
-        val client = ReuseCountingClient()
-        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        advanceUntilIdle()
-        holdSaves = true
-        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
-        advanceUntilIdle()
-        // The fetch's save is held; the journey is worked out meanwhile.
-        val call = JourneyCall("victoria", "Victoria", null)
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(call))))
-        holdSaves = false
-        gate.complete(Unit)
-        advanceUntilIdle()
-        assertEquals(listOf(WidgetJourney(ksxId, setOf(call), "j")), fake.saves.last().journeys)
-    }
-
-    @Test
-    fun `a restart keeps the widget's journey pins until the journey is worked out again`() =
-        runTest(dispatcher) {
-            val saved = WidgetJourney(ksxId, setOf(JourneyCall("victoria", "Victoria", null)), "j")
-            val origin = stopArrivals(ksxId, "King's Cross St. Pancras", 600, now.minusSeconds(120))
-            // Like the app's widget store: the stops aren't restored in-app; the widget's are read.
-            val fake = FakeStore()
-            val store = object : SnapshotStore by fake {
-                override suspend fun load(): DeparturesSnapshot? = null
-                override suspend fun loadForWidget(): DeparturesSnapshot = DeparturesSnapshot(
-                    stops = listOf(origin),
-                    fetchedAt = origin.fetchedAt,
-                    journeys = listOf(saved),
-                    journeyOnlyStopIds = setOf(ksxId),
-                )
-            }
-            val client = ReuseCountingClient()
-            val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-            // The journey is still being worked out (a bus's route loading), so its origin isn't
-            // fetched: the nearby refresh's save keeps the pin and the origin's last arrivals.
-            vm.setWidgetJourneys(setOf("j"), emptyList())
-            advanceUntilIdle()
-            assertEquals(listOf(saved), fake.saves.last().journeys)
-            assertTrue(origin.copy(arrivalsFresh = false) in fake.saves.last().stops)
-            assertEquals(setOf(ksxId), fake.saves.last().journeyOnlyStopIds)
-
-            // Unstarred: the pin goes with it.
-            vm.setWidgetJourneys(emptySet(), emptyList())
-            advanceUntilIdle()
-            assertTrue(fake.saves.last().journeys.isEmpty())
-        }
-
-    @Test
-    fun `a restore that fails once is retried before the widget saves`() = runTest(dispatcher) {
-        val saved = WidgetJourney(ksxId, setOf(JourneyCall("victoria", "Victoria", null)), "j")
-        val origin = stopArrivals(ksxId, "King's Cross St. Pancras", 600, now.minusSeconds(120))
-        val fake = FakeStore()
-        var failures = 1
-        val store = object : SnapshotStore by fake {
-            override suspend fun load(): DeparturesSnapshot? = null
-            override suspend fun loadForWidget(): DeparturesSnapshot {
-                if (failures-- > 0) throw java.io.IOException("read failed")
-                return DeparturesSnapshot(stops = listOf(origin), fetchedAt = origin.fetchedAt, journeys = listOf(saved))
-            }
-        }
+    fun `the same report again isn't written twice`() = runTest(dispatcher) {
+        val store = FakeStore()
         val vm = MainViewModel(ReuseCountingClient(), listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        // The screen reports the journey before its route (and the restore) are in: a placeholder.
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, emptySet())))
         advanceUntilIdle()
-        assertEquals(listOf(saved), fake.saves.last().journeys)
+        vm.setWidgetJourneys(setOf("j"), emptyList())
+        vm.setWidgetJourneys(setOf("j"), emptyList())
+        advanceUntilIdle()
+        assertEquals(1, store.reports.size)
     }
 
     @Test
-    fun `a late restore doesn't bring back a departure a check has rejected`() = runTest(dispatcher) {
-        val old = JourneyCall("victoria", "Victoria", null)
-        val saved = WidgetJourney(ksxId, setOf(old), "j")
-        val gate = CompletableDeferred<Unit>()
-        val fake = FakeStore()
-        val store = object : SnapshotStore by fake {
-            override suspend fun load(): DeparturesSnapshot? = null
-            override suspend fun loadForWidget(): DeparturesSnapshot {
-                gate.await()
-                return DeparturesSnapshot(stops = emptyList(), fetchedAt = now, journeys = listOf(saved))
-            }
-        }
-        val vm = MainViewModel(ReuseCountingClient(), listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        // A complete check judges the old call and finds nothing calling there now.
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, emptySet(), setOf(old))))
-        gate.complete(Unit)
-        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
-        advanceUntilIdle()
-        assertTrue(fake.saves.last().journeys.none { old in it.calls })
-    }
-
-    @Test
-    fun `a restored pin for the other direction isn't brought back`() = runTest(dispatcher) {
-        val saved = WidgetJourney(ksxId, setOf(JourneyCall("victoria", "Victoria", null)), "j", shownFrom = ksxId)
-        val gate = CompletableDeferred<Unit>()
-        val fake = FakeStore()
-        val store = object : SnapshotStore by fake {
-            override suspend fun load(): DeparturesSnapshot? = null
-            override suspend fun loadForWidget(): DeparturesSnapshot {
-                gate.await()
-                return DeparturesSnapshot(stops = emptyList(), fetchedAt = now, journeys = listOf(saved))
-            }
-        }
-        val vm = MainViewModel(ReuseCountingClient(), listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        // This session shows the journey from the other end, its route still loading.
-        vm.setWidgetJourneys(setOf("j"), emptyList(), mapOf("j" to oxcId))
-        gate.complete(Unit)
-        advanceUntilIdle()
-        assertTrue(fake.saves.last().journeys.isEmpty())
-        // And it's dropped from storage even if no refresh saves.
-        assertEquals(emptyList<WidgetJourney>(), fake.replaced.last())
-    }
-
-    @Test
-    fun `a call change before the first save still reaches the store`() = runTest(dispatcher) {
-        val old = JourneyCall("victoria", "Victoria", null)
-        val saved = WidgetJourney(ksxId, setOf(old), "j")
-        val fake = FakeStore()
-        val store = object : SnapshotStore by fake {
-            override suspend fun load(): DeparturesSnapshot? = null
-            override suspend fun loadForWidget(): DeparturesSnapshot =
-                DeparturesSnapshot(stops = emptyList(), fetchedAt = now, journeys = listOf(saved))
-        }
-        val client = ReuseCountingClient()
-        client.failingArrivals += oxcId
-        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        advanceUntilIdle()
-        // A complete check now finds another departure calling there instead.
-        val new = JourneyCall("victoria", "Brixton", null)
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(new), setOf(old, new))))
-        advanceUntilIdle()
-        assertTrue(fake.saves.isEmpty())
-        assertEquals(setOf(new), fake.replaced.last().single().calls)
-    }
-
-    @Test
-    fun `a pin added while the restore is still reading is written once it's done`() =
-        pinAddedDuringRestore(DeparturesSnapshot(stops = emptyList(), fetchedAt = now))
-
-    @Test
-    fun `a pin added while the restore finds nothing stored is written once it's done`() =
-        pinAddedDuringRestore(null)
-
-    private fun pinAddedDuringRestore(restored: DeparturesSnapshot?) = runTest(dispatcher) {
-        val gate = CompletableDeferred<Unit>()
-        val fake = FakeStore()
-        val store = object : SnapshotStore by fake {
-            override suspend fun loadForWidget(): DeparturesSnapshot? {
-                gate.await()
-                return restored
-            }
-        }
-        val client = ReuseCountingClient()
-        client.failingArrivals += oxcId
-        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
-        advanceUntilIdle()
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(JourneyCall("victoria", "Victoria", null)))))
-        advanceUntilIdle()
-        assertTrue(fake.replaced.isEmpty())
-        gate.complete(Unit)
-        advanceUntilIdle()
-        assertEquals(listOf("j"), fake.replaced.last().map { it.key })
-    }
-
-    @Test
-    fun `a new pin written before the first save carries its fetched origin`() = runTest(dispatcher) {
-        val fake = FakeStore()
-        val client = ReuseCountingClient()
-        client.failingArrivals += oxcId
-        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = fake)
-        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
-        advanceUntilIdle()
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(JourneyCall("victoria", "Victoria", null)))))
-        advanceUntilIdle()
-        assertTrue(fake.saves.isEmpty())
-        assertEquals(listOf(ksxId), fake.replacedOrigins.last().map { it.stopId })
-    }
-
-    @Test
-    fun `a direct journeys write never lands a stale list over a newer one`() = runTest(dispatcher) {
-        val gate = CompletableDeferred<Unit>()
-        val fake = FakeStore()
-        var hold = true
-        val store = object : SnapshotStore by fake {
-            override suspend fun replaceWidgetJourneys(journeys: List<WidgetJourney>, origins: List<StopArrivals>) {
-                if (hold) gate.await()
-                fake.replaceWidgetJourneys(journeys, origins)
-            }
-        }
-        val client = ReuseCountingClient()
-        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
-        advanceUntilIdle()
-        val first = JourneyCall("victoria", "Victoria", null)
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(first))))
-        advanceUntilIdle()
-        // A relocation cancels a fetch with a change pending: the direct write is held...
-        client.arrivalsGate = CompletableDeferred()
-        vm.refresh()
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, emptySet(), setOf(first))))
-        vm.cancelFetch()
-        advanceUntilIdle()
-        // ...while a newer check pins another departure.
-        val second = JourneyCall("victoria", "Brixton", null)
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(second))))
-        hold = false
-        gate.complete(Unit)
-        advanceUntilIdle()
-        assertEquals(setOf(second), fake.replaced.last().single().calls)
-    }
-
-    @Test
-    fun `an older ViewModel's direct journeys write stands down for a newer one`() = runTest(dispatcher) {
-        val fake = FakeStore()
-        val client = ReuseCountingClient()
-        client.failingArrivals += oxcId
-        val old = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = fake)
-        advanceUntilIdle()
-        // A relocation makes a successor; the old one's pending change mustn't land after it.
-        MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = fake)
-        advanceUntilIdle()
-        val writes = fake.replaced.size
-        old.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(JourneyCall("victoria", "Victoria", null)))))
-        advanceUntilIdle()
-        assertEquals(writes, fake.replaced.size)
-    }
-
-    @Test
-    fun `an older ViewModel's direct journeys write in flight lands before a newer one's save`() = runTest(dispatcher) {
-        val fake = FakeStore()
-        val gate = CompletableDeferred<Unit>()
-        val order = mutableListOf<String>()
-        val store = object : SnapshotStore by fake {
-            override suspend fun replaceWidgetJourneys(journeys: List<WidgetJourney>, origins: List<StopArrivals>) {
-                gate.await()
-                fake.replaceWidgetJourneys(journeys, origins)
-                order += "old write"
-            }
-            override suspend fun saveKeepingFresher(snapshot: DeparturesSnapshot) {
-                fake.save(snapshot)
-                order += "new save"
-            }
-        }
-        val client = ReuseCountingClient()
-        client.failingArrivals += oxcId
-        val old = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        advanceUntilIdle()
-        // The old one's write passes its ownership check, then waits on storage...
-        old.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(JourneyCall("victoria", "Victoria", null)))))
-        advanceUntilIdle()
-        // ...while a relocation makes a successor, whose save must not land first.
-        client.failingArrivals -= oxcId
-        MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        advanceUntilIdle()
-        gate.complete(Unit)
-        advanceUntilIdle()
-        assertEquals(listOf("old write", "new save"), order)
-    }
-
-    @Test
-    fun `a journeys change queued behind a canceled fetch is still written`() = runTest(dispatcher) {
+    fun `a failed journeys write is retried after the next fetch`() = runTest(dispatcher) {
         val store = FakeStore()
         val client = ReuseCountingClient()
         val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
         vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
         advanceUntilIdle()
+        store.failJourneyWrites = 1
         val call = JourneyCall("victoria", "Victoria", null)
         vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, setOf(call))))
         advanceUntilIdle()
-        // A fetch starts; the check changes while it runs; a relocation cancels it.
-        client.arrivalsGate = CompletableDeferred()
+        assertTrue(store.reports.isEmpty())
         vm.refresh()
-        vm.setWidgetJourneys(setOf("j"), listOf(WidgetJourneyCheck("j", ksxId, emptySet(), setOf(call))))
-        vm.cancelFetch()
         advanceUntilIdle()
-        assertEquals(emptyList<WidgetJourney>(), store.replaced.last())
+        assertEquals(listOf(WidgetJourney(ksxId, setOf(call), "j")), store.stored!!.journeys)
     }
 
     @Test
-    fun `saves keep the stored journeys while they can't be read back`() = runTest(dispatcher) {
-        val saved = WidgetJourney(ksxId, setOf(JourneyCall("victoria", "Victoria", null)), "j")
+    fun `an older ViewModel's journeys write stands down for a newer one`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val client = ReuseCountingClient()
+        val old = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
+        advanceUntilIdle()
+        // A relocation makes a successor; the old one's report mustn't land after it.
+        MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
+        advanceUntilIdle()
+        old.setWidgetJourneys(setOf("j"), emptyList())
+        advanceUntilIdle()
+        assertTrue(store.reports.isEmpty())
+    }
+
+    @Test
+    fun `an older ViewModel's journeys write in flight lands before a newer one's`() = runTest(dispatcher) {
         val fake = FakeStore()
-        var failing = true
+        val gate = CompletableDeferred<Unit>()
+        val order = mutableListOf<Set<String>>()
+        var calls = 0
         val store = object : SnapshotStore by fake {
-            override suspend fun load(): DeparturesSnapshot? = null
-            override suspend fun loadForWidget(): DeparturesSnapshot {
-                if (failing) throw java.io.IOException("read failed")
-                val origin = stopArrivals(ksxId, "King's Cross St. Pancras", 600, now.minusSeconds(120))
-                return DeparturesSnapshot(stops = listOf(origin), fetchedAt = now, journeys = listOf(saved), journeyOnlyStopIds = setOf(ksxId))
+            override suspend fun updateWidgetJourneys(report: WidgetJourneysReport, origins: List<StopArrivals>) {
+                if (calls++ == 0) gate.await()
+                order += report.keys
+                fake.updateWidgetJourneys(report, origins)
             }
         }
         val client = ReuseCountingClient()
-        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
+        val old = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
         advanceUntilIdle()
-        // Every start-up read failed: the save leaves the stored journeys alone.
-        assertEquals(1, fake.keptJourneysSaves.size)
-        // Storage recovers: the next save reads them back first and writes them with the rest.
-        failing = false
-        vm.refresh()
+        // The old one's write passes its ownership check, then waits on storage...
+        old.setWidgetJourneys(setOf("old"), emptyList())
         advanceUntilIdle()
-        assertEquals(1, fake.keptJourneysSaves.size)
-        assertEquals(listOf(saved), fake.saves.last().journeys)
+        // ...while a relocation makes a successor, whose write must not land first.
+        val successor = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
+        successor.setWidgetJourneys(setOf("new"), emptyList())
+        advanceUntilIdle()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf(setOf("old"), setOf("new")), order)
     }
-
-    @Test
-    fun `a restored journey origin that was nearby last time is carried too`() = runTest(dispatcher) {
-        val saved = WidgetJourney(ksxId, setOf(JourneyCall("victoria", "Victoria", null)), "j")
-        val origin = stopArrivals(ksxId, "King's Cross St. Pancras", 600, now.minusSeconds(120))
-        val fake = FakeStore()
-        val store = object : SnapshotStore by fake {
-            override suspend fun load(): DeparturesSnapshot? = null
-            // Saved when the origin was a nearby stop, so not marked journey-only.
-            override suspend fun loadForWidget(): DeparturesSnapshot =
-                DeparturesSnapshot(stops = listOf(origin), fetchedAt = origin.fetchedAt, journeys = listOf(saved))
-        }
-        val vm = MainViewModel(ReuseCountingClient(), listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-        vm.setWidgetJourneys(setOf("j"), emptyList())
-        advanceUntilIdle()
-        assertEquals(listOf(saved), fake.saves.last().journeys)
-        assertTrue(origin.copy(arrivalsFresh = false) in fake.saves.last().stops)
-        assertEquals(setOf(ksxId), fake.saves.last().journeyOnlyStopIds)
-    }
-
-    @Test
-    fun `a restored journey origin that's nearby but fails is carried, not dropped`() = runTest(dispatcher) {
-        val saved = WidgetJourney(ksxId, setOf(JourneyCall("victoria", "Victoria", null)), "j")
-        val origin = stopArrivals(ksxId, "King's Cross St. Pancras", 600, now.minusSeconds(120))
-        val fake = FakeStore()
-        val store = object : SnapshotStore by fake {
-            override suspend fun load(): DeparturesSnapshot? = null
-            override suspend fun loadForWidget(): DeparturesSnapshot =
-                DeparturesSnapshot(stops = listOf(origin), fetchedAt = origin.fetchedAt, journeys = listOf(saved))
-        }
-        val client = ReuseCountingClient()
-        client.failingArrivals += ksxId
-        val vm = MainViewModel(client, seeds, clock = { now }, io = dispatcher, snapshotStore = store)
-        vm.setWidgetJourneys(setOf("j"), emptyList())
-        advanceUntilIdle()
-        assertEquals(listOf(saved), fake.saves.last().journeys)
-        assertTrue(origin.copy(arrivalsFresh = false) in fake.saves.last().stops)
-    }
-
-    @Test
-    fun `on a cold start a restored journey origin alone doesn't save over failed nearby stops`() =
-        runTest(dispatcher) {
-            val saved = WidgetJourney(ksxId, setOf(JourneyCall("victoria", "Victoria", null)), "j")
-            val fake = FakeStore()
-            val store = object : SnapshotStore by fake {
-                override suspend fun load(): DeparturesSnapshot? = null
-                override suspend fun loadForWidget(): DeparturesSnapshot = DeparturesSnapshot(
-                    stops = listOf(stopArrivals(ksxId, "King's Cross St. Pancras", 600, now.minusSeconds(120))),
-                    fetchedAt = now.minusSeconds(120),
-                    journeys = listOf(saved),
-                    journeyOnlyStopIds = setOf(ksxId),
-                )
-            }
-            val client = ReuseCountingClient()
-            client.failingArrivals += oxcId
-            val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
-            vm.setWidgetJourneys(setOf("j"), emptyList())
-            vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
-            advanceUntilIdle()
-            assertTrue(fake.saves.isEmpty())
-        }
 
     @Test
     fun `a fresh journey origin doesn't save the widget when its nearby stops failed`() = runTest(dispatcher) {
@@ -3642,7 +3305,7 @@ class MainViewModelTest {
                     fake.save(snapshot)
                 }
                 // The app's refresh saves go through here too.
-                override suspend fun saveKeepingFresher(snapshot: DeparturesSnapshot) = save(snapshot)
+                override suspend fun saveKeepingJourneys(snapshot: DeparturesSnapshot) = save(snapshot)
             }
             val client = ReuseCountingClient()
             val vm = MainViewModel(
