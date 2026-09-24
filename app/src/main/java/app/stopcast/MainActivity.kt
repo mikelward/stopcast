@@ -17,6 +17,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -61,6 +63,7 @@ import app.stopcast.domain.BugReport
 import java.io.IOException
 import app.stopcast.domain.Journeys
 import app.stopcast.data.DataStoreStarredJourneysStore
+import app.stopcast.ui.rememberListStateFor
 import app.stopcast.domain.StarredJourney
 import app.stopcast.domain.CachingStopFinder
 import app.stopcast.domain.NearbyStopsCache
@@ -342,6 +345,14 @@ class MainActivity : ComponentActivity() {
                 // in-memory fix is gone anyway (never persisted, SPEC *Privacy*), so a restored
                 // dialog would only build a location-unavailable report (Codex P2 on #86). The report
                 // inputs are rebuilt from the current [nearby] state (also ViewModel-backed) at send.
+                // The departures list's scroll position, held here — above the Settings/Licenses
+                // overlays and the route page, which take the list out of composition — so returning
+                // from any of them lands where the rider left off, and it survives a rotation too.
+                // It follows the nearby set, as the departures themselves do: a different set of stops
+                // starts at the top (see rememberListStateFor).
+                val departuresListState = rememberListStateFor(
+                    (nearby as? NearbyStopsViewModel.State.Ready)?.clusterSetKey,
+                )
                 val bugReportConsent: BugReportConsentViewModel = viewModel()
                 val requestBugReport = {
                     if (skipBugReportConsent) shareBugReport(bugReportRequestFor(nearby))
@@ -429,6 +440,7 @@ class MainActivity : ComponentActivity() {
                                     // above; consume it here so re-entering departures relocates.
                                     foregroundReturnPending = returnLatch.pending,
                                     onForegroundReturnConsumed = { returnLatch.pending = false },
+                                    listState = departuresListState,
                                 )
                             else -> {
                                 // While the gate is up (a failed/empty relocate, or a retry), drop
@@ -672,6 +684,8 @@ class MainActivity : ComponentActivity() {
         // (re)entry"; [onForegroundReturnConsumed] clears it once acted on.
         foregroundReturnPending: Boolean,
         onForegroundReturnConsumed: () -> Unit,
+        // The departures list's scroll position, hoisted by the caller so it survives the overlays.
+        listState: LazyListState = rememberLazyListState(),
     ) {
         // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
         // the set changes (the user moved and re-located) rather than left keyed in the
@@ -824,6 +838,7 @@ class MainActivity : ComponentActivity() {
                 LocalRouteStops provides routeStops(appContext),
             ) {
                 MainScreen(
+                    listState = listState,
                     state = state,
                     now = tickingNow(),
                     // Re-locates then re-fetches (see onRelocate above) — the same action a return
