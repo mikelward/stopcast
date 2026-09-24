@@ -1761,7 +1761,8 @@ and these carry the rest as their own PRs:
         branching services with the same topology as the widget. Move the pure line-pill color
         resolver out of `LinePill` into the same module, so both apps share one palette and one
         contrast rule.
-  - [ ] Share a versioned watch envelope between the apps, reusing `PersistedStop` unchanged.
+  - [x] Share a versioned watch envelope between the apps, reusing `PersistedStop` unchanged.
+        (`WatchEnvelope` in `:shared`; `PersistedSnapshot.kt` moved there too.)
         - It's capped by encoded bytes: departures trimmed to each stop's freshness window
           (plus enough per destination group past the boundary to fill the display cap). Over
           the `DataItem` budget, the whole envelope goes as an `Asset`; only past a hard
@@ -1793,6 +1794,8 @@ and these carry the rest as their own PRs:
         sync may pass through Google's servers), plus the Data Safety determination.
   - [ ] Disruptions on the watch, only after *Carry disruption / line-status into the widget*
         (Phase 4) adds an age-stamped status. The watch withholds each one at the same expiry.
+        The envelope then carries those line statuses too: a status row (and so a rail line's
+        "No key"/"No data", whose feed state `PersistedStop` already keeps) needs one.
   - [ ] Tile: the widget's rows, the data's age, and a staleness timeline.
         - Entries break at each countdown minute, each departure time, and each stop's own
           staleness boundary.
