@@ -13,7 +13,7 @@ import org.junit.Test
  * text flips black/white to stay legible on the fill; the hollow pill's accent is nudged to
  * stay legible on the surface.
  */
-class LinePillTest {
+class LineColorsTest {
     @Test
     fun `tube lines map to their official TfL color`() {
         assertEquals(Color(0xFFE32017), lineFillColor("central", "tube"))
@@ -162,18 +162,37 @@ class LinePillTest {
     }
 
     @Test
-    fun `the route rail takes the pill's color, including a rail operator's and an Overground accent`() {
-        assertEquals(Color(0xFFE32017), lineAccentColor("central", "tube", "Central"))
-        assertEquals(Color(0xFF8CC63E), lineAccentColor("southern", "national-rail", "Southern"))
-        assertEquals(overgroundAccentColor("mildmay"), lineAccentColor("mildmay", "overground", "Mildmay"))
-        assertNull(lineAccentColor("unknown", "national-rail", "Unknown Trains"))
+    fun `a named Overground line is hollow, its accent nudged for the surface`() {
+        val dark = Color(0xFF121212)
+        val accent = overgroundAccentColor("mildmay")!!
+        assertEquals(
+            PillColors.Hollow(label = accentInkOn(accent, dark), border = accentEdgeOn(accent, dark)),
+            pillColors("Mildmay", "mildmay", "overground", dark),
+        )
     }
 
     @Test
-    fun `a black line's rail is lifted off a dark surface`() {
-        val black = lineAccentColor("northern", "tube", "Northern")!!
-        val dark = Color(0xFF121212)
-        assertTrue(accentEdgeOn(black, dark) != black)
-        assertEquals(black, accentEdgeOn(black, Color.White))
+    fun `a tube line is solid, with its APCA label, outline and halo`() {
+        val fill = Color(0xFF0098D4)
+        val label = textColorOn(fill)
+        assertEquals(
+            PillColors.Solid(fill = fill, label = label, border = borderColorOn(fill), halo = haloFor(label)),
+            pillColors("Victoria", "victoria", "tube", Color.White),
+        )
+    }
+
+    @Test
+    fun `a rail operator's brand wins over its mode, and an unknown operator is neutral`() {
+        val southern = pillColors("Southern", "southern", "national-rail", Color.White)
+        assertEquals(Color(0xFF8CC63E), (southern as PillColors.Solid).fill)
+        assertEquals(PillColors.Neutral, pillColors("Unknown Trains", "unknown", "national-rail", Color.White))
+    }
+
+    @Test
+    fun `a solid pill's colors don't depend on the surface`() {
+        assertEquals(
+            pillColors("Central", "central", "tube", Color.White),
+            pillColors("Central", "central", "tube", Color.Black),
+        )
     }
 }

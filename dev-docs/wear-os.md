@@ -492,6 +492,11 @@ it before committing to the design.
 
 - A **Wear OS release** in the same Play listing and package, on its own form-factor track. The
   Wear AAB is built by `:wear` in the same CI, signed with the same key.
+- **Release gate (maintainer, 2026-09-24):** the watch code is built ahead of the package
+  rename, so nothing ships by accident. `:wear`'s release tasks fail unless the build passes
+  `-Pstopcast.wearRelease=approved`, and fail anyway while the application ID is still
+  `app.stopcast`. CI never passes the flag, and a CI step asserts the release build fails
+  without it. It's lifted only after the rename and the launch decision.
 - It must meet Play's Wear OS app-quality requirements: watch screenshots and a tile that works
   on round screens and at large font scales. The watch honors the system font size; StopCast's
   own text-size factor stays a phone setting unless the maintainer wants it synced.
@@ -500,7 +505,8 @@ it before committing to the design.
 
 ## Suggested order
 
-1. The package rename (a prerequisite; see *Modules*).
+1. The package rename, a prerequisite for **releasing** the watch app (the release gate in
+   *Distribution* enforces it); the code can be built before it.
 2. Extract `:domain` into its own module, and move the route topology asset and loader into the
    shared Android library module (refactor only).
 

@@ -1723,9 +1723,11 @@ and these carry the rest as their own PRs:
       no key and needs no location (companion model, "option A", chosen for the first
       version). The staleness rules carry over (D4): the tile's countdowns tick from a timeline
       and turn stale at the shared threshold, with no polling. The plan, the standalone
-      alternative, privacy, battery and testing are in **`dev-docs/wear-os.md`**. **Blocked on**
-      the package rename (the watch and phone apps must share an application ID). Decided by
-      the maintainer (2026-09-24):
+      alternative, privacy, battery and testing are in **`dev-docs/wear-os.md`**. The code is
+      being built now (maintainer, 2026-09-24), but **the watch app must not be released
+      until the maintainer has renamed the package to `app.stopdash` and decided to launch**:
+      the watch and phone apps share one application ID, and a Play listing can't be renamed.
+      Decided by the maintainer (2026-09-24):
       - a companion app for the first version, with a standalone watch left for later;
       - the watch shows the widget's stops, with no separate watch-only choice;
       - the Data Layer may relay through Google's servers, with a disclosure.
@@ -1733,9 +1735,15 @@ and these carry the rest as their own PRs:
       The doc's remaining open questions (starred journeys, crash reports on the watch, a
       tile-only first release) can be settled as each step comes up.
       Steps, one PR each:
+  - [ ] **Release gate (lands with the `:wear` module):** `:wear`'s release tasks fail
+        unless the build is run with `-Pstopcast.wearRelease=approved`, and fail anyway while its
+        application ID is still `app.stopcast`. CI's root `bundleRelease` never passes the flag,
+        so a deploy can't ship the watch app by accident, and a CI step asserts that
+        `:wear:bundleRelease` fails without it. Lift it only after the rename and the launch
+        decision, in the same PR as the Play step below.
   - [x] Extract `app.stopcast.domain` into a pure-Kotlin `:domain` module (refactor only; the
         package already had no Android imports).
-  - [ ] Move `route_topology.json` and
+  - [x] Move `route_topology.json` and
         `RouteTopologyStore` into a small shared Android library module, so the watch groups
         branching services with the same topology as the widget. Move the pure line-pill color
         resolver out of `LinePill` into the same module, so both apps share one palette and one
@@ -1797,7 +1805,8 @@ and these carry the rest as their own PRs:
         - A foreground ticker advances countdowns and staleness at each boundary, with no
           polling; test it with an injected clock.
         - Add a watch-app `*ScreenshotTest` (round screen, large font) to CI's allow-list.
-  - [ ] Play: file the Data Safety answers decided with the publisher, then a Wear OS release
+  - [ ] Play (**maintainer only, after the rename and the launch decision**): lift the release
+        gate, file the Data Safety answers decided with the publisher, then a Wear OS release
         track with screenshots and the app-quality review.
 
 ## Beyond MVP (not planned)
