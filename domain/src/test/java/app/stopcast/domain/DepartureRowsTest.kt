@@ -793,6 +793,39 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `stopStatusFolded keeps a hub-wide notice once on a list without distances`() {
+        // A searched station's page (no distances): a lift notice TfL reports against each member of
+        // the interchange is one card, kept in the first member's place, while line rows all stay.
+        val notice = "No Step Free Access - Step free access is not available to the Victoria line"
+        val hub = "King's Cross & St Pancras International"
+        val line = lineStatusRow("KGX", "King's Cross St. Pancras", "victoria")
+        val folded = DepartureRows.stopStatusFolded(
+            listOf(
+                stopStatusRow("KGX", "King's Cross St. Pancras", notice, hubId = "HUBKGX", hubName = hub),
+                line,
+                stopStatusRow("STP1", "St Pancras International", notice, hubId = "HUBKGX", hubName = hub),
+                stopStatusRow("STP2", "St Pancras International", notice, hubId = "HUBKGX", hubName = hub),
+            ),
+        )
+        assertEquals(listOf("KGX", "KGX"), folded.map { it.stopId })
+        assertEquals(notice, folded[0].stopDisruption)
+        assertEquals(line, folded[1])
+    }
+
+    @Test
+    fun `stopStatusFolded keeps distinct places and distinct notices apart`() {
+        val folded = DepartureRows.stopStatusFolded(
+            listOf(
+                stopStatusRow("A", "Alpha", "Station closed"),
+                stopStatusRow("B", "Beta", "Station closed"),
+                stopStatusRow("K1", "Hub One", "Lifts out", hubId = "HUBX"),
+                stopStatusRow("K2", "Hub Two", "Escalator out", hubId = "HUBX"),
+            ),
+        )
+        assertEquals(listOf("A", "B", "K1", "K2"), folded.map { it.stopId })
+    }
+
+    @Test
     fun `nearbyDeduped folds a hub-wide notice across an interchange onto the nearest member`() {
         // A hub-wide notice (a lift outage) is reported by TfL against every stop point in an
         // interchange. Those members carry distinct stop ids but one shared hubNaptanCode

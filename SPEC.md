@@ -796,7 +796,9 @@ strips that name from the body for display. Stripping *before* the fold would sp
 differently-named members — see below.
 
 On the **near-me list** one notice reported against **several stop points** is shown **once**, on
-the nearest point, not once per point: a hub-wide "no step-free access" against both King's Cross
+the nearest point, not once per point — and likewise on a list without distances (a searched
+station's page, the watched list), where it is kept on the first point listed (maintainer,
+2026-09-24): a hub-wide "no step-free access" against both King's Cross
 St. Pancras and St Pancras International, or a closed bus stop reported against each pole of one
 junction (reported both ways). The fold keys on `(place, normalized text)` — line breaks fixed but
 the leading name **not** stripped, since that strip is per-member and would otherwise give a hub's

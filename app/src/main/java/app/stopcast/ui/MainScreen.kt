@@ -682,7 +682,9 @@ fun MainScreen(
         // across's soonest-first order (D1).
         val ordered =
             if (stopDistanceMeters.isEmpty()) {
-                across
+                // No line dedupe without distances (a station's page shows every stop), but a
+                // notice TfL reports against each member of a hub is still one card per place.
+                DepartureRows.stopStatusFolded(across)
             } else {
                 val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters)
                 DepartureRows.byStopDistance(deduped, stopDistanceMeters)
