@@ -96,6 +96,8 @@ jobs:
         # The station-index workflow runs it too, but only when the builder changes; this keeps a
         # regression from waiting for the next refresh to surface.
         run: python3 scripts/build_station_index_test.py
+      - name: Test the National Rail station code builder
+        run: python3 scripts/build_crs_index_test.py
       - name: Assemble debug APK
         run: ./gradlew assembleDebug
       - name: Upload debug APK

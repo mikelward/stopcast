@@ -1,22 +1,25 @@
 name: station-index
 
-# Builds the bundled station index (app/src/main/assets/stations/station_index.json) from TfL
-# and commits it to the pull request's branch — the list "Find a station" searches on the device
-# (SPEC *Finding stops*). It runs when a pull request changes the builder or this workflow. The
-# weekly refresh from TfL is station-index-refresh.yml, which opens a pull request of its own.
+# Builds the bundled station index (app/src/main/assets/stations/station_index.json) from TfL,
+# and the National Rail station codes beside it (crs_codes.json) from NaPTAN, and commits both to
+# the pull request's branch — the list "Find a station" searches on the device (SPEC *Finding
+# stops*) and the codes National Rail boards are asked for by. It runs when a pull request changes
+# either builder or this workflow. The weekly refresh is station-index-refresh.yml, which opens a
+# pull request of its own.
 #
-# Split like ci.yml's screenshot sync: the build job runs PR code (the script) with a read-only
+# Split like ci.yml's screenshot sync: the build job runs PR code (the scripts) with a read-only
 # token, and the shared ci-commit-artifact workflow does the commit with its own credential,
 # never running PR code.
 #
-# Cost and reliability (AGENTS.md): 0 pounds — a few keyless TfL requests and a minute of
-# Actions time per run; nothing the app sends, so no Play Data Safety or battery change. If TfL
-# is down or answers oddly the script refuses to write, the run fails, and the committed list
-# stays as it was.
+# Cost and reliability (AGENTS.md): 0 pounds — a few keyless TfL requests, one keyless NaPTAN
+# download and a minute of Actions time per run; nothing the app sends, so no Play Data Safety or
+# battery change. If TfL or NaPTAN is down or answers oddly the script refuses to write, the run
+# fails, and the committed files stay as they were.
 on:
   pull_request:
     paths:
       - scripts/build_station_index.py
+      - scripts/build_crs_index.py
       - .github/workflows/station-index.yml
 permissions: {}
 concurrency:
@@ -36,6 +39,10 @@ jobs:
         run: python3 scripts/build_station_index_test.py
       - name: Build the index from TfL
         run: python3 scripts/build_station_index.py --out build/stations/station_index.json
+      - name: Test the station code builder
+        run: python3 scripts/build_crs_index_test.py
+      - name: Build the station codes from NaPTAN
+        run: python3 scripts/build_crs_index.py --stations build/stations/station_index.json --out build/stations/crs_codes.json
       - name: Upload the index
         uses: actions/upload-artifact@v4
         with:
