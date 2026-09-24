@@ -168,6 +168,7 @@ internal object TileLayout {
                         when (line) {
                             is TileLine.Header -> text(line.text, 12f, gray, bold = true, spoken = line.spoken)
                             is TileLine.Departure -> row(line.row)
+                            TileLine.OnlyHidden -> text(context.getString(R.string.tile_only_hidden), 14f, white, maxLines = 2)
                             is TileLine.EmptyStop -> {
                                 val empty = if (line.uncertain) R.string.tile_may_be_out_of_date else R.string.tile_no_departures
                                 text(context.getString(R.string.tile_stop_empty, line.stopName, context.getString(empty)), 14f, white)

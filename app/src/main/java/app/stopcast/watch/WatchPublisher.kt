@@ -13,6 +13,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flowOf
 
 /** The phone's side of the Data Layer, a seam so [WatchPublisher] is testable without Play services. */
 interface WatchChannel {
@@ -58,12 +59,17 @@ class WatchPublisher(
         data object Failed : Outcome
     }
 
-    suspend fun publish(snapshot: DeparturesSnapshot?, starred: Set<StarredRow>, force: Boolean = false): Outcome {
+    suspend fun publish(
+        snapshot: DeparturesSnapshot?,
+        starred: Set<StarredRow>,
+        hiddenModes: Set<String> = emptySet(),
+        force: Boolean = false,
+    ): Outcome {
         snapshot ?: return Outcome.NothingStored
         return try {
             // Asked first, so a phone with no watch app never builds or hashes an envelope.
             if (!channel.watchInstalled()) return Outcome.NoWatch
-            val payload = WatchEnvelopes.build(snapshot, starred, now = now())
+            val payload = WatchEnvelopes.build(snapshot, starred, hiddenModes = hiddenModes, now = now())
             val hash = sha256(payload.bytes)
             if (!force && hash == marker.get()) return Outcome.Unchanged
             channel.put(payload)
@@ -86,16 +92,17 @@ class WatchPublisher(
             MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
         /**
-         * One publish request per settled change to the stored [snapshots] or [starred] rows: every
-         * write, from any writer, with bursts coalesced to the latest inside [window]. The first
-         * value is the state at start, which the durable marker compares against.
+         * One publish request per settled change to the stored [snapshots], the [starred] rows or
+         * the [hiddenModes]: every write, from any writer, with bursts coalesced to the latest inside
+         * [window]. The first value is the state at start, which the durable marker compares against.
          */
         @OptIn(FlowPreview::class)
         fun requests(
             snapshots: Flow<DeparturesSnapshot?>,
             starred: Flow<Set<StarredRow>>,
+            hiddenModes: Flow<Set<String>> = flowOf(emptySet()),
             window: Duration = COALESCE,
         ): Flow<Pair<DeparturesSnapshot?, Set<StarredRow>>> =
-            combine(snapshots, starred) { snapshot, stars -> snapshot to stars }.debounce(window)
+            combine(snapshots, starred, hiddenModes) { snapshot, stars, _ -> snapshot to stars }.debounce(window)
     }
 }

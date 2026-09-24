@@ -2,6 +2,7 @@ package app.stopcast.data
 
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DeparturesSnapshot
+import app.stopcast.domain.HiddenModes
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopArrivals
@@ -36,6 +37,8 @@ data class WatchEnvelope(
      *  the watch never shows an incomplete refresh as complete. Past the transfer ceiling, one id
      *  stands for the list: the watch reads only whether it's empty. */
     val missingStopIds: List<String> = emptyList(),
+    /** The modes hidden from the near-me list, which the widget leaves out, so the watch does too. */
+    val hiddenModes: List<String> = emptyList(),
 ) {
     companion object {
         /** Bump on any change an older watch app would misread; it refuses rather than guesses. */
@@ -105,6 +108,7 @@ object WatchEnvelopes {
         snapshot: DeparturesSnapshot,
         starred: Set<StarredRow>,
         selected: Set<StarredRow> = emptySet(),
+        hiddenModes: Set<String> = emptySet(),
         threshold: Duration = Staleness.THRESHOLD,
         perGroupCap: Int = PER_GROUP_CAP,
         dataItemBudget: Int = DATA_ITEM_BUDGET_BYTES,
@@ -124,14 +128,20 @@ object WatchEnvelopes {
             val ids = kept.mapTo(HashSet()) { it.stopId }
             return allKeys.filter { it.stopId in ids }
         }
-        val protectedStops = (starred + selected).mapTo(HashSet()) { it.stopId }
+        // A star on a hidden mode's row protects nothing: the watch leaves that row out, as the widget does.
+        val visibleStops = HiddenModes.rows(
+            DepartureRows.across(snapshot.stops, now, splitPlatforms = false),
+            hiddenModes,
+        ).mapTo(HashSet()) { it.stopId }
+        val protectedStops = (starred + selected).map { it.stopId }.filterTo(HashSet()) { it in visibleStops }
         val missing = (snapshot.missingStopIds - snapshot.journeyOnlyStopIds).sorted()
 
-        var envelope = WatchEnvelope(stops = stops, starred = keysFor(stops), missingStopIds = missing)
+        val hidden = hiddenModes.sorted()
+        var envelope = WatchEnvelope(stops = stops, starred = keysFor(stops), missingStopIds = missing, hiddenModes = hidden)
         var bytes = encode(envelope)
         if (bytes.size <= dataItemBudget) return WatchPayload(envelope, bytes, asAsset = false)
         if (bytes.size <= transferCeiling) return WatchPayload(envelope, bytes, asAsset = true)
-        val ranked = rankedStopIds(snapshot.stops.filterNot { it.stopId in snapshot.journeyOnlyStopIds }, starred, threshold, now)
+        val ranked = rankedStopIds(snapshot.stops.filterNot { it.stopId in snapshot.journeyOnlyStopIds }, starred, hiddenModes, threshold, now)
         val dropOrder = ranked.reversed().let { low -> low.filterNot { it in protectedStops } + low.filter { it in protectedStops } }
         // The watch reads only whether any stop is missing, so past the ceiling one id keeps the
         // flag, and the list can't hold the payload over the bound on its own.
@@ -143,21 +153,30 @@ object WatchEnvelopes {
             if (bytes.size <= transferCeiling) break
             dropped += id
             val kept = stops.filterNot { it.stopId in dropped }
-            envelope = WatchEnvelope(stops = kept, starred = keysFor(kept), omittedStops = stops.size - kept.size, missingStopIds = missingFlag)
+            envelope = WatchEnvelope(
+                stops = kept,
+                starred = keysFor(kept),
+                omittedStops = stops.size - kept.size,
+                missingStopIds = missingFlag,
+                hiddenModes = hidden,
+            )
             bytes = encode(envelope)
         }
         return WatchPayload(envelope, bytes, asAsset = true)
     }
 
-    /** The stops by where their first row lands in the widget's order at [now], best first. */
+    /** The stops by where their first row lands in the widget's order at [now], best first; a hidden
+     *  mode's rows don't count, as the widget leaves them out. */
     private fun rankedStopIds(
         stops: List<StopArrivals>,
         starred: Set<StarredRow>,
+        hiddenModes: Set<String>,
         threshold: Duration,
         now: Instant,
     ): List<String> {
         val staleStop = stops.associate { it.stopId to (java.time.Duration.between(it.fetchedAt, now) >= threshold.toJavaDuration()) }
-        val rows = DepartureRows.across(stops, now, splitPlatforms = false).sortedBy { if (staleStop[it.stopId] == true) 1 else 0 }
+        val rows = HiddenModes.rows(DepartureRows.across(stops, now, splitPlatforms = false), hiddenModes)
+            .sortedBy { if (staleStop[it.stopId] == true) 1 else 0 }
         val byRow = DepartureRows.pinStarred(rows, starred, warningsLead = false).map { it.stopId }.distinct()
         return byRow + stops.map { it.stopId }.filterNot { it in byRow }
     }

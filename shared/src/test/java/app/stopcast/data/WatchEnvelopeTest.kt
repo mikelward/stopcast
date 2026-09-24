@@ -300,4 +300,25 @@ class WatchEnvelopeTest {
         assertEquals(1, envelope.missingStopIds.size)
         assertEquals(listOf("940GEXAMPLE1"), envelope.stops.map { it.stopId })
     }
+
+    @Test
+    fun `the hidden modes travel with it`() {
+        val snapshot = DeparturesSnapshot(listOf(stop("940GEXAMPLE1", listOf(departure(2)))), now)
+        val payload = WatchEnvelopes.build(snapshot, emptySet(), hiddenModes = setOf("tube", "bus"), now = now)
+        assertEquals(listOf("bus", "tube"), decoded(payload).hiddenModes)
+    }
+
+    @Test
+    fun `past the ceiling a stop of hidden modes goes before one the tile would show`() {
+        val busOnly = stop("940GBUS", listOf(departure(1, line = "73", mode = "bus")))
+        val tube = stop("940GTUBE", listOf(departure(5)))
+        val snapshot = DeparturesSnapshot(stops = listOf(busOnly, tube), fetchedAt = now)
+        // Starred and soonest, but of a hidden mode: neither protects it nor ranks it first.
+        val star = setOf(StarredRow("940GBUS", "73", "inbound"))
+        val full = WatchEnvelopes.build(snapshot, star, hiddenModes = setOf("bus"), now = now).bytes.size
+        val payload = WatchEnvelopes.build(
+            snapshot, star, hiddenModes = setOf("bus"), dataItemBudget = 10, transferCeiling = full - 1, now = now,
+        )
+        assertEquals(listOf("940GTUBE"), decoded(payload).stops.map { it.stopId })
+    }
 }

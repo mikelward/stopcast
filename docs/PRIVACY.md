@@ -66,8 +66,8 @@ carries your saved data under your control, and a bug report carries what you co
 **Your Wear OS watch (optional; not released yet).** If a watch paired with your phone has the
 StopCast watch app installed, the phone sends it what your home-screen widget shows, so the watch
 can show it too: the widget's stops (their names and IDs, and the nearby stops each is compared
-against, which are worked out from your phone's last location), their departures, and which rows
-you've starred. It never sends your coordinates or your API keys, and the watch never contacts TfL,
+against, which are worked out from your phone's last location), their departures, which rows
+you've starred, and which kinds of transport you've hidden. It never sends your coordinates or your API keys, and the watch never contacts TfL,
 National Rail or anything else itself. In the other direction, the watch will send the phone the
 row each StopCast complication shows, and its requests to refresh. This goes through **Google Play
 services' Wearable Data Layer**: over Bluetooth when the watch is near, but when it isn't (a watch

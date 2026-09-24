@@ -77,6 +77,14 @@ class WatchPublisherTest {
     }
 
     @Test
+    fun `hiding a mode is a change`() = runTest {
+        val channel = FakeChannel()
+        val publisher = WatchPublisher(channel, FakeMarker(), logged::add) { now }
+        publisher.publish(snapshot(), emptySet())
+        assertEquals(WatchPublisher.Outcome.Published, publisher.publish(snapshot(), emptySet(), hiddenModes = setOf("bus")))
+    }
+
+    @Test
     fun `a forced republish goes out even when unchanged`() = runTest {
         val channel = FakeChannel()
         val publisher = WatchPublisher(channel, FakeMarker(), logged::add) { now }
