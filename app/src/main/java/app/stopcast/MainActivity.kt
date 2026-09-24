@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -62,6 +63,7 @@ import app.stopcast.domain.StarredJourney
 import app.stopcast.domain.CachingStopFinder
 import app.stopcast.domain.NearbyStopsCache
 import app.stopcast.domain.Coordinates
+import app.stopcast.domain.StationMatch
 import app.stopcast.domain.StopMap
 import app.stopcast.ui.BugReportConsentDialog
 import app.stopcast.ui.FontSizeSetting
@@ -78,7 +80,12 @@ import app.stopcast.ui.LINE_STATUS_REUSE
 import app.stopcast.ui.MainViewModel
 import app.stopcast.ui.NearbyStopsViewModel
 import app.stopcast.ui.SettingsScreen
+import app.stopcast.ui.StationPlaceholderScreen
+import app.stopcast.ui.StationSearchScreen
+import app.stopcast.ui.StationSearchViewModel
+import app.stopcast.ui.StationStopsViewModel
 import app.stopcast.ui.StopRef
+import app.stopcast.ui.WriteFailures
 import app.stopcast.ui.theme.StopCastTheme
 import app.stopcast.widget.LiveWidgetRefreshResult
 import app.stopcast.widget.StopCastWidget
@@ -96,6 +103,7 @@ import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -259,6 +267,12 @@ class MainActivity : ComponentActivity() {
                 var licensesOpen by rememberSaveable { mutableStateOf(false) }
                 var settingsOpen by rememberSaveable { mutableStateOf(false) }
                 val openLicenses = { licensesOpen = true }
+                // "Find a station" (SPEC *Finding stops*): the search, and the station opened from it
+                // (its TfL id and name). Hosted as overlays like Settings, so the near-me departures
+                // stop polling while they're up; back from a station returns to the search.
+                var stationSearchOpen by rememberSaveable { mutableStateOf(false) }
+                var openStationId by rememberSaveable { mutableStateOf<String?>(null) }
+                var openStationName by rememberSaveable { mutableStateOf("") }
 
                 // App settings + the opt-in "live widget" refresh (SPEC D5). The setting is
                 // collected here and applied to the scheduler at start — so an enabled toggle
@@ -339,7 +353,7 @@ class MainActivity : ComponentActivity() {
                 // switch and composes the foreground-return observer in its aboveOverlay slot — above
                 // the switch — so a return that lands while an overlay is open is still seen (#136).
                 NearbyArea(
-                    overlayOpen = licensesOpen || settingsOpen,
+                    overlayOpen = licensesOpen || settingsOpen || stationSearchOpen || openStationId != null,
                     aboveOverlay = {
                         ForegroundReturnLatcher(
                             isReady = { nearbyViewModel.state.value is NearbyStopsViewModel.State.Ready },
@@ -351,6 +365,26 @@ class MainActivity : ComponentActivity() {
                         // Licenses wins if both are somehow set; each closes via its own Back.
                         if (licensesOpen) {
                             LicensesScreen(onBack = { licensesOpen = false })
+                        } else if (!settingsOpen) {
+                            StationSearchArea(
+                                stationId = openStationId,
+                                stationName = openStationName,
+                                onOpenStation = { match ->
+                                    openStationId = match.id
+                                    openStationName = match.name
+                                },
+                                // The name goes with the id, so nothing about a station looked at is
+                                // kept in the saved state once it's closed.
+                                onCloseStation = {
+                                    openStationId = null
+                                    openStationName = ""
+                                },
+                                onCloseSearch = {
+                                    stationSearchOpen = false
+                                    openStationId = null
+                                    openStationName = ""
+                                },
+                            )
                         } else {
                             SettingsScreen(
                                 liveWidgetRefresh = liveWidgetRefresh == true,
@@ -385,6 +419,7 @@ class MainActivity : ComponentActivity() {
                                     locationBanner = nearbyViewModel.locationBanner,
                                     onOpenLicenses = openLicenses,
                                     onOpenSettings = { settingsOpen = true },
+                                    onFindStation = { stationSearchOpen = true },
                                     updateAvailable = updateAvailable.value,
                                     onOpenAppListing = ::openPlayListing,
                                     onSendBugReport = requestBugReport,
@@ -423,6 +458,9 @@ class MainActivity : ComponentActivity() {
                                     // update item), so surface an available update on the Locating spinner.
                                     updateAvailable = updateAvailable.value,
                                     onOpenAppListing = ::openPlayListing,
+                                    // The station search needs no location, so it's offered here too:
+                                    // most useful to exactly the users who can't use near me.
+                                    onFindStation = { stationSearchOpen = true },
                                 )
                             }
                         }
@@ -620,6 +658,7 @@ class MainActivity : ComponentActivity() {
         locationBanner: StateFlow<LocationBanner?>,
         onOpenLicenses: () -> Unit,
         onOpenSettings: () -> Unit,
+        onFindStation: () -> Unit,
         // Play reports a newer version — the overflow gets its red dot and "Update available"
         // item. Threaded from the activity's [updateAvailable] state, refreshed on each resume.
         updateAvailable: Boolean,
@@ -655,6 +694,8 @@ class MainActivity : ComponentActivity() {
         val stopsKey = remember(ready) { ready.clusterSetKey }
         val stores: NearbyDeparturesStores = viewModel()
         val storeOwner = remember(stopsKey) { stores.ownerFor(stopsKey) }
+        // Shared with a searched station's page, so a write failure there surfaces here too.
+        val writeFailures = viewModel<WriteFailuresHolder>().failures
         CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
             val viewModel: MainViewModel = viewModel(
                 factory = viewModelFactory {
@@ -698,6 +739,7 @@ class MainActivity : ComponentActivity() {
                             // Feeds the per-fetch debug-log line: time spent rate-limited.
                             rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
                             logStats = ::logDepartureWarning,
+                            writeFailures = writeFailures,
                         )
                     }
                 },
@@ -858,6 +900,7 @@ class MainActivity : ComponentActivity() {
                     onStarWriteFailureShown = viewModel::starWriteFailureShown,
                     onOpenLicenses = onOpenLicenses,
                     onOpenSettings = onOpenSettings,
+                    onFindStation = onFindStation,
                     updateAvailable = updateAvailable,
                     onOpenAppListing = onOpenAppListing,
                     revealableModes = revealableModes,
@@ -866,6 +909,150 @@ class MainActivity : ComponentActivity() {
                     onReveal = { mode -> if (!relocatingNow) viewModel.reveal(mode) },
                     onSendBugReport = onSendBugReport,
                     locationBanner = locationBannerNow,
+                )
+            }
+        }
+    }
+
+    /**
+     * "Find a station" (SPEC *Finding stops*): the name search, or — once a match is picked — that
+     * station's live departures. The search's ViewModel is activity-retained, so back from a
+     * station finds the query and matches as they were. A station gets its own retained store
+     * (like a nearby set's), cleared when another station opens or the search closes, so its
+     * fetch stops with it. Its departures are never saved for the widget (no snapshot store): the
+     * widget shows the near-me set, and a station looked up once isn't one the user watches.
+     */
+    @Composable
+    private fun StationSearchArea(
+        stationId: String?,
+        stationName: String,
+        onOpenStation: (StationMatch) -> Unit,
+        onCloseStation: () -> Unit,
+        onCloseSearch: () -> Unit,
+    ) {
+        val search: StationSearchViewModel = viewModel(
+            key = "station-search",
+            factory = viewModelFactory {
+                initializer {
+                    StationSearchViewModel(stationFinder, createSavedStateHandle(), warn = ::logDepartureWarning)
+                }
+            },
+        )
+        val stores: NearbyDeparturesStores = viewModel(key = "station-stores")
+        // The near-me list's write-failure flags: a star or dismiss that fails after this page has
+        // closed (the write outlives it) is shown on the next list instead of lost with the page.
+        val writeFailures = viewModel<WriteFailuresHolder>().failures
+        val closeSearch = {
+            stores.clearAll()
+            search.clear()
+            onCloseSearch()
+        }
+        // Leaving a station drops its retained models, so its departures don't outlive the page
+        // and reopening it fetches afresh rather than showing what was loaded before.
+        val closeStation = {
+            stores.clearAll()
+            onCloseStation()
+        }
+        if (stationId == null) {
+            val state by search.state.collectAsStateWithLifecycle()
+            StationSearchScreen(
+                state = state,
+                onQueryChange = search::onQueryChange,
+                onOpenStation = onOpenStation,
+                onRetry = search::retry,
+                onBack = closeSearch,
+            )
+            return
+        }
+        val appContext = applicationContext
+        val storeOwner = remember(stationId) { stores.ownerFor(stationId) }
+        CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
+            val stopsModel: StationStopsViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer { StationStopsViewModel(stationFinder, stationId, warn = ::logDepartureWarning) }
+                },
+            )
+            val stops by stopsModel.state.collectAsStateWithLifecycle()
+            val ready = stops as? StationStopsViewModel.State.Ready
+            if (ready == null) {
+                StationPlaceholderScreen(
+                    title = stationName,
+                    state = stops,
+                    onRetry = stopsModel::retry,
+                    onBack = closeStation,
+                )
+                return@CompositionLocalProvider
+            }
+            val viewModel: MainViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        MainViewModel(
+                            client = KtorTflClient(
+                                httpClient,
+                                appKey = { UserApiKeySetting.current },
+                                rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                                requestPool = SharedTflRequestPool.pool,
+                                warn = ::logDepartureWarning,
+                            ),
+                            seedStops = ready.stops,
+                            // Stars and dismissals are per row/place across every view, so a star
+                            // set here shows on the near-me list too, and the other way round.
+                            starredStore = DataStoreStarredRowsStore.from(appContext, warn = ::logStarWarning),
+                            dismissedStore = DataStoreDismissedAlertsStore.from(appContext, warn = ::logDepartureWarning),
+                            warn = ::logDepartureWarning,
+                            arrivalsReuse = ARRIVALS_REUSE,
+                            disruptionReuse = DISRUPTION_REUSE,
+                            lineStatusReuse = LINE_STATUS_REUSE,
+                            rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
+                            logStats = ::logDepartureWarning,
+                            // Not the widget's list: the near-me model keeps the journey pins.
+                            ownsWidgetJourneys = false,
+                            // A star set here reorders the widget's pinned rows too, so redraw it.
+                            redrawWidget = { StopCastWidget().updateAll(appContext) },
+                            writeFailures = writeFailures,
+                        )
+                    }
+                },
+            )
+            val state by viewModel.state.collectAsStateWithLifecycle()
+            val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+            val starred by viewModel.starred.collectAsStateWithLifecycle()
+            val starringAvailable by viewModel.starringAvailable.collectAsStateWithLifecycle()
+            val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
+            val dismissed by viewModel.dismissed.collectAsStateWithLifecycle()
+            val dismissWriteFailed by viewModel.dismissWriteFailed.collectAsStateWithLifecycle()
+            // Kept live while shown, like the near-me list; there's no location to re-resolve.
+            AutoRefresh(viewModel, NOT_RELOCATING)
+            // And refreshed on a return to the foreground, as the near-me list is (by its relocate),
+            // so coming back to the app doesn't leave aged departures up until the next tick.
+            val lifecycleOwner = LocalLifecycleOwner.current
+            LaunchedEffect(lifecycleOwner, viewModel) {
+                var returning = false
+                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    if (returning && !viewModel.refreshing.value) viewModel.refresh()
+                    returning = true
+                }
+            }
+            CompositionLocalProvider(
+                LocalRouteTopology provides routeTopology.value,
+                LocalRouteStops provides routeStops,
+            ) {
+                MainScreen(
+                    state = state,
+                    now = tickingNow(),
+                    onRefresh = { viewModel.refresh() },
+                    refreshing = refreshing,
+                    starred = starred,
+                    onToggleStar = viewModel::toggleStar,
+                    starringAvailable = starringAvailable,
+                    starWriteFailed = starWriteFailed,
+                    onStarWriteFailureShown = viewModel::starWriteFailureShown,
+                    dismissed = dismissed,
+                    onDismissAlert = viewModel::dismissAlert,
+                    dismissWriteFailed = dismissWriteFailed,
+                    onDismissWriteFailureShown = viewModel::dismissWriteFailureShown,
+                    stationTitle = stationName,
+                    onCloseStation = closeStation,
                 )
             }
         }
@@ -927,6 +1114,20 @@ class MainActivity : ComponentActivity() {
         // single long-lived client is OkHttp's own recommended shape; it lives for the
         // process and dies with it.
         private val httpClient by lazy { KtorTflClient.defaultHttpClient() }
+
+        // "Find a station": the name search and a station's stop lookup, both on demand from the
+        // search screen, never on the refresh path. The typed query goes to TfL only (SPEC *Privacy*).
+        private val stationFinder by lazy {
+            KtorTflClient(
+                httpClient,
+                appKey = { UserApiKeySetting.current },
+                rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                requestPool = SharedTflRequestPool.pool,
+            )
+        }
+
+        // The station view has no location fix to wait on, so its auto-refresh is never held off by one.
+        private val NOT_RELOCATING: StateFlow<Boolean> = MutableStateFlow(false)
 
         // The route detail's stop lists, cached for the process so reopening a route (or the
         // activity after rotation) shows its stops without refetching. Fetched only when a route
@@ -1034,6 +1235,11 @@ internal suspend fun persistBugReportOptOut(settings: AppSettings) {
  * clears every other key, since only one nearby set is shown at a time; [onCleared] clears
  * them all when the activity is finished for good.
  */
+/** The activity's one [WriteFailures], retained across rotation and shared by every departures model. */
+internal class WriteFailuresHolder : androidx.lifecycle.ViewModel() {
+    val failures = WriteFailures()
+}
+
 internal class NearbyDeparturesStores : androidx.lifecycle.ViewModel() {
     private val stores = mutableMapOf<String, ViewModelStore>()
 

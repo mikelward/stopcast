@@ -192,8 +192,20 @@ The app finds stops two ways:
   nothing leaves it soon); the reasoning and alternatives live in `TODO.md`. (How the
   *services* a line repeats across adjacent stops collapse to one row is *Departures*; this is
   only which stops are looked up.)
-- **Search** — by stop name or by line, for pinning a stop the user isn't standing at
-  (home, work, the school run).
+- **Find a station** (maintainer, 2026-09-24) — the overflow's *Find a station* (also a button
+  on the location screen, since it needs no location) searches
+  TfL's stops by name as the user types (a short pause after the last letter, and at least
+  two letters, so a name costs one request rather than one per keystroke). Each match shows
+  its name and modes; picking one opens that station's live departures: the hub's stations,
+  the station itself, or a bus stop area's poles, grouped under the usual place and platform
+  headers (a platform or place tap drills in as on the main list). The page is titled by the
+  station, back returns to the search with its matches kept, and it refreshes while shown like
+  the main list. It is a look, not a pin: nothing about it is saved, and the widget keeps
+  showing the near-me set. Stars and dismissed alerts are shared with the main list. Matching is
+  TfL's own for now; fuzzy matching and abbreviations ("KX" for King's Cross) are a follow-up,
+  as is setting the near-me origin to a station instead of the current location (`TODO.md`).
+- **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at
+  (home, work, the school run); arrives with watched stops.
 
 ### Departures
 
@@ -945,8 +957,8 @@ TfL requests that *are* the product: a nearby-stops lookup necessarily sends coo
 to TfL — **precise** where the user granted precise and an accurate fix is available,
 approximate under an approximate-only grant or when no accurate fix can be obtained (see
 *Finding stops*) — and a departures lookup necessarily sends the watched stop
-IDs. Stop **search** (Phase 2) likewise sends the typed stop-name or line query to TfL's
-search endpoints. That is inherent to each feature and disclosed; precise location is the
+IDs. **Find a station** likewise sends the typed name to TfL's stop search (and a later
+search-to-pin would send a stop-name or line query); the query is never saved or logged. That is inherent to each feature and disclosed; precise location is the
 Play Data Safety type the nearby action may collect (and so declares), not a claim that
 every fix sent is precise.
 

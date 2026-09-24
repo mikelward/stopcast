@@ -35,6 +35,8 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.cancel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -1691,6 +1693,59 @@ class MainViewModelTest {
         assertTrue(saved.stops.isEmpty())
     }
 
+    @Test
+    fun `a star tapped just before the model is cleared still lands and reaches the widget`() = runTest(dispatcher) {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val store = object : app.stopcast.domain.StarredRowsStore {
+            val toggled = mutableListOf<app.stopcast.domain.StarredRow>()
+            override fun starred() = kotlinx.coroutines.flow.flowOf(app.stopcast.domain.StarredRowSet.Loaded(emptySet()))
+            override suspend fun toggle(row: app.stopcast.domain.StarredRow) {
+                gate.await()
+                toggled += row
+            }
+        }
+        var redraws = 0
+        val vm = MainViewModel(
+            ReuseCountingClient(), listOf(seeds.first()), clock = { now }, io = dispatcher, starredStore = store,
+            redrawWidget = { redraws++ },
+        )
+        advanceUntilIdle()
+        val before = redraws
+        vm.toggleStar(row("940GZZLUOXC", "victoria", "inbound"))
+        runCurrent()
+        // A searched station's page closing clears its model mid-write.
+        vm.viewModelScope.cancel()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, store.toggled.size)
+        assertEquals("the widget still redraws with the new star", before + 1, redraws)
+    }
+
+    @Test
+    fun `a star write that fails after its page closed surfaces on the shared list`() = runTest(dispatcher) {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val failing = object : app.stopcast.domain.StarredRowsStore {
+            override fun starred() = kotlinx.coroutines.flow.flowOf(app.stopcast.domain.StarredRowSet.Loaded(emptySet()))
+            override suspend fun toggle(row: app.stopcast.domain.StarredRow) {
+                gate.await()
+                throw java.io.IOException("disk full")
+            }
+        }
+        val shared = WriteFailures()
+        val nearMe = MainViewModel(ReuseCountingClient(), listOf(seeds.first()), clock = { now }, io = dispatcher, writeFailures = shared)
+        val station = MainViewModel(
+            ReuseCountingClient(), listOf(seeds.first()), clock = { now }, io = dispatcher,
+            starredStore = failing, ownsWidgetJourneys = false, writeFailures = shared,
+        )
+        advanceUntilIdle()
+        station.toggleStar(row("940GZZLUOXC", "victoria", "inbound"))
+        runCurrent()
+        station.viewModelScope.cancel()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(nearMe.starWriteFailed.value)
+    }
+
     private class FakeStarredStore(
         initial: Set<app.stopcast.domain.StarredRow> = emptySet(),
     ) : app.stopcast.domain.StarredRowsStore {
@@ -2908,6 +2963,20 @@ class MainViewModelTest {
         old.setWidgetJourneys(setOf("j"), emptyList())
         advanceUntilIdle()
         assertTrue(store.reports.isEmpty())
+    }
+
+    @Test
+    fun `a searched station's model doesn't take the widget's journeys from the near-me one`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val client = ReuseCountingClient()
+        val nearMe = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, snapshotStore = store)
+        advanceUntilIdle()
+        // Opening a searched station builds a model beside it that doesn't speak for the widget.
+        MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher, ownsWidgetJourneys = false)
+        advanceUntilIdle()
+        nearMe.setWidgetJourneys(setOf("j"), emptyList())
+        advanceUntilIdle()
+        assertEquals(1, store.reports.size)
     }
 
     @Test

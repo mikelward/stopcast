@@ -206,6 +206,8 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.BugReportConsentDialogScreenshotTest" -Proborazzi.test.record=true
       - name: Run RouteDetailScreen screenshot tests
         run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.RouteDetailScreenScreenshotTest" -Proborazzi.test.record=true
+      - name: Run StationSearch screenshot tests
+        run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.StationSearchScreenshotTest" -Proborazzi.test.record=true
       - name: Print failing test details
         if: failure()
         run: |

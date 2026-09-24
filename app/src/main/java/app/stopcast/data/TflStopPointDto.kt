@@ -29,6 +29,9 @@ data class TflStopPointDto(
     val id: String = "",
     val naptanId: String = "",
     val commonName: String = "",
+    // TfL's NaPTAN stop type ("NaptanMetroStation", "TransportInterchange", …). Read only to pick a
+    // station tree's departure-bearing stops ([departureStops]).
+    val stopType: String = "",
     val lat: Double = 0.0,
     val lon: Double = 0.0,
     val modes: List<String> = emptyList(),
@@ -88,6 +91,19 @@ fun TflStopPointDto.hubStationNames(): List<String> =
         .map { cleanStopName(it) }
         .filter { it.isNotBlank() }
         .distinct()
+
+/**
+ * The stops in this station tree that carry departures, for "Find a station": each node whose
+ * [stopType] is one of [stopTypes] (a hub's stations, a bus stop area's poles) and serves a line,
+ * without descending below it — a station's own platforms and entrances are part of it, not stops
+ * of their own. The root counts too, so a searched station or pole returns itself.
+ */
+fun TflStopPointDto.departureStops(stopTypes: Collection<String>): List<TflStopPointDto> =
+    if (stopType in stopTypes) {
+        if (lines.isNotEmpty()) listOf(this) else emptyList()
+    } else {
+        children.flatMap { it.departureStops(stopTypes) }
+    }
 
 @Serializable
 data class TflStopLineDto(

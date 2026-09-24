@@ -729,6 +729,31 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         staying in the small unit up to ~1 km as the interim `StopDistance.label` does. Feed the
         locale/unit choice into the pure formatter (don't read locale inside it) so the rounding
         stays JVM-testable. Until then the interim metric m/km ships.
+- [x] **Find a station and view its departures** (maintainer, 2026-09-24). Overflow → *Find a
+      station* → TfL `/StopPoint/Search` as the user types (300 ms pause, 2+ letters) → a match
+      opens that station's live departures: its departure-bearing stops from `/StopPoint/{id}`
+      (a hub's stations, a station, a bus stop area's poles), fed through a `MainViewModel` of
+      its own with no snapshot store, so the widget keeps the near-me set. A look, not a pin.
+  - [ ] **Fuzzy find, abbreviations and ids** (maintainer, 2026-09-24). "KC", "KGX" and "KX"
+        should all find King's Cross; a station or hub id ("HUBKGX", "940GZZLUKSX") should match
+        too. TfL's search is server-side and word-based, so this likely needs a local index of
+        stations/hubs (names, ids, CRS/hub codes, aliases) — a bundled asset like the route
+        topology, or one built from lookups — ranked locally, with TfL's search as a fallback for
+        bus stops the index lacks. Port TypeLauncher's matcher (`AppLaunchStatsStore.kt`,
+        `launcherMatchTier`): tiers Prefix > Anchored (first letter at a word start, skips only
+        to word starts — "kc" → "King's Cross") > Substring > Fuzzy (anchored first letter, then a
+        subsequence), best tier across several fields (name, aliases/codes, ids — the way it
+        scores package names), ties broken by usage then alphabetically. Add normalization it
+        lacks (drop apostrophes/punctuation, fold diacritics) so "kings" is a prefix of "King's
+        Cross". **No hand-kept alias list** (maintainer, 2026-09-24): derive abbreviations by
+        rule, word "Cross" → "X", so "King's Cross" also reads "King's X" / "KX" and "Charing
+        Cross" reads "CX", matched as an extra field through the same tiers. "KGX" comes from
+        the id match ("HUBKGX"), not an alias. Weigh extracting the matcher into a shared
+        `mikelward/*` library instead of a second copy.
+  - [ ] **Set the near-me origin to a station** (maintainer, 2026-09-24): use a searched
+        station in place of the current location, for planning from somewhere else.
+  - [x] **Find a station from the location gate**: a *Find a station* button under the gate's
+        own action, since the search needs no location and helps most a user who denied it (Codex).
 - [ ] **Search for a stop by name or line, and pin it.** Beyond nearby discovery, let the
       user type a **stop/station name** (TfL `/StopPoint/Search`) *or* a **line**
       (`/Line/Search/{query}` — the query is a path segment, not a `?query=` parameter like the

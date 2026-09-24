@@ -165,6 +165,15 @@ class MainViewModel(
     private val rateWaitMillis: () -> Long = { 0L },
     // Sink for the per-fetch stats line — kept apart from [warn], which carries only failures.
     private val logStats: (String) -> Unit = {},
+    // Whether this list speaks for the widget's journey pins. The near-me list does; a searched
+    // station's (SPEC *Finding stops*) doesn't, and must not take the widget-journeys turn from the
+    // near-me model it sits beside, or that model's later journey writes would stand down.
+    ownsWidgetJourneys: Boolean = true,
+    // Where a failed star or dismiss write is reported ([starWriteFailed], [dismissWriteFailed]).
+    // Its own by default; the app passes one shared by the near-me list and a searched station's
+    // page, so a write that fails after the station page has closed (the write outlives it — see
+    // [toggleStar]) still surfaces on the next list shown rather than on a model no screen reads.
+    writeFailures: WriteFailures = WriteFailures(),
 ) : ViewModel() {
     // The near-me tiers, updatable IN PLACE so a relocation that keeps the same nearby set can
     // reconcile them without rebuilding this ViewModel (which would drop a revealed expansion —
@@ -211,7 +220,7 @@ class MainViewModel(
     private var widgetJourneysPending = false
     // This ViewModel's place in line: a newer one (a relocation made it) owns the widget's journeys,
     // so this one's writes stand down rather than land an older report over the newer one's.
-    private val widgetJourneysGeneration = WidgetJourneysWrites.next()
+    private val widgetJourneysGeneration = if (ownsWidgetJourneys) WidgetJourneysWrites.next() else NO_WIDGET_JOURNEYS
 
     /**
      * [snapshot] as the widget may show it: the nearby stops [nearIds] and the journey origins
@@ -356,14 +365,14 @@ class MainViewModel(
     // rotation that happens between the failed tap and the screen showing the message (a
     // replay-0 event would be lost in that gap). The screen calls [starWriteFailureShown]
     // once it has surfaced it, which clears the flag so it isn't shown again.
-    private val _starWriteFailed = MutableStateFlow(false)
+    private val _starWriteFailed = writeFailures.star
     val starWriteFailed: StateFlow<Boolean> = _starWriteFailed.asStateFlow()
 
     // Same seam as [starWriteFailed], for a failed alert dismissal: a tap that didn't persist
     // leaves the card visible, so the screen surfaces a snackbar rather than let the dismiss
     // look broken. Acknowledged StateFlow (survives a rotation between the tap and the message),
     // cleared by [dismissWriteFailureShown].
-    private val _dismissWriteFailed = MutableStateFlow(false)
+    private val _dismissWriteFailed = writeFailures.dismiss
     val dismissWriteFailed: StateFlow<Boolean> = _dismissWriteFailed.asStateFlow()
 
     private var fetchJob: Job? = null
@@ -1305,23 +1314,29 @@ class MainViewModel(
      */
     fun toggleStar(row: DepartureRow) {
         viewModelScope.launch {
-            try {
-                withContext(io) { starredStore.toggle(StarredRow.of(row)) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                warn("star toggle failed: ${reason(e)}")
-                // The write didn't take and the store won't re-emit, so the star silently
-                // stays as it was — tell the user rather than let the tap look broken.
-                _starWriteFailed.value = true
-                return@launch
+            // NonCancellable for the whole action: the tap is the user's decision, and it must land
+            // — and reach the widget — even if this model is cleared the next moment (a searched
+            // station's page closing right after a star). A canceled write would drop the star with
+            // no failure to show; a canceled redraw would leave the widget's pinned order stale.
+            withContext(NonCancellable + io) {
+                try {
+                    starredStore.toggle(StarredRow.of(row))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    warn("star toggle failed: ${reason(e)}")
+                    // The write didn't take and the store won't re-emit, so the star silently
+                    // stays as it was — tell the user rather than let the tap look broken.
+                    _starWriteFailed.value = true
+                    return@withContext
+                }
+                // The pin is persisted and the in-app list has already re-ordered off [starred].
+                // The widget redraw is a separate, secondary surface: re-render it now so the star
+                // change shows without waiting for the next fetch (it pins starred rows from the
+                // persisted state — SPEC D8), but a redraw failure is logged only — it must not
+                // report "couldn't save your pin," which is reserved for an actual store failure.
+                redrawWidgetBestEffort("star change")
             }
-            // The pin is persisted and the in-app list has already re-ordered off [starred].
-            // The widget redraw is a separate, secondary surface: re-render it now so the star
-            // change shows without waiting for the next fetch (it pins starred rows from the
-            // persisted state — SPEC D8), but a redraw failure is logged only — it must not
-            // report "couldn't save your pin," which is reserved for an actual store failure.
-            redrawWidgetBestEffort("star change")
         }
     }
 
@@ -1336,7 +1351,8 @@ class MainViewModel(
         val alert = DismissedAlert.of(row) ?: return
         viewModelScope.launch {
             try {
-                withContext(io) { dismissedStore.dismiss(alert) }
+                // NonCancellable, like a star: a dismiss tapped just before leaving the page still lands.
+                withContext(NonCancellable + io) { dismissedStore.dismiss(alert) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1501,11 +1517,14 @@ class MainViewModel(
     private fun reason(e: Throwable): String =
         (e as? TflException)?.message ?: e::class.simpleName.orEmpty()
 
-    private fun kindOf(e: Throwable?): DeparturesUiState.Error.Kind = when (e) {
-        is TflException.Offline -> DeparturesUiState.Error.Kind.OFFLINE
-        is TflException.RateLimited -> DeparturesUiState.Error.Kind.RATE_LIMITED
-        else -> DeparturesUiState.Error.Kind.UNREACHABLE
-    }
+    private fun kindOf(e: Throwable?): DeparturesUiState.Error.Kind = errorKindOf(e)
+}
+
+/** The user-facing error a failed TfL call maps to: offline, rate-limited, or else unreachable. */
+internal fun errorKindOf(e: Throwable?): DeparturesUiState.Error.Kind = when (e) {
+    is TflException.Offline -> DeparturesUiState.Error.Kind.OFFLINE
+    is TflException.RateLimited -> DeparturesUiState.Error.Kind.RATE_LIMITED
+    else -> DeparturesUiState.Error.Kind.UNREACHABLE
 }
 
 /**
@@ -1513,6 +1532,18 @@ class MainViewModel(
  * interleave, and a generation per ViewModel, so only the newest one's writes land — one cleared by
  * a relocation can't land its older report over its successor's.
  */
+/**
+ * The acknowledged flags for a failed star or alert-dismiss write (see [MainViewModel.starWriteFailed]),
+ * shareable between models so a failure reaches whichever screen is shown next.
+ */
+class WriteFailures {
+    val star = MutableStateFlow(false)
+    val dismiss = MutableStateFlow(false)
+}
+
+/** The generation of a model that never writes the widget's journeys: no real turn is ever this. */
+private const val NO_WIDGET_JOURNEYS = -1L
+
 internal object WidgetJourneysWrites {
     val lock = Mutex()
     private val generation = java.util.concurrent.atomic.AtomicLong()

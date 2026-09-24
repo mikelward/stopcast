@@ -63,6 +63,9 @@ fun LocationGate(
     updateAvailable: Boolean = false,
     // Open the Play Store listing (from the "Update available" button). Default no-op.
     onOpenAppListing: () -> Unit = {},
+    // Open "Find a station" (SPEC *Finding stops*), which needs no location — so a user who denied
+    // it, or whose fix or lookup failed, can still look a station up. Null hides the button.
+    onFindStation: (() -> Unit)? = null,
 ) {
     // Saved so an open About dialog survives rotation on the gate.
     var showAbout by rememberSaveable { mutableStateOf(false) }
@@ -133,6 +136,11 @@ fun LocationGate(
         if (stuck) {
             TextButton(onClick = onSendBugReport, modifier = Modifier.padding(top = 24.dp)) {
                 Text(stringResource(R.string.menu_send_bug_report))
+            }
+        }
+        if (onFindStation != null) {
+            TextButton(onClick = onFindStation, modifier = Modifier.padding(top = 24.dp)) {
+                Text(stringResource(R.string.menu_find_station))
             }
         }
         // Always present, below the state's own action: the one way to reach the app version and
