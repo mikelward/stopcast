@@ -951,8 +951,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         settle the threshold and the latency trade on a device.
 - [x] **Star a journey** (maintainer, 2026-09-23). Two stations on one line, starred by tapping a
       station on a route page's stop list; cards atop the near-me list show that line's trains from
-      the nearer end that call at the other, a tap on the heading flips direction. Direct and rail
-      only (SPEC *Journeys*).
+      the nearer end that call at the other. The heading's ⇄ swaps direction, and a tap on the
+      heading opens the journey's own view (Swap direction, Unstar journey, trains headed by
+      platform; maintainer, 2026-09-24). Direct and rail only (SPEC *Journeys*).
+  - [ ] **Settle the heading's ⇄ tap target.** It is a compact 24dp target (below the 48dp
+        guideline) while the control is tried out (maintainer, 2026-09-24); keep, enlarge, or drop
+        it once judged on a device.
   - [x] **A discoverable way to star a journey.** A dismissible tip atop a starrable stop list
         says a stop can be tapped to star the journey there (maintainer, 2026-09-24).
   - [x] **Bus journeys, and a journey as a segment on any line** (maintainer, 2026-09-23: "really
