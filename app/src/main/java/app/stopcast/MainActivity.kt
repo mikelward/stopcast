@@ -2,6 +2,7 @@ package app.stopcast
 
 import android.Manifest
 import app.stopcast.data.FileNearbyStopsStore
+import app.stopcast.data.FileRouteStopsStore
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -817,7 +818,7 @@ class MainActivity : ComponentActivity() {
             // ahead of the stop (see DepartureRows.destinationLines).
             CompositionLocalProvider(
                 LocalRouteTopology provides routeTopology.value,
-                LocalRouteStops provides routeStops,
+                LocalRouteStops provides routeStops(appContext),
             ) {
                 MainScreen(
                     state = state,
@@ -1035,7 +1036,7 @@ class MainActivity : ComponentActivity() {
             }
             CompositionLocalProvider(
                 LocalRouteTopology provides routeTopology.value,
-                LocalRouteStops provides routeStops,
+                LocalRouteStops provides routeStops(appContext),
             ) {
                 MainScreen(
                     state = state,
@@ -1129,19 +1130,28 @@ class MainActivity : ComponentActivity() {
         // The station view has no location fix to wait on, so its auto-refresh is never held off by one.
         private val NOT_RELOCATING: StateFlow<Boolean> = MutableStateFlow(false)
 
-        // The route detail's stop lists, cached for the process so reopening a route (or the
-        // activity after rotation) shows its stops without refetching. Fetched only when a route
-        // page opens — never on the refresh path.
-        private val routeStops by lazy {
-            RouteStopsRepository(
+        // The route detail's stop lists and stop areas' poles, kept for a day in memory and in a
+        // file in the app's cache directory (never backed up), so reopening a route — or the app
+        // after the process was killed — shows its stops without refetching. Fetched only when a
+        // route page or journey card needs them — never on the refresh path. The file is read
+        // once, off the main thread, as soon as the repository is built.
+        private val routeStopsLock = Any()
+        private var routeStopsInstance: RouteStopsRepository? = null
+
+        private fun routeStops(context: Context): RouteStopsRepository = synchronized(routeStopsLock) {
+            routeStopsInstance ?: RouteStopsRepository(
                 source = KtorTflClient(
                     httpClient,
                     appKey = { UserApiKeySetting.current },
                     rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
                     requestPool = SharedTflRequestPool.pool,
                 ),
-                warn = { StopcastDebugLog.warning("route stops: %s", it) },
-            )
+                warn = ::logRouteStopsWarning,
+                store = FileRouteStopsStore(File(context.applicationContext.cacheDir, "route-stops.json"), ::logRouteStopsWarning),
+            ).also { repository ->
+                routeStopsInstance = repository
+                (context.applicationContext as? StopcastApp)?.applicationScope?.launch { repository.warm() }
+            }
         }
     }
 }
@@ -1537,6 +1547,8 @@ private fun tickingNow(): Instant {
  * ViewModel store (Codex). A top-level function captures nothing.
  */
 private fun logLocationWarning(message: String) = StopcastDebugLog.warning("location: %s", message)
+
+private fun logRouteStopsWarning(message: String) = StopcastDebugLog.warning("route stops: %s", message)
 
 /**
  * The process-wide nearby-lookup cache: top-level so it outlives an Activity or ViewModel (a

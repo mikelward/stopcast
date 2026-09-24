@@ -817,6 +817,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         places, kept in the never-backed-up cache dir); the timer refreshes stops past 500 m every
         other minute; the widget skips a stop the app fetched <30 s ago. Running the nearby lookup,
         line status and departures in parallel is the next lever, not yet done.
+  - [x] **Routes and stop areas are kept a day** (maintainer, 2026-09-24). Route sequences and
+        stop-area poles were held for the process only; they now persist for 24 h in the
+        never-backed-up cache dir, so a route page or journey card after a cold start needs no
+        request.
   - [x] **Auto-fetch only within walking reach** (maintainer, 2026-09-23). Eager is each mode's
         nearest two clusters within 500 m; a mode with none that close gets its single nearest out
         to the mile. At a big interchange a second Overground station 1.3 km off no longer loads.

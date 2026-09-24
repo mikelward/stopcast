@@ -276,11 +276,14 @@ fun MainScreen(
     // The routes (both directions) of each journey's starred line and of every line at its origin,
     // which say where the journey boards and alights and which trains or buses call at the far end.
     // From the process cache at once when a line was loaded already; otherwise fetched off the render
-    // path (the same lookup the route page makes, one or two requests per line per process). A failed
+    // path (the same lookup the route page makes, one or two requests per line a day). A failed
     // load is kept as such (null), so the card says so and offers a retry rather than checking forever.
     val routeStopsRepository = LocalRouteStops.current
     var journeyRouteRetry by rememberSaveable { mutableIntStateOf(0) }
     val loadedSequences = remember { mutableStateMapOf<String, LineSequence?>() }
+    // The loaders below run again each hour, so a route or area the repository has let expire (a day
+    // old) is refetched while the screen stays up; the old copy shows until the new one is in.
+    val routeRecheck = now.epochSecond / 3600
     fun sequencesFor(lineIds: Collection<String>): Map<String, LineSequence?> = buildMap {
         for (id in lineIds) {
             if (id in loadedSequences) put(id, loadedSequences[id]) else routeStopsRepository?.cached(id, "")?.let { put(id, it) }
@@ -293,7 +296,7 @@ fun MainScreen(
         journeys.associate { j -> j.key to starSequences[j.lineId]?.let { Journeys.segment(j, it) } }
     }
     // A bus journey's origin stop area (from its starred line's route) and the area's poles, looked
-    // up once per process off the render path: another line may board beside the origin (stop K by
+    // up once a day off the render path: another line may board beside the origin (stop K by
     // stop L) and reach the far end too (SPEC *Journeys*). A failed lookup is kept as such (null).
     val journeyAreas = remember(journeys, journeySegments, starSequences) {
         journeys.filter { it.bus }.mapNotNull { j ->
@@ -302,19 +305,22 @@ fun MainScreen(
         }.toMap()
     }
     val loadedPoles = remember { mutableStateMapOf<String, List<StopLocation>?>() }
-    LaunchedEffect(routeStopsRepository, journeyAreas, journeyRouteRetry) {
+    LaunchedEffect(routeStopsRepository, journeyAreas, journeyRouteRetry, routeRecheck) {
         val repository = routeStopsRepository ?: return@LaunchedEffect
         for (areaId in journeyAreas.values.distinct()) {
-            if (loadedPoles[areaId] != null) continue
-            loadedPoles.remove(areaId)
-            loadedPoles[areaId] = repository.cachedPoles(areaId) ?: try {
+            val held = loadedPoles[areaId]
+            if (held != null && repository.cachedPoles(areaId) != null) continue
+            if (held == null) loadedPoles.remove(areaId)
+            val poles = repository.cachedPoles(areaId) ?: try {
                 repository.loadPoles(areaId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TflException) {
-                // Logged (sanitized) by the repository; null marks the failure for the card.
-                null
+                // Logged (sanitized) by the repository; null marks the failure for the card, unless
+                // an expired copy is held: route data a day old beats none.
+                held
             }
+            loadedPoles[areaId] = poles
         }
     }
     // Each bus journey's area poles, by journey key: absent while loading, null when it failed.
@@ -367,18 +373,20 @@ fun MainScreen(
     val journeyLineIds = remember(journeyStarLines, originLines, siblingLines) {
         (journeyStarLines + originLines + siblingLines).filter { it.isNotBlank() }.distinct()
     }
-    LaunchedEffect(routeStopsRepository, journeyLineIds, journeyRouteRetry) {
+    LaunchedEffect(routeStopsRepository, journeyLineIds, journeyRouteRetry, routeRecheck) {
         val repository = routeStopsRepository ?: return@LaunchedEffect
         for (lineId in journeyLineIds) {
-            if (loadedSequences[lineId] != null) continue
-            loadedSequences.remove(lineId)
+            val held = loadedSequences[lineId]
+            if (held != null && repository.cached(lineId, "") != null) continue
+            if (held == null) loadedSequences.remove(lineId)
             loadedSequences[lineId] = try {
                 repository.load(lineId, "")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TflException) {
-                // Logged (sanitized) by the repository; null marks the failure for the card.
-                null
+                // Logged (sanitized) by the repository; null marks the failure for the card, unless
+                // an expired copy is held: route data a day old beats none.
+                held
             }
         }
     }
