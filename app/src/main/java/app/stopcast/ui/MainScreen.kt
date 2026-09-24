@@ -61,6 +61,10 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -127,6 +131,7 @@ import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DestinationAbbreviations
 import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.HiddenModes
+import app.stopcast.domain.ModeGroups
 import app.stopcast.domain.NoTimes
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
@@ -292,6 +297,9 @@ fun MainScreen(
     hiddenModes: Set<String> = emptySet(),
     onHideMode: ((String) -> Unit)? = null,
     onShowAllModes: () -> Unit = {},
+    // Shows or hides a whole group of modes from the overflow menu's checkboxes, one per
+    // [ModeGroups.ALL] group, ticked when shown. Null leaves the menu without them.
+    onSetModeGroupShown: ((ModeGroups.Group, Boolean) -> Unit)? = null,
     // A change of hidden modes failed to save: a snackbar says so, then [onHiddenModesWriteFailureShown].
     hiddenModesWriteFailed: Boolean = false,
     onHiddenModesWriteFailureShown: () -> Unit = {},
@@ -1026,6 +1034,24 @@ fun MainScreen(
                                         },
                                     )
                                 }
+                                // One checkbox per mode nearby (SPEC *Finding stops → Hiding a mode*):
+                                // ticked is shown. The menu stays open, so several can be toggled.
+                                if (onSetModeGroupShown != null) {
+                                    HorizontalDivider()
+                                    ModeGroups.ALL.forEach { group ->
+                                        val shown = !ModeGroups.isHidden(group, hiddenModes)
+                                        DropdownMenuItem(
+                                            text = { Text(groupName(group)) },
+                                            leadingIcon = { Checkbox(checked = shown, onCheckedChange = null) },
+                                            onClick = { onSetModeGroupShown(group, !shown) },
+                                            modifier = Modifier.semantics {
+                                                toggleableState = ToggleableState(shown)
+                                                role = Role.Checkbox
+                                            },
+                                        )
+                                    }
+                                    HorizontalDivider()
+                                }
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.menu_settings)) },
                                     onClick = {
@@ -1337,7 +1363,7 @@ private fun LoadedContent(
                 ActionBanner(
                     text = stringResource(
                         R.string.modes_hidden,
-                        hiddenModes.map(::modeName).sorted().joinToString(", "),
+                        hiddenGroupsLabel(hiddenModes),
                     ),
                     actionLabel = stringResource(R.string.modes_show_all),
                     onAction = onShowAllModes,
@@ -1376,7 +1402,7 @@ private fun LoadedContent(
                         text = when {
                             hiddenModes.isNotEmpty() -> stringResource(
                                 R.string.modes_hidden_empty,
-                                hiddenModes.map(::modeName).sorted().joinToString(", "),
+                                hiddenGroupsLabel(hiddenModes),
                             )
                             emptyStateUncertain -> stringResource(R.string.departures_stale_empty)
                             else -> stringResource(R.string.departures_empty)
@@ -1418,7 +1444,7 @@ private fun LoadedContent(
                         if (hiddenModes.isNotEmpty()) {
                             stringResource(
                                 R.string.modes_hidden_empty,
-                                hiddenModes.map(::modeName).sorted().joinToString(", "),
+                                hiddenGroupsLabel(hiddenModes),
                             )
                         } else {
                             stringResource(
@@ -2016,12 +2042,14 @@ private fun HideModeMenu(
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.pinchFontSizeHost()) {
         FontSizeWindow {
             leading?.invoke()
-            modes.forEach { mode ->
+            // One item per group the modes fall in ("Hide Train" for Thameslink or the Overground);
+            // hiding it hides the whole group, as the overflow menu's checkbox does.
+            modes.map(ModeGroups::of).distinctBy { it.key }.forEach { group ->
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.hide_mode, modeName(mode))) },
+                    text = { Text(stringResource(R.string.hide_mode, groupName(group))) },
                     onClick = {
                         onDismiss()
-                        onHideMode(mode)
+                        onHideMode(group.modes.first())
                     },
                 )
             }

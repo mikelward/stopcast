@@ -4,6 +4,7 @@ import android.Manifest
 import app.stopcast.data.FileNearbyStopsStore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.Mutex
+import app.stopcast.domain.ModeGroups
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.JourneyEnd
 import app.stopcast.domain.stopPlace
@@ -929,6 +930,22 @@ class MainActivity : ComponentActivity() {
                 },
                 reconcile = reconcileSameSet,
             )
+            // The overflow menu's checkboxes: hiding a group filters at once, as from a long press;
+            // showing one again re-picks the set so its stops come back, as "Show all" does.
+            val onSetModeGroupShown: (ModeGroups.Group, Boolean) -> Unit = { group, shown ->
+                if (shown) {
+                    relocateAction(
+                        cancelFetch = viewModel::cancelFetch,
+                        relocate = { onSameSet ->
+                            HiddenModesSetting.setGroupHidden(group, hidden = false)
+                            nearbyViewModel.refilter(onSameSet)
+                        },
+                        reconcile = reconcileSameSet,
+                    )()
+                } else {
+                    HiddenModesSetting.setGroupHidden(group, hidden = true)
+                }
+            }
             // Consume a latched foreground return (set by the activity-level observer above the
             // overlay switch). Because the latch lives above this view, it survives this view being
             // out of composition (an overlay) until a re-entry consumes it here — the whole point.
@@ -1052,8 +1069,11 @@ class MainActivity : ComponentActivity() {
                     // from the next re-locate. Showing them again re-picks the set from the same
                     // fix, so they come back now (SPEC *Finding stops → Hiding a mode*).
                     hiddenModes = hiddenModes,
-                    onHideMode = { mode -> HiddenModesSetting.setHidden(mode, hidden = true) },
+                    // A long press hides the mode's whole group ("Train" for Thameslink), as its
+                    // overflow checkbox does.
+                    onHideMode = { mode -> HiddenModesSetting.setGroupHidden(ModeGroups.of(mode), hidden = true) },
                     onShowAllModes = onShowAllModes,
+                    onSetModeGroupShown = onSetModeGroupShown,
                     hiddenModesWriteFailed = hiddenModesWriteFailed,
                     onHiddenModesWriteFailureShown = HiddenModesSetting::writeFailureShown,
                 )

@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.stopcast.R
+import app.stopcast.domain.ModeGroups
 import app.stopcast.domain.StationMatch
 import java.util.Locale
 
@@ -206,6 +207,22 @@ internal fun modesLabel(modes: List<String>): String =
     modes.filter { it.isNotBlank() }.distinct().joinToString(" · ") { mode ->
         modeName(mode)
     }
+
+/** A hiding group's display name ("tube" → "Tube & DLR"), else its mode's name. */
+internal fun groupName(group: ModeGroups.Group): String = GROUP_NAMES[group.key] ?: modeName(group.key)
+
+/** The hidden groups' names, in menu order ("Train, Bus"), for the banner and empty states. */
+internal fun hiddenGroupsLabel(hidden: Set<String>): String =
+    ModeGroups.hiddenGroups(hidden).joinToString(", ") { groupName(it) }
+
+private val GROUP_NAMES = mapOf(
+    "tube" to "Tube & DLR",
+    "train" to "Train",
+    "bus" to "Bus",
+    "tram" to "Tram",
+    "boat" to "Boat",
+    "coach" to "Coach",
+)
 
 /** A mode's display name ("national-rail" → "National Rail"), or its id tidied for one we don't know. */
 internal fun modeName(mode: String): String =

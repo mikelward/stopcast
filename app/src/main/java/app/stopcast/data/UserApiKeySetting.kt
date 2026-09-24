@@ -1,6 +1,7 @@
 package app.stopcast.data
 
 import app.stopcast.domain.AppSettings
+import app.stopcast.domain.ModeGroups
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -267,6 +268,10 @@ object HiddenModesSetting {
     /** Hides [mode] (or shows it again when [hidden] is false). Applied at once, persisted in order. */
     fun setHidden(mode: String, hidden: Boolean) =
         holder.set(if (hidden) current + mode else current.filterNot { it.equals(mode, ignoreCase = true) }.toSet())
+
+    /** Hides all of [group] (or shows it again when [hidden] is false). */
+    fun setGroupHidden(group: ModeGroups.Group, hidden: Boolean) =
+        holder.set(ModeGroups.withGroup(current, group, hidden))
 
     /** Shows every mode again. */
     fun showAll() = holder.set(emptySet())
