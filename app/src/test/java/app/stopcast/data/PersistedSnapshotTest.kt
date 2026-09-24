@@ -3,6 +3,7 @@ package app.stopcast.data
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.LineRef
+import app.stopcast.domain.RailFeed
 import app.stopcast.domain.StopArrivals
 import app.stopcast.domain.StopDisruption
 import java.time.Instant
@@ -196,5 +197,32 @@ class PersistedSnapshotTest {
     fun `an unknown format version is discarded rather than mis-read`() {
         val fromFuture = sample().toPersisted().copy(version = PersistedSnapshot.CURRENT_VERSION + 1)
         assertNull(fromFuture.toDomain())
+    }
+
+    @Test
+    fun `a stop's National Rail feed state survives the round trip`() {
+        for (feed in RailFeed.entries) {
+            val snapshot = DeparturesSnapshot(
+                stops = listOf(
+                    StopArrivals(
+                        stopId = "910GEXAMPLE",
+                        stopName = "Example",
+                        departures = emptyList(),
+                        fetchedAt = now,
+                        lines = listOf(LineRef("southern", "Southern", "national-rail")),
+                        railFeed = feed,
+                    ),
+                ),
+                fetchedAt = now,
+            )
+            assertEquals(feed, snapshot.toPersisted().toDomain()!!.stops.single().railFeed)
+        }
+    }
+
+    @Test
+    fun `an unknown or missing feed state reads back as none`() {
+        val stop = PersistedStop(stopId = "910GEXAMPLE", stopName = "Example", railFeed = "SOMETHING_NEW")
+        assertNull(PersistedSnapshot(stops = listOf(stop)).toDomain()!!.stops.single().railFeed)
+        assertNull(PersistedSnapshot(stops = listOf(stop.copy(railFeed = null))).toDomain()!!.stops.single().railFeed)
     }
 }
