@@ -1,9 +1,10 @@
 name: station-index-refresh
 
-# Rebuilds the bundled station list (app/src/main/assets/stations/station_index.json) from TfL
-# once a week and, when it changed, opens (or updates) a pull request with the new list, so "Find
-# a station" keeps up with TfL without anyone touching the builder. station-index.yml still
-# rebuilds it on a pull request that changes the builder; this is the scheduled refresh.
+# Rebuilds the bundled station list (app/src/main/assets/stations/station_index.json) from TfL,
+# and the National Rail station codes (crs_codes.json) from NaPTAN, once a week and, when either
+# changed, opens (or updates) a pull request with them, so "Find a station" and National Rail
+# times keep up without anyone touching the builders. station-index.yml still rebuilds both on a
+# pull request that changes a builder; this is the scheduled refresh.
 #
 # Split like the others: the build job fetches from TfL and runs the builder with a read-only
 # token; the publish job runs nothing from TfL or any pull request — it only commits the built
@@ -12,10 +13,10 @@ name: station-index-refresh
 # only), because a pull request opened or pushed with the default token starts no CI on it.
 # Borrowed for now; TODO.md tracks moving both to one shared UPDATE_PAT.
 #
-# Cost and reliability (AGENTS.md): 0 pounds — a dozen keyless TfL requests and a couple of
-# minutes of Actions time a week; nothing the app sends, so no Play Data Safety or battery change.
-# If TfL is down or answers short (a missing mode, a missing interchange, under 200 stations),
-# the builder refuses to write, this scheduled run fails — GitHub emails the owner — and the
+# Cost and reliability (AGENTS.md): 0 pounds — a dozen keyless TfL requests, one ~30 MB NaPTAN
+# download, and a couple of minutes of Actions time a week; nothing the app sends, so no Play Data Safety or battery change.
+# If TfL or NaPTAN is down or answers short (a missing mode, a missing interchange, under 200
+# stations, under 2,000 station codes), the builder refuses to write, this scheduled run fails — GitHub emails the owner — and the
 # committed list stays as it was. An unchanged list opens nothing.
 on:
   schedule:
@@ -27,6 +28,7 @@ concurrency:
   cancel-in-progress: false
 env:
   INDEX: app/src/main/assets/stations/station_index.json
+  CRS: app/src/main/assets/stations/crs_codes.json
   BRANCH: station-index/refresh
 jobs:
   build:
@@ -57,24 +59,30 @@ jobs:
           echo "tip=$(git ls-remote "$REPO_URL" "refs/heads/$BRANCH" | cut -f1)" >> "$GITHUB_OUTPUT"
       - name: Test the index builder
         run: python3 scripts/build_station_index_test.py
+      - name: Test the station code builder
+        run: python3 scripts/build_crs_index_test.py
       - name: Build the index from TfL
         run: python3 scripts/build_station_index.py --out "$INDEX"
-      - name: Compare with the committed list
+      - name: Build the National Rail station codes from NaPTAN
+        run: python3 scripts/build_crs_index.py --stations "$INDEX" --out "$CRS"
+      - name: Compare with the committed lists
         id: diff
         run: |
-          if git diff --quiet -- "$INDEX"; then
-            echo "The list is unchanged; nothing to open."
+          if git diff --quiet -- "$INDEX" "$CRS"; then
+            echo "The lists are unchanged; nothing to open."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            git diff --stat -- "$INDEX"
+            git diff --stat -- "$INDEX" "$CRS"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Upload the index
+      - name: Upload the lists
         if: steps.diff.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: station-index
-          path: ${{ env.INDEX }}
+          path: |
+            ${{ env.INDEX }}
+            ${{ env.CRS }}
           if-no-files-found: error
 
   publish:
@@ -107,10 +115,11 @@ jobs:
             exit 1
           fi
           cp build/station-index/station_index.json "$INDEX"
+          cp build/station-index/crs_codes.json "$CRS"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$BRANCH"
-          git add -- "$INDEX"
+          git add -- "$INDEX" "$CRS"
           git commit -m "Refresh the list of stations search finds"
           # The branch is this workflow's own: each week's list replaces the last one's. Leased on
           # the tip the build job saw as the run started (or on its absence), so a change someone
@@ -131,4 +140,4 @@ jobs:
           fi
           gh pr create --base main --head "$BRANCH" \
             --title "Refresh the list of stations search finds" \
-            --body "The weekly rebuild of the bundled station list from TfL (station-index-refresh.yml) found changes. Review the diff of \`$INDEX\` for anything odd (a mode or interchange gone missing) before merging; the builder already refuses a list under 200 stations or missing a required mode or interchange."
+            --body "The weekly rebuild of the bundled station list from TfL (station-index-refresh.yml) found changes. Review the diffs of \`$INDEX\` and \`$CRS\` for anything odd (a mode, interchange or station code gone missing) before merging; the builders already refuse a list under 200 stations, one missing a required mode or interchange, or under 2,000 station codes."
