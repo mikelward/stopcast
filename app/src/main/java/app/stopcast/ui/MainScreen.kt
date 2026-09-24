@@ -2604,10 +2604,12 @@ internal fun RouteDetailScreen(
                     ?.let { toggle ->
                         { stop ->
                             val positions = (stops as? RouteStopsUi.Loaded)?.positions.orEmpty()
+                            val areas = (stops as? RouteStopsUi.Loaded)?.sequence?.stopAreas.orEmpty()
                             // The name as the list shows it: a stop TfL gave no name keeps its id,
-                            // so a saved journey's heading never has a blank end.
+                            // so a saved journey's heading never has a blank end. Its stop area rides
+                            // along, so "Find a station" can open the end as the whole place.
                             fun end(id: String, name: String) =
-                                JourneyEnd(id, name.ifBlank { id }, positions[id]?.first, positions[id]?.second)
+                                JourneyEnd(id, name.ifBlank { id }, positions[id]?.first, positions[id]?.second, areas[id].orEmpty())
                             // A saved journey this stop already ends on this page is toggled (off) as
                             // itself, rather than starred again under this direction's pole ids.
                             val existing = journeysHere.entries.firstOrNull { stop.id in it.value }?.key

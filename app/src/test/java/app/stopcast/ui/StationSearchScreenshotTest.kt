@@ -20,8 +20,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * "Find a station" (SPEC *Finding stops*): the search with matches, before a query, and after a
- * failure, plus a station page still loading its stops. UI-only, so it renders with no network.
+ * "Find a station" (SPEC *Finding stops*): the search with matches, before a query (with and
+ * without the user's own stops), and after a failure, plus a station page still loading its stops. UI-only, so it renders with no network.
  * Public station names only, no user data.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -68,9 +68,27 @@ class StationSearchScreenshotTest {
 
     @Test
     fun station_search_prompt() {
-        show(StationSearchViewModel.State())
+        show(StationSearchViewModel.State(yoursRead = true))
         composeRule.onNodeWithText("Type a name to search").assertIsDisplayed()
         captureSnapshot("station-search-prompt.png")
+    }
+
+    @Test
+    fun station_search_yours() {
+        var opened: StationMatch? = null
+        show(
+            StationSearchViewModel.State(
+                favorites = listOf(StationMatch("490G00000001", "King's Cross Station", listOf("bus"))),
+                recent = listOf(StationMatch("940GZZLUOXC", "Oxford Circus", listOf("tube"))),
+                yoursRead = true,
+            ),
+            onOpen = { opened = it },
+        )
+        composeRule.onNodeWithText("Starred").assertIsDisplayed()
+        composeRule.onNodeWithText("Recent").assertIsDisplayed()
+        captureSnapshot("station-search-yours.png")
+        composeRule.onNodeWithText("Oxford Circus").performClick()
+        assertEquals("940GZZLUOXC", opened?.id)
     }
 
     @Test

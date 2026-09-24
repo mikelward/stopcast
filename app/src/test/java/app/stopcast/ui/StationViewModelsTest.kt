@@ -8,6 +8,7 @@ import app.stopcast.domain.StationFinder
 import app.stopcast.domain.StationMatch
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.TflException
+import app.stopcast.domain.YourStops
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -88,7 +89,7 @@ class StationViewModelsTest {
         vm.clear()
         advanceUntilIdle()
         assertTrue("the pending search never ran", finder.queries.isEmpty())
-        assertEquals(StationSearchViewModel.State(), vm.state.value)
+        assertEquals(StationSearchViewModel.State(yoursRead = true), vm.state.value)
         assertEquals(null, saved.get<String>("query"))
     }
 
@@ -115,6 +116,82 @@ class StationViewModelsTest {
         val result = vm.state.value.result as StationSearchViewModel.Result.Matches
         assertEquals(listOf("HUBKGX"), result.matches.map { it.id })
         assertEquals(DeparturesUiState.Error.Kind.OFFLINE, result.remoteFailure)
+    }
+
+    private val favoriteStop = StationMatch("490000000001A", "Example Road", listOf("bus"))
+
+    @Test
+    fun `the user's own stops are listed before anything is typed`() = runTest {
+        val recent = StationMatch("940GZZLUOXC", "Oxford Circus", listOf("tube"))
+        val vm = StationSearchViewModel(
+            FakeFinder(),
+            loadYours = { YourStops(favorites = listOf(favoriteStop), recent = listOf(recent)) },
+            io = dispatcher,
+        )
+        assertFalse("not read yet", vm.state.value.yoursRead)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.yoursRead)
+        assertEquals(listOf(favoriteStop), vm.state.value.favorites)
+        assertEquals(listOf(recent), vm.state.value.recent)
+    }
+
+    @Test
+    fun `a starred station the device couldn't name is named from the bundled index`() = runTest {
+        val vm = StationSearchViewModel(
+            FakeFinder(),
+            loadIndex = { StationIndex(listOf(kingsCross)) },
+            loadYours = { YourStops(unnamedStarred = listOf("HUBKGX")) },
+            io = dispatcher,
+        )
+        advanceUntilIdle()
+        assertEquals(listOf("HUBKGX"), vm.state.value.favorites.map { it.id })
+    }
+
+    @Test
+    fun `an older read of the user's stops that lands last doesn't overwrite a newer one`() = runTest {
+        val first = CompletableDeferred<YourStops>()
+        val reads = ArrayDeque(listOf<suspend () -> YourStops>({ first.await() }, { YourStops(favorites = listOf(favoriteStop)) }))
+        val vm = StationSearchViewModel(FakeFinder(), loadYours = { reads.removeFirst()() }, io = dispatcher)
+        runCurrent()
+        vm.refreshYours()
+        advanceUntilIdle()
+        assertEquals(listOf(favoriteStop), vm.state.value.favorites)
+        first.complete(YourStops())
+        advanceUntilIdle()
+        assertEquals("the stale first read is ignored", listOf(favoriteStop), vm.state.value.favorites)
+    }
+
+    @Test
+    fun `a starred bus stop matches as the user types, before TfL`() = runTest {
+        val finder = FakeFinder(search = { emptyList() })
+        val vm = StationSearchViewModel(
+            finder,
+            loadIndex = { StationIndex(listOf(kingsCross)) },
+            loadYours = { YourStops(favorites = listOf(favoriteStop)) },
+            io = dispatcher,
+            debounceMillis = 300,
+        )
+        vm.onQueryChange("example")
+        runCurrent()
+        assertEquals(listOf(favoriteStop), (vm.state.value.result as StationSearchViewModel.Result.Matches).matches)
+        assertTrue("TfL's search is still to come", finder.queries.isEmpty())
+        advanceUntilIdle()
+        assertEquals(listOf(favoriteStop), (vm.state.value.result as StationSearchViewModel.Result.Matches).matches)
+    }
+
+    @Test
+    fun `opening a match remembers it and rereads the recent list`() = runTest {
+        val opened = mutableListOf<StationMatch>()
+        val vm = StationSearchViewModel(
+            FakeFinder(),
+            loadYours = { YourStops(recent = opened.toList()) },
+            recordOpen = { opened.add(0, it) },
+            io = dispatcher,
+        )
+        advanceUntilIdle()
+        vm.onOpened(oxford)
+        advanceUntilIdle()
+        assertEquals(listOf(oxford), vm.state.value.recent)
     }
 
     @Test

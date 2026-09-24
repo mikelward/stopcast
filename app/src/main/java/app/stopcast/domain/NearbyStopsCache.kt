@@ -58,6 +58,18 @@ class NearbyStopsCache(
         }?.stops
     }
 
+    /**
+     * Every stop the fresh lookups hold, the latest lookup's first, for "Find a station" to match
+     * on the device ([YourStops.known]). Only the stops — their positions stay here.
+     */
+    @Synchronized
+    fun recentStops(): List<StopLocation> {
+        loadOnce()
+        val now = clock()
+        if (entries.removeAll { !fresh(it, now) }) store.save(entries.toList())
+        return entries.flatMap { it.stops }.distinctBy { it.id }
+    }
+
     @Synchronized
     fun put(latitude: Double, longitude: Double, radiusMeters: Int, stopTypes: List<String>, stops: List<StopLocation>) {
         if (stops.isEmpty()) return

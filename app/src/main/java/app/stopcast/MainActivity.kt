@@ -2,6 +2,18 @@ package app.stopcast
 
 import android.Manifest
 import app.stopcast.data.FileNearbyStopsStore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Mutex
+import app.stopcast.domain.DepartureRow
+import app.stopcast.domain.JourneyEnd
+import app.stopcast.domain.stopPlace
+import app.stopcast.data.FileStarredPlacesStore
+import kotlinx.coroutines.flow.first
+import app.stopcast.widget.logWidgetSnapshotWarning
+import app.stopcast.domain.YourStops
+import app.stopcast.domain.StarredRowSet
+import app.stopcast.data.FileRecentStationsStore
+import app.stopcast.data.DataStoreSnapshotStore
 import app.stopcast.data.FileRouteStopsStore
 import android.content.Context
 import android.content.Intent
@@ -756,6 +768,7 @@ class MainActivity : ComponentActivity() {
                             rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
                             logStats = ::logDepartureWarning,
                             writeFailures = writeFailures,
+                            onStarToggled = { row -> rememberStarredPlace(appContext, row) },
                         )
                     }
                 },
@@ -964,6 +977,9 @@ class MainActivity : ComponentActivity() {
                         createSavedStateHandle(),
                         // The bundled index, read off the main thread on the search's first query.
                         loadIndex = { StationIndexStore.load(appContext) },
+                        // The user's own stops, from the device: listed before typing, matched as they type.
+                        loadYours = { loadYourStops(appContext) },
+                        recordOpen = { recentStationsStore(appContext).add(it) },
                         warn = ::logDepartureWarning,
                     )
                 }
@@ -986,10 +1002,15 @@ class MainActivity : ComponentActivity() {
         }
         if (stationId == null) {
             val state by search.state.collectAsStateWithLifecycle()
+            // Reread the user's own stops each time the search shows: a star may have changed.
+            LaunchedEffect(Unit) { search.refreshYours() }
             StationSearchScreen(
                 state = state,
                 onQueryChange = search::onQueryChange,
-                onOpenStation = onOpenStation,
+                onOpenStation = { match ->
+                    search.onOpened(match)
+                    onOpenStation(match)
+                },
                 onRetry = search::retry,
                 onBack = closeSearch,
             )
@@ -1040,6 +1061,7 @@ class MainActivity : ComponentActivity() {
                             // A star set here reorders the widget's pinned rows too, so redraw it.
                             redrawWidget = { StopCastWidget().updateAll(appContext) },
                             writeFailures = writeFailures,
+                            onStarToggled = { row -> rememberStarredPlace(appContext, row) },
                         )
                     }
                 },
@@ -1592,6 +1614,111 @@ private fun nearbyStopsCache(context: Context): NearbyStopsCache = synchronized(
         FileNearbyStopsStore(File(context.applicationContext.cacheDir, "nearby-stops.json"), warn = ::logLocationWarning),
     ).also { nearbyStopsCacheInstance = it }
 }
+
+/**
+ * The stations recently opened from "Find a station": process-wide, backed by a file in the app's
+ * no-backup directory, so the list survives a restart but never leaves the device.
+ */
+private val recentStationsLock = Any()
+private var recentStationsInstance: FileRecentStationsStore? = null
+
+private fun recentStationsStore(context: Context): FileRecentStationsStore = synchronized(recentStationsLock) {
+    recentStationsInstance ?: FileRecentStationsStore(
+        File(context.applicationContext.noBackupFilesDir, "recent-stations.json"),
+        warn = ::logDepartureWarning,
+    ).also { recentStationsInstance = it }
+}
+
+/**
+ * The place behind each starred row's stop, recorded on each toggle ([rememberStarredPlace]) so a
+ * star is listed by name in "Find a station" after its stop has left the caches: process-wide,
+ * backed by a file in the app's no-backup directory, never leaving the device.
+ */
+private val starredPlacesLock = Any()
+private var starredPlacesInstance: FileStarredPlacesStore? = null
+
+// Serializes each read of the star set with the places write it drives, so two quick toggles (or a
+// toggle and Find opening) can't apply an older star set last.
+private val starredPlacesMutex = Mutex()
+
+private fun starredPlacesStore(context: Context): FileStarredPlacesStore = synchronized(starredPlacesLock) {
+    starredPlacesInstance ?: FileStarredPlacesStore(
+        File(context.applicationContext.noBackupFilesDir, "starred-places.json"),
+        warn = ::logStarWarning,
+    ).also { starredPlacesInstance = it }
+}
+
+/**
+ * After a star toggle, record [row]'s place if its stop now holds a star, and forget every stop
+ * that doesn't — at once, so an unstarred stop's place isn't kept until Find next opens.
+ */
+private suspend fun rememberStarredPlace(context: Context, row: DepartureRow) = starredPlacesMutex.withLock {
+    val starred = try {
+        DataStoreStarredRowsStore.from(context, warn = ::logStarWarning).starred().first() as? StarredRowSet.Loaded
+    } catch (e: IOException) {
+        logStarWarning("starred places not updated: ${e::class.simpleName}")
+        null
+    } ?: return@withLock
+    val stopIds = starred.starred.mapTo(HashSet()) { it.stopId }
+    val place = stopPlace(row.stopId, row.stopName, row.clusterId, listOf(row.mode))
+    starredPlacesStore(context).reconcile(stopIds, mapOf(row.stopId to place))
+}
+
+/**
+ * The user's own stops for "Find a station" (SPEC *Finding stops*), all read from the device: the
+ * starred journeys' ends; the places holding a starred row; the recent opens; and every place the
+ * app has lately shown (the widget's snapshot and the nearby-lookup cache), so they match with no
+ * TfL search. A source that can't be read is logged by kind alone and left out. Call off the main
+ * thread.
+ */
+private suspend fun loadYourStops(context: Context): YourStops {
+    val journeys = readOrEmpty("starred journeys") {
+        DataStoreStarredJourneysStore.from(context, warn = ::logStarWarning).journeys().first().orEmpty()
+    }
+    val shown = readOrEmpty("snapshot") {
+        DataStoreSnapshotStore.from(context, warn = ::logWidgetSnapshotWarning).load()?.stops.orEmpty()
+            .map { it.stopId to stopPlace(it.stopId, it.stopName, it.clusterId, it.lines.map { line -> line.mode }) }
+    }
+    val nearby = nearbyStopsCache(context).recentStops()
+        .map { it.id to stopPlace(it.id, it.name, it.clusterId, it.lines.map { line -> line.mode }) }
+    val known = nearby + shown
+    val placeOf = known.toMap()
+    // A starred stop's place: as lately shown, else as recorded when it was starred. What's shown is
+    // recorded too (a star from before places were recorded), and unstarred stops are forgotten —
+    // under the same lock as a toggle's update, reading the star set inside it.
+    val (starred, unnamed) = starredPlacesMutex.withLock {
+        // Null when the starred set couldn't be read, so the recorded places aren't pruned against it.
+        val starredStopIds = try {
+            (DataStoreStarredRowsStore.from(context, warn = ::logStarWarning).starred().first() as? StarredRowSet.Loaded)
+                ?.starred?.mapTo(HashSet()) { it.stopId }
+        } catch (e: IOException) {
+            logDepartureWarning("find a station: starred rows unreadable (${e::class.simpleName})")
+            null
+        }
+        val places = starredPlacesStore(context)
+        val recorded = places.load()
+        val resolved = starredStopIds.orEmpty().mapNotNull { id -> (placeOf[id] ?: recorded[id])?.let { id to it } }
+        starredStopIds?.let { ids -> places.reconcile(ids, resolved.toMap()) }
+        resolved to starredStopIds.orEmpty().filter { it !in placeOf && it !in recorded }.sorted()
+    }
+    // A journey starred before its ends' stop areas were saved takes them from what's been shown.
+    fun JourneyEnd.withArea() = if (areaId.isNotBlank()) this else copy(areaId = placeOf[stopId]?.id.orEmpty())
+    return YourStops.of(
+        journeys = journeys.map { it.copy(from = it.from.withArea(), to = it.to.withArea()) },
+        starred = starred.map { it.second }.distinctBy { it.id },
+        recent = recentStationsStore(context).load(),
+        known = known.map { it.second },
+        unnamedStarred = unnamed,
+    )
+}
+
+private inline fun <T> readOrEmpty(what: String, read: () -> List<T>): List<T> =
+    try {
+        read()
+    } catch (e: IOException) {
+        logDepartureWarning("find a station: $what unreadable (${e::class.simpleName})")
+        emptyList()
+    }
 
 /**
  * The production sink for the departures/disruption seam's warnings. Without it wired,

@@ -71,4 +71,33 @@ class StationIndexTest {
         val member = StationMatch("940GZZLUKSX", "King's Cross St. Pancras", listOf("tube"))
         assertEquals(listOf("HUBKGX"), index.rank("pancras", emptyList(), listOf(member, hub)).map { it.id })
     }
+
+    @Test
+    fun `the user's stops join the index and lead their tier`() {
+        val busStop = StationMatch("490000000001A", "Kennington Road", listOf("bus"))
+        val yours = index.withYours(YourStops(favorites = listOf(busStop)))
+        assertEquals(listOf("490000000001A", "940GZZLUKNG"), yours.search("kenn").map { it.id })
+        assertEquals(listOf("940GZZLUKNG"), index.search("kenn").map { it.id })
+    }
+
+    @Test
+    fun `a starred station folded into its interchange makes the interchange lead`() {
+        val hubs = StationIndex(
+            listOf(
+                IndexedStation("HUBAAA", "Kings Place", listOf("tube")),
+                IndexedStation("HUBKGX", "Kings Crossing", listOf("tube")),
+                IndexedStation("940GZZLUKSX", "King's Cross St. Pancras", listOf("tube"), hubId = "HUBKGX"),
+            ),
+        )
+        val starred = StationMatch("940GZZLUKSX", "King's Cross St. Pancras", listOf("tube"))
+        assertEquals(listOf("HUBAAA", "HUBKGX"), hubs.search("kings").map { it.id })
+        assertEquals(listOf("HUBKGX", "HUBAAA"), hubs.withYours(YourStops(favorites = listOf(starred))).search("kings").map { it.id })
+    }
+
+    @Test
+    fun `a stop seen lately matches but doesn't lead`() {
+        val seen = StationMatch("490000000002B", "Kennington Park Road", listOf("bus"))
+        val yours = index.withYours(YourStops(known = listOf(seen)))
+        assertEquals(listOf("940GZZLUKNG", "490000000002B"), yours.search("kenn").map { it.id })
+    }
 }

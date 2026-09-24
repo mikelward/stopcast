@@ -200,8 +200,19 @@ The app finds stops two ways:
   the station itself, or a bus stop area's poles, grouped under the usual place and platform
   headers (a platform or place tap drills in as on the main list). The page is titled by the
   station, back returns to the search with its matches kept, and it refreshes while shown like
-  the main list. It is a look, not a pin: nothing about it is saved, and the widget keeps
-  showing the near-me set. Stars and dismissed alerts are shared with the main list.
+  the main list. It is a look, not a pin: the widget keeps showing the near-me set, and the
+  station is only remembered in the search's own *Recent* list (below). Stars and dismissed
+  alerts are shared with the main list.
+
+  **The user's own stops** (maintainer, 2026-09-24) come without a TfL search. Before anything
+  is typed, the search lists them under **Starred** (the ends of starred journeys, then the
+  places holding a starred row, each recorded when starred) and **Recent** (the last eight stations opened from the
+  search). As the user types, those and every place the app has lately shown near them (the
+  widget's last departures and the nearby-lookup cache) match on the device alongside the
+  bundled stations, so a starred bus stop appears at once; a bus stop (a journey's end
+  included) lists as its stop area, whose page holds its poles. A starred or recently opened place leads its matching tier. All
+  of it is read from the device and sent nowhere; the recent list stays on the device and out
+  of backups (*Privacy*).
 
   **Matching** (maintainer, 2026-09-24) runs on the device against a **bundled list of London's
   stations and interchanges** (tube, DLR, Overground, Elizabeth line, tram, rail and piers — not
@@ -987,7 +998,9 @@ to TfL — **precise** where the user granted precise and an accurate fix is ava
 approximate under an approximate-only grant or when no accurate fix can be obtained (see
 *Finding stops*) — and a departures lookup necessarily sends the watched stop
 IDs. **Find a station** likewise sends the typed name to TfL's stop search (and a later
-search-to-pin would send a stop-name or line query); the query is never saved or logged. That is inherent to each feature and disclosed; precise location is the
+search-to-pin would send a stop-name or line query); the query is never saved or logged. The
+stations opened from it are remembered for its *Recent* list, and each starred row's place (so
+a star is listed by name), in the app's no-backup storage: never logged, sent, or backed up. That is inherent to each feature and disclosed; precise location is the
 Play Data Safety type the nearby action may collect (and so declares), not a claim that
 every fix sent is precise.
 

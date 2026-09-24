@@ -102,7 +102,14 @@ fun StationSearchScreen(
                 Box(modifier = Modifier.height(4.dp))
             }
             when (val result = state.result) {
-                StationSearchViewModel.Result.Idle -> Message(stringResource(R.string.station_search_prompt))
+                StationSearchViewModel.Result.Idle -> when {
+                    // Before anything is typed, the user's own stops, to pick without typing. Nothing
+                    // until they're read, so the prompt doesn't flash up and then give way.
+                    state.query.isBlank() && !state.yoursRead -> Unit
+                    state.query.isBlank() && (state.favorites.isNotEmpty() || state.recent.isNotEmpty()) ->
+                        YourStopsList(state.favorites, state.recent, onOpenStation)
+                    else -> Message(stringResource(R.string.station_search_prompt))
+                }
                 StationSearchViewModel.Result.NoMatches -> Message(stringResource(R.string.station_search_no_matches))
                 is StationSearchViewModel.Result.Failed -> Column(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -137,6 +144,28 @@ fun StationSearchScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** The user's starred stops, then their recent opens, each under its heading. */
+@Composable
+private fun YourStopsList(favorites: List<StationMatch>, recent: List<StationMatch>, onOpenStation: (StationMatch) -> Unit) {
+    LazyColumn(modifier = Modifier.fillMaxSize().testTag("stationSearchYours")) {
+        listOf(R.string.station_search_starred to favorites, R.string.station_search_recent to recent).forEach { (heading, stops) ->
+            if (stops.isEmpty()) return@forEach
+            item(key = "heading-$heading") {
+                Text(
+                    stringResource(heading),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+                )
+            }
+            items(stops, key = { "$heading-${it.id}" }) { match ->
+                MatchRow(match, onClick = { onOpenStation(match) })
+                HorizontalDivider()
             }
         }
     }

@@ -8,11 +8,14 @@ import app.stopcast.domain.StationIndex
 import app.stopcast.domain.StationMatch
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.TflException
+import app.stopcast.domain.YourStops
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +34,10 @@ import kotlinx.coroutines.withContext
  *
  * The query is the user's own words and may name where they live, so it is sent to TfL and nowhere
  * else, and never logged (SPEC *Privacy*); a failure logs only its kind.
+ *
+ * Before anything is typed it lists the user's own stops — [State.favorites] and [State.recent]
+ * opens — and as they type those stops, and the ones lately shown near them, match on the device
+ * with the bundled stations ([YourStops]), none of it sent anywhere.
  */
 class StationSearchViewModel(
     private val finder: StationFinder,
@@ -41,6 +48,11 @@ class StationSearchViewModel(
     // The bundled station index, searched on the device as the user types (read off the main
     // thread, once). Empty by default, which leaves the search on TfL's matching alone.
     loadIndex: suspend () -> StationIndex = { StationIndex.EMPTY },
+    // The user's own stops, read from the device each time the search opens ([refreshYours]). The
+    // loader handles its own read failures: whatever it can't read is simply not listed.
+    private val loadYours: suspend () -> YourStops = { YourStops.EMPTY },
+    // Remembers a station opened from the search, for the recent list; blocking, run on [io].
+    private val recordOpen: suspend (StationMatch) -> Unit = {},
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val debounceMillis: Long = DEBOUNCE_MILLIS,
     private val warn: (String) -> Unit = {},
@@ -49,6 +61,11 @@ class StationSearchViewModel(
         val query: String = "",
         val result: Result = Result.Idle,
         val searching: Boolean = false,
+        // The user's starred and recently opened stops, listed before anything is typed; unread
+        // (false) until the first read lands, so the screen doesn't flash its prompt first.
+        val favorites: List<StationMatch> = emptyList(),
+        val recent: List<StationMatch> = emptyList(),
+        val yoursRead: Boolean = false,
     )
 
     sealed interface Result {
@@ -75,6 +92,14 @@ class StationSearchViewModel(
     // Loaded once, on first use, so opening the search never waits on the asset read.
     private val index = viewModelScope.async(io, start = CoroutineStart.LAZY) { loadIndex() }
 
+    // Which read is the latest: an older one that lands after a newer one started is ignored, so a
+    // star changed between the two can't be overwritten by the stale list. Declared before [yours],
+    // whose initializer starts the first read.
+    @Volatile
+    private var yoursGeneration = 0
+
+    private var yours: Deferred<YourStops> = readYours()
+
     init {
         // A restored query is searched again at once; a fresh one is empty and searches nothing.
         start(_state.value.query, debounce = false)
@@ -93,7 +118,37 @@ class StationSearchViewModel(
     fun clear() {
         search?.cancel()
         savedState.remove<String>(KEY_QUERY)
-        _state.value = State()
+        _state.update { State(favorites = it.favorites, recent = it.recent, yoursRead = it.yoursRead) }
+    }
+
+    /**
+     * Read the user's own stops again — when the search opens, since a star may have changed since
+     * it last did. The typed search picks the new read up from its next letter.
+     */
+    fun refreshYours() {
+        yours = readYours()
+    }
+
+    /** Remember [match] as opened, for the recent list; the write finishes even if the search closes. */
+    fun onOpened(match: StationMatch) {
+        viewModelScope.launch {
+            withContext(NonCancellable + io) { recordOpen(match) }
+            refreshYours()
+        }
+    }
+
+    private fun readYours(): Deferred<YourStops> {
+        val generation = ++yoursGeneration
+        return viewModelScope.async(io) {
+            // A star the device couldn't name may be a listed station: name it from the bundled list.
+            val loaded = loadYours()
+            val named = if (loaded.unnamedStarred.isEmpty()) loaded else loaded.namedFrom(index.await())
+            named.also { read ->
+                if (generation == yoursGeneration) {
+                    _state.update { it.copy(favorites = read.favorites, recent = read.recent, yoursRead = true) }
+                }
+            }
+        }
     }
 
     /** Search the current query again now — the Retry after a failure. */
@@ -114,7 +169,9 @@ class StationSearchViewModel(
             // The bundled index answers at once — an abbreviation or code finds its station before
             // the typing pause is over. TfL's search (for what the index doesn't hold, like bus
             // stops) follows the pause, and the two are merged and ranked together.
-            val stations = index.await()
+            val bundled = index.await()
+            val own = yours.await()
+            val stations = withContext(io) { bundled.withYours(own) }
             val local = withContext(io) { stations.search(trimmed) }
             if (local.isNotEmpty()) _state.update { it.copy(result = Result.Matches(local), searching = true) }
             if (debounce) delay(debounceMillis)

@@ -1722,6 +1722,27 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `a saved star tells the app its row, so the place can be recorded, even as the page closes`() = runTest(dispatcher) {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val store = object : app.stopcast.domain.StarredRowsStore {
+            override fun starred() = kotlinx.coroutines.flow.flowOf(app.stopcast.domain.StarredRowSet.Loaded(emptySet()))
+            override suspend fun toggle(row: app.stopcast.domain.StarredRow) = gate.await()
+        }
+        val told = mutableListOf<String>()
+        val vm = MainViewModel(
+            ReuseCountingClient(), listOf(seeds.first()), clock = { now }, io = dispatcher, starredStore = store,
+            onStarToggled = { told += it.stopId },
+        )
+        advanceUntilIdle()
+        vm.toggleStar(row("940GZZLUOXC", "victoria", "inbound"))
+        runCurrent()
+        vm.viewModelScope.cancel()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("940GZZLUOXC"), told)
+    }
+
+    @Test
     fun `a star write that fails after its page closed surfaces on the shared list`() = runTest(dispatcher) {
         val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
         val failing = object : app.stopcast.domain.StarredRowsStore {
