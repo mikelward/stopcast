@@ -192,8 +192,9 @@ The app finds stops two ways:
   nothing leaves it soon); the reasoning and alternatives live in `TODO.md`. (How the
   *services* a line repeats across adjacent stops collapse to one row is *Departures*; this is
   only which stops are looked up.)
-- **Find a station** (maintainer, 2026-09-24) — the overflow's *Find a station* (also a button
-  on the location screen, since it needs no location) searches
+- **Find a station** (maintainer, 2026-09-24) — the overflow's *From…* (labeled so a *To…* for
+  simple direct trips can sit beside it; spelled out as *Find a station* on the location
+  screen's button, since it needs no location) searches
   TfL's stops by name as the user types (a short pause after the last letter, and at least
   two letters, so a name costs one request rather than one per keystroke). Each match shows
   its name and modes; picking one opens that station's live departures: the hub's stations,

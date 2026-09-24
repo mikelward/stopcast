@@ -772,8 +772,8 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
 - [x] **Hide services that end where the rider is** (maintainer, 2026-09-24): a departure whose
       terminus (TfL `destinationNaptanId`, else its name) is a nearby place no farther than its
       boarding stop is dropped before the merge (`Terminating`), so the list and widget agree.
-- [x] **Find a station and view its departures** (maintainer, 2026-09-24). Overflow → *Find a
-      station* → TfL `/StopPoint/Search` as the user types (300 ms pause, 2+ letters) → a match
+- [x] **Find a station and view its departures** (maintainer, 2026-09-24). Overflow → *From…*
+      (the location gate's button still reads *Find a station*) → TfL `/StopPoint/Search` as the user types (300 ms pause, 2+ letters) → a match
       opens that station's live departures: its departure-bearing stops from `/StopPoint/{id}`
       (a hub's stations, a station, a bus stop area's poles), fed through a `MainViewModel` of
       its own with no snapshot store, so the widget keeps the near-me set. A look, not a pin.
