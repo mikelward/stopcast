@@ -1,7 +1,9 @@
 package app.stopcast.ui
 
 import androidx.lifecycle.SavedStateHandle
+import app.stopcast.domain.IndexedStation
 import app.stopcast.domain.LineRef
+import app.stopcast.domain.StationIndex
 import app.stopcast.domain.StationFinder
 import app.stopcast.domain.StationMatch
 import app.stopcast.domain.StopLocation
@@ -88,6 +90,31 @@ class StationViewModelsTest {
         assertTrue("the pending search never ran", finder.queries.isEmpty())
         assertEquals(StationSearchViewModel.State(), vm.state.value)
         assertEquals(null, saved.get<String>("query"))
+    }
+
+    private val kingsCross = IndexedStation("HUBKGX", "King's Cross St. Pancras", listOf("tube"))
+
+    @Test
+    fun `the bundled index answers at once, before TfL`() = runTest {
+        val finder = FakeFinder(search = { listOf(StationMatch("490000000001A", "Kings Road", listOf("bus"))) })
+        val vm = StationSearchViewModel(finder, loadIndex = { StationIndex(listOf(kingsCross)) }, io = dispatcher, debounceMillis = 300)
+        vm.onQueryChange("kx")
+        runCurrent()
+        assertEquals(listOf("HUBKGX"), (vm.state.value.result as StationSearchViewModel.Result.Matches).matches.map { it.id })
+        assertTrue("TfL's search is still to come", vm.state.value.searching)
+        advanceUntilIdle()
+        assertEquals(listOf("kx"), finder.queries)
+    }
+
+    @Test
+    fun `a failed TfL search keeps the index's matches and says what's missing`() = runTest {
+        val finder = FakeFinder(search = { throw TflException.Offline(null) })
+        val vm = StationSearchViewModel(finder, loadIndex = { StationIndex(listOf(kingsCross)) }, io = dispatcher, debounceMillis = 300)
+        vm.onQueryChange("kings")
+        advanceUntilIdle()
+        val result = vm.state.value.result as StationSearchViewModel.Result.Matches
+        assertEquals(listOf("HUBKGX"), result.matches.map { it.id })
+        assertEquals(DeparturesUiState.Error.Kind.OFFLINE, result.remoteFailure)
     }
 
     @Test

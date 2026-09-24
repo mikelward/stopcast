@@ -138,6 +138,8 @@
     <!-- Shown under the empty search field. -->
     <string name="station_search_prompt">Type a name to search</string>
     <string name="station_search_no_matches">No matches</string>
+    <!-- Under the station matches when TfL's search (which covers bus stops) failed. -->
+    <string name="station_search_bus_stops_missing">Bus stops not searched</string>
     <!-- A searched station that has no stops stopcast shows departures for. -->
     <string name="station_no_departures">No departures here</string>
     <string name="settings_title">Settings</string>

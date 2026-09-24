@@ -1,0 +1,64 @@
+name: station-index
+
+# Builds the bundled station index (app/src/main/assets/stations/station_index.json) from TfL
+# and commits it to the pull request's branch — the list "Find a station" searches on the device
+# (SPEC *Finding stops*). It runs when a pull request changes the builder or this workflow; to
+# refresh the list from TfL, change the builder (even a comment) in a pull request.
+#
+# Split like ci.yml's screenshot sync: the build job runs PR code (the script) with a read-only
+# token, and the shared ci-commit-artifact workflow does the commit with its own credential,
+# never running PR code.
+#
+# Cost and reliability (AGENTS.md): 0 pounds — a few keyless TfL requests and a minute of
+# Actions time per run; nothing the app sends, so no Play Data Safety or battery change. If TfL
+# is down or answers oddly the script refuses to write, the run fails, and the committed list
+# stays as it was.
+on:
+  pull_request:
+    paths:
+      - scripts/build_station_index.py
+      - .github/workflows/station-index.yml
+permissions: {}
+concurrency:
+  group: station-index-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  build:
+    name: build station index
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Test the index builder
+        run: python3 scripts/build_station_index_test.py
+      - name: Build the index from TfL
+        run: python3 scripts/build_station_index.py --out build/stations/station_index.json
+      - name: Upload the index
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-index
+          path: build/stations/
+          if-no-files-found: error
+
+  commit:
+    name: commit station index
+    needs: [build]
+    # Same-repo PRs only: a fork's branch isn't pushable with this credential.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    uses: mikelward/ci-commit-artifact/.github/workflows/commit-artifact.yml@main
+    # The called workflow's commit job declares all three; GitHub refuses a caller granting less.
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    with:
+      artifact-name: station-index
+      dest-path: app/src/main/assets/stations
+      commit-message: 'Refresh the list of stations search finds'
+      branch-ref: ${{ github.event.pull_request.head.ref }}
+      expected-head-sha: ${{ github.event.pull_request.head.sha }}
+    # The commit credential is an environment secret, which reaches a called workflow only this way.
+    secrets: inherit # zizmor: ignore[secrets-inherit]
