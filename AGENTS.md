@@ -200,6 +200,15 @@ as a confirmed TfL hex. SPEC has the full scheme and rationale.
   guess and record it under `TODO.md`'s *Decisions needing review*; destructive or
   irreversible actions outside the loop, and privacy uncertainty (is this a coordinate? a
   watched stop?), still wait for a real answer.
+- **"Merge in order"** (or "drive in order") is *drive* for PRs in flight together, each
+  merged only once every lower-numbered active PR has. Waiting holds only the merge: keep
+  driving a queued PR — review comments, CI, rebases — so it is green with Codex's `+1`
+  the moment it is the lowest. Merge by hand, never auto-merge (disarm any already
+  armed), rechecking the lower PRs just before. Each merge moves the base, so rebase the
+  next one per the `dirty`/`behind` rule even where the ruleset allows `behind`, and
+  merge on its new verdict. Active means open, not a draft, and either green with a `+1`
+  and only waiting its turn, or opened, reopened, pushed to, reviewed or commented on in
+  the last 30 minutes; say which lower PRs you skipped as stale.
 - **A red baseline is the next task** — get `./gradlew test`/`lint` green before pulling
   new work from `TODO.md`.
 
