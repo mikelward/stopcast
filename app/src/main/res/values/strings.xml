@@ -40,6 +40,9 @@
     <!-- Boarding-stop line in the route detail body. %1$s is the stop/interchange name; the app
          bar already shows where the service is going, so this names where it departs from. -->
     <string name="route_detail_from">From %1$s</string>
+    <!-- The service's full name atop the route detail, for a tube or Overground line TfL names
+         bare. %1$s is the line's name, e.g. "Victoria" → "Victoria line". -->
+    <string name="route_detail_line_name">%1$s line</string>
     <!-- Spoken on the boarding stop of the route page's stop list, which is marked by a blue dot. -->
     <string name="route_stop_current">Your stop</string>
     <string name="route_detail_no_disruption">No disruptions reported</string>

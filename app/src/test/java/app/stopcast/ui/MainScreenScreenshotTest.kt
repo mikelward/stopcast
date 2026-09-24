@@ -1548,9 +1548,11 @@ class MainScreenScreenshotTest {
         journeyScreen(forkedOrigin("West End" to 60), forkedSource, kingToNorthEnd)
         composeRule.onNodeWithText("West End").performClick()
         composeRule.waitForIdle()
-        // The West End train's page: its stops run to West End, and nothing names the north branch.
+        // The West End train's page: its stops run to West End, and nothing names the north branch
+        // (the page's "Northern line" heading is the line, not the branch).
         composeRule.onAllNodesWithText("West End", substring = true).assertCountEquals(2)
-        composeRule.onAllNodesWithText("North", substring = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("North End", substring = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("North Park", substring = true).assertCountEquals(0)
     }
 
     @Test

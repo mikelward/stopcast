@@ -122,6 +122,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.stopcast.R
 import app.stopcast.domain.cleanDisruptionBody
+import app.stopcast.domain.serviceName
+import app.stopcast.domain.takesLineSuffix
 import app.stopcast.domain.Connections
 import app.stopcast.domain.Countdown
 import app.stopcast.domain.Departure
@@ -2950,6 +2952,26 @@ internal fun RouteDetailScreen(
             // it, so with the list shown the label is repeated noise, but a status row (no train to
             // follow) or a loading, failed, or withheld list would otherwise leave the page not saying
             // which stop it's about — ambiguous when one line is watched at two stops (Codex).
+            // The service's full name first, so the pill's short code (LNWR, AWC, HAM) is never
+            // a puzzle; left out where the pill already says it all (a bus number, DLR).
+            // TfL can leave the soonest departure's mode off: take it from another departure, else
+            // from the line id, so a tube line still reads "Victoria line".
+            val headingMode = row.mode
+                .ifBlank { row.upcoming.firstOrNull { it.mode.isNotBlank() }?.mode.orEmpty() }
+                .ifBlank { Connections.knownMode(row.lineId).orEmpty() }
+            val service = serviceName(row.lineName, headingMode)
+            if (service != null) {
+                Text(
+                    text = if (takesLineSuffix(row.lineName, headingMode)) {
+                        stringResource(R.string.route_detail_line_name, service)
+                    } else {
+                        service
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    // A heading, so TalkBack's heading navigation lands on what the page is about.
+                    modifier = Modifier.semantics { heading() },
+                )
+            }
             val place = row.hubName.ifBlank { row.stopName }
             val showFrom = stops !is RouteStopsUi.Loaded && place.isNotBlank()
             if (showFrom) {
@@ -2957,6 +2979,7 @@ internal fun RouteDetailScreen(
                     text = stringResource(R.string.route_detail_from, place),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = if (service != null) 4.dp else 0.dp),
                 )
             }
             // The followed route's countdowns, leading the page — the card's one-line format, times
@@ -2971,7 +2994,7 @@ internal fun RouteDetailScreen(
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().padding(top = if (showFrom) 8.dp else 0.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = if (showFrom || service != null) 8.dp else 0.dp),
                 )
             }
             val status = row.status

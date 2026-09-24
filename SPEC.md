@@ -474,8 +474,10 @@ destination by branch), not whichever of the line's trains is soonest
 (once the tapped route has no trains left it falls back to the soonest, and the title follows, so the
 title and stop list always name the same train) — its own app bar naming the route (line pill +
 destination) and
-carrying the star (so the long-press is the shortcut, the page the discoverable path), then, leading
-the body, **every upcoming departure on that route** — not the card's first three — on one full-width
+carrying the star (so the long-press is the shortcut, the page the discoverable path), then, heading
+the body, the service's **full name** — "Victoria line", "London Northwestern Railway" — so a short
+pill code is never a puzzle (left off where the pill already is the name: a bus number, DLR), then
+**every upcoming departure on that route** — not the card's first three — on one full-width
 line of countdowns in the card's format (times only; any that don't fit ellipsize off the end, and the
 line is withheld while stale, D4), and the line's **full disruption text**, which the row's inline **⚠** glyph stands
 in for: shown collapsed to its first line, tapped to expand (the same widget the stop-closure card

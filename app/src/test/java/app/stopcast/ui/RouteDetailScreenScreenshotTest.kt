@@ -309,6 +309,96 @@ class RouteDetailScreenScreenshotTest {
     }
 
     @Test
+    fun aRailOperator_isNamedInFullAtTheTop() {
+        // The pill only says "LNWR"; the page spells out whose train it is.
+        val stop = StopArrivals(
+            stopId = "910GEUSTON",
+            stopName = "London Euston",
+            departures = listOf(
+                Departure(
+                    "london-northwestern-railway", "London Northwestern Railway", "", "Crewe",
+                    "Platform 10", now.plusSeconds(360), "national-rail",
+                ),
+            ),
+            fetchedAt = now,
+        )
+        val row = DepartureRows.across(listOf(stop), now).first { it.upcoming.isNotEmpty() }
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loaded(
+                        listOf(RouteStop("910GEUSTON", "London Euston"), RouteStop("910GCREWE", "Crewe")),
+                    ),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("London Northwestern Railway").assertIsDisplayed()
+        composeRule.onNodeWithText("London Northwestern Railway")
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+        composeRule.onNodeWithText("LNWR").assertIsDisplayed()
+        captureSnapshot("route-detail-rail-operator.png")
+    }
+
+    @Test
+    fun aTubeLine_isNamedAsALine() {
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = healthyRow(),
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Victoria line").assertIsDisplayed()
+    }
+
+    @Test
+    fun aTubeLineWithNoModeFromTfl_isStillNamedAsALine() {
+        // TfL can omit modeName; the line id still says it's the tube.
+        val stop = StopArrivals(
+            stopId = "940GZZLUVIC",
+            stopName = "Victoria",
+            departures = listOf(
+                Departure("victoria", "Victoria", "northbound", "Walthamstow Central", null, now.plusSeconds(120), ""),
+            ),
+            fetchedAt = now,
+        )
+        val row = DepartureRows.across(listOf(stop), now).first { it.upcoming.isNotEmpty() }
+        composeRule.setContent {
+            StopCastTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Victoria line").assertIsDisplayed()
+    }
+
+    @Test
     fun aHealthyRoute_saysNoDisruptions_andStillStars() {
         composeRule.setContent {
             StopCastTheme {
