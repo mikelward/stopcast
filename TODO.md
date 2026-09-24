@@ -1733,8 +1733,9 @@ and these carry the rest as their own PRs:
       The doc's remaining open questions (starred journeys, crash reports on the watch, a
       tile-only first release) can be settled as each step comes up.
       Steps, one PR each:
-  - [ ] Extract `app.stopcast.domain` into a pure-Kotlin `:domain` module (refactor only; the
-        package already has no Android imports). Move `route_topology.json` and
+  - [x] Extract `app.stopcast.domain` into a pure-Kotlin `:domain` module (refactor only; the
+        package already had no Android imports).
+  - [ ] Move `route_topology.json` and
         `RouteTopologyStore` into a small shared Android library module, so the watch groups
         branching services with the same topology as the widget. Move the pure line-pill color
         resolver out of `LinePill` into the same module, so both apps share one palette and one

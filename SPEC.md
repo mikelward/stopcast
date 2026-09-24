@@ -914,9 +914,10 @@ spells them.
 
 ## Architecture
 
-- **Kotlin + Jetpack Compose**, a single `:app` module (mirroring simmo and Type
-  Launcher), with all product logic in a pure-Kotlin **domain** layer (`app.stopcast.
-  domain`) that is testable on the JVM with no Android: nearest-stop ranking,
+- **Kotlin + Jetpack Compose**: an `:app` module (mirroring simmo and Type Launcher), with
+  all product logic in a pure-Kotlin **`:domain` module** (`app.stopcast.domain`) that is
+  testable on the JVM with no Android, and that a Wear OS app can share
+  (`dev-docs/wear-os.md`): nearest-stop ranking,
   arrival→countdown formatting, disruption summarization, and staleness
   classification live there.
 - The **TfL client** (Ktor/OkHttp + kotlinx.serialization models) sits behind a

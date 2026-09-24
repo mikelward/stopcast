@@ -574,7 +574,8 @@ private fun WidgetMessage(text: String) {
  */
 internal fun widgetLineLabel(row: DepartureRow, group: DestinationGroup): String {
     val base = DepartureLabels.destinationLabel(group.destination, row.directionKey) ?: "—"
-    return if (group.branch != null) "$base/${abbreviateBranch(group.branch)}" else base
+    val branch = group.branch ?: return base
+    return "$base/${abbreviateBranch(branch)}"
 }
 
 @androidx.compose.runtime.Composable

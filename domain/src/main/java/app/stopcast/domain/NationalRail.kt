@@ -209,7 +209,7 @@ class RailAwareTflClient(
 const val NATIONAL_RAIL_MODE = "national-rail"
 
 /** The operators whose trains TfL's own feed carries, left out of a National Rail board. */
-internal val TFL_RUN_OPERATORS = setOf("LO", "XR")
+val TFL_RUN_OPERATORS = setOf("LO", "XR")
 
 /**
  * A National Rail operator's TfL-style line id ("Great Northern" → `great-northern`), so its
