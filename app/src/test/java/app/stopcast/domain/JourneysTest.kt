@@ -194,6 +194,55 @@ class JourneysTest {
     }
 
     @Test
+    fun `another line stopping at the far end's place under another name is shown`() {
+        val segment = Journeys.segment(parkToHill, bus())!!
+        // b2 stops at "Hill Station / High Road": another stop area and name, about 100 m from Hill.
+        fun b2(at: Pair<Double, Double>, name: String = "Hill Station / High Road") = LineSequence(
+            routes = listOf(LineRoute("Park ↔ Dale", listOf("PARKN", "HIGHN", "DALEN"))),
+            stopNames = mapOf("PARKN" to "Park", "HIGHN" to name, "DALEN" to "Dale"),
+            stopPositions = mapOf("PARKN" to (51.500 to -0.12), "HIGHN" to at, "DALEN" to (51.52 to -0.12)),
+            stopAreas = mapOf("HIGHN" to "G-HIGH"),
+        )
+        val rows = rowsAt("PARKN", departure("Dale", 60, "b2", "bus"))
+        fun shown(line: LineSequence) = Journeys.trains(segment, rows, mapOf("b1" to bus(), "b2" to line), parkToHill).rows
+        assertEquals(listOf("b2"), shown(b2(51.5109 to -0.12)).map { it.lineId })
+        // The same name further off is another place; a stop as close by another name is too.
+        assertTrue(shown(b2(51.5125 to -0.12)).isEmpty())
+        assertTrue(shown(b2(51.5109 to -0.12, "Ridge")).isEmpty())
+    }
+
+    @Test
+    fun `a route variant reaching the far end's other stop counts where another reaches its own`() {
+        val segment = Journeys.segment(parkToHill, bus())!!
+        // b2's short variant stops at Hill itself; its long one at "Hill / High Road", 100 m off.
+        val b2 = LineSequence(
+            routes = listOf(
+                LineRoute("Park ↔ Hill", listOf("PARKN", "HILLN")),
+                LineRoute("Park ↔ Dale", listOf("PARKN", "HIGHN", "DALEN")),
+            ),
+            stopNames = mapOf("PARKN" to "Park", "HILLN" to "Hill", "HIGHN" to "Hill / High Road", "DALEN" to "Dale"),
+            stopPositions = mapOf(
+                "PARKN" to (51.500 to -0.12), "HILLN" to (51.510 to -0.12),
+                "HIGHN" to (51.5109 to -0.12), "DALEN" to (51.52 to -0.12),
+            ),
+        )
+        val rows = rowsAt("PARKN", departure("Dale", 60, "b2", "bus"))
+        val trains = Journeys.trains(segment, rows, mapOf("b1" to bus(), "b2" to b2), parkToHill)
+        assertEquals(listOf("b2"), trains.rows.map { it.lineId })
+    }
+
+    @Test
+    fun `same place needs the same name start and nearness`() {
+        val here = 51.5 to -0.12
+        val near = 51.5009 to -0.12
+        assertTrue(Journeys.samePlace("Hill", here, "Hill Station  / High Road", near))
+        assertTrue(Journeys.samePlace("Hill Station", here, "hill station", near))
+        assertFalse(Journeys.samePlace("Hill", here, "Hill Road", near))
+        assertFalse(Journeys.samePlace("Hill", here, "Hill", 51.502 to -0.12))
+        assertFalse(Journeys.samePlace("Hill", null, "Hill", near))
+    }
+
+    @Test
     fun `a departure with no line id isn't a definite no`() {
         val segment = Journeys.segment(journey, rail)!!
         val trains = Journeys.trains(segment, rowsAt("TOP", departure("Bottom A", 60, lineId = "")), mapOf("example" to rail))

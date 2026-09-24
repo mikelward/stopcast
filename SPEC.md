@@ -537,7 +537,12 @@ A bus's way back leaves from the pole across the road, so each direction is **pl
 line's route**: an end matches its own stop, else a stop in the same TfL stop area, else one of the
 same name, else — for a stop served one way only — the route's nearest stop within a short walk
 (400 m). When the route can't place the origin as one stop, the card says it couldn't check rather
-than guess one. The origin's departures are fetched alongside the near-me stops (one request, none
+than guess one. Another line counts as reaching the far end when it stops at the **same place**
+there, even where TfL files that stop under another stop area and name (maintainer, 2026-09-24): a
+stop whose name starts the same ("Hill Station", "Hill Station / High Road") within
+150 m. Both are needed — a name alone would join same-named stops across town, a distance alone a
+road that merely passes by — and it applies to the far end only; the origin stays the exact stop
+whose departures are shown. The origin's departures are fetched alongside the near-me stops (one request, none
 when it's already near) and stay out of the near-me list; each line's route is the same lookup the
 route page makes (one per line at the origin, per process). Until they are in, the card says it's
 checking rather than claim there are none.
