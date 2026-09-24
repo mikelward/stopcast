@@ -508,8 +508,8 @@ fun MainScreen(
                         unresolved = parts.any { it.unresolved },
                         routeFailed = parts.any { it.routeFailed },
                     )
-                    // Trains on another branch, offered with where to change when they leave first.
-                    val changes = Journeys.changesBefore(trains.rows, parts.flatMap { it.changes })
+                    // Trains on another branch, offered with where to change when no direct one is due.
+                    val changes = Journeys.changesWithoutDirect(trains.rows, parts.flatMap { it.changes })
                     reached = parts.flatMapTo(HashSet()) { it.reachedIds }
                     // A neighboring pole whose fetch failed, whose lookup did, or whose line's route
                     // did, may have had a bus.
@@ -1591,6 +1591,12 @@ private fun DepartureList(
                                 )
                             }
                         }
+                        // A suspended line's status row is no direct train: with trains to change from, say so under it.
+                        if (state.changes.isNotEmpty() && !state.incomplete && !Journeys.directDue(state.rows)) {
+                            item(key = "journey-none|${card.journey.key}") {
+                                JourneyNote(stringResource(R.string.journey_none_direct, card.journey.to.name))
+                            }
+                        }
                         journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail)
                         if (state.incomplete) {
                             item(key = "journey-note|${card.journey.key}") {
@@ -1939,7 +1945,7 @@ internal sealed interface JourneyCardState {
         val incomplete: Boolean = false,
         // [incomplete] because some line's route failed to load: offer a retry.
         val retry: Boolean = false,
-        // Trains on another branch that leave before the first direct one, with where to change.
+        // Trains on another branch, with where to change, when no direct train is due.
         val changes: List<JourneyChange> = emptyList(),
     ) : JourneyCardState {
         /**

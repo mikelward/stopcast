@@ -649,14 +649,14 @@ claims nothing new. Alerts on lines with no starred journey (a separate favorite
 `TODO.md` idea.
 
 **Change at a fork.** When a line runs only one branch from the origin (a Northern line train to
-Edgware from King's Cross, none to High Barnet), a train on the other branch that leaves before the
-next direct one is shown too, under "King's Cross ➔ Camden Town (for High Barnet)" (maintainer,
-2026-09-24): the change stop is the last stop its path shares with the route to the far end, from
-the route data the card already loads. With no
-direct train at all, the card says "No direct trains" above them. It names only where to change,
-not the connecting train's time, which isn't known; a later change-train is never offered, since
-the direct one is then no slower. Rail only: a bus's path is often the route's end, too loose to
-send a rider to change on. The widget keeps showing direct trains only.
+Edgware from King's Cross, none to High Barnet) and no direct train is due, the card shows the
+other branch's trains instead, under "King's Cross ➔ Camden Town (for High Barnet)", with "No direct
+trains" above them (maintainer, 2026-09-24). The change stop is the last stop the train's path
+shares with the route to the far end, from the route data the card already loads; the brackets name
+the journey's own end, not the branch's terminus. While a direct train is due none is offered, since
+changing mostly lands the rider on that same train at the fork. It names only where to change, not
+the connecting train's time, which isn't known. Rail only: a bus's path is often the route's end,
+too loose to send a rider to change on. The widget keeps showing direct trains only.
 
 **Direct only, for now.** A journey that needs a change of line is routing — the eventual goal is starring
 home and work, which needs it, and it stays a non-goal until then. The tap-a-stop entry point has no
