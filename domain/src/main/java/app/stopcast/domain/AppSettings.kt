@@ -87,6 +87,15 @@ interface AppSettings {
     /** Set [railApiKey]; a null or blank value clears it. Suspending, off the main thread. */
     suspend fun setRailApiKey(key: String?) {}
 
+    /**
+     * The transport modes hidden from the near-me list (SPEC *Finding stops → Hiding a mode*),
+     * empty by default: everything shows.
+     */
+    fun hiddenModes(): Flow<Set<String>> = flowOf(emptySet())
+
+    /** Set [hiddenModes] to [modes]. Suspending, off the main thread; best-effort. */
+    suspend fun setHiddenModes(modes: Set<String>) {}
+
     companion object {
         /** A store that persists nothing and always reads the defaults — the default for tests
          *  and a build with no wired DataStore, so the app runs identically minus persistence. */

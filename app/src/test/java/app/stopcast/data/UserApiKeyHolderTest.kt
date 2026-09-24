@@ -3,6 +3,7 @@ package app.stopcast.data
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.FontSizeSettings
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -10,9 +11,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -47,6 +50,36 @@ class UserApiKeyHolderTest {
     // manual advancing) and are cancelled with the test via backgroundScope's Job.
     private fun TestScope.eagerHolder() =
         UserApiKeyHolder(CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)))
+
+    @Test
+    fun `loaded waits for the stored value, and returns at once when never warmed`() = runTest {
+        val stored = MutableSharedFlow<String?>()
+        val holder = eagerHolder()
+        assertNull("never warmed: the initial value, without waiting", holder.loaded())
+        holder.warm(FakeSettings(stored))
+        val read = async { holder.loaded() }
+        // Run what's ready without advancing the clock, which would pass the load timeout.
+        runCurrent()
+        assertTrue("still waiting for the store", read.isActive)
+        stored.emit("EXAMPLE")
+        assertEquals("EXAMPLE", read.await())
+    }
+
+    @Test
+    fun `a failed write is reported until the screen has shown it`() = runTest {
+        val holder = eagerHolder()
+        val failing = object : AppSettings by FakeSettings(flowOf(null)) {
+            override suspend fun setUserApiKey(key: String?) = throw java.io.IOException("disk full")
+        }
+        holder.warm(failing)
+        holder.set("EXAMPLE")
+        advanceUntilIdle()
+        // Still applied in memory, but the screen is told it won't survive a restart.
+        assertEquals("EXAMPLE", holder.current)
+        assertTrue(holder.writeFailed.value)
+        holder.writeFailureShown()
+        assertEquals(false, holder.writeFailed.value)
+    }
 
     @Test
     fun `warm reads the stored key into current`() = runTest {

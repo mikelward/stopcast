@@ -3,7 +3,9 @@ package app.stopcast
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import androidx.glance.appwidget.updateAll
 import app.stopcast.data.DataStoreAppSettings
+import app.stopcast.data.HiddenModesSetting
 import app.stopcast.data.RailApiKeySetting
 import app.stopcast.data.UserApiKeySetting
 import app.stopcast.data.logAppSettingsWarning
@@ -15,12 +17,15 @@ import app.stopcast.telemetry.PrefsConsentStore
 import app.stopcast.telemetry.TelemetryConsent
 import app.stopcast.telemetry.TelemetryGate
 import app.stopcast.telemetry.startTelemetry
+import app.stopcast.widget.StopCastWidget
 import com.mikelward.androidlog.DebugLog
 import com.mikelward.androidlog.android.DebugFileSink
 import com.mikelward.androidlog.android.LogcatSink
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 private const val LOGCAT_TAG = "StopCast"
@@ -171,6 +176,25 @@ open class StopcastApp : Application() {
     protected open fun warmSharedState() {
         UserApiKeySetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
         RailApiKeySetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
+        HiddenModesSetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
+        // Redraw the widget when the hidden modes change, so it leaves out what the list does without
+        // waiting for the next refresh. Process-wide, so a change made just before the user leaves
+        // for Settings or a search still reaches it; keyed on the in-process set the widget reads,
+        // so a change that failed to save still applies there until restart, as in the list.
+        applicationScope.launch {
+            HiddenModesSetting.changes
+                .drop(1)
+                .collect {
+                    try {
+                        StopCastWidget().updateAll(this@StopcastApp)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // The next snapshot save redraws it anyway; only the prompt redraw is lost.
+                        logAppSettingsWarning("widget redraw after hiding failed: ${e::class.simpleName}")
+                    }
+                }
+        }
     }
 
     /**

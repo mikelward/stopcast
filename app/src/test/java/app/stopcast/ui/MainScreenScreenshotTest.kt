@@ -204,6 +204,42 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `with every mode nearby hidden the list says so rather than that nothing runs`() {
+        val busOnly = StopArrivals(
+            "490000001A",
+            "Example Road",
+            listOf(dep("73", "73", "inbound", "Victoria", 150, "", mode = "bus")),
+            now.minusSeconds(30),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                MainScreen(DeparturesUiState.Loaded(listOf(busOnly), now.minusSeconds(30)), now, {}, hiddenModes = setOf("bus"))
+            }
+        }
+        composeRule.onNodeWithText("Nothing else to show with Bus hidden").assertExists()
+    }
+
+    @Test
+    fun `a hidden mode's rows are left out under a banner that shows them again`() {
+        var shownAll = false
+        capture("main-modes-hidden.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(stops(now.minusSeconds(30)), now.minusSeconds(30), lineStatuses = statuses()),
+                now,
+                {},
+                hiddenModes = setOf("bus"),
+                onShowAllModes = { shownAll = true },
+            )
+        }
+        composeRule.onNodeWithText("Bus hidden").assertExists()
+        // The 73 bus is left out; the Victoria line still shows.
+        composeRule.onNodeWithText("Brixton").assertExists()
+        composeRule.onNodeWithText("73").assertDoesNotExist()
+        composeRule.onNodeWithText("Show all").performClick()
+        assertTrue(shownAll)
+    }
+
+    @Test
     fun `a National Rail line with no key says so and opens Settings`() {
         val stop = StopArrivals(
             "910GEXAMPLE",
@@ -1693,6 +1729,42 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("Victoria ➔ Warren Street").assertExists()
         composeRule.onNodeWithText("Walthamstow Central", substring = true).assertExists()
         composeRule.onNodeWithText("No departures nearby").assertExists()
+    }
+
+    @Test
+    fun `under journey cards, an empty near-me list with modes hidden says so`() {
+        val origin = StopArrivals(
+            "940GZZLUVIC",
+            "Victoria",
+            listOf(dep("victoria", "Victoria", "northbound", "Walthamstow Central", 180, "Northbound - Platform 5")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(
+                        LocalRouteStops provides RouteStopsRepository(
+                            object : RouteSequenceSource {
+                                override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+                            },
+                        ),
+                    ) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(origin), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(victoriaToWarrenStreet),
+                            hiddenModes = setOf("bus"),
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Victoria ➔ Warren Street").assertExists()
+        composeRule.onNodeWithText("Nothing else to show with Bus hidden").assertExists()
+        composeRule.onNodeWithText("No departures nearby").assertDoesNotExist()
     }
 
     @Test

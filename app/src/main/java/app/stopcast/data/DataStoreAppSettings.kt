@@ -95,6 +95,13 @@ class DataStoreAppSettings internal constructor(
         dataStore.updateData { (it ?: PersistedSettings()).copy(railApiKey = normalized) }
     }
 
+    override fun hiddenModes(): Flow<Set<String>> =
+        persisted().map { it?.hiddenModes.orEmpty() }
+
+    override suspend fun setHiddenModes(modes: Set<String>) {
+        dataStore.updateData { (it ?: PersistedSettings()).copy(hiddenModes = modes) }
+    }
+
     // The shared read flow: DataStore's `data`, with a transient I/O read failure retried rather
     // than collapsed to a terminal default. A `catch`-and-emit would end the flow, leaving a
     // long-lived collector stuck at the default after storage recovered (Codex P2 on #56).
@@ -185,6 +192,8 @@ data class PersistedSettings(
     // The user's own Rail Data Marketplace key for National Rail departures, or null. A credential,
     // handled like [userApiKey]: sent only with the user's own National Rail requests.
     val railApiKey: String? = null,
+    // The transport modes hidden from the near-me list. Defaulted, so an older file hides none.
+    val hiddenModes: Set<String> = emptySet(),
 )
 
 /**

@@ -69,6 +69,7 @@ import app.stopcast.data.StationIndexStore
 import app.stopcast.domain.RouteStopsRepository
 import app.stopcast.data.SharedTflRateLimiter
 import app.stopcast.data.SharedTflRequestPool
+import app.stopcast.data.HiddenModesSetting
 import app.stopcast.data.RailApiKeySetting
 import app.stopcast.domain.TflClient
 import app.stopcast.domain.RailAwareTflClient
@@ -222,6 +223,9 @@ class MainActivity : ComponentActivity() {
                         nearbyStopsCache(applicationContext),
                     ),
                     warn = ::logLocationWarning,
+                    // Waits for the stored set on a cold start, so the first pick already leaves out
+                    // what the user hid rather than fetching it until the next re-locate.
+                    hiddenModes = { HiddenModesSetting.loaded() },
                 )
             }
         }
@@ -810,6 +814,8 @@ class MainActivity : ComponentActivity() {
             val relocatingNow by relocating.collectAsStateWithLifecycle()
             val refreshing = departuresRefreshing || relocatingNow
             val locationBannerNow by locationBanner.collectAsStateWithLifecycle()
+            val hiddenModes by HiddenModesSetting.changes.collectAsStateWithLifecycle()
+            val hiddenModesWriteFailed by HiddenModesSetting.writeFailed.collectAsStateWithLifecycle()
             val starred by viewModel.starred.collectAsStateWithLifecycle()
             // Starred journeys (SPEC *Journeys*): read from the device, each turned so its origin is
             // the end nearer this fix, or flipped by a tap on its card. The shown origins are fetched
@@ -871,10 +877,9 @@ class MainActivity : ComponentActivity() {
             // Each shown journey's fetched stops, as the screen last reported them; read by a relocate.
             val journeyStopIds = remember { mutableStateOf(emptyMap<String, Set<String>>()) }
             val openJourneyKey = remember { mutableStateOf<String?>(null) }
-            val onRelocate: () -> Unit = relocateAction(
-                cancelFetch = viewModel::cancelFetch,
-                relocate = relocate,
-                reconcile = { fresh ->
+            // Brings the retained departures in line with a re-picked nearby set of the same places:
+            // updates its tiers and distances and re-fetches (a relocation, or "Show all").
+            val reconcileSameSet: (NearbyStopsViewModel.State.Ready) -> Unit = { fresh ->
                     // A journey the fresh fix puts over a mile away is held back from this refresh
                     // too, not just from the next one once the screen catches up (Codex). Relocate
                     // sets the banner before calling here, so a retained or last-known fix (banner
@@ -907,7 +912,22 @@ class MainActivity : ComponentActivity() {
                         dropJourneyStopIds = drop,
                         awaitJourneyStops = await,
                     )
+                }
+            val onRelocate: () -> Unit = relocateAction(
+                cancelFetch = viewModel::cancelFetch,
+                relocate = relocate,
+                reconcile = reconcileSameSet,
+            )
+            // "Show all" re-picks the nearby set from the same fix with every mode back, then either
+            // a new set's departures load on their own or the same places' are reconciled and
+            // re-fetched, as after a relocation (SPEC *Finding stops → Hiding a mode*).
+            val onShowAllModes: () -> Unit = relocateAction(
+                cancelFetch = viewModel::cancelFetch,
+                relocate = { onSameSet ->
+                    HiddenModesSetting.showAll()
+                    nearbyViewModel.refilter(onSameSet)
                 },
+                reconcile = reconcileSameSet,
             )
             // Consume a latched foreground return (set by the activity-level observer above the
             // overlay switch). Because the latch lives above this view, it survives this view being
@@ -1028,6 +1048,14 @@ class MainActivity : ComponentActivity() {
                     onReveal = { mode -> if (!relocatingNow) viewModel.reveal(mode) },
                     onSendBugReport = onSendBugReport,
                     locationBanner = locationBannerNow,
+                    // Hiding filters the list at once; the hidden mode's stops stop being fetched
+                    // from the next re-locate. Showing them again re-picks the set from the same
+                    // fix, so they come back now (SPEC *Finding stops → Hiding a mode*).
+                    hiddenModes = hiddenModes,
+                    onHideMode = { mode -> HiddenModesSetting.setHidden(mode, hidden = true) },
+                    onShowAllModes = onShowAllModes,
+                    hiddenModesWriteFailed = hiddenModesWriteFailed,
+                    onHiddenModesWriteFailureShown = HiddenModesSetting::writeFailureShown,
                 )
             }
         }

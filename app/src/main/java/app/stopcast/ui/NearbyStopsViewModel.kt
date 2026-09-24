@@ -3,6 +3,7 @@ package app.stopcast.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.stopcast.domain.Coordinates
+import app.stopcast.domain.HiddenModes
 import app.stopcast.domain.LocationFix
 import app.stopcast.domain.LocationProvider
 import app.stopcast.domain.NearbySelection
@@ -58,6 +59,9 @@ class NearbyStopsViewModel(
     private val radiusMeters: Int = NearbySelection.OUTER_RADIUS_METERS,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val warn: (String) -> Unit = {},
+    // The transport modes the user has hidden: a stop serving only those isn't picked, so it costs
+    // no request (SPEC *Finding stops → Hiding a mode*). Read at each resolve.
+    private val hiddenModes: suspend () -> Set<String> = { emptySet() },
 ) : ViewModel() {
     sealed interface State {
         /** The location permission isn't held yet — the screen asks for it. */
@@ -267,6 +271,32 @@ class NearbyStopsViewModel(
     }
 
     /**
+     * Re-picks the nearby set from the fix already shown, after the hidden modes changed: showing a
+     * mode again brings its stops back, hiding one drops the stops that served only it. No new fix,
+     * and the lookup is a cache hit, so it costs no request; the departures for any newly picked
+     * stop are fetched as for a relocation. When the re-pick keeps the same places (a mixed place
+     * whose lines or tier changed), [onSameSet] reconciles the retained departures, as [relocate]'s
+     * does. Does nothing while no set is shown.
+     */
+    fun refilter(onSameSet: (State.Ready) -> Unit = {}) {
+        val shown = _state.value
+        val fix = when (shown) {
+            is State.Ready -> shown.location
+            is State.Empty -> shown.location
+            else -> return
+        }
+        locateJob?.cancel()
+        // Supersedes any relocation in flight, whose completion no longer owns the indicator (it
+        // clears only while it's the active resolve), so clear it here, as [locate] does.
+        _relocating.value = false
+        locateJob = viewModelScope.launch {
+            val next = resolveFrom(fix)
+            _state.value = next
+            if (next is State.Ready && shown is State.Ready && next.clusterSetKey == shown.clusterSetKey) onSameSet(next)
+        }
+    }
+
+    /**
      * The device fix (with its [LocationFix.isFallback] confidence), or `null` — the "couldn't get
      * your location" outcome — with cancellation rethrown and any other failure logged coarsely
      * (never a coordinate, SPEC *Privacy*). Shared by [locate] and [relocate], which then decide
@@ -299,9 +329,14 @@ class NearbyStopsViewModel(
             warn("nearby stops lookup failed: ${(e as? TflException)?.message ?: e::class.simpleName}")
             return State.Failed(kindOf(e), location = fix)
         }
+        // A hidden mode's stops aren't picked, so they cost no request — unless that would leave
+        // nothing at all: then the full set is picked and the list, filtered by mode, says what's
+        // hidden rather than claiming nothing runs nearby (SPEC principle 2).
+        val shown = HiddenModes.stops(found, hiddenModes())
         val result = NearbySelection.selectClusters(
-            found, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters,
-        )
+            shown, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters,
+        ).takeIf { it.eager.isNotEmpty() }
+            ?: NearbySelection.selectClusters(found, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters)
         // Eager empty means no stop with a route in range (each present mode contributes its
         // nearest; a route-less stop is never eager and has nothing to show) — nothing nearby runs.
         if (result.eager.isEmpty()) return State.Empty(location = fix)

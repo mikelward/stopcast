@@ -4,10 +4,13 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.LineRef
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopArrivals
 import app.stopcast.ui.theme.StopCastTheme
@@ -90,6 +93,90 @@ class StarLongPressTest {
         }
         composeRule.onNodeWithText("Brixton").performTouchInput { longClick() }
         assertEquals(theRow.lineId, toggled?.lineId)
+    }
+
+    @Test
+    fun `on the near-me list a long press opens a menu to pin the row or hide its mode`() {
+        var toggled: DepartureRow? = null
+        var hidden: String? = null
+        composeRule.setContent {
+            StopCastTheme {
+                MainScreen(
+                    state = loaded(),
+                    now = now,
+                    onRefresh = {},
+                    starred = emptySet(),
+                    onToggleStar = { toggled = it },
+                    onHideMode = { hidden = it },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Brixton").performTouchInput { longClick() }
+        // The menu opens; nothing is pinned or hidden until an item is picked.
+        assertNull(toggled)
+        composeRule.onNodeWithText("Pin to top").assertExists()
+        composeRule.onNodeWithText("Hide Tube").performClick()
+        assertEquals("tube", hidden)
+        assertNull(toggled)
+
+        composeRule.onNodeWithText("Brixton").performTouchInput { longClick() }
+        composeRule.onNodeWithText("Pin to top").performClick()
+        assertEquals(theRow.lineId, toggled?.lineId)
+    }
+
+    @Test
+    fun `a header's long press offers every mode the place serves, not just those with trains due`() {
+        var hidden: String? = null
+        val mixed = stop.copy(
+            lines = listOf(LineRef("victoria", "Victoria", "tube"), LineRef("73", "73", "bus")),
+        )
+        composeRule.setContent {
+            StopCastTheme {
+                MainScreen(
+                    state = DeparturesUiState.Loaded(stops = listOf(mixed), fetchedAt = now),
+                    now = now,
+                    onRefresh = {},
+                    stopDistanceMeters = mapOf(mixed.stopId to 100.0),
+                    onHideMode = { hidden = it },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("King's Cross St. Pancras", substring = true)
+            .performTouchInput { longClick() }
+        composeRule.onNodeWithText("Hide Tube").assertExists()
+        // No bus is due, but the place serves one, so it can still be hidden.
+        composeRule.onNodeWithText("Hide Bus").performClick()
+        assertEquals("bus", hidden)
+    }
+
+    @Test
+    fun `a header offers a mode only a sibling stop of the place serves`() {
+        var hidden: String? = null
+        // Two stops of one place: this one has the Victoria line due; its sibling serves a bus only.
+        val here = stop.copy(clusterId = "HUBEXAMPLE")
+        val sibling = StopArrivals(
+            stopId = "490000001B",
+            stopName = "King's Cross St. Pancras",
+            departures = emptyList(),
+            fetchedAt = now,
+            lines = listOf(LineRef("73", "73", "bus")),
+            clusterId = "HUBEXAMPLE",
+        )
+        composeRule.setContent {
+            StopCastTheme {
+                MainScreen(
+                    state = DeparturesUiState.Loaded(stops = listOf(here, sibling), fetchedAt = now),
+                    now = now,
+                    onRefresh = {},
+                    stopDistanceMeters = mapOf(here.stopId to 100.0, sibling.stopId to 120.0),
+                    onHideMode = { hidden = it },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("King's Cross St. Pancras", substring = true)
+            .performTouchInput { longClick() }
+        composeRule.onNodeWithText("Hide Bus").performClick()
+        assertEquals("bus", hidden)
     }
 
     @Test

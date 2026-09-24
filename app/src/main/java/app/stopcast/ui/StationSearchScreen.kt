@@ -204,8 +204,12 @@ private fun Message(text: String) {
  */
 internal fun modesLabel(modes: List<String>): String =
     modes.filter { it.isNotBlank() }.distinct().joinToString(" · ") { mode ->
-        KNOWN_MODE_NAMES[mode] ?: mode.replace('-', ' ').replaceFirstChar { it.titlecase(Locale.ROOT) }
+        modeName(mode)
     }
+
+/** A mode's display name ("national-rail" → "National Rail"), or its id tidied for one we don't know. */
+internal fun modeName(mode: String): String =
+    KNOWN_MODE_NAMES[mode.lowercase(Locale.ROOT)] ?: mode.replace('-', ' ').replaceFirstChar { it.titlecase(Locale.ROOT) }
 
 private val KNOWN_MODE_NAMES = mapOf(
     "tube" to "Tube",

@@ -2,6 +2,7 @@ package app.stopcast.data
 
 import app.stopcast.domain.AppSettings
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The user's TfL `app_key` in force right now, for every TfL request in the process (SPEC D7).
@@ -46,14 +48,36 @@ object UserApiKeySetting {
 /**
  * The process-wide app_key cache's behavior, with its [scope] injected so a test can drive it on a
  * virtual clock. One instance backs [UserApiKeySetting]; production passes a `Dispatchers.Default`
- * scope.
+ * scope. Blank normalizes to null (keyless).
  */
 class UserApiKeyHolder(
-    private val scope: CoroutineScope,
+    scope: CoroutineScope,
     // Which stored key this holder keeps: the TfL app_key by default, or another credential
     // ([RailApiKeySetting]) handled the same way.
-    private val read: (AppSettings) -> Flow<String?> = AppSettings::userApiKey,
-    private val write: suspend (AppSettings, String?) -> Unit = { settings, key -> settings.setUserApiKey(key) },
+    read: (AppSettings) -> Flow<String?> = AppSettings::userApiKey,
+    write: suspend (AppSettings, String?) -> Unit = { settings, key -> settings.setUserApiKey(key) },
+) : StoredSettingHolder<String?>(
+    scope,
+    initial = null,
+    read = read,
+    write = write,
+    normalize = { key -> key?.trim()?.takeIf(String::isNotEmpty) },
+    // The failure class only is logged, never the key itself (SPEC *Privacy*).
+    label = "api key",
+)
+
+/**
+ * A setting every part of the process reads synchronously ([current]), warmed from [AppSettings]
+ * and written back in order. [UserApiKeyHolder] and [HiddenModesSetting] are its uses.
+ */
+open class StoredSettingHolder<T>(
+    private val scope: CoroutineScope,
+    initial: T,
+    private val read: (AppSettings) -> Flow<T>,
+    private val write: suspend (AppSettings, T) -> Unit,
+    private val normalize: (T) -> T = { it },
+    // Names the setting in a failed-write log line; never its value.
+    private val label: String,
 ) {
 
     private var settings: AppSettings = AppSettings.NONE
@@ -65,7 +89,7 @@ class UserApiKeyHolder(
      * can't race to DataStore on independent coroutines and land out of order (the earlier value
      * written last, restored after process death). FIFO and unbounded.
      */
-    private val writes = Channel<String?>(Channel.UNLIMITED)
+    private val writes = Channel<T>(Channel.UNLIMITED)
 
     /**
      * Guards [current] and [userHasSet] so [set] (usually the main thread) and the store collector
@@ -78,51 +102,67 @@ class UserApiKeyHolder(
     private val lock = Any()
 
     /**
-     * Whether the user has set the key in this process. This holder is the process's sole writer of
-     * the key, so every store emission after the warm read is an echo of one of our own writes —
-     * once the user has made a choice, [current] is authoritative and those echoes must not roll it
-     * back (that is exactly how a cleared key could otherwise be restored and then sent). Before the
+     * Whether the user has set the value in this process. This holder is the process's sole writer
+     * of it, so every store emission after the warm read is an echo of one of our own writes — once
+     * the user has made a choice, [current] is authoritative and those echoes must not roll it back
+     * (that is exactly how a cleared key could otherwise be restored and then sent). Before the
      * first [set], the warm read seeds [current] from the store.
      */
     private var userHasSet = false
 
+    // Completed once [current] holds the stored value (the warm read landed) or the user's own.
+    private val loadedSignal = CompletableDeferred<Unit>()
+
     /**
-     * The key applied to TfL requests right now, or null when keyless (the default until [warm]
-     * reads the stored value). Volatile so a background request coroutine sees the latest paste
-     * without synchronization.
+     * The value in force right now ([initial] until [warm] reads the stored one). Volatile so a
+     * background request coroutine sees the latest change without synchronization.
      */
     @Volatile
-    var current: String? = null
+    var current: T = initial
         private set(value) {
             field = value
             _changes.value = value
         }
 
-    private val _changes = MutableStateFlow<String?>(null)
+    private val _changes = MutableStateFlow(initial)
 
-    /** [current] as a flow, so a screen can act when the key changes. */
-    val changes: StateFlow<String?> = _changes.asStateFlow()
+    private val _writeFailed = MutableStateFlow(false)
 
     /**
-     * Begins reading the stored key into [current], off the main thread, and keeps it live for
+     * True once a write failed: the value holds in memory but won't survive the process, so a
+     * screen that offers the setting says so (SPEC principle 2). Cleared by [writeFailureShown].
+     */
+    val writeFailed: StateFlow<Boolean> = _writeFailed.asStateFlow()
+
+    /** The screen has told the user about a failed write. */
+    fun writeFailureShown() {
+        _writeFailed.value = false
+    }
+
+    /** [current] as a flow, so a screen can act when the value changes. */
+    val changes: StateFlow<T> = _changes.asStateFlow()
+
+    /**
+     * Begins reading the stored value into [current], off the main thread, and keeps it live for
      * later writes. Idempotent — a second call is ignored — so it can be called from
-     * `StopcastApp.onCreate` without stacking collectors. Requests before the warm read lands run
-     * keyless (the safe default: a real key only raises the budget, never gates a fetch).
+     * `StopcastApp.onCreate` without stacking collectors. Reads before the warm read lands see
+     * [initial] (for a key, keyless: the safe default, since a real key only raises the budget).
      */
     fun warm(appSettings: AppSettings) {
         settings = appSettings
         if (writeJob == null) {
             writeJob = scope.launch {
-                for (key in writes) {
+                for (value in writes) {
                     try {
-                        write(settings, key)
+                        write(settings, value)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
                         // Best-effort: the value is already applied in memory, so a failed write
-                        // leaves the app using the chosen key until a restart re-reads the store.
-                        // Sanitized — the failure class only, never the key itself (SPEC *Privacy*).
-                        logAppSettingsWarning("api key write failed: ${e::class.simpleName}")
+                        // leaves the app using it until a restart re-reads the store. Sanitized —
+                        // the failure class only, never the value itself (SPEC *Privacy*).
+                        logAppSettingsWarning("$label write failed: ${e::class.simpleName}")
+                        _writeFailed.value = true
                     }
                 }
             }
@@ -136,21 +176,38 @@ class UserApiKeyHolder(
                 synchronized(lock) {
                     if (!userHasSet) current = stored
                 }
+                loadedSignal.complete(Unit)
             }
         }
     }
 
     /**
-     * The user pasted [key] (or cleared it — null/blank). Applied to [current] at once so the next
-     * request uses it, and persisted in order in the background. Blank normalizes to null (keyless).
+     * [current] once the stored value has been read, for a caller that must not act on [initial]
+     * before then (a cold start's first nearby pick). Returns at once when [warm] was never called
+     * (tests, a build with no store), and after [LOAD_TIMEOUT_MILLIS] if the store is slow, so a
+     * stuck read can delay but never block the caller.
      */
-    fun set(key: String?) {
-        val normalized = key?.trim()?.takeIf(String::isNotEmpty)
+    suspend fun loaded(): T {
+        if (collectJob != null) withTimeoutOrNull(LOAD_TIMEOUT_MILLIS) { loadedSignal.await() }
+        return current
+    }
+
+    /**
+     * The user changed the value to [value]. Applied to [current] at once so the next read uses it,
+     * and persisted in order in the background.
+     */
+    fun set(value: T) {
+        val normalized = normalize(value)
         synchronized(lock) {
             userHasSet = true
             current = normalized
         }
+        loadedSignal.complete(Unit)
         writes.trySend(normalized)
+    }
+
+    private companion object {
+        const val LOAD_TIMEOUT_MILLIS = 2_000L
     }
 }
 
@@ -179,4 +236,44 @@ object RailApiKeySetting {
 
     /** The user pasted [key] (or cleared it). Applied at once, persisted in order. */
     fun set(key: String?) = holder.set(key)
+}
+
+/**
+ * The transport modes the user has hidden from the near-me list (SPEC *Finding stops → Hiding a
+ * mode*), in force right now for the nearby lookup, the list and the widget: the same process-wide
+ * cache as [UserApiKeySetting], so each reads it without a disk read.
+ */
+object HiddenModesSetting {
+    private val holder = StoredSettingHolder<Set<String>>(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        initial = emptySet(),
+        read = AppSettings::hiddenModes,
+        write = { settings, modes -> settings.setHiddenModes(modes) },
+        label = "hidden modes",
+    )
+
+    /** The hidden modes right now; empty (everything shows) until [warm] reads the stored set. */
+    val current: Set<String> get() = holder.current
+
+    /** The hidden modes once the stored set has been read (see [StoredSettingHolder.loaded]). */
+    suspend fun loaded(): Set<String> = holder.loaded()
+
+    /** [current] as a flow, for the list and its banner. */
+    val changes: StateFlow<Set<String>> get() = holder.changes
+
+    /** Begins reading the stored set into [current]. Idempotent. */
+    fun warm(appSettings: AppSettings) = holder.warm(appSettings)
+
+    /** Hides [mode] (or shows it again when [hidden] is false). Applied at once, persisted in order. */
+    fun setHidden(mode: String, hidden: Boolean) =
+        holder.set(if (hidden) current + mode else current.filterNot { it.equals(mode, ignoreCase = true) }.toSet())
+
+    /** Shows every mode again. */
+    fun showAll() = holder.set(emptySet())
+
+    /** True once a change failed to save (it holds until the app restarts); see [writeFailureShown]. */
+    val writeFailed: StateFlow<Boolean> get() = holder.writeFailed
+
+    /** The list has told the user a change didn't save. */
+    fun writeFailureShown() = holder.writeFailureShown()
 }

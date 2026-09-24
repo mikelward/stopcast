@@ -86,6 +86,78 @@ class NearbyStopsViewModelTest {
     )
 
     @Test
+    fun `a hidden mode's stops aren't picked, and showing it again brings them back`() = runTest {
+        val stops = listOf(stop("b1", 50.0, "bus"), stop("t1", 300.0, "tube"))
+        var hidden = setOf("bus")
+        val model = NearbyStopsViewModel(
+            location = FakeLocation(origin), finder = FakeFinder { stops }, io = dispatcher, hiddenModes = { hidden },
+        )
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(listOf("t1"), (model.state.value as NearbyStopsViewModel.State.Ready).eagerStops.map { it.id })
+
+        hidden = emptySet()
+        model.refilter()
+        advanceUntilIdle()
+        assertEquals(listOf("b1", "t1"), (model.state.value as NearbyStopsViewModel.State.Ready).eagerStops.map { it.id })
+    }
+
+    @Test
+    fun `showing a mode again at the same places reconciles the retained departures`() = runTest {
+        // One place serving bus and tube: hiding the bus keeps the place, so "Show all" re-picks the
+        // same places with the bus lines back, and the departures must be reconciled to fetch them.
+        val mixed = stop("m1", 50.0, "tube").let { it.copy(lines = it.lines + LineRef("bus-m1", "m1", "bus")) }
+        var hidden = setOf("bus")
+        val model = NearbyStopsViewModel(
+            location = FakeLocation(origin), finder = FakeFinder { listOf(mixed) }, io = dispatcher, hiddenModes = { hidden },
+        )
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(listOf("tube"), (model.state.value as NearbyStopsViewModel.State.Ready).eagerStops.single().lines.map { it.mode })
+
+        hidden = emptySet()
+        var reconciled: NearbyStopsViewModel.State.Ready? = null
+        model.refilter { reconciled = it }
+        advanceUntilIdle()
+        assertEquals(listOf("tube", "bus"), reconciled?.eagerStops?.single()?.lines?.map { it.mode })
+    }
+
+    @Test
+    fun `show all during a relocation doesn't leave the refresh indicator on`() = runTest {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var waitForFix = false
+        val location = object : LocationProvider {
+            override suspend fun current(forceFresh: Boolean): LocationFix {
+                if (waitForFix) gate.await()
+                return LocationFix(origin, isFallback = false)
+            }
+        }
+        val model = vm(location, FakeFinder { listOf(stop("b1", 50.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        waitForFix = true
+        model.relocate()
+        advanceUntilIdle()
+        assertTrue(model.relocating.value)
+        model.refilter()
+        advanceUntilIdle()
+        assertEquals(false, model.relocating.value)
+    }
+
+    @Test
+    fun `hiding every mode nearby still picks the stops, so the list can say they're hidden`() = runTest {
+        val model = NearbyStopsViewModel(
+            location = FakeLocation(origin),
+            finder = FakeFinder { listOf(stop("b1", 50.0, "bus")) },
+            io = dispatcher,
+            hiddenModes = { setOf("bus") },
+        )
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(listOf("b1"), (model.state.value as NearbyStopsViewModel.State.Ready).eagerStops.map { it.id })
+    }
+
+    @Test
     fun `shows the nearby stops within the rings, nearest-first with lines carried through`() = runTest {
         val stops = listOf(
             // Out of order; a bus stop beyond the ~1 mi outer ring is excluded.
