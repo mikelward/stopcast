@@ -126,6 +126,7 @@ import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
 import app.stopcast.domain.DestinationAbbreviations
 import app.stopcast.domain.DismissedAlert
+import app.stopcast.domain.HiddenModes
 import app.stopcast.domain.NoTimes
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.Staleness
@@ -285,6 +286,15 @@ fun MainScreen(
     // a top banner over the list says so and offers "Try again" (which runs [onRefresh], a re-locate).
     // Null hides it. Default null so an unwired build/test renders without it.
     locationBanner: LocationBanner? = null,
+    // The transport modes hidden from the near-me list (SPEC *Finding stops → Hiding a mode*): their
+    // rows are left out and a one-line banner says so, with [onShowAllModes] to show them again. A
+    // non-null [onHideMode] makes a long press on a near-me row or header offer "Hide ‹mode›".
+    hiddenModes: Set<String> = emptySet(),
+    onHideMode: ((String) -> Unit)? = null,
+    onShowAllModes: () -> Unit = {},
+    // A change of hidden modes failed to save: a snackbar says so, then [onHiddenModesWriteFailureShown].
+    hiddenModesWriteFailed: Boolean = false,
+    onHiddenModesWriteFailureShown: () -> Unit = {},
     // Open the station search (SPEC *Finding stops*); null hides the overflow's "Find a station" item.
     onFindStation: (() -> Unit)? = null,
     // Non-null when this screen shows one searched station rather than the near-me list (SPEC
@@ -635,12 +645,18 @@ fun MainScreen(
     val journeyRowsShown = remember(journeyCards) {
         journeyCards.flatMap { (it.state as? JourneyCardState.Trains)?.shownRows.orEmpty() }
     }
-    val nearbyRows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, dismissed) {
+    // Each place's modes, less those already hidden, for a header's "Hide ‹mode›" items.
+    val placeModesShown = remember(loaded?.stops, hiddenModes) {
+        placeModes(loaded?.stops.orEmpty()).mapValues { (_, modes) ->
+            modes.filterNotTo(LinkedHashSet()) { HiddenModes.isHidden(it, hiddenModes) }
+        }
+    }
+    val nearbyRows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, dismissed, hiddenModes) {
         val ld = loaded ?: return@remember emptyList()
         // A near-me list shows its nearby stops only: a journey's farther origin, fetched for its
         // card above, isn't one of them (SPEC *Journeys*).
         val shownStops = if (stopDistanceMeters.isEmpty()) ld.stops else ld.stops.filter { it.stopId in stopDistanceMeters }
-        val across = DepartureRows.across(shownStops, now, ld.lineStatuses)
+        val across = HiddenModes.rows(DepartureRows.across(shownStops, now, ld.lineStatuses), hiddenModes)
         // A "near me now" list (distances present) shows a line once, from its nearest stop, then
         // orders closest-stop-first (soonest breaks a same-stop tie). A location-free list keeps
         // across's soonest-first order (D1).
@@ -691,7 +707,7 @@ fun MainScreen(
     // carries a line-status row (Codex). The saved stop ids already pin the place. Dismissals and
     // stars still apply, as on the full list. The title is resolved from the matched group each time, since a letterless bus
     // pole's qualifier (its shared terminus) can change with the departures (Codex).
-    val platformView = remember(loaded?.stops, loaded?.lineStatuses, now, platformStopIds, platformKey, platformIsStation, starred, dismissed, rows) {
+    val platformView = remember(loaded?.stops, loaded?.lineStatuses, now, platformStopIds, platformKey, platformIsStation, starred, dismissed, rows, hiddenModes) {
         val ids = platformStopIds?.split(',')?.toSet() ?: return@remember null
         val ld = loaded ?: return@remember emptyList<DepartureRow>() to null
         // A station view saved its clusters, not stop ids, so each snapshot re-resolves its members —
@@ -701,7 +717,7 @@ fun MainScreen(
             else ld.stops.filter { it.stopId in ids }
         val stopRows = DepartureRows.pinStarred(
             DepartureRows.withoutDismissed(
-                DepartureRows.across(platformStops, now, ld.lineStatuses),
+                HiddenModes.rows(DepartureRows.across(platformStops, now, ld.lineStatuses), hiddenModes),
                 dismissed,
             ),
             starred,
@@ -824,6 +840,15 @@ fun MainScreen(
     // not the full-screen route page below, so a failure while the page is open holds the flag until
     // the user returns, then shows, rather than firing at a host that isn't composed. Clear first,
     // then show, so a rotation while it's visible doesn't re-trigger it.
+    // A hidden-modes change that didn't save holds only until the app restarts: say so, the same way
+    // (SPEC principle 2).
+    val hiddenModesWriteFailedMessage = stringResource(R.string.hidden_modes_write_failed)
+    LaunchedEffect(hiddenModesWriteFailed, detailRow == null) {
+        if (hiddenModesWriteFailed && detailRow == null) {
+            onHiddenModesWriteFailureShown()
+            snackbarHostState.showSnackbar(hiddenModesWriteFailedMessage)
+        }
+    }
     LaunchedEffect(starWriteFailed, detailRow == null) {
         if (starWriteFailed && detailRow == null) {
             onStarWriteFailureShown()
@@ -1094,7 +1119,15 @@ fun MainScreen(
                     starred = starred,
                     onToggleStar = onToggleStar,
                     starringAvailable = starringAvailable,
-                    revealableModes = if (platformRows != null) emptySet() else revealableModes,
+                    revealableModes = if (platformRows != null) {
+                        emptySet()
+                    } else {
+                        revealableModes.filterNotTo(LinkedHashSet()) { HiddenModes.isHidden(it, hiddenModes) }
+                    },
+                    hiddenModes = hiddenModes,
+                    onHideMode = onHideMode,
+                    modesByPlace = placeModesShown,
+                    onShowAllModes = onShowAllModes,
                     onReveal = onReveal,
                     onOpenDetail = { row, focus ->
                         detailKey = row.detailKey()
@@ -1254,6 +1287,13 @@ private fun LoadedContent(
     // Non-null when the shown stops are backed by a low-confidence location: a top banner says so
     // and offers "Try again" (runs [onRefresh], a re-locate). Null hides it.
     locationBanner: LocationBanner? = null,
+    // The modes hidden from this list, their banner's "Show all", and the long-press "Hide ‹mode›"
+    // (null on a list that doesn't offer it). See [MainScreen].
+    hiddenModes: Set<String> = emptySet(),
+    onHideMode: ((String) -> Unit)? = null,
+    onShowAllModes: () -> Unit = {},
+    // Each place's modes not yet hidden (by cluster), for a header's "Hide ‹mode›" items.
+    modesByPlace: Map<String, Set<String>> = emptyMap(),
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -1290,6 +1330,18 @@ private fun LoadedContent(
                     onTryAgain = onRefresh,
                 )
             }
+            // Modes the user hid (SPEC *Finding stops → Hiding a mode*): one line saying which, so a
+            // shorter list never passes for all there is, with "Show all" to bring them back.
+            if (hiddenModes.isNotEmpty()) {
+                ActionBanner(
+                    text = stringResource(
+                        R.string.modes_hidden,
+                        hiddenModes.map(::modeName).sorted().joinToString(", "),
+                    ),
+                    actionLabel = stringResource(R.string.modes_show_all),
+                    onAction = onShowAllModes,
+                )
+            }
             // Independent, not exclusive: a kept snapshot can be BOTH incomplete (a stop
             // was missing) and failed-to-refresh, and both facts have to stay visible —
             // collapsing them into one branch would drop the "stops missing" warning and
@@ -1318,9 +1370,16 @@ private fun LoadedContent(
                     // — the data is too old to trust that conclusion, and newer ones may
                     // exist (SPEC D4). Prompt a refresh instead of asserting an empty list.
                     Text(
-                        text = stringResource(
-                            if (emptyStateUncertain) R.string.departures_stale_empty else R.string.departures_empty,
-                        ),
+                        // With modes hidden, an empty list says so rather than "no departures": the
+                        // hidden modes may well be running (SPEC *Finding stops → Hiding a mode*).
+                        text = when {
+                            hiddenModes.isNotEmpty() -> stringResource(
+                                R.string.modes_hidden_empty,
+                                hiddenModes.map(::modeName).sorted().joinToString(", "),
+                            )
+                            emptyStateUncertain -> stringResource(R.string.departures_stale_empty)
+                            else -> stringResource(R.string.departures_empty)
+                        },
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1335,6 +1394,8 @@ private fun LoadedContent(
                     revealableModes, onReveal,
                     listState = listState,
                     onOpenSettings = onOpenSettings,
+                    onHideMode = onHideMode,
+                    modesByPlace = modesByPlace,
                     onOpenDetail = onOpenDetail,
                     onDismissAlert = onDismissAlert,
                     onOpenPlatform = onOpenPlatform,
@@ -1352,9 +1413,17 @@ private fun LoadedContent(
                     // Not in a journey's own view, nor when every nearby row is already on a journey
                     // card above.
                     nearbyEmptyNote = if (rows.isEmpty() && !journeyView && !nearbyShownAbove) {
-                        stringResource(
-                            if (emptyStateUncertain) R.string.departures_stale_empty else R.string.departures_empty_nearby,
-                        )
+                        // With modes hidden, say so rather than "no departures": they may be running.
+                        if (hiddenModes.isNotEmpty()) {
+                            stringResource(
+                                R.string.modes_hidden_empty,
+                                hiddenModes.map(::modeName).sorted().joinToString(", "),
+                            )
+                        } else {
+                            stringResource(
+                                if (emptyStateUncertain) R.string.departures_stale_empty else R.string.departures_empty_nearby,
+                            )
+                        }
                     } else {
                         null
                     },
@@ -1413,7 +1482,12 @@ private fun Banner(text: String) {
  * [Banner].
  */
 @Composable
-private fun ActionBanner(text: String, onTryAgain: () -> Unit) {
+private fun ActionBanner(
+    text: String,
+    onTryAgain: () -> Unit = {},
+    actionLabel: String = stringResource(R.string.try_again),
+    onAction: () -> Unit = onTryAgain,
+) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         modifier = Modifier.fillMaxWidth(),
@@ -1428,7 +1502,7 @@ private fun ActionBanner(text: String, onTryAgain: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.weight(1f).padding(vertical = 8.dp),
             )
-            TextButton(onClick = onTryAgain) { Text(stringResource(R.string.try_again)) }
+            TextButton(onClick = onAction) { Text(actionLabel) }
         }
     }
 }
@@ -1448,6 +1522,10 @@ private fun DepartureList(
     onDismissAlert: (DepartureRow) -> Unit = {},
     // Opens Settings from a National Rail line's "No key" (SPEC *National Rail*).
     onOpenSettings: () -> Unit = {},
+    // Hides a mode from a long press on a near-me row or header; null keeps long-press as starring.
+    onHideMode: ((String) -> Unit)? = null,
+    // Each place's modes not yet hidden (by cluster), for a header's "Hide ‹mode›" items.
+    modesByPlace: Map<String, Set<String>> = emptyMap(),
     onOpenPlatform: ((StopGroup) -> Unit)? = null,
     onOpenStation: ((StopGroup) -> Unit)? = null,
     onOpenStopMap: ((String, String) -> Unit)? = null,
@@ -1684,6 +1762,8 @@ private fun DepartureList(
                                 .minByOrNull { it.second }
                                 ?.let { (stopId, _) -> { open(stopId, group.stopName) } }
                         },
+                        hideModes = if (onHideMode != null) headerModes(group, modesByPlace) else emptyList(),
+                        onHideMode = onHideMode,
                     )
                 }
             }
@@ -1696,6 +1776,7 @@ private fun DepartureList(
                     starringAvailable = starringAvailable,
                     onOpenDetail = onOpenDetail,
                     onOpenSettings = onOpenSettings,
+                    onHideMode = onHideMode,
                 )
             }
         }
@@ -1798,6 +1879,10 @@ private fun StopGroupHeader(
     // What a screen reader hears for [name] when it differs ("King's Cross to Camden Town, for High
     // Barnet", never the drawn arrow). Null reads [name].
     spokenName: String? = null,
+    // The modes a long press on the header offers to hide (SPEC *Finding stops → Hiding a mode*);
+    // empty or a null [onHideMode] leaves the header without a long press.
+    hideModes: List<String> = emptyList(),
+    onHideMode: ((String) -> Unit)? = null,
 ) {
     val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
     val openLabel = stringResource(R.string.action_show_platform)
@@ -1813,12 +1898,41 @@ private fun StopGroupHeader(
             distanceLabel?.let { append(", ").append(it) }
         }
     }
+    val hideable = onHideMode != null && hideModes.isNotEmpty()
+    var hideMenuOpen by remember { mutableStateOf(false) }
+    // The latest tap action, read by a detector keyed only on whether there is one: the caller
+    // builds [onClick] afresh on every recomposition (the clock ticks every few seconds), and keying
+    // the detector on it would restart it and drop a long press in progress, as [RouteRow] avoids.
+    val currentOnClick by rememberUpdatedState(onClick)
+    val tappable = onClick != null
+    val moreLabel = stringResource(R.string.more_actions)
+    Box {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             // The tap target spans the full row including the group-break space above the text, so
             // the header grows no taller for being tappable and the list keeps its spacing.
-            .then(if (onClick != null) Modifier.clickable(onClickLabel = openLabel, onClick = onClick) else Modifier)
+            .then(
+                if (hideable) {
+                    // A tap opens the platform, a long press the "Hide ‹mode›" menu — the same
+                    // gesture handling as a route row, with both actions announced.
+                    Modifier
+                        .pointerInput(tappable) {
+                            detectTapGestures(
+                                onTap = { currentOnClick?.invoke() },
+                                onLongPress = { hideMenuOpen = true },
+                            )
+                        }
+                        .semantics {
+                            if (tappable) onClick(label = openLabel) { currentOnClick?.invoke(); true }
+                            onLongClick(label = moreLabel) { hideMenuOpen = true; true }
+                        }
+                } else if (onClick != null) {
+                    Modifier.clickable(onClickLabel = openLabel, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            )
             .padding(start = 4.dp, end = 4.dp, top = if (firstOnScreen) 0.dp else 16.dp)
             .semantics(mergeDescendants = true) { contentDescription = spoken },
         verticalAlignment = Alignment.CenterVertically,
@@ -1874,7 +1988,76 @@ private fun StopGroupHeader(
             )
         }
     }
+    if (hideable) {
+        HideModeMenu(
+            expanded = hideMenuOpen,
+            onDismiss = { hideMenuOpen = false },
+            modes = hideModes,
+            onHideMode = { mode -> onHideMode?.invoke(mode) },
+        )
+    }
+    }
 }
+
+/**
+ * The long-press menu of a near-me header or row (SPEC *Finding stops → Hiding a mode*): an
+ * optional [leading] item (a row's pin/unpin), then "Hide ‹mode›" for each of [modes]. Wrapped in
+ * [FontSizeWindow] like the overflow menu, so the chosen text size reaches it.
+ */
+@Composable
+private fun HideModeMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    modes: List<String>,
+    onHideMode: (String) -> Unit,
+    leading: (@Composable () -> Unit)? = null,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.pinchFontSizeHost()) {
+        FontSizeWindow {
+            leading?.invoke()
+            modes.forEach { mode ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.hide_mode, modeName(mode))) },
+                    onClick = {
+                        onDismiss()
+                        onHideMode(mode)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The modes a header's place serves, in a stable order, for its "Hide ‹mode›" items: from every
+ * stop of the place — its cluster ([placeModes]), so a sibling platform or pole counts too — by
+ * their served lines and departures, not just the rows on screen, so a mode with no train due can
+ * still be hidden. A stop closure has no mode of its own to hide.
+ */
+private fun headerModes(group: StopGroup, placeModes: Map<String, Set<String>>): List<String> =
+    group.rows.asSequence()
+        .flatMap { row ->
+            val served = placeModes[placeOf(row.clusterId, row.stopId)].orEmpty()
+            if (row.stopDisruption == null && row.mode.isNotBlank()) served + row.mode else served
+        }
+        .distinctBy { it.lowercase() }
+        .sortedBy(::modeName)
+        .toList()
+
+/**
+ * Each place's modes, by cluster (a stop in none is its own place), from its stops' served lines
+ * and departures, for [headerModes].
+ */
+internal fun placeModes(stops: List<StopArrivals>): Map<String, Set<String>> {
+    val modes = HashMap<String, LinkedHashSet<String>>()
+    for (stop in stops) {
+        val place = modes.getOrPut(placeOf(stop.clusterId, stop.stopId)) { LinkedHashSet() }
+        (stop.lines.map { it.mode } + stop.departures.map { it.mode }).filterTo(place) { it.isNotBlank() }
+    }
+    return modes
+}
+
+private fun placeOf(clusterId: String, stopId: String): String = clusterId.ifBlank { "\u0000stop:$stopId" }
 
 /**
  * A stop-closure alert as its own header-less card at the top of the list (SPEC *Disruptions*): the
@@ -2177,6 +2360,8 @@ private fun StopGroupCard(
     starringAvailable: Boolean,
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
     onOpenSettings: () -> Unit = {},
+    // Offers "Hide ‹mode›" in each row's long-press menu; null keeps long-press as starring.
+    onHideMode: ((String) -> Unit)? = null,
 ) {
     // Cap the line pill at half the card's inner width, so a long name at a large font scale
     // ellipsizes rather than consuming the card and starving the countdown, which must stay one line
@@ -2204,6 +2389,7 @@ private fun StopGroupCard(
                         starrable = false,
                         onToggleStar = onToggleStar,
                         onOpenDetail = onOpenDetail,
+                        onHideMode = onHideMode,
                     ) {
                         LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
                         // The reason chip lives in the weighted slack so it absorbs the shrink (and
@@ -2275,6 +2461,7 @@ private fun StopGroupCard(
                         onOpenDetail = onOpenDetail,
                         // The route row's own soonest train names the route the detail follows.
                         focus = RouteFocus.of(group2),
+                        onHideMode = onHideMode,
                     ) {
                         LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode, modifier = pillModifier)
                         DestinationLabelContent(
@@ -2325,24 +2512,31 @@ private fun RouteRow(
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
     // The route this row shows (null for a status row), handed to the detail so it opens on it.
     focus: RouteFocus? = null,
+    // Makes a long press open a menu — the pin/unpin, then "Hide ‹mode›" for this row's mode (SPEC
+    // *Finding stops → Hiding a mode*) — instead of pinning at once. Null keeps the direct pin.
+    onHideMode: ((String) -> Unit)? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     val starActionLabel = stringResource(if (isStarred) R.string.unstar else R.string.star)
     val detailActionLabel = stringResource(R.string.departure_details)
+    val moreLabel = stringResource(R.string.more_actions)
     val currentRow by rememberUpdatedState(row)
     val currentToggleStar by rememberUpdatedState(onToggleStar)
     val currentOpenDetail by rememberUpdatedState(onOpenDetail)
     val currentFocus by rememberUpdatedState(focus)
-    val onLongPress: ((Offset) -> Unit)? = if (starrable) {
-        { currentToggleStar(currentRow) }
-    } else {
-        null
+    val hideMode = row.mode.takeIf { onHideMode != null && it.isNotBlank() }
+    var menuOpen by remember { mutableStateOf(false) }
+    val onLongPress: ((Offset) -> Unit)? = when {
+        hideMode != null -> { _ -> menuOpen = true }
+        starrable -> { _ -> currentToggleStar(currentRow) }
+        else -> null
     }
     val starColor = LocalStarredBorderColor.current
+    Box {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .pointerInput(starrable) {
+            .pointerInput(starrable, hideMode) {
                 detectTapGestures(
                     onTap = { currentOpenDetail(currentRow, currentFocus) },
                     onLongPress = onLongPress,
@@ -2351,7 +2545,10 @@ private fun RouteRow(
             .semantics {
                 isTraversalGroup = true
                 onClick(label = detailActionLabel) { currentOpenDetail(currentRow, currentFocus); true }
-                if (starrable) onLongClick(label = starActionLabel) { currentToggleStar(currentRow); true }
+                when {
+                    hideMode != null -> onLongClick(label = moreLabel) { menuOpen = true; true }
+                    starrable -> onLongClick(label = starActionLabel) { currentToggleStar(currentRow); true }
+                }
             }
             .then(
                 if (isStarred) {
@@ -2366,6 +2563,28 @@ private fun RouteRow(
         verticalAlignment = Alignment.CenterVertically,
         content = content,
     )
+    if (hideMode != null) {
+        HideModeMenu(
+            expanded = menuOpen,
+            onDismiss = { menuOpen = false },
+            modes = listOf(hideMode),
+            onHideMode = { mode -> onHideMode?.invoke(mode) },
+            leading = if (starrable) {
+                {
+                    DropdownMenuItem(
+                        text = { Text(starActionLabel) },
+                        onClick = {
+                            menuOpen = false
+                            currentToggleStar(currentRow)
+                        },
+                    )
+                }
+            } else {
+                null
+            },
+        )
+    }
+    }
 }
 
 /**

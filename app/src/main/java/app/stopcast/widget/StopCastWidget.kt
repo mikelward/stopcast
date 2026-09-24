@@ -37,6 +37,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import app.stopcast.MainActivity
 import app.stopcast.StopcastDebugLog
+import app.stopcast.data.HiddenModesSetting
 import app.stopcast.data.DataStoreSnapshotStore
 import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.RouteTopologyStore
@@ -44,6 +45,7 @@ import app.stopcast.domain.Countdown
 import app.stopcast.domain.DepartureLabels
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.HiddenModes
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.DestinationGroup
 import app.stopcast.domain.JourneyCall
@@ -56,6 +58,7 @@ import app.stopcast.domain.StopGroup
 import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.abbreviateBranch
 import app.stopcast.domain.lineCode
+import app.stopcast.ui.modeName
 import app.stopcast.ui.groupHeaderSpoken
 import app.stopcast.ui.groupHeaderTitle
 import app.stopcast.ui.lineFillColor
@@ -120,6 +123,11 @@ class StopCastWidget : GlanceAppWidget() {
             logWidgetSnapshotWarning("widget starred read failed: ${e::class.simpleName}")
             emptySet()
         }
+        // The modes hidden from the near-me list (SPEC *Finding stops → Hiding a mode*), from the
+        // same in-process setting the list uses, so the widget leaves out exactly what the list
+        // does, even a change that failed to save and holds only until restart. Its read waits for
+        // the stored set on a cold start and is bounded, so it can delay this render but never hang it.
+        val hiddenModes = HiddenModesSetting.loaded()
         val now = Instant.now()
         // Arm the one-shot staleness-boundary redraw from the snapshot we're about to render, on
         // the render path itself: first add, host rebind, and the app's updateAll after a fetch
@@ -157,6 +165,7 @@ class StopCastWidget : GlanceAppWidget() {
                 maxLinesCompact = widgetLineBudget(size.height, fontScale, compact = true, stacked = stacked),
                 stacked = stacked,
                 topology = topology,
+                hiddenModes = hiddenModes,
             )
             WidgetContent(model, now, fontScale)
         }
@@ -206,6 +215,9 @@ internal data class WidgetModel(
     // Not even one departure fits, compact or not (the minimum size at a very large font):
     // WidgetContent says so rather than show a departure missing its line or its destination.
     val tooSmall: Boolean = false,
+    // The hidden modes' names ("Bus, Tram") when every departure left is one of theirs, so the
+    // empty widget says they're hidden rather than that none are due; null otherwise.
+    val onlyHidden: String? = null,
 )
 
 /**
@@ -243,6 +255,8 @@ internal fun widgetModel(
     // Whether rows are stacked on two lines (see WidgetModel.stacked); the budgets already count it.
     stacked: Boolean = false,
     topology: RouteTopology = RouteTopology.EMPTY,
+    // Modes hidden from the near-me list: left out here too, except on a journey's own rows.
+    hiddenModes: Set<String> = emptySet(),
 ): WidgetModel {
     if (snapshot == null || snapshot.stops.isEmpty()) {
         return WidgetModel(hasData = false, stale = false, uncertain = false, stamp = null, rows = emptyList())
@@ -285,7 +299,11 @@ internal fun widgetModel(
     // an oversized *first* row too (it shows at most `maxLines` groups) rather than exempting
     // it. Groups within a row keep destinationLines' soonest-first order and per-line time cap.
     val journeyRows = pinJourneys(ordered, snapshot, now)
-    val pinned = journeyRows + DepartureRows.pinStarred(withoutJourneys(ordered, snapshot), starred)
+    val nearby = withoutJourneys(ordered, snapshot)
+    val shownNearby = HiddenModes.rows(nearby, hiddenModes)
+    val pinned = journeyRows + DepartureRows.pinStarred(shownNearby, starred)
+    val onlyHidden = hiddenModes.takeIf { pinned.isEmpty() && nearby.isNotEmpty() }
+        ?.map(::modeName)?.sorted()?.joinToString(", ")
     // The journeys stay a band of their own at the top: grouping by place runs within each band, so
     // another row at a journey's origin can't pull ahead of a later journey.
     val journeyBand = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<DepartureRow, Boolean>())
@@ -371,6 +389,7 @@ internal fun widgetModel(
         compact = compact,
         stacked = stacked,
         tooSmall = tooSmall,
+        onlyHidden = onlyHidden,
     )
 }
 
@@ -473,6 +492,9 @@ internal fun WidgetContent(
                 // Has a snapshot but no rows to show — every service has departed or the
                 // stops returned none. Distinguish a trustworthy "none" from data too old to
                 // assert that (SPEC D4), rather than leaving the widget blank below the header.
+                // Every departure left is of a mode the user hid: say so, not that none are due.
+                model.rows.isEmpty() && model.onlyHidden != null ->
+                    WidgetMessage("Nothing else to show with ${model.onlyHidden} hidden")
                 model.rows.isEmpty() ->
                     WidgetMessage(
                         if (model.uncertain) "Departures may be out of date" else "No upcoming departures",

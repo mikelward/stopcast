@@ -81,6 +81,20 @@
     <!-- Instead of the dash on a National Rail line when no National Rail key is set, so a key
          would give its times; tapping it opens Settings. -->
     <string name="status_no_rail_key">No key</string>
+    <!-- Long-press menu of a near-me row or header: hides every stop and route of that mode from the
+         near-me list (SPEC *Finding stops → Hiding a mode*). The argument is a mode name ("Bus"). -->
+    <string name="hide_mode">Hide %1$s</string>
+    <!-- Screen-reader label for the long press that opens that menu. -->
+    <string name="more_actions">Options</string>
+    <!-- One-line banner over the near-me list while modes are hidden; the argument lists them
+         ("Bus, Tram"). Its action shows them all again. -->
+    <string name="modes_hidden">%1$s hidden</string>
+    <string name="modes_show_all">Show all</string>
+    <!-- Snackbar when a change of hidden modes couldn't be saved: it holds until the app restarts. -->
+    <string name="hidden_modes_write_failed">Couldn\'t save that; it resets when StopDash restarts</string>
+    <!-- The near-me list's empty state while modes are hidden, instead of "no departures": the
+         hidden modes may be running. The argument lists them ("Bus, Tram"). -->
+    <string name="modes_hidden_empty">Nothing else to show with %1$s hidden</string>
     <string name="status_no_rail_key_action">Add a National Rail key</string>
     <!-- A timed row's destination line when TfL gives neither destination nor towards but
          did give a direction; used only when even the direction is missing. -->

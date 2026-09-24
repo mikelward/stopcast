@@ -62,6 +62,30 @@ class WidgetModelTest {
     }
 
     @Test
+    fun `a mode hidden from the near-me list is left out of the widget too`() {
+        val bus = departure("73", 60).copy(mode = "bus")
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(stop("490000001A", listOf(departure("victoria", 120), bus), now.minusSeconds(30))),
+            fetchedAt = now.minusSeconds(30),
+        )
+        assertEquals(listOf("victoria"), widgetModel(snapshot, now, hiddenModes = setOf("bus")).rows.map { it.row.lineId })
+    }
+
+    @Test
+    fun `when every departure left is of a hidden mode the widget says so`() {
+        val bus = departure("73", 60).copy(mode = "bus")
+        val snapshot = DeparturesSnapshot(
+            stops = listOf(stop("490000001A", listOf(bus), now.minusSeconds(30))),
+            fetchedAt = now.minusSeconds(30),
+        )
+        val model = widgetModel(snapshot, now, hiddenModes = setOf("bus"))
+        assertTrue(model.rows.isEmpty())
+        assertEquals("Bus", model.onlyHidden)
+        // Nothing hidden: no such note.
+        assertNull(widgetModel(snapshot, now).onlyHidden)
+    }
+
+    @Test
     fun `a fresh snapshot has data, a stamp, and is not stale`() {
         val snapshot = DeparturesSnapshot(
             stops = listOf(stop("490000001A", listOf(departure("victoria", 120)), now.minusSeconds(30))),

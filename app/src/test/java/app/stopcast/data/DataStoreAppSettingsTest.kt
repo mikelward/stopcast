@@ -27,6 +27,14 @@ class DataStoreAppSettingsTest {
     }
 
     @Test
+    fun `hidden modes read none by default and persist a change`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(null))
+        assertTrue(store.hiddenModes().first().isEmpty())
+        store.setHiddenModes(setOf("bus", "national-rail"))
+        assertEquals(setOf("bus", "national-rail"), store.hiddenModes().first())
+    }
+
+    @Test
     fun `live widget refresh reads the default when nothing is stored`() = runTest {
         val store = DataStoreAppSettings(FakeDataStore(null))
         assertFalse(store.liveWidgetRefresh().first())

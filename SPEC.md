@@ -232,6 +232,23 @@ The app finds stops two ways:
   instead of the current location is a follow-up (`TODO.md`).
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run); arrives with watched stops.
+- **Hiding a mode** (maintainer, 2026-09-24) — a busy place can fill the near-me list with a mode
+  the user doesn't ride (a dozen Thameslink rows, every bus at a junction). A long press on a near-me
+  row opens a small menu, pinning or unpinning it and **"Hide ‹mode›"**; a long press on a place's
+  header offers "Hide ‹mode›" for each mode it serves. Starring a near-me row therefore takes the
+  menu's first item. Journey cards keep a long press as a direct star, since a starred journey is
+  the user's explicit choice and hiding doesn't reach it.
+  A hidden mode's stops aren't picked for the near-me set, so they cost no request; a place that also
+  serves other modes keeps them, with the hidden mode's rows left out, and the widget leaves them
+  out too. A closure still shows at a place that keeps an unhidden mode, so hiding one mode never
+  hides a closed stop the user still rides from; a stop serving only hidden modes isn't checked at
+  all, since its closure matters only to a rider of that mode and checking it would spend the
+  requests hiding saves. Hiding takes
+  effect on the list at once, and the fetch saving from the next re-locate; if every mode nearby is
+  hidden, the stops are still fetched so the list can say what's hidden rather than claim nothing
+  runs. While any mode is hidden, **a one-line banner** over the list names them ("Bus hidden") with
+  **"Show all"**, which brings them back from the same fix without a new lookup, so a shorter list
+  never passes for all there is (principle 2). The hidden set is a setting, kept on the device.
 
 ### Departures
 
