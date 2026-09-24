@@ -1,0 +1,58 @@
+package app.stopcast.domain
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+/** Searching and ranking the bundled index, on public station names and ids. */
+class StationIndexTest {
+    private val index = StationIndex(
+        listOf(
+            IndexedStation("HUBKGX", "King's Cross St. Pancras", listOf("tube", "national-rail")),
+            IndexedStation("940GZZLUKSX", "King's Cross St. Pancras", listOf("tube"), hubId = "HUBKGX"),
+            IndexedStation("940GZZLUCHX", "Charing Cross", listOf("tube"), hubId = "HUBCHX"),
+            IndexedStation("940GZZLUKNG", "Kennington", listOf("tube")),
+            IndexedStation("940GZZLUKSH", "Kilburn High Road", listOf("overground")),
+        ),
+    )
+
+    @Test
+    fun `a station inside a matched hub is folded into the hub`() {
+        assertEquals(listOf("HUBKGX"), index.search("kings").map { it.id })
+    }
+
+    @Test
+    fun `KX, KGX and KC all find King's Cross first`() {
+        for (query in listOf("kx", "kgx", "kc")) {
+            assertEquals(query, "HUBKGX", index.search(query).first().id)
+        }
+    }
+
+    @Test
+    fun `CX finds Charing Cross`() {
+        assertEquals("940GZZLUCHX", index.search("cx").first().id)
+    }
+
+    @Test
+    fun `better tiers rank first, and a hub leads its tier`() {
+        // "ki": King's Cross and Kilburn High Road start with it (the hub first), Kennington only
+        // has the letters in order.
+        assertEquals(listOf("HUBKGX", "940GZZLUKSH", "940GZZLUKNG"), index.search("ki").map { it.id })
+    }
+
+    @Test
+    fun `TfL's extra matches slot in by their own tier`() {
+        val local = index.search("kings")
+        val busStop = StationMatch("490000000001A", "Kings Road", listOf("bus"))
+        val unmatched = StationMatch("490000000002B", "Somewhere Else", listOf("bus"))
+        val ranked = index.rank("kings", local, listOf(unmatched, busStop, StationMatch("HUBKGX", "dup")))
+        assertEquals(listOf("HUBKGX", "490000000001A", "490000000002B"), ranked.map { it.id })
+        assertEquals("King's Cross St. Pancras", ranked.first().name)
+    }
+
+    @Test
+    fun `a TfL match inside a matched interchange stays folded into it`() {
+        val local = index.search("kings")
+        val member = StationMatch("940GZZLUKSX", "King's Cross St. Pancras", listOf("tube"))
+        assertEquals(listOf("HUBKGX"), index.rank("kings", local, listOf(member)).map { it.id })
+    }
+}

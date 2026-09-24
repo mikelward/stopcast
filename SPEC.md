@@ -201,9 +201,24 @@ The app finds stops two ways:
   headers (a platform or place tap drills in as on the main list). The page is titled by the
   station, back returns to the search with its matches kept, and it refreshes while shown like
   the main list. It is a look, not a pin: nothing about it is saved, and the widget keeps
-  showing the near-me set. Stars and dismissed alerts are shared with the main list. Matching is
-  TfL's own for now; fuzzy matching and abbreviations ("KX" for King's Cross) are a follow-up,
-  as is setting the near-me origin to a station instead of the current location (`TODO.md`).
+  showing the near-me set. Stars and dismissed alerts are shared with the main list.
+
+  **Matching** (maintainer, 2026-09-24) runs on the device against a **bundled list of London's
+  stations and interchanges** (tube, DLR, Overground, Elizabeth line, tram, rail and piers — not
+  bus stops), so results appear as the user types and an abbreviation or a station code finds
+  its station: "KX", "KC" and "KGX" all find King's Cross. The list is built from TfL by a
+  workflow and ships with the app; TfL's own search still runs after the typing pause for what
+  the list lacks (bus stops, a newer station), and both are ranked together. The ranking is
+  TypeLauncher's, so the fleet's type-to-find surfaces agree: a name that **starts with** the
+  query first, then one whose **word starts** spell it ("kc" → King's Cross), then one that
+  **contains** it, then one holding its letters **in order**. A station code counts as a
+  prefix. Apostrophes, punctuation and accents are ignored ("kings" finds King's Cross).
+  Abbreviations are **generated, never listed**: a word "Cross" also reads "X", so "KX" and
+  "CX" (Charing Cross) need no alias table. Within a tier an interchange leads, then the
+  shorter name. A station whose interchange also matches is folded into it, since the
+  interchange's page holds it. If TfL's search fails but the list matched, the list's matches
+  stand, with a line saying bus stops weren't searched. Setting the near-me origin to a station
+  instead of the current location is a follow-up (`TODO.md`).
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run); arrives with watched stops.
 

@@ -50,6 +50,7 @@ import app.stopcast.data.DataStoreDismissedAlertsStore
 import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.RouteTopologyStore
+import app.stopcast.data.StationIndexStore
 import app.stopcast.domain.RouteStopsRepository
 import app.stopcast.data.SharedTflRateLimiter
 import app.stopcast.data.SharedTflRequestPool
@@ -930,11 +931,20 @@ class MainActivity : ComponentActivity() {
         onCloseStation: () -> Unit,
         onCloseSearch: () -> Unit,
     ) {
+        // Captured once, so lambdas the retained ViewModels keep close over the application, not
+        // this Activity (which a rotation destroys).
+        val appContext = applicationContext
         val search: StationSearchViewModel = viewModel(
             key = "station-search",
             factory = viewModelFactory {
                 initializer {
-                    StationSearchViewModel(stationFinder, createSavedStateHandle(), warn = ::logDepartureWarning)
+                    StationSearchViewModel(
+                        stationFinder,
+                        createSavedStateHandle(),
+                        // The bundled index, read off the main thread on the search's first query.
+                        loadIndex = { StationIndexStore.load(appContext) },
+                        warn = ::logDepartureWarning,
+                    )
                 }
             },
         )
@@ -964,7 +974,6 @@ class MainActivity : ComponentActivity() {
             )
             return
         }
-        val appContext = applicationContext
         val storeOwner = remember(stationId) { stores.ownerFor(stationId) }
         CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
             val stopsModel: StationStopsViewModel = viewModel(
