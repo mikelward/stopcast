@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -1250,6 +1251,162 @@ class MainScreenScreenshotTest {
     private val victoriaToWarrenStreet = StarredJourney(
         JourneyEnd("940GZZLUVIC", "Victoria"), JourneyEnd("940GZZLUWRR", "Warren Street"), "victoria",
     )
+
+    @Test
+    fun `a far journey waits behind a button at the foot, unfetched, and revealing it loads it`() {
+        // More than a mile from both ends (the distance is the caller's; synthetic here).
+        val origins = mutableListOf<List<StopRef>>()
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(
+                        LocalRouteStops provides RouteStopsRepository(
+                            object : RouteSequenceSource {
+                                override suspend fun routeSequence(lineId: String, direction: String) = victoriaLine
+                            },
+                        ),
+                    ) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(victoriaToWarrenStreet),
+                            farJourneyMeters = mapOf(victoriaToWarrenStreet.key to 2400.0),
+                            onToggleJourney = {},
+                            onJourneyOrigins = { origins += it },
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        // Collapsed to a "Faraway favorites" button at the foot: no heading, no card, origin not fetched.
+        composeRule.onNodeWithText("Faraway favorites").assertExists()
+        composeRule.onNodeWithText("Victoria ➔ Warren Street", substring = true).assertDoesNotExist()
+        assertTrue(origins.all { refs -> refs.none { it.id == "940GZZLUVIC" } })
+        captureSnapshot("main-journey-far.png")
+
+        // Revealing it shows its card, headed with its distance, and fetches its origin.
+        composeRule.onNodeWithText("Faraway favorites").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Victoria ➔ Warren Street", substring = true).assertExists()
+        composeRule.onNodeWithText("(2.4 km)", substring = true).assertExists()
+        assertTrue(origins.last().any { it.id == "940GZZLUVIC" })
+        captureSnapshot("main-journey-far-revealed.png")
+
+        // Its heading still opens its own view.
+        composeRule.onNodeWithText("Victoria ➔ Warren Street", substring = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Unstar journey").assertExists()
+    }
+
+    @Test
+    fun `revealed faraway favorites are held back again after leaving their nearby set`() {
+        var nearbyKey by mutableStateOf("940GZZLUMRH")
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                        journeys = listOf(victoriaToWarrenStreet),
+                        farJourneyMeters = mapOf(victoriaToWarrenStreet.key to 2400.0),
+                        nearbyKey = nearbyKey,
+                        onToggleJourney = {},
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Faraway favorites").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Victoria ➔ Warren Street", substring = true).assertExists()
+
+        nearbyKey = "940GZZLUSVS"
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Victoria ➔ Warren Street", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("Faraway favorites").assertExists()
+        // Back to the first set: the tap was forgotten on leaving it.
+        nearbyKey = "940GZZLUMRH"
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Victoria ➔ Warren Street", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("Faraway favorites").assertExists()
+    }
+
+    @Test
+    fun `a faraway reveal restored after process death holds only for the set it was tapped for`() {
+        // Read once per (re)created screen, so a change reaches only the restored one — as when the
+        // rider moves while the process is dead — never the live screen before its state is saved.
+        var restoreKey = "940GZZLUMRH"
+        val restoration = StateRestorationTester(composeRule)
+        restoration.setContent {
+            val nearbyKey = remember { restoreKey }
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                        journeys = listOf(victoriaToWarrenStreet),
+                        farJourneyMeters = mapOf(victoriaToWarrenStreet.key to 2400.0),
+                        nearbyKey = nearbyKey,
+                        onToggleJourney = {},
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Faraway favorites").performClick()
+        composeRule.waitForIdle()
+
+        // Same set: the reveal survives.
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.onNodeWithText("Victoria ➔ Warren Street", substring = true).assertExists()
+
+        // Restored somewhere else.
+        restoreKey = "940GZZLUSVS"
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.onNodeWithText("Victoria ➔ Warren Street", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("Faraway favorites").assertExists()
+    }
+
+    @Test
+    fun `a faraway reveal held above the screen survives an overlay taking the list away`() {
+        var listShown by mutableStateOf(true)
+        composeRule.setContent {
+            // Hoisted as MainActivity does, above the Settings/Licenses/search switch.
+            val farReveal = rememberFarReveal("940GZZLUMRH")
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    if (listShown) {
+                        MainScreen(
+                            DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
+                            now,
+                            {},
+                            stopDistanceMeters = mapOf("940GZZLUMRH" to 300.0),
+                            journeys = listOf(victoriaToWarrenStreet),
+                            farJourneyMeters = mapOf(victoriaToWarrenStreet.key to 2400.0),
+                            nearbyKey = "940GZZLUMRH",
+                            farReveal = farReveal,
+                            onToggleJourney = {},
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.onNodeWithText("Faraway favorites").performClick()
+        composeRule.waitForIdle()
+
+        // An overlay opens and closes again.
+        listShown = false
+        composeRule.waitForIdle()
+        listShown = true
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Victoria ➔ Warren Street", substring = true).assertExists()
+    }
 
     private fun journeyScreen(
         origin: StopArrivals,

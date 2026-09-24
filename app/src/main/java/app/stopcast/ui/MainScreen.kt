@@ -39,9 +39,9 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -192,6 +192,14 @@ fun MainScreen(
     // The starred journeys (SPEC *Journeys*), each already turned so its origin is the end nearer the
     // rider: shown as cards atop the near-me list, and starrable from a route page's stop list.
     journeys: List<StarredJourney> = emptyList(),
+    // The journeys more than a mile from the rider (key → meters to the nearer end): held behind the
+    // Faraway favorites button, and not fetched until it's tapped ([Journeys.farJourneys]).
+    farJourneyMeters: Map<String, Double> = emptyMap(),
+    // The nearby stop set shown ([NearbyStopsViewModel.State.Ready.clusterSetKey]): a tap on Faraway
+    // favorites holds for this set only, so a relocation elsewhere holds far journeys back again.
+    nearbyKey: String? = null,
+    // The Faraway favorites tap; the app hoists it above the overlays so opening one keeps it.
+    farReveal: FarRevealState = rememberFarReveal(nearbyKey),
     onToggleJourney: ((StarredJourney) -> Unit)? = null,
     // Dismisses the route page's tip on starring a journey; null (dismissed, or not read yet) hides it.
     onDismissJourneyTip: (() -> Unit)? = null,
@@ -210,6 +218,10 @@ fun MainScreen(
     // The stops to fetch for the journey cards (each journey's origin this way round), reported
     // whenever they change; the ViewModel fetches them alongside the near-me stops.
     onJourneyOrigins: (List<StopRef>) -> Unit = {},
+    // The same stops by journey (key → its origin and neighboring poles' ids), and the journey whose
+    // own view is open (kept however far), so a relocate can drop a journey's stops the moment it's
+    // held back, before the screen reports again.
+    onJourneyStopIds: (Map<String, Set<String>>, String?) -> Unit = { _, _ -> },
     // The starred journeys' keys and each placed journey's latest check (the departures found to call
     // at its far end), for the widget to pin (it can't load route data itself); reported whenever
     // they change. The ViewModel keeps what they add up to.
@@ -305,17 +317,27 @@ fun MainScreen(
             if (id in loadedSequences) put(id, loadedSequences[id]) else routeStopsRepository?.cached(id, "")?.let { put(id, it) }
         }
     }
-    val journeyStarLines = remember(journeys) { journeys.map { it.lineId }.filter { it.isNotBlank() }.distinct() }
+    // The starred journey whose own view is open (its key), from a tap on its heading, or null.
+    var journeyViewKey by rememberSaveable { mutableStateOf<String?>(null) }
+    // Whether the rider has tapped "Faraway favorites" to show the far journeys in full, for this
+    // nearby set ([rememberFarReveal]).
+    val farRevealed = farReveal.revealed
+    // The journeys shown in full and fetched: the near ones, the far ones once revealed, and a far
+    // one while its own view is open.
+    val cardJourneys = remember(journeys, farJourneyMeters, journeyViewKey, farRevealed) {
+        journeys.filter { it.key !in farJourneyMeters || farRevealed || it.key == journeyViewKey }
+    }
+    val journeyStarLines = remember(cardJourneys) { cardJourneys.map { it.lineId }.filter { it.isNotBlank() }.distinct() }
     val starSequences = sequencesFor(journeyStarLines)
     // Where each journey boards and alights this way round: a bus's way back uses other poles.
-    val journeySegments = remember(journeys, starSequences) {
-        journeys.associate { j -> j.key to starSequences[j.lineId]?.let { Journeys.segment(j, it) } }
+    val journeySegments = remember(cardJourneys, starSequences) {
+        cardJourneys.associate { j -> j.key to starSequences[j.lineId]?.let { Journeys.segment(j, it) } }
     }
     // A bus journey's origin stop area (from its starred line's route) and the area's poles, looked
     // up once a day off the render path: another line may board beside the origin (stop K by
     // stop L) and reach the far end too (SPEC *Journeys*). A failed lookup is kept as such (null).
-    val journeyAreas = remember(journeys, journeySegments, starSequences) {
-        journeys.filter { it.bus }.mapNotNull { j ->
+    val journeyAreas = remember(cardJourneys, journeySegments, starSequences) {
+        cardJourneys.filter { it.bus }.mapNotNull { j ->
             val originId = journeySegments[j.key]?.originId ?: return@mapNotNull null
             starSequences[j.lineId]?.stopAreas?.get(originId)?.takeIf { it.isNotBlank() }?.let { j.key to it }
         }.toMap()
@@ -345,8 +367,8 @@ fun MainScreen(
     }.toMap()
     // The stop each journey is fetched from: its resolved origin, or, before its route is in, a
     // station's own id (the same both ways) — a bus waits, since its way-back pole isn't known yet.
-    val journeyOrigins = remember(journeys, journeySegments, starSequences, journeyPoles) {
-        journeys.mapNotNull { j ->
+    val journeyOrigins = remember(cardJourneys, journeySegments, starSequences, journeyPoles) {
+        cardJourneys.mapNotNull { j ->
             val id = journeySegments[j.key]?.originId ?: j.from.stopId.takeUnless { j.bus } ?: return@mapNotNull null
             // The starred line, plus every line of its mode the route data lists at the origin (the
             // 134 beside the 43), so one with no predictions still has its route loaded and its
@@ -376,8 +398,8 @@ fun MainScreen(
     }
     // The lines boarding beside a bus journey's origin (and not at it), so their routes can say
     // whether they reach the far end ([Journeys.siblingPoles]).
-    val siblingLines = remember(journeys, journeySegments, journeyPoles) {
-        journeys.flatMap { j ->
+    val siblingLines = remember(cardJourneys, journeySegments, journeyPoles) {
+        cardJourneys.flatMap { j ->
             val originId = journeySegments[j.key]?.originId ?: return@flatMap emptyList()
             val poles = journeyPoles[j.key].orEmpty()
             val atOrigin = poles.firstOrNull { it.id == originId }?.lines.orEmpty().mapTo(HashSet()) { it.id }
@@ -409,15 +431,15 @@ fun MainScreen(
     val journeySequences = sequencesFor(journeyLineIds)
     // The poles beside each bus journey's origin that board a line reaching its far end, fetched
     // alongside the origin (one arrivals request each) and shown on its card under their letter.
-    val journeySiblings = remember(journeys, journeySegments, journeyPoles, journeySequences) {
-        journeys.mapNotNull { j ->
+    val journeySiblings = remember(cardJourneys, journeySegments, journeyPoles, journeySequences) {
+        cardJourneys.mapNotNull { j ->
             val originId = journeySegments[j.key]?.originId ?: return@mapNotNull null
             val poles = journeyPoles[j.key] ?: return@mapNotNull null
             j.key to Journeys.siblingPoles(j, originId, poles, journeySequences)
         }.toMap()
     }
-    val siblingOrigins = remember(journeys, journeySiblings) {
-        journeys.flatMap { j ->
+    val siblingOrigins = remember(cardJourneys, journeySiblings) {
+        cardJourneys.flatMap { j ->
             journeySiblings[j.key]?.poles.orEmpty().map { pole ->
                 pole.toStopRef().copy(lines = pole.lines.filter { Journeys.ofMode(it, j.mode) })
             }
@@ -425,16 +447,24 @@ fun MainScreen(
     }
     // Each journey's far end this way round: its own stop, and the stops the route places it at (a
     // bus's other poles), whose closure the card shows.
-    val journeyDestinationIds = remember(journeys, journeySegments) {
-        journeys.associate { j -> j.key to (setOf(j.to.stopId) + journeySegments[j.key]?.destinationIds.orEmpty()) }
+    val journeyDestinationIds = remember(cardJourneys, journeySegments) {
+        cardJourneys.associate { j -> j.key to (setOf(j.to.stopId) + journeySegments[j.key]?.destinationIds.orEmpty()) }
     }
     val reportJourneyOrigins by rememberUpdatedState(onJourneyOrigins)
     LaunchedEffect(journeyOrigins, siblingOrigins) { reportJourneyOrigins(journeyOrigins + siblingOrigins) }
+    val reportJourneyStopIds by rememberUpdatedState(onJourneyStopIds)
+    val journeyStopIds = remember(cardJourneys, journeySegments, journeySiblings) {
+        cardJourneys.associate { j ->
+            val originId = journeySegments[j.key]?.originId ?: j.from.stopId
+            j.key to (setOf(originId) + journeySiblings[j.key]?.poles.orEmpty().map { it.id })
+        }
+    }
+    LaunchedEffect(journeyStopIds, journeyViewKey) { reportJourneyStopIds(journeyStopIds, journeyViewKey) }
     // The journey cards: the trains or buses from each journey's origin that call at its far end, on
     // any line, the origin's closure notice if it has one, or why they can't be shown yet (SPEC
     // principle 1).
     val journeyCards = remember(
-        loaded?.stops, loaded?.lineStatuses, loaded?.unavailableStopIds, now, journeys, journeySegments,
+        loaded?.stops, loaded?.lineStatuses, loaded?.unavailableStopIds, now, cardJourneys, journeySegments,
         journeySequences, dismissed, journeyAreas, journeyPoles, journeySiblings, journeyDestinationStops,
         journeyDestinationIds, journeyDestinationsUnknown,
     ) {
@@ -444,7 +474,7 @@ fun MainScreen(
             ld?.let { DepartureRows.across(it.stops, now, it.lineStatuses) }.orEmpty(),
             dismissed,
         )
-        journeys.map { journey ->
+        cardJourneys.map { journey ->
             val segment = journeySegments[journey.key]
             val originId = segment?.originId ?: journey.from.stopId
             val origin = ld?.stops?.firstOrNull { it.stopId == originId }
@@ -556,14 +586,20 @@ fun MainScreen(
     // What each placed journey's card found for the widget (it can't load routes itself): the
     // origin's departures that call at the far end, by line, destination and branch, and — from a
     // complete check — every departure it judged. The ViewModel merges these into what it pins.
-    val journeyKeys = remember(journeys) { journeys.mapTo(HashSet()) { it.key } }
+    // The widget follows the same rule as the list: only near journeys are pinned there, so a far
+    // one opened in the app doesn't join it.
+    val journeyKeys = remember(cardJourneys, farJourneyMeters) {
+        cardJourneys.filter { it.key !in farJourneyMeters }.mapTo(HashSet()) { it.key }
+    }
     // The direction each journey is shown in, so a flip reaches the widget even before its route
     // can place the new origin.
-    val journeyShownFrom = remember(journeys) { journeys.associate { it.key to it.from.stopId } }
+    val journeyShownFrom = remember(journeyKeys, cardJourneys) {
+        cardJourneys.filter { it.key in journeyKeys }.associate { it.key to it.from.stopId }
+    }
     // One check per boarding stop: the origin under the journey's key, a neighboring pole under its
     // [WidgetJourneys.poleKey], each pinned on the widget from its own stop.
-    val widgetJourneyChecks = remember(journeyCards) {
-        journeyCards.flatMap { card ->
+    val widgetJourneyChecks = remember(journeyCards, journeyKeys) {
+        journeyCards.filter { it.journey.key in journeyKeys }.flatMap { card ->
             val key = card.journey.key
             val rows = (card.state as? JourneyCardState.Trains)?.rows.orEmpty()
             card.boardingIds.mapIndexed { i, id ->
@@ -728,7 +764,6 @@ fun MainScreen(
     // The starred journey whose own view is open (its key), from a tap on its heading, or null. It
     // resolves against the current cards each recomposition, so it follows a swap and its trains stay
     // live; once the saved journeys are known and it isn't among them (unstarred), the view closes.
-    var journeyViewKey by rememberSaveable { mutableStateOf<String?>(null) }
     val journeyViewCard = journeyViewKey?.let { key -> journeyCards.firstOrNull { it.journey.key == key } }
     LaunchedEffect(journeyViewKey, journeyViewCard == null, journeysLoading) {
         if (journeyViewKey != null && journeyViewCard == null && !journeysLoading) journeyViewKey = null
@@ -1040,7 +1075,15 @@ fun MainScreen(
                     stopDistanceMeters = if (platformRows != null) emptyMap() else stopDistanceMeters,
                     onOpenStopMap = onOpenStopMap,
                     // Journey cards sit atop the near-me list only, not a platform or station view.
-                    journeyCards = if (platformRows != null) emptyList() else journeyCards,
+                    // A far journey's card sits at the foot, once revealed, never among the near ones.
+                    journeyCards = if (platformRows != null) emptyList() else journeyCards.filter { it.journey.key !in farJourneyMeters },
+                    farJourneyCards = if (platformRows != null || !farRevealed) emptyList() else journeyCards.filter { it.journey.key in farJourneyMeters },
+                    farJourneyMeters = farJourneyMeters,
+                    onRevealFar = if (platformRows == null && !farRevealed && farJourneyMeters.isNotEmpty()) {
+                        { farReveal.reveal() }
+                    } else {
+                        null
+                    },
                     // Every nearby row is on a journey card above: nothing to call "no departures".
                     nearbyShownAbove = platformRows == null && rows.isEmpty() && nearbyRows.isNotEmpty(),
                     onFlipJourney = onFlipJourney,
@@ -1186,6 +1229,9 @@ private fun LoadedContent(
     onOpenJourney: ((StarredJourney) -> Unit)? = null,
     journeyView: Boolean = false,
     onUnstarJourney: ((StarredJourney) -> Unit)? = null,
+    farJourneyCards: List<JourneyCard> = emptyList(),
+    farJourneyMeters: Map<String, Double> = emptyMap(),
+    onRevealFar: (() -> Unit)? = null,
     starred: Set<StarredRow> = emptySet(),
     onToggleStar: (DepartureRow) -> Unit = {},
     starringAvailable: Boolean = true,
@@ -1255,7 +1301,7 @@ private fun LoadedContent(
             }
             // Starred journeys still show when nothing nearby has departures: their origins can be
             // farther away, and hiding them behind "No departures" would drop live trains.
-            if (rows.isEmpty() && journeyCards.isEmpty()) {
+            if (rows.isEmpty() && journeyCards.isEmpty() && farJourneyCards.isEmpty() && onRevealFar == null) {
                 // Scrollable even though it doesn't overflow: PullToRefreshBox reads the
                 // pull from a scrollable child's nested-scroll events, so a plain Column
                 // here would leave pull-to-refresh dead on the empty state (only the
@@ -1293,6 +1339,9 @@ private fun LoadedContent(
                     onOpenJourney = onOpenJourney,
                     journeyView = journeyView,
                     onUnstarJourney = onUnstarJourney,
+                    farJourneyCards = farJourneyCards,
+                    farJourneyMeters = farJourneyMeters,
+                    onRevealFar = onRevealFar,
                     // Not in a journey's own view, nor when every nearby row is already on a journey
                     // card above.
                     nearbyEmptyNote = if (rows.isEmpty() && !journeyView && !nearbyShownAbove) {
@@ -1398,6 +1447,11 @@ private fun DepartureList(
     onRetryJourneyRoutes: () -> Unit = {},
     // Opens a journey's own view from a tap on its heading; null leaves the heading inert.
     onOpenJourney: ((StarredJourney) -> Unit)? = null,
+    // The faraway journeys' cards once revealed, with each one's meters to its nearer end; and the
+    // button that reveals them, null once they are (or when there are none).
+    farJourneyCards: List<JourneyCard> = emptyList(),
+    farJourneyMeters: Map<String, Double> = emptyMap(),
+    onRevealFar: (() -> Unit)? = null,
     // True in a journey's own view: the title bar names the journey, so its heading is dropped, and
     // each of its groups is headed by its platform/pole so the rider sees where to board.
     journeyView: Boolean = false,
@@ -1440,6 +1494,130 @@ private fun DepartureList(
             }.toMap()
         }
     }
+    // A journey's heading (or, in its own view, its actions), closure notices, and trains or note —
+    // shared by the near journeys at the top and the revealed faraway ones at the bottom, whose
+    // headings also carry their distance ([farMeters]).
+    fun LazyListScope.journeyItems(cards: List<JourneyCard>, farMeters: Map<String, Double>? = null) {
+            cards.forEachIndexed { index, card ->
+                if (journeyView) {
+                    item(key = "journey-actions|${card.journey.key}") {
+                        JourneyActions(
+                            card.journey,
+                            onSwap = { onFlipJourney(card.journey) },
+                            onUnstar = onUnstarJourney?.let { unstar -> { unstar(card.journey) } },
+                        )
+                    }
+                } else {
+                    item(key = "journey-header|${card.journey.key}") {
+                        JourneyHeader(
+                            card.journey,
+                            // First on screen, or first under the "Faraway favorites" label: no break.
+                            firstOnScreen = index == 0,
+                            onSwap = { onFlipJourney(card.journey) },
+                            onOpen = onOpenJourney?.let { open -> { open(card.journey) } },
+                            distanceLabel = farMeters?.get(card.journey.key)?.let(StopDistance::label),
+                        )
+                    }
+                }
+                // The origin's closure notice rides the journey card: a farther origin isn't on the near-me
+                // list, so without it the trains below would read as catchable at a closed station.
+                card.closures.forEach { rows ->
+                    val closure = rows.first()
+                    item(key = "journey-closure|${card.journey.key}|${closure.stopId}") {
+                        // Dismissed on every pole that carries it, so the next pole's copy doesn't take its place.
+                        StopClosureCard(closure, onDismiss = { rows.forEach(onDismissAlert) })
+                    }
+                }
+                if (card.destinationUnchecked) {
+                    item(key = "journey-destination-unchecked|${card.journey.key}") {
+                        JourneyNote(stringResource(R.string.journey_destination_unchecked, card.journey.to.name))
+                    }
+                }
+                when (val state = card.state) {
+                    is JourneyCardState.Trains -> if (state.rows.isEmpty()) {
+                        // Only trains to change from: "no direct trains" unless some departure couldn't be
+                        // checked (it may be direct), which the note below says instead.
+                        if (state.changes.isEmpty() || !state.incomplete) {
+                            item(key = "journey-none|${card.journey.key}") {
+                                JourneyNote(
+                                    stringResource(
+                                        when {
+                                            state.changes.isNotEmpty() -> R.string.journey_none_direct
+                                            card.journey.bus -> R.string.journey_none_bus
+                                            else -> R.string.journey_none
+                                        },
+                                        card.journey.to.name,
+                                    ),
+                                )
+                            }
+                        }
+                        journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail)
+                        if (state.incomplete) {
+                            item(key = "journey-note|${card.journey.key}") {
+                                JourneyNote(
+                                    stringResource(R.string.journey_incomplete),
+                                    onRetry = onRetryJourneyRoutes.takeIf { state.retry },
+                                )
+                            }
+                        }
+                    } else {
+                        // Any bus boarding elsewhere than the origin (a pole beside it), even when it's the
+                        // only one: each stop's buses go under its own heading and pole letter, so none
+                        // reads as leaving from the stop the rider is at. The journey's own view heads
+                        // every group that way ("King's Cross St. Pancras – Platform 7"), so it shows
+                        // where to board; the list's card otherwise leaves that to the journey heading.
+                        val severalStops = state.rows.any { it.stopId != card.boardingIds.firstOrNull() }
+                        StopGrouping.groupByStop(state.rows, warningsLead = false).forEachIndexed { groupIndex, group ->
+                            if (severalStops || journeyView) {
+                                item(key = "journey-stop|${card.journey.key}|${group.key}") {
+                                    StopGroupHeader(
+                                        group.stopName,
+                                        group.qualifier,
+                                        distanceLabel = null,
+                                        // In the journey view the first group heads the page under the
+                                        // actions, with no group break above it.
+                                        firstOnScreen = journeyView && groupIndex == 0,
+                                    )
+                                }
+                            }
+                            item(key = "journey-card|${card.journey.key}|${group.key}") {
+                                StopGroupCard(
+                                    group,
+                                    now,
+                                    starred = starred,
+                                    onToggleStar = onToggleStar,
+                                    starringAvailable = starringAvailable,
+                                    onOpenDetail = onOpenDetail,
+                                )
+                            }
+                        }
+                        journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail)
+                        if (state.incomplete) {
+                            item(key = "journey-note|${card.journey.key}") {
+                                JourneyNote(
+                                    stringResource(R.string.journey_incomplete),
+                                    onRetry = onRetryJourneyRoutes.takeIf { state.retry },
+                                )
+                            }
+                        }
+                    }
+                    JourneyCardState.Checking -> item(key = "journey-note|${card.journey.key}") {
+                        JourneyNote(
+                            stringResource(if (card.journey.bus) R.string.journey_checking_bus else R.string.journey_checking),
+                        )
+                    }
+                    is JourneyCardState.NotChecked -> item(key = "journey-note|${card.journey.key}") {
+                        JourneyNote(
+                            stringResource(if (card.journey.bus) R.string.journey_not_checked_bus else R.string.journey_not_checked),
+                            onRetry = onRetryJourneyRoutes.takeIf { state.retry },
+                        )
+                    }
+                    JourneyCardState.RouteFailed -> item(key = "journey-note|${card.journey.key}") {
+                        JourneyNote(stringResource(R.string.journey_route_failed), onRetry = onRetryJourneyRoutes)
+                    }
+                }
+            }
+    }
     LazyColumn(
         modifier = modifier,
         state = listState,
@@ -1450,123 +1628,7 @@ private fun DepartureList(
         // alert's expanded state onto it.
         // Starred journeys lead the list (SPEC *Journeys*): each a header naming the direction shown,
         // tappable to show the other, over a card of just the trains that call at the far end.
-        journeyCards.forEachIndexed { index, card ->
-            if (journeyView) {
-                item(key = "journey-actions|${card.journey.key}") {
-                    JourneyActions(
-                        card.journey,
-                        onSwap = { onFlipJourney(card.journey) },
-                        onUnstar = onUnstarJourney?.let { unstar -> { unstar(card.journey) } },
-                    )
-                }
-            } else {
-                item(key = "journey-header|${card.journey.key}") {
-                    JourneyHeader(
-                        card.journey,
-                        firstOnScreen = index == 0,
-                        onSwap = { onFlipJourney(card.journey) },
-                        onOpen = onOpenJourney?.let { open -> { open(card.journey) } },
-                    )
-                }
-            }
-            // The origin's closure notice rides the journey card: a farther origin isn't on the near-me
-            // list, so without it the trains below would read as catchable at a closed station.
-            card.closures.forEach { rows ->
-                val closure = rows.first()
-                item(key = "journey-closure|${card.journey.key}|${closure.stopId}") {
-                    // Dismissed on every pole that carries it, so the next pole's copy doesn't take its place.
-                    StopClosureCard(closure, onDismiss = { rows.forEach(onDismissAlert) })
-                }
-            }
-            if (card.destinationUnchecked) {
-                item(key = "journey-destination-unchecked|${card.journey.key}") {
-                    JourneyNote(stringResource(R.string.journey_destination_unchecked, card.journey.to.name))
-                }
-            }
-            when (val state = card.state) {
-                is JourneyCardState.Trains -> if (state.rows.isEmpty()) {
-                    // Only trains to change from: "no direct trains" unless some departure couldn't be
-                    // checked (it may be direct), which the note below says instead.
-                    if (state.changes.isEmpty() || !state.incomplete) {
-                        item(key = "journey-none|${card.journey.key}") {
-                            JourneyNote(
-                                stringResource(
-                                    when {
-                                        state.changes.isNotEmpty() -> R.string.journey_none_direct
-                                        card.journey.bus -> R.string.journey_none_bus
-                                        else -> R.string.journey_none
-                                    },
-                                    card.journey.to.name,
-                                ),
-                            )
-                        }
-                    }
-                    journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail)
-                    if (state.incomplete) {
-                        item(key = "journey-note|${card.journey.key}") {
-                            JourneyNote(
-                                stringResource(R.string.journey_incomplete),
-                                onRetry = onRetryJourneyRoutes.takeIf { state.retry },
-                            )
-                        }
-                    }
-                } else {
-                    // Any bus boarding elsewhere than the origin (a pole beside it), even when it's the
-                    // only one: each stop's buses go under its own heading and pole letter, so none
-                    // reads as leaving from the stop the rider is at. The journey's own view heads
-                    // every group that way ("King's Cross St. Pancras – Platform 7"), so it shows
-                    // where to board; the list's card otherwise leaves that to the journey heading.
-                    val severalStops = state.rows.any { it.stopId != card.boardingIds.firstOrNull() }
-                    StopGrouping.groupByStop(state.rows, warningsLead = false).forEachIndexed { groupIndex, group ->
-                        if (severalStops || journeyView) {
-                            item(key = "journey-stop|${card.journey.key}|${group.key}") {
-                                StopGroupHeader(
-                                    group.stopName,
-                                    group.qualifier,
-                                    distanceLabel = null,
-                                    // In the journey view the first group heads the page under the
-                                    // actions, with no group break above it.
-                                    firstOnScreen = journeyView && groupIndex == 0,
-                                )
-                            }
-                        }
-                        item(key = "journey-card|${card.journey.key}|${group.key}") {
-                            StopGroupCard(
-                                group,
-                                now,
-                                starred = starred,
-                                onToggleStar = onToggleStar,
-                                starringAvailable = starringAvailable,
-                                onOpenDetail = onOpenDetail,
-                            )
-                        }
-                    }
-                    journeyChanges(card, state, now, starred, onToggleStar, starringAvailable, onOpenDetail)
-                    if (state.incomplete) {
-                        item(key = "journey-note|${card.journey.key}") {
-                            JourneyNote(
-                                stringResource(R.string.journey_incomplete),
-                                onRetry = onRetryJourneyRoutes.takeIf { state.retry },
-                            )
-                        }
-                    }
-                }
-                JourneyCardState.Checking -> item(key = "journey-note|${card.journey.key}") {
-                    JourneyNote(
-                        stringResource(if (card.journey.bus) R.string.journey_checking_bus else R.string.journey_checking),
-                    )
-                }
-                is JourneyCardState.NotChecked -> item(key = "journey-note|${card.journey.key}") {
-                    JourneyNote(
-                        stringResource(if (card.journey.bus) R.string.journey_not_checked_bus else R.string.journey_not_checked),
-                        onRetry = onRetryJourneyRoutes.takeIf { state.retry },
-                    )
-                }
-                JourneyCardState.RouteFailed -> item(key = "journey-note|${card.journey.key}") {
-                    JourneyNote(stringResource(R.string.journey_route_failed), onRetry = onRetryJourneyRoutes)
-                }
-            }
-        }
+        journeyItems(journeyCards)
         nearbyEmptyNote?.let { note ->
             item(key = "nearby-empty") { JourneyNote(note) }
         }
@@ -1618,6 +1680,25 @@ private fun DepartureList(
                     starringAvailable = starringAvailable,
                     onOpenDetail = onOpenDetail,
                 )
+            }
+        }
+        // The faraway journeys (SPEC *Journeys*), at the foot like the "More" stops: a button, then,
+        // once tapped, their cards under a "Faraway favorites" label (revealing is what fetches them).
+        if (farJourneyCards.isNotEmpty()) {
+            item(key = "far-journeys-label") {
+                Text(
+                    text = stringResource(R.string.journeys_faraway),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, top = 16.dp),
+                )
+            }
+            journeyItems(farJourneyCards, farJourneyMeters)
+        } else if (onRevealFar != null) {
+            item(key = "far-journeys-reveal") {
+                TextButton(onClick = onRevealFar, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Text(stringResource(R.string.journeys_faraway))
+                }
             }
         }
         if (revealableModes.isNotEmpty()) {
@@ -1985,12 +2066,16 @@ private fun JourneyActions(journey: StarredJourney, onSwap: () -> Unit, onUnstar
 private fun JourneyHeader(
     journey: StarredJourney,
     firstOnScreen: Boolean,
-    onSwap: () -> Unit,
+    // Null hides the ⇄ (a far journey's collapsed heading: nothing below it to swap).
+    onSwap: (() -> Unit)?,
     onOpen: (() -> Unit)? = null,
+    // How far away a collapsed far journey is ("2.4 km"), dimmed after the star; null for none.
+    distanceLabel: String? = null,
 ) {
     val openLabel = stringResource(R.string.action_open_journey)
     val swapLabel = stringResource(R.string.action_flip_journey)
-    val spoken = stringResource(R.string.journey_title_spoken, journey.from.name, journey.to.name)
+    val title = stringResource(R.string.journey_title_spoken, journey.from.name, journey.to.name)
+    val spoken = distanceLabel?.let { "$title, $it" } ?: title
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2023,7 +2108,17 @@ private fun JourneyHeader(
                 tint = LocalStarredBorderColor.current,
                 modifier = Modifier.padding(start = 4.dp).size(16.dp),
             )
+            if (distanceLabel != null) {
+                Text(
+                    text = " ($distanceLabel)",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
         }
+        if (onSwap == null) return@Row
         // Compact on purpose (maintainer, 2026-09-24): a 24dp target with no 48dp minimum, so the
         // heading keeps a header's height while the swap control is still being tried out. The
         // journey's own view carries a full-size Swap direction button.

@@ -211,6 +211,9 @@ class MainViewModel(
     // snapshot, which shows only the nearby set ([journeyOnly]).
     private var journeyStops: List<StopRef> = emptyList()
 
+    // A same-set reconcile's refresh held for the screen's next journey-stop report (see reconcile).
+    private var refreshAwaitsJourneyStops = false
+
     private val fetchedStops: List<StopRef>
         get() {
             val near = nearStops
@@ -330,7 +333,12 @@ class MainViewModel(
             s.id in declaredBefore && !declaredBefore.getValue(s.id).containsAll(s.lines.map { it.id })
         }
         val shown = (_state.value as? DeparturesUiState.Loaded)?.stops?.mapTo(HashSet()) { it.stopId }.orEmpty()
-        if (dropped || linesAdded || fetchJob?.isActive == true || stops.any { it.id !in shown }) refresh()
+        if (
+            refreshAwaitsJourneyStops || dropped || linesAdded || fetchJob?.isActive == true ||
+            stops.any { it.id !in shown }
+        ) {
+            refresh()
+        }
     }
 
     // The far ends of the starred journeys as shown (SPEC *Journeys*): only their stop-level
@@ -1027,6 +1035,7 @@ class MainViewModel(
      * within [farArrivalsReuse] — see [recentlyFetched].
      */
     fun refresh(automatic: Boolean = false) {
+        refreshAwaitsJourneyStops = false
         fetchJob?.cancel()
         val previous = _state.value
         // Keep the last-good list on screen while refreshing; only show the spinner
@@ -1399,9 +1408,18 @@ class MainViewModel(
         newMore: List<NearbySelection.NearbyCluster>,
         // Each stop's distance from the new fix (see [refresh]'s far-stop carry-over); null keeps the old.
         newDistanceMeters: Map<String, Double>? = null,
+        // Journey stops the new fix holds back (a journey now over a mile away, SPEC *Journeys*):
+        // dropped before this reconcile's refresh, so it doesn't fetch them once on the old list
+        // ahead of the screen reporting the new one.
+        dropJourneyStopIds: Set<String> = emptySet(),
+        // A journey the new fix brings back within a mile: its stops aren't known until the screen
+        // builds its card, so the refresh waits for the screen's next report ([setJourneyStops],
+        // then [journeyStopsReported]) and runs once with them, rather than now and again then.
+        awaitJourneyStops: Boolean = false,
     ) {
         newDistanceMeters?.let { stopDistanceMeters = it }
         val before = fetchedStops.mapTo(mutableSetOf()) { it.id }
+        if (dropJourneyStopIds.isNotEmpty()) journeyStops = journeyStops.filter { it.id !in dropJourneyStopIds }
         eagerStops = newEager.flatMap { cluster -> cluster.stops.map { it.toStopRef() } }
         more = newMore
         // Keep a revealed cluster's identity while it is present in EITHER tier. A cluster promoted
@@ -1457,7 +1475,15 @@ class MainViewModel(
             // (SPEC D4 / principle 1).
             pruneDepartedFromWidget(departed)
         }
-        refresh()
+        if (awaitJourneyStops) refreshAwaitsJourneyStops = true else refresh()
+    }
+
+    /**
+     * The screen has reported its journey stops ([setJourneyStops] ran first, refreshing if they
+     * changed): run a refresh a reconcile left waiting on this report, if that didn't already.
+     */
+    fun journeyStopsReported() {
+        if (refreshAwaitsJourneyStops) refresh()
     }
 
     /**

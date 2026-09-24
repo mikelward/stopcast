@@ -124,6 +124,93 @@ object Journeys {
         return if (toMeters < fromMeters) journey.reversed() else journey
     }
 
+    /** Within this of either end, a starred journey is near enough to show in full: about a mile. */
+    const val NEAR_METERS: Double = 1609.0
+
+    /**
+     * How far [journey] is from ([latitude], [longitude]) — the distance to its nearer end — when
+     * that is more than [nearMeters], else null (near). A far journey waits behind the Faraway
+     * favorites button and isn't fetched until that's tapped (maintainer, 2026-09-24). Without a position or either end's
+     * coordinates it can't be judged, so it counts as near and shows in full rather than hide live
+     * trains on a guess (SPEC principle 1).
+     */
+    fun farMeters(
+        journey: StarredJourney,
+        latitude: Double?,
+        longitude: Double?,
+        nearMeters: Double = NEAR_METERS,
+    ): Double? {
+        if (latitude == null || longitude == null) return null
+        val fromMeters = distanceTo(journey.from, latitude, longitude) ?: return null
+        val toMeters = distanceTo(journey.to, latitude, longitude) ?: return null
+        return minOf(fromMeters, toMeters).takeIf { it > nearMeters }
+    }
+
+    /**
+     * The far journeys among [journeys], keyed to their [farMeters] distance. Only a confirmed fix
+     * holds a journey back: an approximate (last-known) or unrefreshed one may be where the rider
+     * was, not is, so on [fixConfirmed] false none is far and every journey shows in full.
+     */
+    fun farJourneys(
+        journeys: List<StarredJourney>,
+        latitude: Double?,
+        longitude: Double?,
+        fixConfirmed: Boolean,
+    ): Map<String, Double> {
+        if (!fixConfirmed) return emptyMap()
+        return journeys.mapNotNull { j -> farMeters(j, latitude, longitude)?.let { j.key to it } }.toMap()
+    }
+
+    /**
+     * The stops to stop fetching for the [held] journeys, given each journey's fetched stops
+     * ([stopIdsByJourney], key → its origin and neighboring poles): theirs, less any another
+     * journey still needs.
+     */
+    fun heldBackStopIds(stopIdsByJourney: Map<String, Set<String>>, held: Set<String>): Set<String> {
+        if (held.isEmpty()) return emptySet()
+        val kept = stopIdsByJourney.filterKeys { it !in held }.values.flatten().toSet()
+        return stopIdsByJourney.filterKeys { it in held }.values.flatten().toSet() - kept
+    }
+
+    /**
+     * The journey stops a same-set relocate to ([latitude], [longitude]) should stop fetching at
+     * once: those of the journeys that fix puts over a mile away ([farJourneys]), unless the rider
+     * has revealed them ([revealed]). Nothing on a fix that isn't [fixConfirmed] — a retained or
+     * last-known one may be where the rider was, and the screen, which also holds nothing back on
+     * one, wouldn't re-report a stop dropped on it. Nor the [openJourneyKey] journey's, which the
+     * screen keeps however far while its own view is open.
+     */
+    fun stopIdsToHoldBack(
+        journeys: List<StarredJourney>,
+        latitude: Double?,
+        longitude: Double?,
+        fixConfirmed: Boolean,
+        revealed: Boolean,
+        stopIdsByJourney: Map<String, Set<String>>,
+        openJourneyKey: String? = null,
+    ): Set<String> {
+        if (revealed) return emptySet()
+        val held = farJourneys(journeys, latitude, longitude, fixConfirmed).keys - setOfNotNull(openJourneyKey)
+        return heldBackStopIds(stopIdsByJourney, held)
+    }
+
+    /**
+     * Whether a same-set relocate to ([latitude], [longitude]) releases any of the [heldNow] journeys
+     * (held back and not on screen), so the screen will add its stops: one now within a mile, or
+     * any on a fix that isn't [fixConfirmed], which holds nothing back.
+     */
+    fun releasesHeldJourney(
+        journeys: List<StarredJourney>,
+        latitude: Double?,
+        longitude: Double?,
+        fixConfirmed: Boolean,
+        heldNow: Set<String>,
+    ): Boolean {
+        if (heldNow.isEmpty()) return false
+        val farAfter = farJourneys(journeys, latitude, longitude, fixConfirmed).keys
+        return journeys.any { it.key in heldNow && it.key !in farAfter }
+    }
+
     private fun distanceTo(end: JourneyEnd, latitude: Double, longitude: Double): Double? {
         val lat = end.latitude ?: return null
         val lon = end.longitude ?: return null

@@ -2818,6 +2818,62 @@ class MainViewModelTest {
     private val ksxId = "940GZZLUKSX"
 
     @Test
+    fun `a same-set reconcile doesn't fetch journey stops the new fix holds back`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        advanceUntilIdle()
+        assertEquals(1, client.arrivalCalls[ksxId])
+        val nearFetches = client.arrivalCalls.getValue(oxcId)
+
+        // A relocate keeps the set but takes the journey past a mile: the refresh it starts fetches
+        // the near stop again, but not the journey's origin.
+        vm.reconcile(newEager = eagerOf(oxcId to "tube"), newMore = emptyList(), dropJourneyStopIds = setOf(ksxId))
+        advanceUntilIdle()
+        assertEquals(nearFetches + 1, client.arrivalCalls[oxcId])
+        assertEquals(1, client.arrivalCalls[ksxId])
+    }
+
+    @Test
+    fun `a same-set reconcile awaiting journey stops refreshes once, with them`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        val nearFetches = client.arrivalCalls.getValue(oxcId)
+
+        // A relocate brings a held-back journey in range: nothing is fetched until the screen reports.
+        vm.reconcile(newEager = eagerOf(oxcId to "tube"), newMore = emptyList(), awaitJourneyStops = true)
+        advanceUntilIdle()
+        assertEquals(nearFetches, client.arrivalCalls[oxcId])
+
+        // The screen reports the journey's origin, then that it's done: one refresh, origin included.
+        vm.setJourneyStops(listOf(StopRef(ksxId, "King's Cross St. Pancras")))
+        vm.journeyStopsReported()
+        advanceUntilIdle()
+        assertEquals(nearFetches + 1, client.arrivalCalls[oxcId])
+        assertEquals(1, client.arrivalCalls[ksxId])
+    }
+
+    @Test
+    fun `an awaited refresh still runs when the report adds no stop`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val vm = MainViewModel(client, listOf(seeds.first()), clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+        val nearFetches = client.arrivalCalls.getValue(oxcId)
+
+        // A bus journey whose origin isn't placed yet: the screen's report changes no stop.
+        vm.reconcile(newEager = eagerOf(oxcId to "tube"), newMore = emptyList(), awaitJourneyStops = true)
+        vm.journeyStopsReported()
+        advanceUntilIdle()
+        assertEquals(nearFetches + 1, client.arrivalCalls[oxcId])
+        // Nothing left waiting: a later report doesn't refresh again.
+        vm.journeyStopsReported()
+        advanceUntilIdle()
+        assertEquals(nearFetches + 1, client.arrivalCalls[oxcId])
+    }
+
+    @Test
     fun `a destination the refresh also fetches is checked once`() = runTest(dispatcher) {
         val client = ReuseCountingClient()
         val vm = MainViewModel(

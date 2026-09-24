@@ -589,6 +589,16 @@ the **journey's own view**: the journey in full, **Swap direction** and **Unstar
 its trains with each group headed by where it boards (the platform or pole), rendered from the same
 snapshot as the list; unstarring closes it.
 
+A journey more than **a mile from both ends** of the rider's fix is **held back** (maintainer,
+2026-09-24): the foot of the list has a **Faraway favorites** button, styled like and just above the
+"More stops" ones (those stay last, as the stop list's own controls), and until it's tapped those
+journeys aren't fetched — sparing the request budget and battery for trains the rider can't be
+catching. A tap shows them in full at the foot of the list, each heading carrying its distance,
+until the rider moves to a new set of nearby stops. The widget never pins a far journey, tapped or
+not: it refreshes unattended, so it keeps to trains the rider can catch. Without a confirmed fix
+(none, an approximate last-known one, or one that couldn't be refreshed), or an end's position,
+every journey shows in full rather than be hidden on a guess.
+
 A bus's way back leaves from the pole across the road, so each direction is **placed on the starred
 line's route**: an end matches its own stop, else a stop in the same TfL stop area, else one of the
 same name, else — for a stop served one way only — the route's nearest stop within a short walk
