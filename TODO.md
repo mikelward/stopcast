@@ -1715,6 +1715,90 @@ and these carry the rest as their own PRs:
       requests) and the Play Data Safety answers — building on the debug-log disclosure
       that landed in Phase 1.
 
+## Phase 6 — Wear OS
+
+- [ ] **Show departures on a Wear OS watch** (requested 2026-09-24). A tile first, then a
+      complication, then a small read-only watch app. All of them render the widget's rows from a
+      snapshot the phone pushes over the Wearable Data Layer. The watch never calls TfL, holds
+      no key and needs no location (companion model, "option A", chosen for the first
+      version). The staleness rules carry over (D4): the tile's countdowns tick from a timeline
+      and turn stale at the shared threshold, with no polling. The plan, the standalone
+      alternative, privacy, battery and testing are in **`dev-docs/wear-os.md`**. **Blocked on**
+      the package rename (the watch and phone apps must share an application ID). Decided by
+      the maintainer (2026-09-24):
+      - a companion app for the first version, with a standalone watch left for later;
+      - the watch shows the widget's stops, with no separate watch-only choice;
+      - the Data Layer may relay through Google's servers, with a disclosure.
+
+      The doc's remaining open questions (starred journeys, crash reports on the watch, a
+      tile-only first release) can be settled as each step comes up.
+      Steps, one PR each:
+  - [ ] Extract `app.stopcast.domain` into a pure-Kotlin `:domain` module (refactor only; the
+        package already has no Android imports). Move `route_topology.json` and
+        `RouteTopologyStore` into a small shared Android library module, so the watch groups
+        branching services with the same topology as the widget. Move the pure line-pill color
+        resolver out of `LinePill` into the same module, so both apps share one palette and one
+        contrast rule.
+  - [ ] Share a versioned watch envelope between the apps, reusing `PersistedStop` unchanged.
+        - It's capped by encoded bytes: departures trimmed to each stop's freshness window
+          (plus enough per destination group past the boundary to fill the display cap). Over
+          the `DataItem` budget, the whole envelope goes as an `Asset`; only past a hard
+          transfer ceiling are the lowest-priority stops dropped, shown on the watch as
+          "More stops on phone".
+        - First persist `StopArrivals.railFeed` in `PersistedStop`, so the watch's National
+          Rail empty states match (`LIVE`, `NO_KEY`, `UNAVAILABLE` in the parity test).
+        - It carries a bounded superset of the widget's rows, enough for the app, the
+          complication picker and the tile's timeline. Starred rows and the rows complications
+          are set to (synced from the watch) always come first.
+        - Reusing `PersistedStop` means the watch renders from the widget's own inputs. The
+          envelope adds the starred rows' keys so the watch can pin them.
+        - It leaves out starred journeys (an open question), and drops journey-only stops
+          (`journeyOnlyStopIds`), whose ordinary rows the widget doesn't show. Its nearer-stop
+          lists, which can name stops the widget doesn't show, are listed in the privacy
+          disclosure.
+        - Stars and complication selections are keyed by `StarredRow`'s resolved
+          `directionKey`, not TfL's raw direction, so blank-direction siblings stay distinct.
+        - Test the round trip (blank-direction siblings included), and pin that it carries no
+          coordinate or key.
+  - [ ] Add a `:wear` module skeleton, plus the phone publishing its widget snapshot over the
+        Data Layer. **Prerequisite:** *Persist a refresh-failure kind / incompleteness for the
+        widget* (Phase 4), so the envelope carries the expected stop set and the watch never
+        shows an incomplete refresh as complete. The phone publishes whenever the watch app is
+        installed on a paired watch, connected or not, on every snapshot write and every star
+        change. The latest snapshot syncs, and is republished, when the watch reconnects. A
+        failed publish is logged and retried by one bounded, unique job. The **same PR**
+        discloses the channel: a watch paragraph in SPEC *Privacy* and `docs/PRIVACY.md` (the
+        sync may pass through Google's servers), plus the Data Safety determination.
+  - [ ] Disruptions on the watch, only after *Carry disruption / line-status into the widget*
+        (Phase 4) adds an age-stamped status. The watch withholds each one at the same expiry.
+  - [ ] Tile: the widget's rows, the data's age, and a staleness timeline.
+        - Entries break at each countdown minute, each departure time, and each stop's own
+          staleness boundary.
+        - No stops, or no envelope yet: an explicit one-line setup state, never a blank tile
+          or the previous rows. Stops with no rows show each stop's empty form. A complication
+          with nothing to show returns *no data*.
+        - No **All stops** edge button until the watch app lands; that PR adds it.
+        - Add screenshot tests to CI's `--tests` allow-list.
+  - [ ] Watch-initiated refresh: a tap asks the phone for one debounced, location-free fetch.
+        - The phone answers every request with a typed outcome: refreshed, partly refreshed,
+          not refreshed with a reason (such as rate-limited), or debounced. The watch says so.
+        - When the phone is out of reach, the watch keeps the last snapshot, stamped with its
+          age.
+  - [ ] Complication: a timeline with one entry per upcoming departure, each counted down by
+        the system and replaced by the next when it leaves, then a stale entry at the threshold.
+        - A carried-forward stop's entries carry the uncertainty marker.
+        - The selection syncs back to the phone. This watch-to-phone sync is added to the SPEC
+          *Privacy* / `docs/PRIVACY.md` watch paragraph and the Data Safety determination in the
+          same PR.
+        - A selected stop that leaves the widget's scope falls back to the default row.
+  - [ ] Small watch app: the same cards in a dense rotary-scrolling list ("towards …" on the
+        stop-name line), plus the tile's **All stops** button.
+        - A foreground ticker advances countdowns and staleness at each boundary, with no
+          polling; test it with an injected clock.
+        - Add a watch-app `*ScreenshotTest` (round screen, large font) to CI's allow-list.
+  - [ ] Play: file the Data Safety answers decided with the publisher, then a Wear OS release
+        track with screenshots and the app-quality review.
+
 ## Beyond MVP (not planned)
 
 Directions that would change what stopcast *is*, not steps in the London MVP. Recorded so
