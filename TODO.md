@@ -1029,6 +1029,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           origin (Northern line trains to Edgware, none to High Barnet) and no direct train is due,
           its trains show under "King's Cross ➔ Camden Town (for High Barnet)", the last stop it shares
           with the route to the far end. Rail only; the widget stays direct-only.
+    - [ ] (Idea, maintainer 2026-09-24, not planned) **Frame a change around the journey.**
+          Alternatives to the "King's Cross ➔ Camden Town (for High Barnet)" heading: head it
+          "King's Cross ➔ High Barnet via Camden Town" and show the train's destination as Camden
+          Town (where the rider leaves it) rather than its terminus; or prompt the rider to get off
+          at Camden Town. The prompt needs reliable location tracking during the ride, which isn't
+          on the roadmap (a SPEC non-goal today: no background location).
     - [x] **Hold back faraway journeys** (maintainer, 2026-09-24). A journey more than a mile
           from both ends of a confirmed fix waits behind a "Faraway favorites" button at the foot
           of the list, unfetched until tapped for that nearby set; the widget never pins one.
