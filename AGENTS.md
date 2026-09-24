@@ -241,8 +241,11 @@ as a confirmed TfL hex. SPEC has the full scheme and rationale.
 
 ## Language and spelling
 
-US English everywhere people read English — user-facing strings, commit subjects/bodies,
-PR text, comments, KDoc, identifiers, docs. Watch the forms this fleet gets wrong:
+US English everywhere people read English — base user-facing strings, commit subjects/bodies,
+PR text, comments, KDoc, identifiers, docs — for tooling and parity with the sibling repos. But
+the app's users are in the UK, so **en-GB is first-tier**: a user-facing string whose British
+spelling or usage differs ("favorites", "licenses", "percent") gets its override in
+`values-en-rGB/strings.xml` in the same change; `EnGbStringsTest` fails one that's missing. Watch the forms this fleet gets wrong:
 `gray` (not "grey"), `canceled`/`canceling` (one `l`), `color`, `behavior`, `dialog`,
 `-ize` over `-ise`, `center`, `traveling`. Platform/third-party API spellings stay as
 the framework spells them (`CancellationException` keeps its double `l`). TfL's own line
