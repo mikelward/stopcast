@@ -50,6 +50,15 @@ class StationIndexTest {
     }
 
     @Test
+    fun `TfL's matches rank alongside the index's, not after them`() {
+        // A TfL bus stop that starts with the query, with a shorter name than the indexed station,
+        // ranks ahead of it: one ranking over both sources.
+        val local = index.search("ken")
+        val busStop = StationMatch("490000000003C", "Kent Road", listOf("bus"))
+        assertEquals(listOf("490000000003C", "940GZZLUKNG"), index.rank("ken", local, listOf(busStop)).map { it.id })
+    }
+
+    @Test
     fun `a TfL match inside a matched interchange stays folded into it`() {
         val local = index.search("kings")
         val member = StationMatch("940GZZLUKSX", "King's Cross St. Pancras", listOf("tube"))

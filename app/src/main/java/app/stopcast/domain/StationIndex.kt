@@ -45,18 +45,25 @@ class StationIndex(val stations: List<IndexedStation>) {
      */
     fun rank(query: String, local: List<StationMatch>, remote: List<StationMatch>, limit: Int = DEFAULT_LIMIT): List<StationMatch> {
         val localIds = local.mapTo(HashSet()) { it.id }
-        val extra = remote
-            .filter { it.id !in localIds && hubOf[it.id]?.let { hub -> hub in localIds } != true }
+        val extra = remote.filter { it.id !in localIds && hubOf[it.id]?.let { hub -> hub in localIds } != true }
+        // One ranking over both sources, by the same rules as [search] — tier, interchange first,
+        // shorter name, then name — so a TfL bus stop that matches as well as a bundled station
+        // sorts among them rather than after all of them. Source order only breaks an exact tie.
+        // A match the matcher can't place (TfL found it by a rule this one doesn't share) goes last.
+        return (local + extra)
             .distinctBy { it.id }
-        // Local order is already best-first; a remote match slots in after every local match of
-        // the same or better tier, so the index's tie-breaks (hub first, shorter name) hold.
-        val localTiers = local.map { StationMatcher.tier(query, it.name, it.id) ?: StationMatchTier.Fuzzy }
-        val merged = local.mapIndexed { i, m -> Triple(m, localTiers[i].ordinal, i) } +
-            extra.mapIndexed { i, m ->
-                val tier = StationMatcher.tier(query, m.name, m.id)?.ordinal ?: StationMatchTier.entries.size
-                Triple(m, tier, local.size + i)
-            }
-        return merged.sortedWith(compareBy({ it.second }, { it.third })).take(limit).map { it.first }
+            .withIndex()
+            .sortedWith(
+                compareBy(
+                    { StationMatcher.tier(query, it.value.name, it.value.id, hubOf[it.value.id].orEmpty())?.ordinal ?: StationMatchTier.entries.size },
+                    { !it.value.id.startsWith("HUB", ignoreCase = true) },
+                    { it.value.name.length },
+                    { it.value.name },
+                    { it.index },
+                ),
+            )
+            .take(limit)
+            .map { it.value }
     }
 
     // Each indexed station's interchange, for folding TfL's matches the way [search] folds its own.
