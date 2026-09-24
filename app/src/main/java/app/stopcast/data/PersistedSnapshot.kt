@@ -4,6 +4,7 @@ import app.stopcast.domain.Departure
 import app.stopcast.domain.DeparturesSnapshot
 import app.stopcast.domain.JourneyCall
 import app.stopcast.domain.LineRef
+import app.stopcast.domain.RailFeed
 import app.stopcast.domain.StopArrivals
 import app.stopcast.domain.Terminating
 import app.stopcast.domain.WidgetJourney
@@ -72,6 +73,11 @@ internal data class PersistedStop(
     // back empty and hides nothing until the app next fetches the stop.
     val nearerIds: List<String> = emptyList(),
     val nearerNames: List<String> = emptyList(),
+    // Why the stop's arrivals carry no National Rail times ([RailFeed]: live-but-empty, no key, or
+    // board unavailable), by name, so a restored rail row still says "No key" or "No data"
+    // rather than guessing. Defaulted: an older snapshot reads back null (the pre-persistence
+    // behavior), and a name this build doesn't know reads back null too.
+    val railFeed: String? = null,
 )
 // Stop disruptions (closures) are deliberately NOT persisted: a closure is a point-in-time
 // claim the screen renders unconditionally, with no stale-safe rendering (unlike a countdown,
@@ -168,6 +174,7 @@ internal fun StopArrivals.toPersisted(): PersistedStop =
         towards = towards,
         nearerIds = nearer.ids.sorted(),
         nearerNames = nearer.names.sorted(),
+        railFeed = railFeed?.name,
     )
 
 private fun PersistedStop.toDomain(): StopArrivals =
@@ -184,6 +191,7 @@ private fun PersistedStop.toDomain(): StopArrivals =
         bearing = bearing,
         towards = towards,
         nearer = Terminating.Nearer(nearerIds.toSet(), nearerNames.toSet()),
+        railFeed = railFeed?.let { name -> RailFeed.entries.firstOrNull { it.name == name } },
     )
 
 private fun Departure.toPersisted(): PersistedDeparture =

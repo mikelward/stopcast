@@ -707,7 +707,9 @@ data class StopArrivals(
     val disruptions: List<StopDisruption> = emptyList(),
     val arrivalsFresh: Boolean = true,
     // Where this National Rail station's National Rail times stand after its last arrivals fetch
-    // ([TflClient.railFeed]); null when none apply. Not persisted.
+    // ([TflClient.railFeed]); null when none apply. Persisted with the stop, so a surface rendering
+    // from the snapshot can tell "No key" from "No data" once it has the line statuses a status
+    // row needs ([statusRows]).
     val railFeed: RailFeed? = null,
     // The cluster this stop belongs to — TfL's `stationNaptan` else the display name (see
     // [StopLocation.clusterId]). Carried onto each [DepartureRow] so the screen can group rows
