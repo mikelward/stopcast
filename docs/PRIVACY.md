@@ -62,8 +62,9 @@ you've added a key** (the Play update check carries none); with it, the crash re
 stats above go to Firebase too. Android's backup
 carries your saved data under your control, and a bug report carries what you consent to share.
 
-**Find a station** sends the name you type to TfL's stop search, once you pause typing, and
-then the chosen station's id to look up its stops and departures. The name isn't saved,
+**Find a station** (the menu's *From…*, and a station's *To…*) sends the name you type to TfL's
+stop search, once you pause typing, and then the chosen station's id to look up its stops and
+departures (for *To…*, the stops and the routes of the lines leaving the first station). The name isn't saved,
 logged or sent anywhere else. The last eight stations you open from it are remembered on the
 device to list under *Recent*, in app storage that Android never backs up or transfers; they are
 never logged or sent anywhere, and clearing the app's data removes them. So that a starred stop

@@ -231,6 +231,19 @@ The app finds stops two ways:
   interchange's page holds it. If TfL's search fails but the list matched, the list's matches
   stand, with a line saying bus stops weren't searched. Setting the near-me origin to a station
   instead of the current location is a follow-up (`TODO.md`).
+- **From… To…** (maintainer, 2026-09-24) — a searched station's page has a **To…** action: pick a
+  second station from the same search, and the page keeps only the departures that **call there
+  directly** — the trains or buses from the first station whose path, on their own line's route,
+  reaches the second, titled "From ➔ To". It is the station page narrowed, not a new kind of
+  place: back returns to the whole station, and it is a look, not a pin, like the station itself.
+  A departure whose route is still loading, failed to load, or can't be followed is left out and
+  the page says so ("Checking routes…", "Some routes couldn't be checked") rather than pass a
+  short list off as complete (principle 2); with nothing going there it says "No direct trips to
+  ‹place› soon". Direct only: a trip needing a change is **journey planning**, the eventual goal
+  and a follow-up (`TODO.md`), and starring the trip as a journey is one too. The routes are the
+  same per-line lookups a route page makes (a request or two per line a day, cached); the
+  destination is TfL's stop lookup of the picked station, once. Nothing is saved, and the
+  destination's name and id go only to TfL, as the station search's already do (*Privacy*).
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run); arrives with watched stops.
 - **Hiding a mode** (maintainer, 2026-09-24) — a busy place can fill the near-me list with a mode

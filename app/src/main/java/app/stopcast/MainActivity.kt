@@ -7,6 +7,9 @@ import kotlinx.coroutines.sync.Mutex
 import app.stopcast.domain.ModeGroups
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.JourneyEnd
+import androidx.compose.ui.res.stringResource
+import app.stopcast.ui.rememberTripView
+import app.stopcast.domain.DirectTrips
 import app.stopcast.domain.stopPlace
 import app.stopcast.data.FileStarredPlacesStore
 import kotlinx.coroutines.flow.first
@@ -340,6 +343,12 @@ class MainActivity : ComponentActivity() {
                 var stationSearchOpen by rememberSaveable { mutableStateOf(false) }
                 var openStationId by rememberSaveable { mutableStateOf<String?>(null) }
                 var openStationName by rememberSaveable { mutableStateOf("") }
+                // "To…" from an open station (SPEC *Finding stops → From… To…*): whether its
+                // destination search is up, and the destination picked (id and name), which narrows
+                // the station's page to the departures that go there.
+                var tripPicking by rememberSaveable { mutableStateOf(false) }
+                var tripToId by rememberSaveable { mutableStateOf<String?>(null) }
+                var tripToName by rememberSaveable { mutableStateOf("") }
 
                 // App settings + the opt-in "live widget" refresh (SPEC D5). The setting is
                 // collected here and applied to the scheduler at start — so an enabled toggle
@@ -431,11 +440,31 @@ class MainActivity : ComponentActivity() {
                                 onCloseStation = {
                                     openStationId = null
                                     openStationName = ""
+                                    tripPicking = false
+                                    tripToId = null
+                                    tripToName = ""
                                 },
                                 onCloseSearch = {
                                     stationSearchOpen = false
                                     openStationId = null
                                     openStationName = ""
+                                    tripPicking = false
+                                    tripToId = null
+                                    tripToName = ""
+                                },
+                                tripPicking = tripPicking,
+                                tripToId = tripToId,
+                                tripToName = tripToName,
+                                onPlanTo = { tripPicking = true },
+                                onPickTo = { match ->
+                                    tripPicking = false
+                                    tripToId = match.id
+                                    tripToName = match.name
+                                },
+                                onClosePicker = { tripPicking = false },
+                                onClearTo = {
+                                    tripToId = null
+                                    tripToName = ""
                                 },
                             )
                         } else {
@@ -1096,6 +1125,13 @@ class MainActivity : ComponentActivity() {
         onOpenStation: (StationMatch) -> Unit,
         onCloseStation: () -> Unit,
         onCloseSearch: () -> Unit,
+        tripPicking: Boolean = false,
+        tripToId: String? = null,
+        tripToName: String = "",
+        onPlanTo: () -> Unit = {},
+        onPickTo: (StationMatch) -> Unit = {},
+        onClosePicker: () -> Unit = {},
+        onClearTo: () -> Unit = {},
     ) {
         // Captured once, so lambdas the retained ViewModels keep close over the application, not
         // this Activity (which a rotation destroys).
@@ -1118,19 +1154,55 @@ class MainActivity : ComponentActivity() {
             },
         )
         val stores: NearbyDeparturesStores = viewModel(key = "station-stores")
+        // The To… destination's stop lookup, retained apart from the station's own store (whose
+        // [NearbyDeparturesStores.ownerFor] keeps a single key).
+        val tripStores: NearbyDeparturesStores = viewModel(key = "trip-to-stores")
+        // The destination search, apart from the station search, so back from it finds that as it was.
+        // A destination isn't an opened station: it isn't added to Recent, so nothing of a trip is
+        // kept once it's closed.
+        val toSearch: StationSearchViewModel = viewModel(
+            key = "trip-to-search",
+            factory = viewModelFactory {
+                initializer {
+                    StationSearchViewModel(
+                        stationFinder,
+                        createSavedStateHandle(),
+                        loadIndex = { StationIndexStore.load(appContext) },
+                        loadYours = { loadYourStops(appContext) },
+                        recordOpen = {},
+                        warn = ::logDepartureWarning,
+                    )
+                }
+            },
+        )
         // The near-me list's write-failure flags: a star or dismiss that fails after this page has
         // closed (the write outlives it) is shown on the next list instead of lost with the page.
         val writeFailures = viewModel<WriteFailuresHolder>().failures
         val closeSearch = {
             stores.clearAll()
+            tripStores.clearAll()
             search.clear()
+            toSearch.clear()
             onCloseSearch()
         }
         // Leaving a station drops its retained models, so its departures don't outlive the page
         // and reopening it fetches afresh rather than showing what was loaded before.
         val closeStation = {
             stores.clearAll()
+            tripStores.clearAll()
+            toSearch.clear()
             onCloseStation()
+        }
+        // Back from a To… list returns to the whole station.
+        val clearTo = {
+            tripStores.clearAll()
+            toSearch.clear()
+            onClearTo()
+        }
+        // The destination search's query is dropped with the picker, so nothing of it is kept.
+        val closePicker = {
+            toSearch.clear()
+            onClosePicker()
         }
         if (stationId == null) {
             val state by search.state.collectAsStateWithLifecycle()
@@ -1145,6 +1217,43 @@ class MainActivity : ComponentActivity() {
                 },
                 onRetry = search::retry,
                 onBack = closeSearch,
+            )
+            return
+        }
+        if (tripPicking) {
+            val state by toSearch.state.collectAsStateWithLifecycle()
+            LaunchedEffect(Unit) { toSearch.refreshYours() }
+            StationSearchScreen(
+                state = state,
+                onQueryChange = toSearch::onQueryChange,
+                onOpenStation = { match ->
+                    tripStores.clearAll()
+                    toSearch.clear()
+                    onPickTo(match)
+                },
+                onRetry = toSearch::retry,
+                onBack = closePicker,
+                hint = stringResource(R.string.station_search_to_hint),
+            )
+            return
+        }
+        // The To… destination's stops, looked up once when picked (null while none is).
+        val tripTo = tripToId?.let { toId ->
+            val owner = remember(toId) { tripStores.ownerFor(toId) }
+            val model: StationStopsViewModel = viewModel(
+                viewModelStoreOwner = owner,
+                factory = viewModelFactory {
+                    initializer { StationStopsViewModel(stationFinder, toId, warn = ::logDepartureWarning) }
+                },
+            )
+            model to model.state.collectAsStateWithLifecycle().value
+        }
+        if (tripTo != null && tripTo.second !is StationStopsViewModel.State.Ready) {
+            StationPlaceholderScreen(
+                title = stringResource(R.string.journey_title, stationName, tripToName),
+                state = tripTo.second,
+                onRetry = tripTo.first::retry,
+                onBack = clearTo,
             )
             return
         }
@@ -1216,9 +1325,18 @@ class MainActivity : ComponentActivity() {
                 LocalRouteTopology provides routeTopology.value,
                 LocalRouteStops provides routeStops(appContext),
             ) {
+                val now = tickingNow()
+                val destination = (tripTo?.second as? StationStopsViewModel.State.Ready)?.stops
+                val hubs = remember(ready.stops) { ready.stops.associate { it.id to it.hubId } }
+                val tripEnds = remember(destination) {
+                    destination?.map { DirectTrips.End(it.id, it.name, it.hubId) }
+                }
+                // With a destination, only the departures that go there (SPEC *Finding stops →
+                // From… To…*); the station's whole page otherwise.
+                val trip = tripEnds?.let { rememberTripView(state, it, tripToName, hubs, now) }
                 MainScreen(
-                    state = state,
-                    now = tickingNow(),
+                    state = trip?.state ?: state,
+                    now = now,
                     onRefresh = { viewModel.refresh() },
                     refreshing = refreshing,
                     starred = starred,
@@ -1230,8 +1348,11 @@ class MainActivity : ComponentActivity() {
                     onDismissAlert = viewModel::dismissAlert,
                     dismissWriteFailed = dismissWriteFailed,
                     onDismissWriteFailureShown = viewModel::dismissWriteFailureShown,
-                    stationTitle = stationName,
-                    onCloseStation = closeStation,
+                    stationTitle = if (trip == null) stationName else stringResource(R.string.journey_title, stationName, tripToName),
+                    onCloseStation = if (trip == null) closeStation else clearTo,
+                    onPlanTo = onPlanTo,
+                    tripNotice = trip?.notice,
+                    emptyMessage = trip?.emptyMessage,
                 )
             }
         }

@@ -312,6 +312,15 @@ fun MainScreen(
     // the app's mark, and the overflow menu is left out — it belongs to the main list.
     stationTitle: String? = null,
     onCloseStation: () -> Unit = {},
+    // Non-null on a searched station's page: a "To…" action in the app bar that picks a destination,
+    // after which the page keeps only the departures that go there (SPEC *Finding stops → From… To…*).
+    onPlanTo: (() -> Unit)? = null,
+    // A line over the list saying a To… filter is still checking, or couldn't check, some
+    // departures (SPEC principle 2); null hides it.
+    tripNotice: String? = null,
+    // The empty list's text in place of "No upcoming departures": a To… filter's "No direct
+    // services to ‹place› soon".
+    emptyMessage: String? = null,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Overflow-menu and About-dialog visibility. Saved so an open dialog survives rotation.
@@ -984,6 +993,10 @@ fun MainScreen(
                     IconButton(onClick = onRefresh) {
                         Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
                     }
+                    // A station's "To…": pick where to, and keep only the departures that go there.
+                    if (onPlanTo != null && platformRows == null && !journeyViewOpen) {
+                        TextButton(onClick = onPlanTo) { Text(stringResource(R.string.menu_to)) }
+                    }
                     // Button and menu wrapped together so the dropdown anchors to the overflow
                     // button and opens from it; a bare DropdownMenu sibling anchors to the row
                     // slot instead and drops from the wrong place.
@@ -1204,6 +1217,8 @@ fun MainScreen(
                     // A platform/station drill-down shows one place's stops, not the near-me set, so
                     // the "your location is low-confidence" banner doesn't apply there.
                     locationBanner = if (platformRows != null) null else locationBanner,
+                    tripNotice = if (platformRows != null) null else tripNotice,
+                    emptyMessage = if (platformRows != null) null else emptyMessage,
                     // A journey heading opens the journey's own view (from the full list only).
                     onOpenJourney = { journey -> journeyViewKey = journey.key },
                 )
@@ -1316,6 +1331,10 @@ private fun LoadedContent(
     // Non-null when the shown stops are backed by a low-confidence location: a top banner says so
     // and offers "Try again" (runs [onRefresh], a re-locate). Null hides it.
     locationBanner: LocationBanner? = null,
+    // A To… filter still checking, or unable to check, some departures (see [MainScreen]).
+    tripNotice: String? = null,
+    // The empty list's text in place of "No upcoming departures" (see [MainScreen]).
+    emptyMessage: String? = null,
     // The modes hidden from this list, their banner's "Show all", and the long-press "Hide ‹mode›"
     // (null on a list that doesn't offer it). See [MainScreen].
     hiddenModes: Set<String> = emptySet(),
@@ -1359,6 +1378,7 @@ private fun LoadedContent(
                     onTryAgain = onRefresh,
                 )
             }
+            tripNotice?.let { Banner(it) }
             // Modes the user hid (SPEC *Finding stops → Hiding a mode*): one line saying which, so a
             // shorter list never passes for all there is, with "Show all" to bring them back.
             if (hiddenModes.isNotEmpty()) {
@@ -1407,7 +1427,7 @@ private fun LoadedContent(
                                 hiddenGroupsLabel(hiddenModes),
                             )
                             emptyStateUncertain -> stringResource(R.string.departures_stale_empty)
-                            else -> stringResource(R.string.departures_empty)
+                            else -> emptyMessage ?: stringResource(R.string.departures_empty)
                         },
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
