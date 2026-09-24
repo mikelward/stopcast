@@ -168,6 +168,8 @@
     <string name="settings_api_key_title">TfL API key</string>
     <string name="settings_api_key_summary">Optional. Paste your own free TfL API key for a higher refresh limit.</string>
     <string name="settings_api_key_label">API key</string>
+    <string name="settings_rail_key_title">National Rail API key</string>
+    <string name="settings_rail_key_summary">Optional. Paste your free Rail Data Marketplace key to show National Rail times.</string>
     <string name="settings_api_key_save">Save</string>
     <string name="settings_api_key_clear">Clear</string>
     <string name="settings_api_key_show">Show</string>
@@ -177,6 +179,8 @@
     <string name="menu_about">About</string>
     <string name="about_title">About</string>
     <string name="settings_version">Version %1$s</string>
+    <!-- Where the times and stops come from. NaPTAN's licence (OGL v3) asks for this statement. -->
+    <string name="about_data_sources">Live times from TfL and National Rail. Contains public sector information licensed under the Open Government Licence v3.0.</string>
     <string name="settings_licenses_title">Open source licenses</string>
     <string name="settings_licenses_authors">By %1$s</string>
     <string name="action_back">Back</string>

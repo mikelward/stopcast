@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import app.stopcast.data.DataStoreAppSettings
+import app.stopcast.data.RailApiKeySetting
 import app.stopcast.data.UserApiKeySetting
 import app.stopcast.data.logAppSettingsWarning
 import com.mikelward.androidlog.DebugLog
@@ -87,6 +88,7 @@ open class StopcastApp : Application() {
      */
     protected open fun warmSharedState() {
         UserApiKeySetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
+        RailApiKeySetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
     }
 
     /**

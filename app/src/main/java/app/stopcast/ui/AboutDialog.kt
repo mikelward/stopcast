@@ -14,7 +14,8 @@ import app.stopcast.BuildConfig
 import app.stopcast.R
 
 /**
- * The About dialog: the app name, the running version, and the one action on it — the
+ * The About dialog: the app name, the running version, where its data comes from (with NaPTAN's
+ * licence statement), and the one action on it — the
  * open-source licenses screen (SPEC *About and open-source licenses*). Shared so it can be
  * reached from both the departures top bar and the location gate, since the license
  * attribution has to be reachable whatever state the app is in. The version comes from
@@ -42,6 +43,14 @@ internal fun AboutDialog(onOpenLicenses: () -> Unit, onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
+                    )
+                    // The data's sources and NaPTAN's licence statement (the bundled National Rail
+                    // station codes are built from it).
+                    Text(
+                        text = stringResource(R.string.about_data_sources),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp),
                     )
                 }
             }

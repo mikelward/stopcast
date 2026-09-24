@@ -2814,6 +2814,28 @@ class MainViewModelTest {
         }
     }
 
+    @Test
+    fun `a change of departure source refetches every stop at once, none carried over`() = runTest(dispatcher) {
+        val client = ReuseCountingClient()
+        val key = MutableStateFlow<String?>(null)
+        val vm = MainViewModel(
+            client, listOf(seeds.first()), clock = { now }, io = dispatcher,
+            arrivalsReuse = ARRIVALS_REUSE, departureSourceChanges = key,
+        )
+        advanceUntilIdle()
+        val stop = seeds.first().id
+        assertEquals(1, client.arrivalCalls[stop])
+        // A refresh moments later carries the stop over.
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(1, client.arrivalCalls[stop])
+        // A key pasted in Settings refetches it at once, reuse window or not.
+        key.value = "EXAMPLE"
+        advanceUntilIdle()
+        assertEquals(2, client.arrivalCalls[stop])
+        assertTrue(vm.state.value is DeparturesUiState.Loaded)
+    }
+
     private val oxcId = "940GZZLUOXC"
     private val ksxId = "940GZZLUKSX"
 

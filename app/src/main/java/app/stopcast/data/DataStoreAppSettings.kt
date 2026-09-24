@@ -87,6 +87,14 @@ class DataStoreAppSettings internal constructor(
         dataStore.updateData { (it ?: PersistedSettings()).copy(userApiKey = normalized) }
     }
 
+    override fun railApiKey(): Flow<String?> =
+        persisted().map { it?.railApiKey?.takeIf(String::isNotBlank) }
+
+    override suspend fun setRailApiKey(key: String?) {
+        val normalized = key?.trim()?.takeIf(String::isNotEmpty)
+        dataStore.updateData { (it ?: PersistedSettings()).copy(railApiKey = normalized) }
+    }
+
     // The shared read flow: DataStore's `data`, with a transient I/O read failure retried rather
     // than collapsed to a terminal default. A `catch`-and-emit would end the flow, leaving a
     // long-lived collector stuck at the default after storage recovered (Codex P2 on #56).
@@ -174,6 +182,9 @@ data class PersistedSettings(
     // backup like the rest of their settings, and is never logged or put in any other off-device
     // artifact (SPEC *Privacy*).
     val userApiKey: String? = null,
+    // The user's own Rail Data Marketplace key for National Rail departures, or null. A credential,
+    // handled like [userApiKey]: sent only with the user's own National Rail requests.
+    val railApiKey: String? = null,
 )
 
 /**

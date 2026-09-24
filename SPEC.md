@@ -932,7 +932,8 @@ spells them.
 
 ## Data source, cost, and reliability
 
-StopCast's one **data** dependency is the **TfL Unified API** — free and public. (A
+StopCast's one required **data** dependency is the **TfL Unified API** — free and public; National
+Rail's boards are an optional second one, used only with the user's key (below). (A
 release build also makes one non-data Play Services call to check for app updates — see
 *Update indicator* above; it is free, carries no user data, and adds no Data Safety
 surface.)
@@ -948,7 +949,27 @@ surface.)
   may paste their own free `app_key` in settings for the higher limit. A shared, baked-in
   key would pool every user's traffic into one 500/min bucket and put a credential in
   the APK; a per-user key does neither.
-- **Reliability:** one dependency, so if TfL is down or throttling, stopcast shows
+- **National Rail (optional, the user's own key).** TfL's arrivals feed has no times for
+  National Rail services (Great Northern, Thameslink, Southern…). With a free Rail Data
+  Marketplace key pasted in settings (maintainer, 2026-09-24), a rail station's departures also
+  come from National Rail's own live departure boards (Darwin's `GetDepartureBoard`, by the
+  station's three-letter CRS code), alongside TfL's; without one, those lines show "No data"
+  as before. Like D7, stopcast ships no key. TfL's `910G` ids end in the station's TIPLOC, and
+  NaPTAN (DfT, Open Government Licence v3.0) pairs each TIPLOC with its CRS, so the app bundles
+  that table (rebuilt weekly with the station list) and the two join exactly, never by name.
+  Where TfL lists one station under two National Rail ids, its board is fetched once and shown
+  under one of them, the first whose own TfL fetch works, which keeps it while it keeps asking.
+  Only times National Rail gives are shown: a cancelled train, or one "Delayed" with no estimate,
+  is left out, and the TfL-run services it also lists (Overground, Elizabeth line) come from TfL
+  alone. The optional dependency fails on its own: a failed board (down, rate-limited, a bad key,
+  a garbled answer) leaves the station's TfL departures in place, its National Rail lines back at
+  "No data", and is logged; it never fails the stop or blanks the list. **Cost:
+  £0**, one request per rail station per refresh against the user's own key's limit.
+  **Play Data Safety:** no new data type — a request carries only a public station code and the
+  user's own key for that service, sent at their request; `docs/PRIVACY.md` names National Rail as
+  a recipient, and the Data Safety form and privacy-policy link are re-checked before the release
+  that ships it.
+- **Reliability:** one required dependency, so if TfL is down or throttling, stopcast shows
   stamped last-good data and an offline/rate-limited notice (never a blank or an
   unlabeled stale number). Added latency lives off every render path (snapshot-render,
   above).
@@ -1034,7 +1055,8 @@ the widget when the app isn't driving it is deferred (D5).
 
 StopCast handles location and the set of stops the user watches — which together reveal
 where they live, work, and travel. StopCast itself sends none of it anywhere except the
-TfL requests that *are* the product: a nearby-stops lookup necessarily sends coordinates
+TfL requests that *are* the product (and, with the user's National Rail key, a rail station's
+code to National Rail, below): a nearby-stops lookup necessarily sends coordinates
 to TfL — **precise** where the user granted precise and an accurate fix is available,
 approximate under an approximate-only grant or when no accurate fix can be obtained (see
 *Finding stops*) — and a departures lookup necessarily sends the watched stop
@@ -1054,7 +1076,8 @@ never-leaves-the-device wording). This is the platform's user-controlled channel
 the user's own Google account, not an off-device channel stopcast adds: cost £0, and no
 Play Data Safety change (Android Auto Backup is a platform feature, not data stopcast
 collects or transmits). The guarantee is therefore precise, not absolute — the only **user data**
-*stopcast* sends off the device on its own goes in its TfL requests (its one other network
+*stopcast* sends off the device on its own goes in its TfL requests, and its National Rail
+requests when the user has added a key (*Data source*) (its one other network
 call, the release-only Play update check, carries none — see *Update indicator*); the user's
 own backup/transfer carries their config under their control; and a **consent-gated bug
 report** (see below and `docs/PRIVACY.md`) carries the exact location, per-stop distances, and
@@ -1069,6 +1092,11 @@ release-only Play update-availability check (*Update indicator*): a Play Service
 the app's own version that carries no user data and adds no Data Safety surface. The on-device
 debug log carries coarse diagnostics only: a stop ID, a line id, an HTTP status, or a
 failed Play update check's exception class — never a raw coordinate or the user's API key.
+
+With a National Rail key set (*Data source*), a rail station's departures request also goes to
+the Rail Data Marketplace, carrying that station's CRS code and the user's own key, never a
+location; it is disclosed alongside the TfL requests. The key is a credential, handled like the
+TfL `app_key`: never logged or placed in any other off-device artifact.
 
 ## Engineering quality bar
 
@@ -1131,12 +1159,11 @@ Mirrors the sibling fleet:
 
 - **Journey planning / routing** (the TfL Journey API). StopCast answers "what's next
   from here", not "how do I get there".
-- **Non-TfL operators** outside the Unified API (National Rail services TfL doesn't
-  carry, coach, etc.). TfL gives no times for them, so a National Rail line TfL reports
-  disrupted at a station shows only as its status row, saying "No data" where times would be
-  rather than a dash that read as an empty result (maintainer, 2026-09-24); one in good
-  service isn't listed. Its departures from National Rail's own feed are an open call in
-  `TODO.md`.
+- **Non-TfL operators** outside the Unified API (coach, etc.), National Rail aside: its
+  times come from National Rail's own feed once the user adds a key (*Data source*). Without
+  one, TfL gives no times for them, so a National Rail line TfL reports disrupted at a station
+  shows only as its status row, saying "No data" where times would be rather than a dash that
+  read as an empty result (maintainer, 2026-09-24); one in good service isn't listed.
 - **Ticketing**, Oyster/contactless balances, and service maps.
 - **Writing to TfL.** StopCast is read-only.
 - **Continuous background location / geofencing.** Location is used on demand in the

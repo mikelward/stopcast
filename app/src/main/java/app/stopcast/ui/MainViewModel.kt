@@ -43,6 +43,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -179,6 +182,10 @@ class MainViewModel(
     // records the row's place so "Find a station" can list the star by name later (SPEC *Finding
     // stops*). Handles its own failures; nothing by default.
     private val onStarToggled: suspend (DepartureRow) -> Unit = {},
+    // A setting that changes what a stop's departures include (the National Rail key): its current
+    // value is ignored, and each later change refetches every stop at once, none carried over, so
+    // adding or clearing the key shows without waiting for the next auto-refresh.
+    departureSourceChanges: Flow<Any?> = emptyFlow(),
 ) : ViewModel() {
     // The near-me tiers, updatable IN PLACE so a relocation that keeps the same nearby set can
     // reconcile them without rebuilding this ViewModel (which would drop a revealed expansion —
@@ -553,6 +560,12 @@ class MainViewModel(
     private var initLoadJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            departureSourceChanges.drop(1).collect {
+                arrivalsFetchedAt.clear()
+                refresh()
+            }
+        }
         viewModelScope.launch {
             // A read failure (DataStore IOException, a non-corruption disk error) must not
             // escape and crash the departures screen as it starts. Handle it explicitly:

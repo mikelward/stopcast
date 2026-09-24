@@ -7,6 +7,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -44,7 +48,13 @@ object UserApiKeySetting {
  * virtual clock. One instance backs [UserApiKeySetting]; production passes a `Dispatchers.Default`
  * scope.
  */
-class UserApiKeyHolder(private val scope: CoroutineScope) {
+class UserApiKeyHolder(
+    private val scope: CoroutineScope,
+    // Which stored key this holder keeps: the TfL app_key by default, or another credential
+    // ([RailApiKeySetting]) handled the same way.
+    private val read: (AppSettings) -> Flow<String?> = AppSettings::userApiKey,
+    private val write: suspend (AppSettings, String?) -> Unit = { settings, key -> settings.setUserApiKey(key) },
+) {
 
     private var settings: AppSettings = AppSettings.NONE
     private var collectJob: Job? = null
@@ -83,7 +93,15 @@ class UserApiKeyHolder(private val scope: CoroutineScope) {
      */
     @Volatile
     var current: String? = null
-        private set
+        private set(value) {
+            field = value
+            _changes.value = value
+        }
+
+    private val _changes = MutableStateFlow<String?>(null)
+
+    /** [current] as a flow, so a screen can act when the key changes. */
+    val changes: StateFlow<String?> = _changes.asStateFlow()
 
     /**
      * Begins reading the stored key into [current], off the main thread, and keeps it live for
@@ -97,7 +115,7 @@ class UserApiKeyHolder(private val scope: CoroutineScope) {
             writeJob = scope.launch {
                 for (key in writes) {
                     try {
-                        settings.setUserApiKey(key)
+                        write(settings, key)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -111,7 +129,7 @@ class UserApiKeyHolder(private val scope: CoroutineScope) {
         }
         if (collectJob != null) return
         collectJob = scope.launch {
-            appSettings.userApiKey().collect { stored ->
+            read(appSettings).collect { stored ->
                 // Seed from the store only until the user makes their own change; after that
                 // [current] is theirs and store echoes of our writes must not roll it back. Under
                 // the lock so this decision is atomic with a concurrent [set].
@@ -134,4 +152,31 @@ class UserApiKeyHolder(private val scope: CoroutineScope) {
         }
         writes.trySend(normalized)
     }
+}
+
+/**
+ * The user's Rail Data Marketplace key in force right now, for National Rail's live departures
+ * (SPEC *National Rail*): the same process-wide cache as [UserApiKeySetting], over its own stored
+ * setting. Null means no key, and then no National Rail request is made. **A credential**: sent only
+ * with the user's own National Rail requests, never logged or placed in any other off-device
+ * artifact (`docs/PRIVACY.md`).
+ */
+object RailApiKeySetting {
+    private val holder = UserApiKeyHolder(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        read = AppSettings::railApiKey,
+        write = { settings, key -> settings.setRailApiKey(key) },
+    )
+
+    /** The key applied to National Rail requests right now, or null. */
+    val current: String? get() = holder.current
+
+    /** [current] as a flow: a departures list refetches when it changes. */
+    val changes: StateFlow<String?> get() = holder.changes
+
+    /** Begins reading the stored key into [current]. Idempotent. */
+    fun warm(appSettings: AppSettings) = holder.warm(appSettings)
+
+    /** The user pasted [key] (or cleared it). Applied at once, persisted in order. */
+    fun set(key: String?) = holder.set(key)
 }

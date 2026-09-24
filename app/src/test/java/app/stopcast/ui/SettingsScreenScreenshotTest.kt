@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import app.stopcast.ui.theme.StopCastTheme
@@ -248,6 +249,33 @@ class SettingsScreenScreenshotTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("apiKeyField").assertIsNotEnabled()
+    }
+
+    /** The National Rail key has its own row, saved separately from the TfL key. */
+    @Test
+    fun railKey_savesSeparately() {
+        var rail: String? = null
+        var tfl: String? = null
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    onUserApiKeyChange = { tfl = it },
+                    onRailApiKeyChange = { rail = it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("National Rail API key").assertExists()
+        composeRule.onNodeWithTag("railKeyField").performScrollTo().performTextInput("EXAMPLE")
+        composeRule.onNodeWithTag("railKeySave").performScrollTo().performClick()
+        composeRule.runOnIdle {
+            assert(rail == "EXAMPLE")
+            assert(tfl == null)
+        }
     }
 
     /** Typing a key then tapping Save reports the pasted value; Clear is absent until one is saved. */

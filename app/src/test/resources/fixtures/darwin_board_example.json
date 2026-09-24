@@ -1,0 +1,15 @@
+{
+  "_note": "Hand-written in the shape of the Rail Data Marketplace's LDBWS GetDepartureBoard response (fields per its documentation); not yet checked against a live response. Public example station, no user data.",
+  "generatedAt": "2026-09-24T23:40:12.5263219+01:00",
+  "locationName": "London Waterloo",
+  "crs": "WAT",
+  "platformAvailable": true,
+  "trainServices": [
+    {"std": "23:45", "etd": "On time", "platform": "4", "operator": "South Western Railway", "operatorCode": "SW", "isCancelled": false, "serviceType": "train", "destination": [{"locationName": "Guildford", "crs": "GLD"}], "serviceID": "1"},
+    {"std": "23:48", "etd": "23:52", "platform": "12", "operator": "South Western Railway", "operatorCode": "SW", "isCancelled": false, "destination": [{"locationName": "Reading", "crs": "RDG"}], "serviceID": "2"},
+    {"std": "23:50", "etd": "Delayed", "operator": "South Western Railway", "operatorCode": "SW", "isCancelled": false, "destination": [{"locationName": "Woking", "crs": "WOK"}], "serviceID": "3"},
+    {"std": "23:55", "etd": "Cancelled", "operator": "South Western Railway", "operatorCode": "SW", "isCancelled": true, "destination": [{"locationName": "Windsor & Eton Riverside", "crs": "WNR"}], "serviceID": "4"},
+    {"std": "23:56", "etd": "On time", "operator": "London Overground", "operatorCode": "LO", "isCancelled": false, "destination": [{"locationName": "Somewhere", "crs": "SWH"}], "serviceID": "5"},
+    {"std": "00:10", "etd": "00:12", "platform": "1", "operator": "South Western Railway", "operatorCode": "SW", "isCancelled": false, "destination": [{"locationName": "Portsmouth Harbour", "crs": "PMH"}, {"locationName": "Southampton Central", "crs": "SOU"}], "serviceID": "6"}
+  ]
+}

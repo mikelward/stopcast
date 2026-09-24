@@ -77,6 +77,11 @@ fun SettingsScreen(
     // may not reflect what's stored — a key arriving mid-edit would otherwise reset the field
     // (Codex P2, mirroring the live-widget switch). The key's own null (keyless) is a loaded state.
     userApiKeyLoaded: Boolean = true,
+    // The user's saved Rail Data Marketplace key for National Rail times (empty when none), a report
+    // of a new value, and whether the stored one has been read: as for the TfL key above.
+    railApiKey: String = "",
+    onRailApiKeyChange: (String) -> Unit = {},
+    railApiKeyLoaded: Boolean = true,
 ) {
     BackHandler(onBack = onBack)
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -134,7 +139,24 @@ fun SettingsScreen(
                 }
                 // The optional user app_key (SPEC D7): keyless out of the box, a pasted key raises
                 // the TfL request budget. Last because it's the advanced, rarely-touched control.
-                ApiKeyRow(apiKey = userApiKey, loaded = userApiKeyLoaded, onSave = onUserApiKeyChange)
+                ApiKeyRow(
+                    apiKey = userApiKey,
+                    loaded = userApiKeyLoaded,
+                    onSave = onUserApiKeyChange,
+                    title = stringResource(R.string.settings_api_key_title),
+                    summary = stringResource(R.string.settings_api_key_summary),
+                    tagPrefix = "apiKey",
+                )
+                // The optional National Rail key (SPEC *National Rail*): without it, National Rail
+                // lines show "No data"; with it, their live times from National Rail's own feed.
+                ApiKeyRow(
+                    apiKey = railApiKey,
+                    loaded = railApiKeyLoaded,
+                    onSave = onRailApiKeyChange,
+                    title = stringResource(R.string.settings_rail_key_title),
+                    summary = stringResource(R.string.settings_rail_key_summary),
+                    tagPrefix = "railKey",
+                )
             }
         }
     }
@@ -160,6 +182,10 @@ private fun ApiKeyRow(
     apiKey: String,
     loaded: Boolean,
     onSave: (String) -> Unit,
+    title: String,
+    summary: String,
+    // Prefixes the row's test tags ("apiKeyField", "railKeyField"), one row per key.
+    tagPrefix: String,
 ) {
     // The editable text, saved across rotation (rememberSaveable) so an unsaved paste survives a
     // configuration change. NOT keyed on [apiKey]: keying it would re-seed the draft on any
@@ -185,11 +211,11 @@ private fun ApiKeyRow(
     var revealed by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(
-            text = stringResource(R.string.settings_api_key_title),
+            text = title,
             style = MaterialTheme.typography.bodyLarge,
         )
         Text(
-            text = stringResource(R.string.settings_api_key_summary),
+            text = summary,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -218,7 +244,7 @@ private fun ApiKeyRow(
                 {
                     TextButton(
                         onClick = { revealed = !revealed },
-                        modifier = Modifier.testTag("apiKeyReveal"),
+                        modifier = Modifier.testTag("${tagPrefix}Reveal"),
                     ) {
                         Text(
                             stringResource(
@@ -231,7 +257,7 @@ private fun ApiKeyRow(
             } else {
                 null
             },
-            modifier = Modifier.fillMaxWidth().testTag("apiKeyField"),
+            modifier = Modifier.fillMaxWidth().testTag("${tagPrefix}Field"),
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -249,7 +275,7 @@ private fun ApiKeyRow(
                         revealed = false // nothing to reveal; re-arm masking for a later paste
                         onSave("")
                     },
-                    modifier = Modifier.testTag("apiKeyClear"),
+                    modifier = Modifier.testTag("${tagPrefix}Clear"),
                 ) { Text(stringResource(R.string.settings_api_key_clear)) }
                 Spacer(modifier = Modifier.width(8.dp))
             }
@@ -269,7 +295,7 @@ private fun ApiKeyRow(
                 // Enabled only once loaded and the field's normalized value differs from the saved
                 // (already-normalized) value, so Save is a no-op only when there's a real change.
                 enabled = loaded && draft.trim() != apiKey,
-                modifier = Modifier.testTag("apiKeySave"),
+                modifier = Modifier.testTag("${tagPrefix}Save"),
             ) { Text(stringResource(R.string.settings_api_key_save)) }
         }
     }

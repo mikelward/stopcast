@@ -8,17 +8,28 @@ truth those answers are built from.
 
 ## What leaves the device
 
-StopCast is a **client-only** app. It makes network calls to just two places:
-**Transport for London's Unified API**, the calls that *are* the product, and — on a release
-build only — **Google Play**, to ask whether an app update is available (detailed below; it
-carries nothing about you). Everything stopcast sends that says anything about **you** goes
-only to TfL, and only ever what a request needs to answer your question about departures: the
+StopCast is a **client-only** app. It makes network calls to just two places, plus a third
+only if you add a National Rail key: **Transport for London's Unified API**, the calls that
+*are* the product; — on a release build only — **Google Play**, to ask whether an app update is
+available (detailed below; it carries nothing about you); and, with a National Rail key,
+**National Rail's live departure boards** (the Rail Data Marketplace, detailed below).
+Everything stopcast sends that says anything about **you** goes only to TfL, or with a National
+Rail key also to National Rail, and only ever what a request needs to answer your question
+about departures: the
 details of what you're looking up (your location for "near me
 now" — **precise** if you grant precise and a precise fix is available, otherwise approximate
 (if you grant only approximate, or if no precise fix can be obtained) — or the
 stop or line you're after) and, if you've set an optional TfL API key
 (`app_key`), that key as your own credential, sent with your own TfL calls and nowhere
 else. Location is used **only on demand**, never in the background.
+
+**National Rail times (optional).** If you paste a National Rail API key (from the Rail Data
+Marketplace) in Settings, stopcast also asks **National Rail's live departure boards** for the
+departures at a railway station you're looking at. That request carries only the station's
+three-letter National Rail code (e.g. `WAT` for Waterloo) and your key, never your location. Your
+key is your own credential, sent only with those requests, never logged. Without a key, no
+request goes there. The station codes themselves come bundled with the app, built from NaPTAN,
+the Department for Transport's public stop list.
 
 Nothing else leaves the device *to stopcast*: no analytics, no crash reporter, no
 third-party tracker, and no server of stopcast's own.
@@ -31,7 +42,7 @@ travel — so it adds no new Play Data Safety category beyond Google Play's exis
 the app's distributor. It is free, runs release-only (a debug build isn't a Play app), and
 silently does nothing if Play is unavailable.
 
-Two channels other than a TfL request can carry **user data** off the device, and both are
+Two channels other than a TfL or National Rail request can carry **user data** off the device, and both are
 under your control rather than stopcast's. The first is **your own Android backup and
 device-to-device transfer**, if you have it enabled: like any app's data, your saved stopcast
 data (your settings and its last-good departures snapshot) rides it, so a phone swap keeps your
@@ -42,7 +53,8 @@ location and a screenshot of the screen you sent it from** — but only after a 
 that says so, and then to your clipboard and the app you pick (the clipboard copy happens as
 soon as you confirm — detailed below).
 So the guarantee is precise rather than absolute: **the only user data stopcast itself sends
-off the device goes in its TfL requests** (the Play update check carries none); Android's backup
+off the device goes in its TfL requests, and its National Rail requests if you've added a key**
+(the Play update check carries none); Android's backup
 carries your saved data under your control, and a bug report carries what you consent to share.
 
 **Find a station** sends the name you type to TfL's stop search, once you pause typing, and
@@ -101,7 +113,7 @@ what the app saw, so the log carries **coarse state and reasons**, and nothing m
 The log **never** carries:
 
 - a **raw coordinate** or a full address,
-- the TfL **`app_key`**,
+- the TfL **`app_key`** or your National Rail key,
 - any contact, name, or other personal identifier.
 
 These diagnostics are written to Android's **Logcat** (visible to a developer with the
