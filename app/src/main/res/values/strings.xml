@@ -198,6 +198,8 @@
     <string name="journey_not_checked_bus">Couldn\'t check buses</string>
     <string name="journey_route_failed">Couldn\'t load the route</string>
     <!-- Beneath a journey card's trains when some route or train couldn't be checked. -->
+    <!-- A journey's far end whose closure check failed: it may be closed. %1$s is the stop's name. -->
+    <string name="journey_destination_unchecked">Couldn\'t check %1$s for closures</string>
     <string name="journey_incomplete">Some routes couldn\'t be checked</string>
     <string name="action_unstar_journey">Unstar journey</string>
     <string name="route_stop_journey_starred">Starred journey</string>

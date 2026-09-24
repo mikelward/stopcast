@@ -320,6 +320,121 @@ class MainViewModel(
         if (dropped || linesAdded || fetchJob?.isActive == true || stops.any { it.id !in shown }) refresh()
     }
 
+    // The far ends of the starred journeys as shown (SPEC *Journeys*): only their stop-level
+    // disruptions (a closure, a moved stop) are checked, not their departures, so a journey card can
+    // say its destination is closed. Checked with every refresh, reusing [disruptionCache].
+    private var journeyDestinations: List<StopRef> = emptyList()
+    private var destinationJob: Job? = null
+    private val _journeyDestinationStops = MutableStateFlow<List<StopArrivals>>(emptyList())
+
+    /** Each journey destination's last successful disruption check, as a departure-less stop. */
+    val journeyDestinationStops: StateFlow<List<StopArrivals>> = _journeyDestinationStops.asStateFlow()
+
+    // The destinations whose check failed with no earlier success to fall back on: unknown, which the
+    // card says rather than pass them off as open (SPEC principle 2).
+    private val _journeyDestinationsUnknown = MutableStateFlow<Set<String>>(emptySet())
+    val journeyDestinationsUnknown: StateFlow<Set<String>> = _journeyDestinationsUnknown.asStateFlow()
+
+    /** The journeys' far ends to check for a closure; a change checks them at once. */
+    fun setJourneyDestinations(stops: List<StopRef>) {
+        if (stops.toSet() == journeyDestinations.toSet()) return
+        journeyDestinations = stops
+        val ids = stops.mapTo(HashSet()) { it.id }
+        _journeyDestinationStops.value = _journeyDestinationStops.value.filter { it.stopId in ids }
+        _journeyDestinationsUnknown.value = _journeyDestinationsUnknown.value.filterTo(HashSet()) { it in ids }
+        checkJourneyDestinations()
+    }
+
+    // Each destination closure request in flight. Run in [viewModelScope], not the check's own job, so
+    // a check restarted by a changed destination set (routes arriving one by one) waits on the same
+    // request rather than cancel it and ask again. A success is cached as it lands; each leaves this
+    // map when done, so a failure is asked again next time.
+    private val destinationRequests = HashMap<String, Deferred<Result<List<StopDisruption>>>>()
+
+    /** Starts a closure request for each of [ids] (bus poles batched, as in [fetchBatch]). */
+    private fun requestDestinationDisruptions(ids: List<String>) {
+        val (poles, others) = ids.partition(StopDisruptionBatch::isPole)
+        val requests = poles.chunked(StopDisruptionBatch.MAX_PER_REQUEST).flatMap { batchIds ->
+            val batch = viewModelScope.async {
+                runCatchingTfl { withContext(io) { client.poleDisruptions(batchIds) } }
+                    .onSuccess { found -> val at = clock(); batchIds.forEach { disruptionCache[it] = at to found[it].orEmpty() } }
+                    // Logged here, not by the check: a request can outlive the check that asked for it.
+                    .onFailure { e -> batchIds.forEach { warn("destination disruption fetch failed for stop $it: ${reason(e)}") } }
+            }
+            batchIds.map { id -> id to viewModelScope.async { batch.await().map { it[id].orEmpty() } } }
+        } + others.map { id ->
+            id to viewModelScope.async {
+                runCatchingTfl { withContext(io) { client.stopDisruptions(id) } }
+                    .onSuccess { disruptionCache[id] = clock() to it }
+                    .onFailure { e -> warn("destination disruption fetch failed for stop $id: ${reason(e)}") }
+            }
+        }
+        for ((id, request) in requests) {
+            destinationRequests[id] = request
+            request.invokeOnCompletion { if (destinationRequests[id] === request) destinationRequests.remove(id) }
+        }
+    }
+
+    /**
+     * Checks each journey destination's stop-level disruption: from [disruptionCache] within
+     * [disruptionReuse], else asked for (bus poles batched, as in [fetchBatch]). A failed check keeps
+     * the destination's last known result and is logged; the card makes no claim either way.
+     */
+    private fun checkJourneyDestinations() {
+        destinationJob?.cancel()
+        val stops = journeyDestinations
+        if (stops.isEmpty()) return
+        val fetch = fetchJob
+        destinationJob = viewModelScope.launch {
+            // A destination the fetch in flight also covers (another journey's origin, a nearby stop)
+            // is checked once: after it, from the cache it filled.
+            // One that fetch just failed on isn't asked again at once: it counts as failed here too.
+            val joinedFetchAt = if (fetch?.isActive == true) {
+                fetch.join()
+                lastFetchAt
+            } else {
+                null
+            }
+            val now = clock()
+            fun cached(id: String) = disruptionCache[id]?.takeIf { (at, _) -> isWithin(at, now, disruptionReuse) }?.second
+            fun failedInFetch(id: String) = joinedFetchAt != null && disruptionFailedAt[id] == joinedFetchAt
+            val toAsk = stops.map { it.id }.distinct().filter { cached(it) == null && !failedInFetch(it) }
+            requestDestinationDisruptions(toAsk.filter { it !in destinationRequests })
+            // Taken before any await: a request that finishes leaves the map.
+            val requests = toAsk.associateWith { destinationRequests.getValue(it) }
+            val fetched: Map<String, Result<List<StopDisruption>>> = requests.mapValues { (_, request) -> request.await() }
+            val prior = _journeyDestinationStops.value.associateBy { it.stopId }
+            val failed = HashSet<String>()
+            val checked = ArrayList<StopArrivals>()
+            _journeyDestinationStops.value = stops.distinctBy { it.id }.mapNotNull { stop ->
+                if (cached(stop.id) == null && failedInFetch(stop.id)) {
+                    // The fetch logged it already.
+                    failed += stop.id
+                    return@mapNotNull prior[stop.id]
+                }
+                val disruptions = cached(stop.id) ?: fetched[stop.id]?.fold(
+                    onSuccess = { found -> found.also { disruptionCache[stop.id] = now to it } },
+                    onFailure = {
+                        // Logged by the request.
+                        failed += stop.id
+                        return@mapNotNull prior[stop.id]
+                    },
+                ).orEmpty()
+                // Its own stop as the place: a check covers only this stop, so only this stop's
+                // dismissal can be reconciled (below) — an area-wide one could stay hidden forever. At
+                // worst the same notice on the near-me list is dismissed separately; never hidden.
+                StopArrivals(stop.id, stop.name, emptyList(), now, disruptions = disruptions)
+                    .also { checked += it }
+            }
+            // Every failed check is unknown now, even with an earlier result still shown: that result
+            // may be out of date, so the card says it couldn't check rather than pass it off as current.
+            _journeyDestinationsUnknown.value = failed
+            // A dismissed destination closure that has since cleared is forgotten, so the same notice
+            // recurring later shows again; a place whose check failed keeps its dismissals.
+            reconcileDismissals(stops.distinctBy { it.id }.map { it.copy(clusterId = "", hubId = "") }, checked, emptyMap(), emptySet(), failed)
+        }
+    }
+
     // The "More" buttons to offer: the modes (or the generic bucket) that still have an unrevealed
     // `more` cluster (SPEC *Finding stops → Near me now*). Empty when nothing is left to page.
     private val _moreState = MutableStateFlow(NearbySelection.revealableBuckets(initialMore, emptySet()))
@@ -392,6 +507,12 @@ class MainViewModel(
     // moving signal — is still checked every refresh. In-memory only; written and read on the main
     // thread (viewModelScope), like [hubInfoCache].
     private val disruptionCache = mutableMapOf<String, Pair<Instant, List<StopDisruption>>>()
+
+    // When each stop's closure lookup last failed, stamped with its fetch's `now`, and the `now` of
+    // the latest [fetchBatch]: a journey destination check that waited on that fetch doesn't ask
+    // again for a stop it just failed on (one attempt per refresh, not two, under rate limiting).
+    private val disruptionFailedAt = mutableMapOf<String, Instant>()
+    private var lastFetchAt: Instant? = null
 
     // Each line's last DETERMINED status (good or disrupted) and when it came back, reused for
     // [lineStatusReuse] so a refresh a minute after the last one needn't re-ask about the same lines.
@@ -546,6 +667,7 @@ class MainViewModel(
         // "No departures" claim stay honest (SPEC D4); only the line status is re-checked for it.
         reuse: Set<String> = emptySet(),
     ): FetchBatch {
+        lastFetchAt = now
         val startedAt = elapsedMillis()
         val waitedBefore = rateWaitMillis()
         val merged = mutableListOf<StopArrivals>()
@@ -604,7 +726,10 @@ class MainViewModel(
             // budget); a failed batch fails each of its poles, as a failed single lookup would.
             val poleBatches = HashMap<String, Deferred<Result<Map<String, List<StopDisruption>>>>>()
             stops
-                .filter { !reused(it) && cachedDisruption(it) == null && StopDisruptionBatch.isPole(it.id) }
+                .filter {
+                    !reused(it) && cachedDisruption(it) == null && it.id !in destinationRequests &&
+                        StopDisruptionBatch.isPole(it.id)
+                }
                 .map { it.id }
                 .distinct()
                 .chunked(StopDisruptionBatch.MAX_PER_REQUEST)
@@ -612,6 +737,7 @@ class MainViewModel(
                     val batch = async {
                         runCatchingTfl { withContext(io) { client.poleDisruptions(ids) } }
                             .onSuccess { found -> ids.forEach { id -> disruptionCache[id] = now to found[id].orEmpty() } }
+                            .onFailure { ids.forEach { id -> disruptionFailedAt[id] = now } }
                     }
                     ids.forEach { poleBatches[it] = batch }
                     poleBatchIds += ids
@@ -620,6 +746,8 @@ class MainViewModel(
             val disruptions: List<Deferred<Result<List<StopDisruption>>>?> = stops.mapIndexed { i, stop ->
                 val cached = cachedDisruption(stop)
                 val batch = poleBatches[stop.id]
+                // A journey destination's check already asking about this stop: wait on it, not ask twice.
+                val inFlight = destinationRequests[stop.id]
                 when {
                     reused(stop) -> null
                     // Ahead of the cache check: a batch that already finished has written this
@@ -629,9 +757,11 @@ class MainViewModel(
                         disruptionFromCache[i] = true
                         CompletableDeferred(Result.success(cached.second))
                     }
+                    inFlight != null -> async { inFlight.await().onFailure { disruptionFailedAt[stop.id] = now } }
                     else -> async {
                         runCatchingTfl { withContext(io) { client.stopDisruptions(stop.id) } }
                             .onSuccess { disruptionCache[stop.id] = now to it }
+                            .onFailure { disruptionFailedAt[stop.id] = now }
                     }
                 }
             }
@@ -1062,6 +1192,8 @@ class MainViewModel(
         // Clear the in-flight flag only when this job settles — a job superseded by a
         // newer refresh doesn't clear the newer one's indicator.
         job.invokeOnCompletion { if (fetchJob === job) _refreshing.value = false }
+        // The journeys' far ends too, after this fetch (which caches any it covers).
+        checkJourneyDestinations()
     }
 
     /**
@@ -1198,6 +1330,8 @@ class MainViewModel(
         }
         fetchJob = job
         job.invokeOnCompletion { if (fetchJob === job) _refreshing.value = false }
+        // A revealed stop may be a journey's far end: its closure, just cached, reaches the card too.
+        checkJourneyDestinations()
     }
 
     /**

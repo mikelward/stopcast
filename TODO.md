@@ -1331,6 +1331,10 @@ Builds on Phase 1's minimal line-status marking.
       (`SPEC.md` *Disruptions*) — a screen-reader-only label or an optional tap doesn't satisfy
       sighted at-a-glance use, so icon-only is a **card** option; on the widget the compact
       icon accompanies the visible summary rather than replacing it.
+- [x] **Journey alerts: a closure at the destination** (maintainer, 2026-09-24). The journey card
+      (lines' status and boarding closures already on it) also shows its far end's closure or move.
+      The rest of the item below is on hold: the maintainer's use case is the journey, in the
+      direction from the nearer end.
 - [ ] **Service alerts on favorite routes, at the very top** (maintainer, 2026-09-23). Show the
       line-status alerts affecting the user's starred routes (starred rows, and starred journeys
       once they land) at the very top of the near-me list, even when that line isn't at a nearby

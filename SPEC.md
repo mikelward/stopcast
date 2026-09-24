@@ -606,6 +606,15 @@ and line, every one of its departures on the card — is left out of the list be
 trains don't reach the far end) stays, as do status-only rows, closures, and a stop's own platform
 view.
 
+**Alerts for the journey shown.** A journey card already carries its lines' status (a delay marks
+the train, a suspension shows even with none predicted) and its boarding stops' closures; it also
+shows a closure or move at its **far end**, so a trip can't end somewhere shut (maintainer,
+2026-09-24). Only the destination's stop-level disruption is checked, not its departures: with each
+refresh, reusing the same few-minute cache as every stop's closure check (bus poles batched), so a
+destination costs a request only every few minutes. A failed check keeps the last known notice and
+claims nothing new. Alerts on lines with no starred journey (a separate favorite-lines list) stay a
+`TODO.md` idea.
+
 **Direct only, for now.** A journey that needs a change is routing — the eventual goal is starring
 home and work, which needs it, and it stays a non-goal until then. The tap-a-stop entry point has no
 cue of its own, so a starrable stop list opens with a one-line tip ("Tap a stop to star the journey

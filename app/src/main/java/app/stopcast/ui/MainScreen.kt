@@ -133,6 +133,7 @@ import app.stopcast.domain.StopDistance
 import app.stopcast.domain.StopGroup
 import app.stopcast.domain.StopGrouping
 import app.stopcast.domain.StopLocation
+import app.stopcast.domain.StopArrivals
 import app.stopcast.domain.JourneySegment
 import app.stopcast.domain.JourneyTrains
 import app.stopcast.domain.WidgetJourneys
@@ -185,6 +186,12 @@ fun MainScreen(
     onToggleJourney: ((StarredJourney) -> Unit)? = null,
     // Dismisses the route page's tip on starring a journey; null (dismissed, or not read yet) hides it.
     onDismissJourneyTip: (() -> Unit)? = null,
+    // The journeys' far ends as shown, reported so their closures are checked; and those checks, as
+    // departure-less stops carrying any stop-level disruption (SPEC *Journeys*).
+    onJourneyDestinations: (List<StopRef>) -> Unit = {},
+    journeyDestinationStops: List<StopArrivals> = emptyList(),
+    // The far ends whose closure check failed with nothing known ([JourneyCard.destinationUnchecked]).
+    journeyDestinationsUnknown: Set<String> = emptySet(),
     // Shows the other direction of a journey card (a tap on its header).
     onFlipJourney: (StarredJourney) -> Unit = {},
     // True while a journey-star write has failed and not yet been surfaced: the same acknowledged
@@ -407,6 +414,11 @@ fun MainScreen(
             }
         }.distinctBy { it.id }.filter { sibling -> journeyOrigins.none { it.id == sibling.id } }
     }
+    // Each journey's far end this way round: its own stop, and the stops the route places it at (a
+    // bus's other poles), whose closure the card shows.
+    val journeyDestinationIds = remember(journeys, journeySegments) {
+        journeys.associate { j -> j.key to (setOf(j.to.stopId) + journeySegments[j.key]?.destinationIds.orEmpty()) }
+    }
     val reportJourneyOrigins by rememberUpdatedState(onJourneyOrigins)
     LaunchedEffect(journeyOrigins, siblingOrigins) { reportJourneyOrigins(journeyOrigins + siblingOrigins) }
     // The journey cards: the trains or buses from each journey's origin that call at its far end, on
@@ -414,7 +426,8 @@ fun MainScreen(
     // principle 1).
     val journeyCards = remember(
         loaded?.stops, loaded?.lineStatuses, loaded?.unavailableStopIds, now, journeys, journeySegments,
-        journeySequences, dismissed, journeyAreas, journeyPoles, journeySiblings,
+        journeySequences, dismissed, journeyAreas, journeyPoles, journeySiblings, journeyDestinationStops,
+        journeyDestinationIds, journeyDestinationsUnknown,
     ) {
         val ld = loaded
         // Dismissals apply here as on the list, so an alert dismissed anywhere is gone from the card.
@@ -428,7 +441,8 @@ fun MainScreen(
             val origin = ld?.stops?.firstOrNull { it.stopId == originId }
             // Every boarding stop's closure notice: the origin's, and each neighboring pole's.
             val boardingStops = listOf(originId) + journeySiblings[journey.key]?.poles.orEmpty().map { it.id }
-            val closures = boardingStops.mapNotNull { id -> across.firstOrNull { it.stopId == id && it.stopDisruption != null } }
+            // The far-end stops the card's departures reach (another line may use another pole).
+            var reached = emptySet<String>()
             // The stop being fetched: known before the route is in for a station (see journeyOrigins).
             val fetchedId = segment?.originId ?: journey.from.stopId.takeUnless { journey.bus }
             val state = when {
@@ -455,6 +469,7 @@ fun MainScreen(
                         unresolved = parts.any { it.unresolved },
                         routeFailed = parts.any { it.routeFailed },
                     )
+                    reached = parts.flatMapTo(HashSet()) { it.reachedIds }
                     // A neighboring pole whose fetch failed, whose lookup did, or whose line's route
                     // did, may have had a bus.
                     val polesFailed = journey.key in journeyPoles && journeyPoles[journey.key] == null ||
@@ -503,9 +518,27 @@ fun MainScreen(
                 } else {
                     emptyMap()
                 }
-            JourneyCard(journey, state, closures, checked, boardingIds)
+            // And the far end's (closed or moved), from its own check, for every stop the card's departures
+            // reach there: a journey can't end as shown. One card per notice, however many poles carry it.
+            val destinationIds = journeyDestinationIds[journey.key].orEmpty() + reached
+            val destinationClosures = DepartureRows.withoutDismissed(
+                DepartureRows.across(journeyDestinationStops.filter { it.stopId in destinationIds }, now),
+                dismissed,
+            ).filter { it.stopDisruption != null }.groupBy { it.stopDisruption }.values.toList()
+            val closures = boardingStops.mapNotNull { id ->
+                across.firstOrNull { it.stopId == id && it.stopDisruption != null }?.let(::listOf)
+            } + destinationClosures
+            // A destination whose check failed with nothing known: the card says so, not "open".
+            val destinationUnchecked = destinationIds.any { it in journeyDestinationsUnknown }
+            JourneyCard(journey, state, closures, checked, boardingIds, destinationIds, destinationUnchecked)
         }
     }
+    // The far ends to check for a closure.
+    val journeyDestinations = remember(journeyCards) {
+        journeyCards.flatMap { card -> card.destinationIds.map { id -> StopRef(id, card.journey.to.name) } }.distinctBy { it.id }
+    }
+    val reportJourneyDestinations by rememberUpdatedState(onJourneyDestinations)
+    LaunchedEffect(journeyDestinations) { reportJourneyDestinations(journeyDestinations) }
     // What each placed journey's card found for the widget (it can't load routes itself): the
     // origin's departures that call at the far end, by line, destination and branch, and — from a
     // complete check — every departure it judged. The ViewModel merges these into what it pins.
@@ -1410,9 +1443,16 @@ private fun DepartureList(
             }
             // The origin's closure notice rides the journey card: a farther origin isn't on the near-me
             // list, so without it the trains below would read as catchable at a closed station.
-            card.closures.forEach { closure ->
+            card.closures.forEach { rows ->
+                val closure = rows.first()
                 item(key = "journey-closure|${card.journey.key}|${closure.stopId}") {
-                    StopClosureCard(closure, onDismiss = { onDismissAlert(closure) })
+                    // Dismissed on every pole that carries it, so the next pole's copy doesn't take its place.
+                    StopClosureCard(closure, onDismiss = { rows.forEach(onDismissAlert) })
+                }
+            }
+            if (card.destinationUnchecked) {
+                item(key = "journey-destination-unchecked|${card.journey.key}") {
+                    JourneyNote(stringResource(R.string.journey_destination_unchecked, card.journey.to.name))
                 }
             }
             when (val state = card.state) {
@@ -1732,12 +1772,17 @@ private fun StopClosureCard(row: DepartureRow, onDismiss: () -> Unit) {
 internal data class JourneyCard(
     val journey: StarredJourney,
     val state: JourneyCardState,
-    // Each boarding stop's (undismissed) closure notice, shown on the card whatever the trains' state.
-    val closures: List<DepartureRow> = emptyList(),
+    // The (undismissed) closure notices of its boarding stops and far end, shown whatever the trains'
+    // state: each one notice, as the rows of every pole that carries it (dismissed together).
+    val closures: List<List<DepartureRow>> = emptyList(),
     // Every departure a complete check judged (empty otherwise), for the widget, by boarding stop.
     val checked: Map<String, Set<JourneyCall>> = emptyMap(),
     // The stops it boards from: its origin, then any neighboring poles (empty until placed).
     val boardingIds: List<String> = emptyList(),
+    // Its far-end stops whose closure is checked: its own, the route's, and any a departure reaches.
+    val destinationIds: Set<String> = emptySet(),
+    // Some far-end stop's closure check failed with nothing known, so it may be closed.
+    val destinationUnchecked: Boolean = false,
 )
 
 /** What a journey card can say about its trains. */
