@@ -62,6 +62,9 @@ class NearbyStopsViewModel(
     // The transport modes the user has hidden: a stop serving only those isn't picked, so it costs
     // no request (SPEC *Finding stops → Hiding a mode*). Read at each resolve.
     private val hiddenModes: suspend () -> Set<String> = { emptySet() },
+    // A searched station's own stops, when this set stands at that station (From…): they are where
+    // the rider is taken to be, so they're 0 m away rather than their distance from its middle.
+    private val anchorStopIds: Set<String> = emptySet(),
 ) : ViewModel() {
     sealed interface State {
         /** The location permission isn't held yet — the screen asks for it. */
@@ -353,23 +356,54 @@ class NearbyStopsViewModel(
         // A hidden mode's stops aren't picked, so they cost no request — unless that would leave
         // nothing at all: then the full set is picked and the list, filtered by mode, says what's
         // hidden rather than claiming nothing runs nearby (SPEC principle 2).
-        val shown = HiddenModes.stops(found, hiddenModes())
+        // A searched station's own stops stand where the rider is taken to be (From…), so they're
+        // 0 m away for picking as well as for showing: placed at the fix before either.
+        val placed = if (anchorStopIds.isEmpty()) {
+            found
+        } else {
+            found.map { if (it.id in anchorStopIds) it.copy(latitude = fix.latitude, longitude = fix.longitude) else it }
+        }
+        val shown = HiddenModes.stops(placed, hiddenModes())
         val result = NearbySelection.selectClusters(
             shown, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters,
         ).takeIf { it.eager.isNotEmpty() }
-            ?: NearbySelection.selectClusters(found, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters)
+            ?: NearbySelection.selectClusters(placed, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters)
         // Eager empty means no stop with a route in range (each present mode contributes its
         // nearest; a route-less stop is never eager and has nothing to show) — nothing nearby runs.
         if (result.eager.isEmpty()) return State.Empty(location = fix)
+        // The anchors were moved only for picking: the set keeps their real positions (a stop's
+        // map opens where it stands), and their distance is set to 0 below.
+        val real = if (anchorStopIds.isEmpty()) emptyMap() else found.associateBy { it.id }
+        fun restored(clusters: List<NearbySelection.NearbyCluster>) =
+            if (real.isEmpty()) {
+                clusters
+            } else {
+                clusters.map { c ->
+                    // Only the position goes back: the picked copy's lines stay (a hidden mode's are off it).
+                    c.copy(
+                        stops = c.stops.map { picked ->
+                            real[picked.id]?.let { picked.copy(latitude = it.latitude, longitude = it.longitude) } ?: picked
+                        },
+                    )
+                }
+            }
+        val eager = restored(result.eager)
+        val more = restored(result.more)
         // Distance per stop, over BOTH tiers (in memory only), so a revealed stop is collapsed and
         // ordered like an eager one — the departures list shows a line once, from its nearest stop
         // (SPEC *Finding stops → Near me now*). Never logged or persisted (SPEC *Privacy*).
-        val distances = (result.eager + result.more)
+        val distances = (eager + more)
             .flatMap { it.stops }
-            .associate { it.id to NearestStops.distanceMeters(fix.latitude, fix.longitude, it.latitude, it.longitude) }
+            .associate {
+                it.id to if (it.id in anchorStopIds) {
+                    0.0
+                } else {
+                    NearestStops.distanceMeters(fix.latitude, fix.longitude, it.latitude, it.longitude)
+                }
+            }
         return State.Ready(
-            eager = result.eager,
-            more = result.more,
+            eager = eager,
+            more = more,
             distanceMeters = distances,
             // The exact fix, retained in memory so the consent-gated bug report files the
             // coordinate and these distances from one and the same fix (SPEC *Privacy*).

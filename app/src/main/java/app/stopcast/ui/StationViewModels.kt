@@ -3,6 +3,8 @@ package app.stopcast.ui
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.stopcast.domain.Coordinates
+import app.stopcast.domain.FixedLocation
 import app.stopcast.domain.StationFinder
 import app.stopcast.domain.StationIndex
 import app.stopcast.domain.StationMatch
@@ -208,7 +210,8 @@ class StationStopsViewModel(
 ) : ViewModel() {
     sealed interface State {
         data object Loading : State
-        data class Ready(val stops: List<StopRef>) : State
+        /** The station's stops, and its [center] (null when TfL placed none) — where From… stands. */
+        data class Ready(val stops: List<StopRef>, val center: Coordinates? = null) : State
         /** TfL knows the station but nothing under it carries departures stopcast shows. */
         data object NoStops : State
         data class Failed(val kind: DeparturesUiState.Error.Kind) : State
@@ -229,7 +232,7 @@ class StationStopsViewModel(
         load = viewModelScope.launch {
             _state.value = try {
                 val stops = withContext(io) { finder.stationStops(stationId) }
-                if (stops.isEmpty()) State.NoStops else State.Ready(stops.map(StopLocation::toStopRef))
+                if (stops.isEmpty()) State.NoStops else State.Ready(stops.map(StopLocation::toStopRef), FixedLocation.centerOf(stops))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TflException) {

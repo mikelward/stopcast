@@ -86,6 +86,60 @@ class NearbyStopsViewModelTest {
     )
 
     @Test
+    fun `a station's own stops are where the rider stands, 0 m away`() = runTest {
+        val model = NearbyStopsViewModel(
+            location = FakeLocation(origin),
+            finder = FakeFinder { listOf(stop("own", 150.0, "tube"), stop("b1", 80.0, "bus")) },
+            io = dispatcher,
+            anchorStopIds = setOf("own"),
+        )
+        model.locate()
+        advanceUntilIdle()
+        val ready = model.state.value as NearbyStopsViewModel.State.Ready
+        assertEquals(0.0, ready.distanceMeters.getValue("own"), 0.0)
+        assertEquals(80.0, ready.distanceMeters.getValue("b1"), 1.0)
+    }
+
+    @Test
+    fun `a station's own stop keeps its real place but not a hidden mode's lines`() = runTest {
+        val mixed = stop("own", 300.0, "tube").let { it.copy(lines = it.lines + LineRef("bus-own", "own", "bus")) }
+        val model = NearbyStopsViewModel(
+            location = FakeLocation(origin),
+            finder = FakeFinder { listOf(mixed) },
+            io = dispatcher,
+            hiddenModes = { setOf("bus") },
+            anchorStopIds = setOf("own"),
+        )
+        model.locate()
+        advanceUntilIdle()
+        val own = (model.state.value as NearbyStopsViewModel.State.Ready).eager.single().stops.single()
+        assertEquals(listOf("tube"), own.lines.map { it.mode })
+        assertEquals(300.0 / 111_320.0, own.latitude, 1e-9)
+    }
+
+    @Test
+    fun `a station's own stops are picked first, ahead of nearer ones around it`() = runTest {
+        // Without the anchor, two nearer tube stations would take the tube's places and push the
+        // station's own (700 m from its middle) behind "More".
+        val model = NearbyStopsViewModel(
+            location = FakeLocation(origin),
+            finder = FakeFinder {
+                listOf(stop("t1", 100.0, "tube"), stop("t2", 200.0, "tube"), stop("own", 700.0, "tube"))
+            },
+            io = dispatcher,
+            anchorStopIds = setOf("own"),
+        )
+        model.locate()
+        advanceUntilIdle()
+        val ready = model.state.value as NearbyStopsViewModel.State.Ready
+        assertEquals("own", ready.eagerStops.first().id)
+        // Picked as if at the station's middle, but its real position is kept (its map opens there).
+        val own = (ready.eager + ready.more).flatMap { it.stops }.single { it.id == "own" }
+        assertEquals(700.0 / 111_320.0, own.latitude, 1e-9)
+        assertEquals(0.0, ready.distanceMeters.getValue("own"), 0.0)
+    }
+
+    @Test
     fun `a hidden mode's stops aren't picked, and showing it again brings them back`() = runTest {
         val stops = listOf(stop("b1", 50.0, "bus"), stop("t1", 300.0, "tube"))
         var hidden = setOf("bus")

@@ -197,11 +197,14 @@ The app finds stops two ways:
   screen's button, since it needs no location) searches
   TfL's stops by name as the user types (a short pause after the last letter, and at least
   two letters, so a name costs one request rather than one per keystroke). Each match shows
-  its name and modes; picking one opens that station's live departures: the hub's stations,
-  the station itself, or a bus stop area's poles, grouped under the usual place and platform
-  headers (a platform or place tap drills in as on the main list). The page is titled by the
-  station, back returns to the search with its matches kept, and it refreshes while shown like
-  the main list. It is a look, not a pin: the widget keeps showing the near-me set, and the
+  its name and modes; picking one opens **the near-me list as if you stood at that station**
+  (maintainer, 2026-09-24): the station's own stops (distance 0) and the other stops around it,
+  chosen, ordered and folded exactly as near me is, with distances from the station, and the same
+  *More* and hidden-mode behavior. The station's position (the middle of its stops) stands in for
+  the device's, so the page shares the near-me list's code rather than keeping a second copy of it;
+  a station TfL places nowhere falls back to its own stops alone. The page is titled by the
+  station, back returns to the search with its matches kept, and it refreshes while shown (a
+  refresh re-picks from the same place) like the main list. It is a look, not a pin: the widget keeps showing the near-me set, and the
   station is only remembered in the search's own *Recent* list (below). Stars and dismissed
   alerts are shared with the main list.
 
@@ -229,8 +232,7 @@ The app finds stops two ways:
   "CX" (Charing Cross) need no alias table. Within a tier an interchange leads, then the
   shorter name. A station whose interchange also matches is folded into it, since the
   interchange's page holds it. If TfL's search fails but the list matched, the list's matches
-  stand, with a line saying bus stops weren't searched. Setting the near-me origin to a station
-  instead of the current location is a follow-up (`TODO.md`).
+  stand, with a line saying bus stops weren't searched.
 - **From… To…** (maintainer, 2026-09-24) — **To…** keeps only the departures that **call at a
   chosen station directly**: the trains or buses whose path, on their own line's route, reaches it
   (or any station in its interchange). It is offered in two places. On the **near-me list's
@@ -240,8 +242,9 @@ The app finds stops two ways:
   0.2 mi** (the pole across the road), leaving out hidden modes and stops with no routes, and titled "To ‹place›"; back returns to the list. The starting
   stops follow the rider: a refresh or a return to the app re-locates first, as the list does, and
   works them out again from where the rider now is. Its rows read like the list's: a line once,
-  from its nearest stop, nearest first, with distances. On a **searched station's page** (reached with the overflow's *From…*), it starts from that
-  station, titled "From ➔ To", and back returns to the whole station. Either way it is a look, not
+  from its nearest stop, nearest first, with distances. On a **searched station's page** (reached with the overflow's *From…*), it works the same way
+  from the station's position — its own stops, the default stops around it and any within 0.2 mi —
+  titled "From ➔ To", and back returns to the station's page. Either way it is a look, not
   a pin: nothing is saved and the destination isn't added to the search's *Recent*. A departure
   whose route is still loading, failed to load, or can't be followed is left out and the page says
   so ("Checking routes…", "Some routes couldn't be checked") rather than pass a short list off as
