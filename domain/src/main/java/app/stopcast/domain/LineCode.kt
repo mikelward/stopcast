@@ -55,7 +55,9 @@ fun lineCode(lineName: String, mode: String): String {
  * it is unpinned and single-capital, so it falls back to ELI / LON.
  */
 private fun railOperatorCode(operator: String): String? {
-    railOperatorExceptions[normalizeOperator(operator)]?.let { return it }
+    val key = normalizeOperator(operator)
+    railOperatorExceptions[key]?.let { return it }
+    railOperatorPrefixes.firstOrNull { (prefix, _) -> key.startsWith(prefix) }?.let { return it.second }
     val initials = operator.filter { it.isUpperCase() }
     return if (initials.length > 1) initials else null
 }
@@ -72,6 +74,8 @@ private fun railOperatorCode(operator: String): String? {
  * - the Express services take the "…X" TOC code (Gatwick GX, Heathrow HX) — nicer than the plain
  *   initials GE/HE;
  * - CrossCountry takes its TOC code XC rather than the heuristic's "CC", to stay clear of c2c.
+ * - London Northwestern Railway is in [railOperatorPrefixes] instead: matched by prefix, since
+ *   the capitals read differently depending on how the feed spells the name.
  */
 private val railOperatorExceptions: Map<String, String> = mapOf(
     "southern" to "SN",
@@ -80,6 +84,17 @@ private val railOperatorExceptions: Map<String, String> = mapOf(
     "gatwickexpress" to "GX",
     "heathrowexpress" to "HX",
     "crosscountry" to "XC",
+)
+
+/**
+ * Hand-pinned codes matched by the start of the normalized operator name, for an operator whose
+ * name the rail feed spells more than one way. London Northwestern Railway showed up as a
+ * truncated "LNR…" pill, so its spelling there yields a code of five or more letters from the
+ * capitals heuristic. Matching on "londonnorthwestern" takes every spelling to LNWR — the name
+ * riders know from the old London & North Western Railway — rather than betting on one.
+ */
+private val railOperatorPrefixes: List<Pair<String, String>> = listOf(
+    "londonnorthwestern" to "LNWR",
 )
 
 /** An operator name reduced to lowercase letters and digits, so "South Western Railway",

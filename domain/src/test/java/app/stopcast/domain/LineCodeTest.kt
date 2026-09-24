@@ -73,4 +73,12 @@ class LineCodeTest {
         // One capital, not pinned ⇒ the ordinary rule, so a future operator still shows something.
         assertEquals("MER", lineCode("Merseyrail", "national-rail"))
     }
+
+    @Test
+    fun `London Northwestern is LNWR however the feed spells it`() {
+        assertEquals("LNWR", lineCode("London Northwestern Railway", "national-rail"))
+        assertEquals("LNWR", lineCode("London North Western Railway", "national-rail"))
+        assertEquals("LNWR", lineCode("London NorthWestern Railway", "national-rail"))
+        assertEquals("LNWR", lineCode("London Northwestern Railway (LNR)", "national-rail"))
+    }
 }

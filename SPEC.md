@@ -568,7 +568,9 @@ Rail is the exception** to first-three-letters — it collides ("Southern" and "
 both → SOU) — so a rail operator shows its initials (the capitals in a multi-word name: East
 Midlands Railway → EMR, Greater Anglia → GA), which is also the initialism a rider sees on the
 train and beats the cryptic legacy TOC codes; the few single-word operators that would still
-collide are pinned by hand to their official TOC code (Southern SN, Southeastern SE). **Every
+collide are pinned by hand to their official TOC code (Southern SN, Southeastern SE), and
+London Northwestern Railway is pinned to LNWR, since the rail feed's spelling of it yields a code
+too long for the pill. **Every
 pill shares one fixed width**, sized to the widest code shown (a four-character bus route),
 so the codes form a tidy left column the eye runs straight down a card list, rather than a
 ragged edge that steps in and out as each code's length changes; a shorter code centers in
