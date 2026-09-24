@@ -528,7 +528,9 @@ on a route page, tapping a stop on the stop list (after the boarding stop) stars
 boarding stop to it — both directions — and marks the stop with a star; tapping it again unstars it.
 A journey is a **segment, not a line**: the same two stops starred from another line's page (the 43
 or the 134 between two shared stops) are the same journey. Starred journeys lead the near-me list as
-cards, each headed by the direction shown ("Highgate ➔ King's Cross St. Pancras") with the trains or
+cards, each headed by the direction shown ("Highgate ➔ King's Cross St. Pancras ★", the gold star
+marking a starred journey so its heading reads apart from a bus place's "Place ➔ Destination" header,
+maintainer 2026-09-24) with the trains or
 buses **on any line** from the origin that **call at the far end** (from each line's route; one whose
 path can't be resolved is left out, not guessed). The origin is whichever end is **nearer the rider's
 fix**, from TfL's published stop positions; a tap on the heading shows the other direction.

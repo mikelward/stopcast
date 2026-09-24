@@ -1494,20 +1494,34 @@ private fun JourneyNote(text: String, onRetry: (() -> Unit)? = null) {
 private fun JourneyHeader(journey: StarredJourney, firstOnScreen: Boolean, onFlip: () -> Unit) {
     val flipLabel = stringResource(R.string.action_flip_journey)
     val spoken = stringResource(R.string.journey_title_spoken, journey.from.name, journey.to.name)
-    Text(
-        text = withArrowIcons(stringResource(R.string.journey_title, journey.from.name, journey.to.name)),
-        inlineContent = arrowInlineContent(MaterialTheme.colorScheme.onSurface),
-        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.onSurface,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClickLabel = flipLabel, onClick = onFlip)
             // Read "Highgate to King's Cross", not the arrow's name.
-            .semantics { contentDescription = spoken }
+            .semantics(mergeDescendants = true) { contentDescription = spoken }
             .padding(start = 4.dp, end = 4.dp, top = if (firstOnScreen) 0.dp else 16.dp),
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = withArrowIcons(stringResource(R.string.journey_title, journey.from.name, journey.to.name)),
+            inlineContent = arrowInlineContent(MaterialTheme.colorScheme.onSurface),
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        // The gold star marks a starred journey, telling its heading apart from a bus place's
+        // "Place ➔ Destination" header (maintainer, 2026-09-24). Decorative: the card is a journey
+        // by construction, so it adds nothing to the spoken label.
+        Icon(
+            Icons.Filled.Star,
+            contentDescription = null,
+            tint = LocalStarredBorderColor.current,
+            modifier = Modifier.padding(start = 4.dp).size(16.dp),
+        )
+    }
 }
 
 @Composable
