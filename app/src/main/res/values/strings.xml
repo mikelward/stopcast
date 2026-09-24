@@ -131,6 +131,15 @@
 
     <!-- Settings screen. -->
     <string name="menu_settings">Settings</string>
+    <!-- Overflow item that opens the station search (SPEC *Finding stops*). -->
+    <string name="menu_find_station">Find a station</string>
+    <!-- Placeholder in the station search field. -->
+    <string name="station_search_hint">Station or stop name</string>
+    <!-- Shown under the empty search field. -->
+    <string name="station_search_prompt">Type a name to search</string>
+    <string name="station_search_no_matches">No matches</string>
+    <!-- A searched station that has no stops stopcast shows departures for. -->
+    <string name="station_no_departures">No departures here</string>
     <string name="settings_title">Settings</string>
     <string name="settings_live_widget_refresh_title">Refresh widget every minute</string>
     <string name="settings_live_widget_refresh_summary">Refreshes the home-screen widget about once a minute in the background. Uses more battery and data.</string>

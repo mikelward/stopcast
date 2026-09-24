@@ -88,6 +88,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -254,6 +255,13 @@ fun MainScreen(
     // a top banner over the list says so and offers "Try again" (which runs [onRefresh], a re-locate).
     // Null hides it. Default null so an unwired build/test renders without it.
     locationBanner: LocationBanner? = null,
+    // Open the station search (SPEC *Finding stops*); null hides the overflow's "Find a station" item.
+    onFindStation: (() -> Unit)? = null,
+    // Non-null when this screen shows one searched station rather than the near-me list (SPEC
+    // *Finding stops*): the app bar is titled by it with a back arrow ([onCloseStation]) in place of
+    // the app's mark, and the overflow menu is left out — it belongs to the main list.
+    stationTitle: String? = null,
+    onCloseStation: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Overflow-menu and About-dialog visibility. Saved so an open dialog survives rotation.
@@ -658,6 +666,9 @@ fun MainScreen(
     val platformRows = platformView?.first?.takeUnless { platformGone }
     val shownRows = platformRows ?: rows
     BackHandler(enabled = platformRows != null) { closeView() }
+    // A searched station's page closes back to the search; a drill-down inside it steps out first
+    // (this one is off while a drill-down is open, so the handler above takes that back).
+    BackHandler(enabled = stationTitle != null && platformRows == null, onBack = onCloseStation)
 
     // The starred journey whose own view is open (its key), from a tap on its heading, or null. It
     // resolves against the current cards each recomposition, so it follows a swap and its trains stay
@@ -793,7 +804,12 @@ fun MainScreen(
                             overflow = TextOverflow.StartEllipsis,
                         )
                     } else {
-                        Text(stringResource(R.string.app_name))
+                        if (stationTitle != null) {
+                            // The station is the page's subject, so a long name shows as much as fits.
+                            Text(stationTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        } else {
+                            AppTitle()
+                        }
                     }
                 },
                 navigationIcon = {
@@ -808,6 +824,13 @@ fun MainScreen(
                         }
                     } else if (platformRows != null) {
                         IconButton(onClick = { closeView() }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back),
+                            )
+                        }
+                    } else if (stationTitle != null) {
+                        IconButton(onClick = onCloseStation) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = stringResource(R.string.action_back),
@@ -828,7 +851,7 @@ fun MainScreen(
                     // Button and menu wrapped together so the dropdown anchors to the overflow
                     // button and opens from it; a bare DropdownMenu sibling anchors to the row
                     // slot instead and drops from the wrong place.
-                    Box {
+                    if (stationTitle == null) Box {
                         IconButton(onClick = { menuExpanded = true }) {
                             Box {
                                 Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.menu_more))
@@ -865,6 +888,15 @@ fun MainScreen(
                                         onClick = {
                                             menuExpanded = false
                                             onOpenAppListing()
+                                        },
+                                    )
+                                }
+                                if (onFindStation != null) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.menu_find_station)) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onFindStation()
                                         },
                                     )
                                 }
@@ -2758,6 +2790,25 @@ private fun Centered(modifier: Modifier, content: @Composable () -> Unit) {
     ) { content() }
 }
 
+/**
+ * The app's name in the top bar, drawn only when it fits whole. The bar's actions (the freshness
+ * stamp, refresh, the menu) come first, and at a large text size they can leave the title a sliver:
+ * wrapped it stacked one letter per line, and ellipsized it was a bare "…". The mark beside it already
+ * says which app this is, so the name is left out rather than cut; a screen reader still hears it.
+ */
+@Composable
+private fun AppTitle() {
+    var fits by remember { mutableStateOf(true) }
+    Text(
+        stringResource(R.string.app_name),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Clip,
+        onTextLayout = { fits = !it.hasVisualOverflow },
+        modifier = Modifier.drawWithContent { if (fits) drawContent() },
+    )
+}
+
 @Composable
 private fun RefreshButton(onRefresh: () -> Unit, modifier: Modifier = Modifier) {
     Button(onClick = onRefresh, modifier = modifier) {
@@ -2765,7 +2816,7 @@ private fun RefreshButton(onRefresh: () -> Unit, modifier: Modifier = Modifier) 
     }
 }
 
-private fun errorMessage(kind: DeparturesUiState.Error.Kind): Int = when (kind) {
+internal fun errorMessage(kind: DeparturesUiState.Error.Kind): Int = when (kind) {
     DeparturesUiState.Error.Kind.OFFLINE -> R.string.error_offline
     DeparturesUiState.Error.Kind.RATE_LIMITED -> R.string.error_rate_limited
     DeparturesUiState.Error.Kind.UNREACHABLE -> R.string.error_unreachable

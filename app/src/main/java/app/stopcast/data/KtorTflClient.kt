@@ -5,6 +5,8 @@ import app.stopcast.domain.HubInfo
 import app.stopcast.domain.LineSequence
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.RouteSequenceSource
+import app.stopcast.domain.StationFinder
+import app.stopcast.domain.StationMatch
 import app.stopcast.domain.StopAreaSource
 import app.stopcast.domain.StopDisruption
 import app.stopcast.domain.StopFinder
@@ -63,7 +65,7 @@ class KtorTflClient(
     // Sink for recoverable response oddities (an unparseable disruption date), coarse facts only —
     // a stop id, never a coordinate or key (SPEC *Privacy*). No-op by default (tests, widget).
     private val warn: (String) -> Unit = {},
-) : TflClient, StopFinder, RouteSequenceSource, StopAreaSource {
+) : TflClient, StopFinder, StationFinder, RouteSequenceSource, StopAreaSource {
     override suspend fun arrivals(stopId: String): List<Departure> =
         tflRequest { key ->
             httpClient.get("$baseUrl/StopPoint/$stopId/Arrivals") {
@@ -89,6 +91,30 @@ class KtorTflClient(
                 parameter("returnLines", true)
                 applyAppKey(key)
             }.body<TflStopPointsResponseDto>().stopPoints.mapNotNull { it.toStopLocationOrNull() }
+        }
+
+    override suspend fun searchStations(query: String): List<StationMatch> =
+        tflRequest { key ->
+            httpClient.get("$baseUrl/StopPoint/Search") {
+                parameter("query", query)
+                parameter("maxResults", SEARCH_MAX_RESULTS)
+                // Interchanges ("HUBKGX") are left out unless asked for; a hub is the match whose
+                // stops span every station there, which is what a rider searching a name wants.
+                parameter("includeHubs", true)
+                applyAppKey(key)
+            }.body<TflSearchResponseDto>().matches
+                .mapNotNull { it.toStationMatchOrNull() }
+                .distinctBy { it.id }
+        }
+
+    override suspend fun stationStops(id: String): List<StopLocation> =
+        tflRequest { key ->
+            httpClient.get("$baseUrl/StopPoint/$id") {
+                applyAppKey(key)
+            }.body<TflStopPointDto>()
+                .departureStops(StopFinder.DEFAULT_NEARBY_STOP_TYPES)
+                .mapNotNull { it.toStopLocationOrNull() }
+                .distinctBy { it.id }
         }
 
     override suspend fun hubInfo(hubId: String): HubInfo =
@@ -233,6 +259,9 @@ class KtorTflClient(
 
     companion object {
         const val DEFAULT_BASE_URL: String = "https://api.tfl.gov.uk"
+
+        /** How many name-search matches to ask for — a screenful; a longer query narrows it. */
+        const val SEARCH_MAX_RESULTS: Int = 20
 
         /** The production HTTP client: OkHttp engine + lenient JSON, failing on non-2xx. */
         fun defaultHttpClient(): HttpClient =

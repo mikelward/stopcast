@@ -56,6 +56,23 @@ class LocationGateScreenshotTest {
     }
 
     @Test
+    fun `a denied gate still offers Find a station`() {
+        var opened = false
+        capture("location-denied-find-station.png") {
+            LocationGate(
+                NearbyStopsViewModel.State.PermissionRequired,
+                onAllow = {},
+                onRetry = {},
+                onOpenSettings = {},
+                permanentlyDenied = true,
+                onFindStation = { opened = true },
+            )
+        }
+        composeRule.onNodeWithText("Find a station").performClick()
+        org.junit.Assert.assertTrue(opened)
+    }
+
+    @Test
     fun `permission permanently denied offers settings`() {
         capture("location-denied.png") {
             LocationGate(

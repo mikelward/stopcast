@@ -45,6 +45,10 @@ So the guarantee is precise rather than absolute: **the only user data stopcast 
 off the device goes in its TfL requests** (the Play update check carries none); Android's backup
 carries your saved data under your control, and a bug report carries what you consent to share.
 
+**Find a station** sends the name you type to TfL's stop search, once you pause typing, and
+then the chosen station's id to look up its stops and departures. The name isn't saved,
+logged or sent anywhere else, and the station you look at isn't remembered once you leave it.
+
 **Starred journeys** (two stops you travel between) are kept on the device with your other
 settings and stars, so they ride your own Android backup like the rest (above); they are never
 logged or sent anywhere. For the widget, the departures at a journey's nearer stop, and which of

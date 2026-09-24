@@ -786,4 +786,98 @@ class KtorTflClientTest {
         }
         return KtorTflClient(httpClient = http, baseUrl = "https://tfl.example")
     }
+
+    // A trimmed /StopPoint/Search response: public station names only. The second match repeats the
+    // first's id (TfL can list one hub under two spellings) and the third has no id.
+    private val searchJson =
+        """
+        {
+          "query": "oxford",
+          "total": 3,
+          "matches": [
+            { "id": "940GZZLUOXC", "name": "Oxford Circus Underground Station", "modes": ["tube", "bus"], "zone": "1" },
+            { "id": "940GZZLUOXC", "name": "Oxford Circus", "modes": ["tube"] },
+            { "id": "", "name": "Nowhere" }
+          ]
+        }
+        """.trimIndent()
+
+    @Test
+    fun `station search sends the typed query and maps cleaned, deduped matches`() = runTest {
+        var captured: HttpRequestData? = null
+        val matches = client(searchJson, capture = { captured = it }).searchStations("oxford ci")
+        val url = captured!!.url
+        assertEquals("/StopPoint/Search", url.encodedPath)
+        assertEquals("oxford ci", url.parameters["query"])
+        assertEquals("interchanges are asked for", "true", url.parameters["includeHubs"])
+        assertEquals(listOf("Oxford Circus"), matches.map { it.name })
+        assertEquals(listOf("tube", "bus"), matches.single().modes)
+    }
+
+    // A trimmed /StopPoint/{hubId} tree: an interchange holding a tube station (whose platform child
+    // must not become a stop of its own), a bus stop area with one line-serving pole and one
+    // line-less pole, and an entrance. Public names and ids only.
+    private val stationTreeJson =
+        """
+        {
+          "id": "HUBEXA",
+          "commonName": "Example Interchange",
+          "stopType": "TransportInterchange",
+          "children": [
+            {
+              "id": "940GZZLUEXA",
+              "commonName": "Example Underground Station",
+              "stopType": "NaptanMetroStation",
+              "stationNaptan": "940GZZLUEXA",
+              "hubNaptanCode": "HUBEXA",
+              "modes": ["tube"],
+              "lines": [{ "id": "victoria", "name": "Victoria" }],
+              "lineModeGroups": [{ "modeName": "tube", "lineIdentifier": ["victoria"] }],
+              "children": [
+                { "id": "9400ZZLUEXA1", "commonName": "Example Underground Station", "stopType": "NaptanMetroPlatform",
+                  "lines": [{ "id": "victoria", "name": "Victoria" }] }
+              ]
+            },
+            {
+              "id": "490G00000001",
+              "commonName": "Example Station",
+              "stopType": "NaptanOnstreetBusCoachStopCluster",
+              "children": [
+                { "id": "490000000001A", "commonName": "Example Station", "stopType": "NaptanPublicBusCoachTram",
+                  "stationNaptan": "490G00000001", "stopLetter": "A", "modes": ["bus"],
+                  "lines": [{ "id": "73", "name": "73" }] },
+                { "id": "490000000001B", "commonName": "Example Station", "stopType": "NaptanPublicBusCoachTram",
+                  "stationNaptan": "490G00000001", "modes": ["bus"], "lines": [] }
+              ]
+            },
+            { "id": "940GZZLUEXA-ENT", "commonName": "Example Entrance", "stopType": "NaptanMetroEntrance" }
+          ]
+        }
+        """.trimIndent()
+
+    @Test
+    fun `a station lookup returns the tree's departure-bearing stops, not platforms or entrances`() = runTest {
+        var captured: HttpRequestData? = null
+        val stops = client(stationTreeJson, capture = { captured = it }).stationStops("HUBEXA")
+        assertEquals("/StopPoint/HUBEXA", captured!!.url.encodedPath)
+        assertEquals(listOf("940GZZLUEXA", "490000000001A"), stops.map { it.id })
+        assertEquals(listOf("tube"), stops.first().lines.map { it.mode })
+        assertEquals("A", stops.last().stopLetter)
+    }
+
+    @Test
+    fun `a searched stop that is itself a pole returns itself`() = runTest {
+        val pole = """
+            { "id": "490000000001A", "commonName": "Example Station", "stopType": "NaptanPublicBusCoachTram",
+              "modes": ["bus"], "lines": [{ "id": "73", "name": "73" }] }
+        """.trimIndent()
+        assertEquals(listOf("490000000001A"), client(pole).stationStops("490000000001A").map { it.id })
+    }
+
+    @Test
+    fun `a failed station lookup throws a domain error`() {
+        assertThrows(TflException::class.java) {
+            runTest { client("{}", status = HttpStatusCode.InternalServerError).stationStops("HUBEXA") }
+        }
+    }
 }
