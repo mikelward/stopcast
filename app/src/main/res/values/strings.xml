@@ -151,7 +151,11 @@
 
     <!-- Settings screen. -->
     <string name="menu_settings">Settings</string>
-    <!-- Overflow item that opens the station search (SPEC *Finding stops*). -->
+    <!-- Overflow item that opens the station search (SPEC *Finding stops*): the "from" end of a
+         trip, with "To…" to follow. -->
+    <string name="menu_from">From…</string>
+    <!-- Location-screen button that opens the station search; spelled out, since "From…" alone
+         reads as nothing under a location message. -->
     <string name="menu_find_station">Find a station</string>
     <!-- Placeholder in the station search field. -->
     <string name="station_search_hint">Station or stop name</string>

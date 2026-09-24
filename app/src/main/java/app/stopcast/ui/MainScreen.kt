@@ -303,7 +303,7 @@ fun MainScreen(
     // A change of hidden modes failed to save: a snackbar says so, then [onHiddenModesWriteFailureShown].
     hiddenModesWriteFailed: Boolean = false,
     onHiddenModesWriteFailureShown: () -> Unit = {},
-    // Open the station search (SPEC *Finding stops*); null hides the overflow's "Find a station" item.
+    // Open the station search (SPEC *Finding stops*); null hides the overflow's "From…" item.
     onFindStation: (() -> Unit)? = null,
     // Non-null when this screen shows one searched station rather than the near-me list (SPEC
     // *Finding stops*): the app bar is titled by it with a back arrow ([onCloseStation]) in place of
@@ -1027,7 +1027,7 @@ fun MainScreen(
                                 }
                                 if (onFindStation != null) {
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.menu_find_station)) },
+                                        text = { Text(stringResource(R.string.menu_from)) },
                                         onClick = {
                                             menuExpanded = false
                                             onFindStation()
