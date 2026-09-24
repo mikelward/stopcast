@@ -13,6 +13,16 @@
     <string name="tile_updated_ago">%d min ago</string>
     <!-- Every stop on the tile is past the staleness threshold; countdowns show "?". -->
     <string name="tile_out_of_date">Out of date</string>
+    <!-- Asks the phone for fresh departures. -->
+    <string name="watch_refresh">Refresh</string>
+    <!-- A refresh request is waiting for the phone's answer. -->
+    <string name="watch_refreshing">Refreshing…</string>
+    <!-- The phone couldn't refresh because TfL is rate-limiting it. -->
+    <string name="watch_refresh_rate_limited">Couldn\'t refresh: rate-limited</string>
+    <!-- The phone couldn't reach TfL to refresh. -->
+    <string name="watch_refresh_unreachable">Couldn\'t refresh: TfL unreachable</string>
+    <!-- No phone answered the refresh request. -->
+    <string name="watch_phone_out_of_reach">Phone out of reach</string>
     <!-- A stop with no departures to show. -->
     <string name="tile_no_departures">No departures</string>
     <!-- A stop with no departures to show whose last refresh failed, so it may have some. -->

@@ -18,7 +18,9 @@ import androidx.wear.protolayout.LayoutElementBuilders.Row
 import androidx.wear.protolayout.LayoutElementBuilders.Spacer
 import androidx.wear.protolayout.LayoutElementBuilders.Text
 import androidx.wear.protolayout.ModifiersBuilders.Background
+import androidx.wear.protolayout.ActionBuilders
 import androidx.wear.protolayout.ModifiersBuilders.Border
+import androidx.wear.protolayout.ModifiersBuilders.Clickable
 import androidx.wear.protolayout.ModifiersBuilders.Corner
 import androidx.wear.protolayout.ModifiersBuilders.Modifiers
 import androidx.wear.protolayout.ModifiersBuilders.Padding
@@ -50,21 +52,27 @@ class StopCastTileService : TileService() {
         CallbackToFutureAdapter.getFuture { completer ->
             worker.execute {
                 try {
+                    // A request this watch sent before its process was killed is still owed an answer.
+                    WatchRefresh.resume(this)
+                    // The Refresh line was tapped: ask the phone (debounced), then render with its state.
+                    if (requestParams.currentState.lastClickableId == TileLayout.REFRESH_ID) WatchRefresh.request(this)
                     val store = WatchEnvelopeStore.from(this)
                     store.load()
                     val envelope = (store.state.value as? WatchReceived.Received)?.envelope
                     // The screen bounds how many lines fit; a request that doesn't say gets the default.
                     val device = requestParams.deviceConfiguration
                     val screen = TileScreen(device.screenHeightDp, device.fontScale).takeIf { it.heightDp > 0 }
-                    val schedule = TileTimeline.schedule(envelope, Instant.now(), RouteTopologyStore.load(this), screen)
+                    val now = Instant.now()
+                    val schedule = TileTimeline.schedule(envelope, now, RouteTopologyStore.load(this), screen)
+                    val notices = RefreshPolicy.notices(WatchRefresh.state.value, now)
                     val timeline = TimelineBuilders.Timeline.Builder()
-                    for (entry in schedule.entries) {
+                    for (entry in TileTimeline.withNotice(schedule.entries, notices)) {
                         val validity = TimelineBuilders.TimeInterval.Builder().setStartMillis(entry.start.toEpochMilli())
                         entry.end?.let { validity.setEndMillis(it.toEpochMilli()) }
                         timeline.addTimelineEntry(
                             TimelineBuilders.TimelineEntry.Builder()
                                 .setValidity(validity.build())
-                                .setLayout(LayoutElementBuilders.Layout.Builder().setRoot(TileLayout.root(this, entry.frame)).build())
+                                .setLayout(LayoutElementBuilders.Layout.Builder().setRoot(TileLayout.root(this, entry.frame, entry.notice)).build())
                                 .build(),
                         )
                     }
@@ -140,14 +148,31 @@ internal object TileLayout {
     private val warning = Color(0xFFF2C14E).toArgb()
     private val neutralFill = Color(0xFF303030).toArgb()
 
-    fun root(context: Context, frame: TileFrame): LayoutElement {
+    /** The clickable id of the Refresh line. */
+    const val REFRESH_ID = "refresh"
+
+    fun root(context: Context, frame: TileFrame, notice: RefreshNotice.Kind? = null): LayoutElement {
         val column = Column.Builder().setWidth(expand())
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
         when (frame) {
-            TileFrame.NeverSynced -> column.addContent(message(context.getString(R.string.watch_open_phone)))
-            TileFrame.NoStops -> column.addContent(message(context.getString(R.string.watch_add_stops)))
-            TileFrame.NoneLoaded ->
+            TileFrame.NeverSynced -> {
+                column.addContent(message(context.getString(R.string.watch_open_phone)))
+                // The phone may have stops this watch missed: a refresh asks it to resend them.
+                column.addContent(Spacer.Builder().setHeight(dp(4f)).build())
+                column.addContent(refresh(context, notice))
+            }
+            TileFrame.NoStops -> {
+                column.addContent(message(context.getString(R.string.watch_add_stops)))
+                // Stops added on the phone may not have arrived: a refresh asks it to resend them.
+                column.addContent(Spacer.Builder().setHeight(dp(4f)).build())
+                column.addContent(refresh(context, notice))
+            }
+            TileFrame.NoneLoaded -> {
                 column.addContent(text(context.getString(R.string.watch_partly_out_of_date), 14f, warning, maxLines = 3))
+                // Nothing loaded is exactly when a refresh is wanted.
+                column.addContent(Spacer.Builder().setHeight(dp(4f)).build())
+                column.addContent(refresh(context, notice))
+            }
             is TileFrame.Rows -> {
                 val stamp = when {
                     frame.ageMinutes < 1 -> context.getString(R.string.tile_updated_now)
@@ -176,6 +201,8 @@ internal object TileLayout {
                         },
                     )
                 }
+                column.addContent(Spacer.Builder().setHeight(dp(4f)).build())
+                column.addContent(refresh(context, notice))
             }
         }
         return Box.Builder()
@@ -183,6 +210,37 @@ internal object TileLayout {
             .setHeight(expand())
             .setModifiers(Modifiers.Builder().setPadding(Padding.Builder().setAll(dp(24f)).build()).build())
             .addContent(column.build())
+            .build()
+    }
+
+    /**
+     * The Refresh line: tapping it asks the phone for a refresh (the tile re-renders with
+     * [REFRESH_ID] as its last click). While a refresh is pending, or after one failed, it says so
+     * instead, and stays tappable.
+     */
+    private fun refresh(context: Context, notice: RefreshNotice.Kind?): LayoutElement {
+        val label = refreshLabel(notice)
+        val color = when (notice) {
+            null -> white
+            RefreshNotice.Kind.REFRESHING -> gray
+            else -> warning
+        }
+        return Box.Builder()
+            .setModifiers(
+                Modifiers.Builder()
+                    .setClickable(
+                        Clickable.Builder()
+                            .setId(REFRESH_ID)
+                            .setOnClick(ActionBuilders.LoadAction.Builder().build())
+                            .build(),
+                    )
+                    .setBackground(
+                        Background.Builder().setColor(argb(neutralFill)).setCorner(Corner.Builder().setRadius(dp(12f)).build()).build(),
+                    )
+                    .setPadding(Padding.Builder().setTop(dp(4f)).setBottom(dp(4f)).setStart(dp(12f)).setEnd(dp(12f)).build())
+                    .build(),
+            )
+            .addContent(text(context.getString(label), 12f, color))
             .build()
     }
 

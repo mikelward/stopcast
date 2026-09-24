@@ -21,13 +21,21 @@ class WatchHomeScreenshotTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun capture(name: String, home: WatchHome) {
-        compose.setContent { WatchHomeScreen(home) }
+    private fun capture(name: String, home: WatchHome, notice: RefreshNotice.Kind? = null, refresh: Boolean = false) {
+        compose.setContent { WatchHomeScreen(home, notice, onRefresh = if (refresh) ({}) else null) }
         compose.onRoot().captureRoboImage(filePath = "../app/src/test/snapshots/images/wear_$name.png")
     }
 
     @Test
     fun neverSynced() = capture("never_synced", WatchHome.NeverSynced)
+
+    @Test
+    fun neverSyncedOutOfReach() = capture(
+        "never_synced_out_of_reach",
+        WatchHome.NeverSynced,
+        notice = RefreshNotice.Kind.PHONE_OUT_OF_REACH,
+        refresh = true,
+    )
 
     @Test
     fun noStops() = capture("no_stops", WatchHome.NoStops)
@@ -36,5 +44,13 @@ class WatchHomeScreenshotTest {
     fun stops() = capture(
         "stops",
         WatchHome.Stops(listOf("Oxford Circus", "King's Cross St. Pancras", "Euston"), omitted = 2, partial = true),
+    )
+
+    @Test
+    fun refreshFailed() = capture(
+        "refresh_failed",
+        WatchHome.Stops(listOf("Oxford Circus"), omitted = 0, partial = false),
+        notice = RefreshNotice.Kind.RATE_LIMITED,
+        refresh = true,
     )
 }

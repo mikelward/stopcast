@@ -76,7 +76,7 @@ sealed interface TileFrame {
 data class TileScreen(val heightDp: Int, val fontScale: Float)
 
 /** A frame and the interval it's valid for; a null [end] means "until the next update". */
-data class TileEntry(val start: Instant, val end: Instant?, val frame: TileFrame)
+data class TileEntry(val start: Instant, val end: Instant?, val frame: TileFrame, val notice: RefreshNotice.Kind? = null)
 
 /**
  * The tile's entries, and when to ask for a fresh set ([refreshAt], null when the entries already
@@ -96,17 +96,21 @@ object TileTimeline {
     const val MAX_LINES = 5
 
     /**
-     * How many lines fit under the stamp and [notes] status lines (out of date, stops left out) on
-     * [screen], never more than [MAX_LINES] nor fewer than one. The heights follow the tile's layout
-     * (24dp padding top and bottom, 12sp status text, a pill row of 11sp text in 4dp padding beside
-     * 14sp text, 4dp between lines), scaled by the font scale. Without a [screen], five less the notes.
+     * How many lines fit under the stamp and [notes] status lines (out of date, stops left out),
+     * and above the Refresh chip when [refreshLine], on [screen], never more than [MAX_LINES] nor
+     * fewer than one. The heights follow the tile's layout (24dp padding top and bottom, 12sp status
+     * text, a pill row of 11sp text in 4dp padding beside 14sp text, 4dp between lines, the chip's
+     * 12sp text in 4dp padding after a 4dp spacer), scaled by the font scale. Without a [screen],
+     * five less the notes and the chip.
      */
-    fun lineBudget(screen: TileScreen?, notes: Int): Int {
-        screen ?: return (MAX_LINES - notes).coerceAtLeast(1)
+    fun lineBudget(screen: TileScreen?, notes: Int, refreshLine: Boolean = false): Int {
+        val chip = if (refreshLine) 1 else 0
+        screen ?: return (MAX_LINES - notes - chip).coerceAtLeast(1)
         val scale = screen.fontScale.coerceAtLeast(1f)
         val statusDp = 12 * LINE_HEIGHT * scale
         val lineDp = maxOf(11 * LINE_HEIGHT * scale + 2 * 4 + 2, 14 * LINE_HEIGHT * scale) + 4
-        val room = screen.heightDp - 2 * 24 - statusDp * (1 + notes)
+        val chipDp = if (refreshLine) statusDp + 2 * 4 + 4 else 0f
+        val room = screen.heightDp - 2 * 24 - statusDp * (1 + notes) - chipDp
         return (room / lineDp).toInt().coerceIn(1, MAX_LINES)
     }
 
@@ -118,6 +122,9 @@ object TileTimeline {
 
     /** The most entries a Tiles timeline takes. */
     const val MAX_ENTRIES = 100
+
+    /** The most entries [schedule] makes: two fewer, kept for the splits [withNotice] may add. */
+    const val MAX_SCHEDULED = MAX_ENTRIES - 2
 
     /**
      * The frame at [now]. [withhold] withholds every countdown, for the tail of a timeline the
@@ -143,9 +150,10 @@ object TileTimeline {
         val allStale = stops.all { staleStop.getValue(it.stopId) }
         val partial = envelope.missingStopIds.isNotEmpty() || stops.any { !it.arrivalsFresh } ||
             (!allStale && staleStop.values.any { it })
-        // The status lines drawn above the list take room from it, as the widget's note does.
+        // The status lines drawn above the list take room from it, as the widget's note does, and
+        // so does the Refresh chip at the foot.
         val notes = (if (allStale || partial) 1 else 0) + (if (envelope.omittedStops > 0) 1 else 0)
-        val budget = lineBudget(screen, notes)
+        val budget = lineBudget(screen, notes, refreshLine = true)
         // Fresh rows ahead of stale ones (as the widget orders its cap), then favorites first.
         val ordered = DepartureRows.across(stops, now, splitPlatforms = false)
             .sortedBy { if (staleStop[it.stopId] == true) 1 else 0 }
@@ -196,7 +204,7 @@ object TileTimeline {
      * to the moment every stop is stale, then one open-ended stale entry. A setup frame is a single
      * open-ended entry: no stop has a boundary.
      *
-     * Past [MAX_ENTRIES], the timeline stops at the first instant it can't fit: from there it holds
+     * Past [MAX_SCHEDULED], the timeline stops at the first instant it can't fit: from there it holds
      * one open-ended frame with every countdown withheld, and [TileSchedule.refreshAt] asks for a
      * fresh set at that instant. Every break is generated only between [now] and the all-stale
      * horizon, so a stop fetched long ago costs nothing.
@@ -257,7 +265,7 @@ object TileTimeline {
             if (next == current) continue
             // Room is kept for the horizon's two entries; when a change doesn't fit (or the scan's
             // bound is reached), the timeline stops here with every countdown withheld.
-            if (next == null || closed.size + 1 > MAX_ENTRIES - 2) {
+            if (next == null || closed.size + 1 > MAX_SCHEDULED - 2) {
                 closed += TileEntry(start, at, current)
                 val tail = TileEntry(at, null, frame(envelope, at, topology, withhold = true, screen = screen))
                 return TileSchedule(closed + tail, refreshAt = at)
@@ -269,6 +277,25 @@ object TileTimeline {
         if (horizon <= now) return TileSchedule(listOf(TileEntry(now, null, current)), refreshAt = null)
         closed += TileEntry(start, horizon, current)
         return TileSchedule(closed + TileEntry(horizon, null, frame(envelope, horizon, topology, screen = screen)), refreshAt = null)
+    }
+
+    /**
+     * [entries] with [notices] shown in turn, each until its own `until` (as
+     * [RefreshPolicy.notices] lists them), splitting the entries they change in. So a refresh's
+     * "Refreshing…" turns to out of reach at its timeout, and a failure shows for a while over the
+     * last snapshot and then goes, all without a re-render. It adds at most two entries, which
+     * [MAX_SCHEDULED] leaves room for.
+     */
+    fun withNotice(entries: List<TileEntry>, notices: List<RefreshNotice>): List<TileEntry> {
+        if (notices.isEmpty()) return entries
+        fun kindAt(t: Instant) = notices.firstOrNull { t < it.until }?.kind
+        return entries.flatMap { entry ->
+            val end = entry.end
+            val cuts = notices.map { it.until }.filter { it > entry.start && (end == null || it < end) }.distinct().sorted()
+            (listOf(entry.start) + cuts).zip(cuts + listOf(end)) { start, until ->
+                entry.copy(start = start, end = until, notice = kindAt(start))
+            }
+        }
     }
 
     /** A bound on the instants examined for a change, so a pathological snapshot can't stall a render. */

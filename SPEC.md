@@ -1136,6 +1136,26 @@ widget shows the last *nearby* set the app fetched — "the stops near where you
 opened the app". Phase 2 replaces that with the watched stops; a live-refresh cadence for
 the widget when the app isn't driving it is deferred (D5).
 
+### On the watch
+
+The Wear OS companion (`dev-docs/wear-os.md`) shows the widget's snapshot as the phone last sent
+it, on a tile and in a small app. It never calls TfL itself, and like the widget it renders only
+what is stored, stamped with its age and marked stale rather than passed off as live (D4).
+
+**Refresh from the watch**: tapping the tile's Refresh line, or opening
+the watch app, asks the phone for one refresh of the widget's stops. The phone does the same
+location-free fetch as a widget refresh and sends the result the usual way. Why and how:
+
+- **Every request gets an answer** (principle 2). The phone answers with what happened:
+  refreshed, partly refreshed, rate-limited, TfL unreachable, no stops, or recent enough to skip.
+  A failure shows briefly on the watch over the last snapshot, which keeps its own age stamp. No
+  answer in time reads "Phone out of reach", never a blank screen or old times shown as live.
+- **Debounced on both ends** (battery and the shared rate budget): the watch asks at most every
+  30 s, and the phone reuses a recent fetch. Refreshes from several watches and the widget's own
+  cycle take turns, so overlapping asks cost one fetch, even while TfL is failing.
+- **Robust to the watch being killed**: an unanswered request and a failure's notice outlive the
+  watch app's process, and the tile shows the switch to "Phone out of reach" on time without it.
+
 ## Privacy
 
 StopCast handles location and the set of stops the user watches — which together reveal

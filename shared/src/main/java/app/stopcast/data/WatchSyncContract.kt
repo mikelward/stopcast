@@ -17,6 +17,16 @@ object WatchSyncContract {
      *  them to the watch in order. */
     const val GENERATION_KEY = "generation"
 
+    /** The message path a watch sends to ask the phone for one refresh of the widget's stops. */
+    const val REFRESH_PATH = "/stopcast/refresh"
+
+    /** The message path the phone acknowledges a refresh request on the moment it arrives, with
+     *  the request's id, so the watch knows it's in reach even while the refresh is queued. */
+    const val REFRESH_ACK_PATH = "/stopcast/refresh-ack"
+
+    /** The message path the phone answers a refresh request on, with a [WatchRefreshOutcome]. */
+    const val REFRESH_RESULT_PATH = "/stopcast/refresh-result"
+
     /** Declared by the watch app (res/values/wear.xml), so the phone publishes only when a paired
      *  watch has it installed. */
     const val WATCH_CAPABILITY = "stopcast_watch"

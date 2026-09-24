@@ -61,13 +61,19 @@ class WatchPublisher(
         data object Failed : Outcome
     }
 
+    /**
+     * Publishes [snapshot]. With none stored, nothing is sent, unless [emptyIfNone]: then an empty
+     * one is, so a watch still holding stops the phone no longer has (its data was cleared) shows
+     * none rather than keep them.
+     */
     suspend fun publish(
         snapshot: DeparturesSnapshot?,
         starred: Set<StarredRow>,
         hiddenModes: Set<String> = emptySet(),
         force: Boolean = false,
+        emptyIfNone: Boolean = false,
     ): Outcome {
-        snapshot ?: return Outcome.NothingStored
+        val snapshot = snapshot ?: if (emptyIfNone) DeparturesSnapshot(emptyList(), now()) else return Outcome.NothingStored
         return try {
             // Asked first, so a phone with no watch app never builds or hashes an envelope.
             if (!channel.watchInstalled()) return Outcome.NoWatch

@@ -119,6 +119,14 @@ class WatchPublisherTest {
     }
 
     @Test
+    fun `asked to, an empty envelope clears a watch when nothing is stored`() = runTest {
+        val channel = FakeChannel()
+        val outcome = WatchPublisher(channel, FakeMarker(), logged::add) { now }.publish(null, emptySet(), force = true, emptyIfNone = true)
+        assertEquals(WatchPublisher.Outcome.Published, outcome)
+        assertEquals(1, channel.sent.size)
+    }
+
+    @Test
     fun `a failed write is logged without user data and retried by the next attempt`() = runTest {
         val channel = FakeChannel(failing = true)
         val marker = FakeMarker()

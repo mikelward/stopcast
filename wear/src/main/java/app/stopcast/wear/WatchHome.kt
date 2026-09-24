@@ -2,6 +2,7 @@ package app.stopcast.wear
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,6 +16,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 
@@ -57,7 +59,7 @@ fun watchHome(received: WatchReceived): WatchHome = when (received) {
  * stops by name. The departures themselves come with the tile and the full watch app (TODO Phase 6).
  */
 @Composable
-fun WatchHomeScreen(home: WatchHome) {
+fun WatchHomeScreen(home: WatchHome, notice: RefreshNotice.Kind? = null, onRefresh: (() -> Unit)? = null) {
     MaterialTheme {
         val background = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
         when (home) {
@@ -77,15 +79,33 @@ fun WatchHomeScreen(home: WatchHome) {
                 if (home.omitted > 0) {
                     item { Note(pluralStringResource(R.plurals.watch_more_stops_on_phone, home.omitted, home.omitted)) }
                 }
+                if (onRefresh != null) item { RefreshButton(notice, onRefresh) }
             }
             else -> Box(modifier = background.padding(24.dp), contentAlignment = Alignment.Center) {
                 when (home) {
-                    WatchHome.NeverSynced -> Message(stringResource(R.string.watch_open_phone))
-                    WatchHome.NoStops -> Message(stringResource(R.string.watch_add_stops))
+                    // The phone may have stops this watch missed: a refresh resends them, and a
+                    // failed one says why here rather than leaving only the setup line.
+                    WatchHome.NeverSynced -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Message(stringResource(R.string.watch_open_phone))
+                        if (onRefresh != null) RefreshButton(notice, onRefresh)
+                    }
+                    // Stops added on the phone may not have arrived: the same refresh resends them.
+                    WatchHome.NoStops -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Message(stringResource(R.string.watch_add_stops))
+                        if (onRefresh != null) RefreshButton(notice, onRefresh)
+                    }
                     else -> Title()
                 }
             }
         }
+    }
+}
+
+/** Refresh, or while one is pending or after one failed, what happened. */
+@Composable
+private fun RefreshButton(notice: RefreshNotice.Kind?, onRefresh: () -> Unit) {
+    Button(onClick = onRefresh, modifier = Modifier.padding(top = 8.dp)) {
+        Text(stringResource(refreshLabel(notice)), maxLines = 2, textAlign = TextAlign.Center)
     }
 }
 

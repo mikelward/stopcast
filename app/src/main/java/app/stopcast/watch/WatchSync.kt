@@ -121,7 +121,7 @@ object WatchSync {
      * Publishes what is stored now, read under the process-wide publish lock, so whichever of the
      * collector and the worker runs last sends the newest snapshot, stars and hidden modes.
      */
-    suspend fun publishCurrent(context: Context, force: Boolean): WatchPublisher.Outcome {
+    suspend fun publishCurrent(context: Context, force: Boolean, emptyIfNone: Boolean = false): WatchPublisher.Outcome {
         val appContext = context.applicationContext
         return publishing.withLock {
             val (snapshot, stars) = try {
@@ -134,7 +134,7 @@ object WatchSync {
                 return@withLock WatchPublisher.Outcome.Failed
             }
             // The same in-process setting the widget reads, so the watch leaves out what it does.
-            publisher(appContext).publish(snapshot, stars, HiddenModesSetting.loaded(), force = force)
+            publisher(appContext).publish(snapshot, stars, HiddenModesSetting.loaded(), force = force, emptyIfNone = emptyIfNone)
         }
     }
 
