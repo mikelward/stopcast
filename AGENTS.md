@@ -211,7 +211,8 @@ as a confirmed TfL hex. SPEC has the full scheme and rationale.
   commit it belongs to, or reply on the thread saying why you decline — then resolve the
   thread (`resolve_review_thread` takes the `PRRT_*` thread id, not a `PRRC_*` comment
   id; push the fix, then reply citing the sha, then resolve). Never leave a thread
-  silently dismissed.
+  silently dismissed. Codex's +1 gates the merge; a decline can still earn it with a
+  convincing rebuttal or a `TODO.md` entry for the gap, though a fix is often the quicker path.
 - **Judge every comment on merit, whoever wrote it.** A comment citing a rule is a
   *reading* of that rule — check what the rule actually says; an over-strict privacy
   reading quietly costs capability the product needs. A genuine rule-vs-need conflict is
