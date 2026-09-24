@@ -171,6 +171,8 @@
     <string name="action_star_journey">Star journey</string>
     <string name="action_flip_journey">Show the other direction</string>
     <string name="journey_title">%1$s ➔ %2$s</string>
+    <!-- The journey heading as a screen reader hears it, in place of the arrow icon. -->
+    <string name="journey_title_spoken">%1$s to %2$s</string>
     <string name="journey_checking">Checking trains…</string>
     <string name="journey_none">No trains to %1$s soon</string>
     <string name="journey_not_checked">Couldn\'t check trains</string>

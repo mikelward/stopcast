@@ -6,8 +6,9 @@ import app.stopcast.domain.StopQualifier
 /**
  * A group header's **qualifier segment** — the title-case cue that follows the place name on the one
  * line header ("Platform 1", "Stop E", "Southbound", "➔ Archway"). "Stop" is reserved for a literal
- * pole letter; a compass reads as a bare direction word, a shared terminus as "➔ destination". It
- * joins the place name with " – "
+ * pole letter; a compass reads as a bare direction word, a shared terminus as "➔ destination" (the
+ * arrow drawn as an icon, [withArrowIcons]). It
+ * joins the place name via [groupHeaderJoin] (" – ", or a space before a destination's arrow)
  * ([app.stopcast.ui] owns that join and the styling); null when the group carries no qualifier, so
  * the header is the bare place name. Title case with no small-caps treatment, and it **drops the
  * direction/towards parenthetical** the old two-level sub-header showed — the compass/towards moves
@@ -27,18 +28,25 @@ internal fun groupHeaderLabel(qualifier: StopQualifier?): String? = when (qualif
     is StopQualifier.BusBearing -> bearingSpoken(qualifier.bearing.uppercase())
     is StopQualifier.Terminus ->
         // The same display rename the destination line uses ("Battersea Power" → "Battersea",
-        // DepartureLabels), so the header and the card read consistently. U+2794 "➔" because it sits
-        // centered on the letters, where the font's own "→" sits low (maintainer, 2026-09-23).
-        "\u2794 ${DepartureLabels.destinationLabel(qualifier.terminus, "") ?: qualifier.terminus}"
+        // DepartureLabels), so the header and the card read consistently.
+        "$ARROW ${DepartureLabels.destinationLabel(qualifier.terminus, "") ?: qualifier.terminus}"
 }
 
 /**
- * A group header's full one-line text — the place [name], then " – " and the qualifier when there is
- * one ("King's Cross St. Pancras – Platform 1"), else the bare name. Shared by the in-app list and the
- * widget so the two surfaces title a place the same way.
+ * A group header's full one-line text — the place [name], then the qualifier joined by
+ * [groupHeaderJoin] when there is one ("King's Cross St. Pancras – Platform 1", "Turnpike Lane ➔
+ * Bank"), else the bare name. Shared by the in-app list, its platform view title, and the widget so
+ * every surface titles a place the same way. The widget (Glance) draws the arrow as its glyph; the
+ * app draws it as an icon ([withArrowIcons]).
  */
 internal fun groupHeaderTitle(name: String, qualifier: StopQualifier?): String =
-    groupHeaderLabel(qualifier)?.let { "$name – $it" } ?: name
+    groupHeaderLabel(qualifier)?.let { "$name${groupHeaderJoin(it)}$it" } ?: name
+
+/**
+ * What joins a place name to its qualifier [label]: " – ", or just a space before a destination,
+ * whose arrow already joins them (maintainer, 2026-09-24).
+ */
+internal fun groupHeaderJoin(label: String): String = if (label.startsWith(ARROW)) " " else " – "
 
 /**
  * The **spoken** form of a group's qualifier — what a screen reader hears in place of the visible

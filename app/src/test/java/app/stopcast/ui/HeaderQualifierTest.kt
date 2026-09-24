@@ -90,4 +90,11 @@ class HeaderQualifierTest {
         assertNull(bearingDirection(""))
         assertNull(bearingDirection("X"))
     }
+
+    @Test
+    fun `a title joins a destination by its arrow alone, anything else by a dash`() {
+        assertEquals("Turnpike Lane ➔ Bank", groupHeaderTitle("Turnpike Lane", StopQualifier.Terminus("Bank")))
+        assertEquals("Oxford Circus – Platform 2", groupHeaderTitle("Oxford Circus", StopQualifier.Platform("2", null)))
+        assertEquals("Oxford Circus", groupHeaderTitle("Oxford Circus", null))
+    }
 }
