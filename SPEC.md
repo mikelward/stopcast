@@ -174,7 +174,7 @@ The app finds stops two ways:
   not yet validated on a device** — whether either wants tuning at a real interchange lives in
   `TODO.md`; what is durable is the two-tier shape and the constraints above. **The near-me list is ordered
   closest stop first**, with soonest-first breaking a same-stop tie (a stop's several services
-  are equidistant). **A line-status alert (a suspended line's "No data" row) rides with its
+  are equidistant). **A line-status alert (a suspended line's status row) rides with its
   stop and gets no special order** — it is not hoisted above a closer stop, nor lifted within its
   own stop's section; it simply trails that stop's departures, so a nearer stop is never pushed
   below a farther one for carrying an alert. Starred rows are still pinned to the top. (Stop
@@ -430,6 +430,11 @@ stop, or for that service at the stop) carrying the disruption and no countdown,
 direction-independent since no prediction supplies a direction. So a suspended line or a
 closed stop is surfaced, not silently dropped for want of a departure to build a row from
 (see *Disruptions*) — the quietly-wrong failure the whole model exists to avoid.
+Where its countdown would be, the status row says what is known (maintainer, 2026-09-24): a
+**dash** when the line's source answered with no trains (TfL for its own lines, the National Rail
+board for a National Rail line), **"No data"** when no source answered for it (a National Rail line
+whose board failed, or that no board covers), and **"No key"** for a National Rail line at a
+station a key would cover when none is set — a tap on it opens Settings.
 
 The list shows the **watched stops'** rows (D1) — stopcast renders the stops the user
 chose ahead of time, not "nearest to me" — ordered **location-free** so the view works
@@ -953,8 +958,8 @@ surface.)
   National Rail services (Great Northern, Thameslink, Southern…). With a free Rail Data
   Marketplace key pasted in settings (maintainer, 2026-09-24), a rail station's departures also
   come from National Rail's own live departure boards (Darwin's `GetDepartureBoard`, by the
-  station's three-letter CRS code), alongside TfL's; without one, those lines show "No data"
-  as before. Like D7, stopcast ships no key. TfL's `910G` ids end in the station's TIPLOC, and
+  station's three-letter CRS code), alongside TfL's; without one, a disrupted line's status row there says "No
+  key" and opens Settings (*Departures*). Like D7, stopcast ships no key. TfL's `910G` ids end in the station's TIPLOC, and
   NaPTAN (DfT, Open Government Licence v3.0) pairs each TIPLOC with its CRS, so the app bundles
   that table (rebuilt weekly with the station list) and the two join exactly, never by name.
   Where TfL lists one station under two National Rail ids, its board is fetched once and shown
@@ -962,7 +967,7 @@ surface.)
   Only times National Rail gives are shown: a cancelled train, or one "Delayed" with no estimate,
   is left out, and the TfL-run services it also lists (Overground, Elizabeth line) come from TfL
   alone. The optional dependency fails on its own: a failed board (down, rate-limited, a bad key,
-  a garbled answer) leaves the station's TfL departures in place, its National Rail lines back at
+  a garbled answer) leaves the station's TfL departures in place, its National Rail lines' status rows saying
   "No data", and is logged; it never fails the stop or blanks the list. **Cost:
   £0**, one request per rail station per refresh against the user's own key's limit.
   **Play Data Safety:** no new data type — a request carries only a public station code and the
@@ -1186,8 +1191,8 @@ Mirrors the sibling fleet:
 - **Non-TfL operators** outside the Unified API (coach, etc.), National Rail aside: its
   times come from National Rail's own feed once the user adds a key (*Data source*). Without
   one, TfL gives no times for them, so a National Rail line TfL reports disrupted at a station
-  shows only as its status row, saying "No data" where times would be rather than a dash that
-  read as an empty result (maintainer, 2026-09-24); one in good service isn't listed.
+  shows only as its status row, saying "No key" where times would be (*Departures*); one in good
+  service isn't listed.
 - **Ticketing**, Oyster/contactless balances, and service maps.
 - **Writing to TfL.** StopCast is read-only.
 - **Continuous background location / geofencing.** Location is used on demand in the

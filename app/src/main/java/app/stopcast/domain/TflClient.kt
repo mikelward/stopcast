@@ -16,6 +16,13 @@ interface TflClient {
     suspend fun arrivals(stopId: String): List<Departure>
 
     /**
+     * Where [stopId]'s National Rail times stood in its last [arrivals] (SPEC *National Rail*): the
+     * board came back, no key is set, or the board failed; null when none apply. Read after
+     * [arrivals] returns; a client with no National Rail feed always answers null.
+     */
+    fun railFeed(stopId: String): RailFeed? = null
+
+    /**
      * The current status of each line in [lineIds], from `/Line/{ids}/Status` — one
      * [LineStatus] per line TfL knows, carrying the worst of that line's statuses. An
      * empty [lineIds] makes no request and returns empty. Like [arrivals] it throws on a

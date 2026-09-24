@@ -598,6 +598,7 @@ object DepartureRows {
                     upcoming = emptyList(),
                     fetchedAt = stop.fetchedAt,
                     status = status,
+                    railFeed = stop.railFeed.takeIf { line.mode.equals(NATIONAL_RAIL_MODE, ignoreCase = true) },
                 )
             }
     }
@@ -705,6 +706,9 @@ data class StopArrivals(
     val lines: List<LineRef> = emptyList(),
     val disruptions: List<StopDisruption> = emptyList(),
     val arrivalsFresh: Boolean = true,
+    // Where this National Rail station's National Rail times stand after its last arrivals fetch
+    // ([TflClient.railFeed]); null when none apply. Not persisted.
+    val railFeed: RailFeed? = null,
     // The cluster this stop belongs to — TfL's `stationNaptan` else the display name (see
     // [StopLocation.clusterId]). Carried onto each [DepartureRow] so the screen can group rows
     // into per-place headers by cluster rather than by the name TfL spells inconsistently (SPEC

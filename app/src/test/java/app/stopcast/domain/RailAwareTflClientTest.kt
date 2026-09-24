@@ -211,6 +211,25 @@ class RailAwareTflClientTest {
     }
 
     @Test
+    fun `each stop says why it has no National Rail times`() = runTest {
+        val board = Board(key = false)
+        val client = RailAwareTflClient(tfl, board, { codes })
+        client.arrivals("910GEXAMPLE")
+        assertEquals("no key: a key would give times", RailFeed.NO_KEY, client.railFeed("910GEXAMPLE"))
+        client.arrivals("910GUNKNOWN")
+        assertEquals("no code: a key would give nothing", null, client.railFeed("910GUNKNOWN"))
+        client.arrivals("940GZZLUEXA")
+        assertEquals(null, client.railFeed("940GZZLUEXA"))
+        board.key = true
+        board.fail = true
+        client.arrivals("910GEXAMPLE")
+        assertEquals("the board failed", RailFeed.UNAVAILABLE, client.railFeed("910GEXAMPLE"))
+        board.fail = false
+        client.arrivals("910GEXAMPLE")
+        assertEquals("the board came back", RailFeed.LIVE, client.railFeed("910GEXAMPLE"))
+    }
+
+    @Test
     fun `an operator's name makes TfL's line id`() {
         assertEquals("great-northern", railLineId("Great Northern"))
         assertEquals("c2c", railLineId("c2c"))

@@ -412,6 +412,47 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `a National Rail line's status row says why it has no times, and no other line's does`() {
+        val stop = StopArrivals(
+            "910GEXAMPLE",
+            "Example",
+            departures = emptyList(),
+            fetchedAt = now,
+            lines = listOf(
+                LineRef("great-example", "Great Example", "national-rail"),
+                LineRef("overground-example", "Overground Example", "overground"),
+            ),
+            railFeed = RailFeed.NO_KEY,
+        )
+        val statuses = mapOf(
+            "great-example" to LineStatus("great-example", 6, "Severe Delays"),
+            "overground-example" to LineStatus("overground-example", 2, "Suspended"),
+        )
+        val rows = DepartureRows.across(listOf(stop), now, statuses).associateBy { it.lineId }
+        assertEquals(RailFeed.NO_KEY, rows.getValue("great-example").railFeed)
+        // A TfL-run line gets nothing from a key, so it never says "No key".
+        assertEquals(null, rows.getValue("overground-example").railFeed)
+        assertEquals(NoTimes.NO_KEY, NoTimes.of(rows.getValue("great-example")))
+        assertEquals(NoTimes.NO_TRAINS, NoTimes.of(rows.getValue("overground-example")))
+    }
+
+    @Test
+    fun `a line with no departures shows a dash only when its source answered`() {
+        val rail = DepartureRow(
+            stopId = "910GEXAMPLE", stopName = "Example", lineId = "great-example", lineName = "Great Example",
+            direction = "", directionKey = STATUS_DIRECTION_KEY, destination = "", mode = "national-rail",
+            upcoming = emptyList(), fetchedAt = now,
+        )
+        assertEquals(NoTimes.NO_TRAINS, NoTimes.of(rail.copy(railFeed = RailFeed.LIVE)))
+        assertEquals(NoTimes.NO_KEY, NoTimes.of(rail.copy(railFeed = RailFeed.NO_KEY)))
+        assertEquals(NoTimes.NO_DATA, NoTimes.of(rail.copy(railFeed = RailFeed.UNAVAILABLE)))
+        // No board covers it (no station code, or its twin shows the board): no source answered.
+        assertEquals(NoTimes.NO_DATA, NoTimes.of(rail))
+        // TfL answered for its own lines.
+        assertEquals(NoTimes.NO_TRAINS, NoTimes.of(rail.copy(mode = "tube")))
+    }
+
+    @Test
     fun `a status row carries the stop's pole letter and bearing`() {
         // A suspended bus line's status row must carry the pole's letter/bearing, so it groups under
         // that pole's "(D)" header rather than a separate bare group — the warning has to say which

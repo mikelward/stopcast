@@ -876,6 +876,7 @@ class MainViewModel(
                 bearing = stop.bearing,
                 towards = stop.towards,
                 nearer = nearer,
+                freshRailFeed = if (departures != null) client.railFeed(stop.id) else null,
             )?.let { merged += it }
         }
 

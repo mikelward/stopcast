@@ -1,5 +1,6 @@
 package app.stopcast.domain
 
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -15,6 +16,39 @@ import kotlinx.coroutines.sync.withLock
 interface RailBoardSource {
     val available: Boolean
     suspend fun departures(crs: String): List<Departure>
+}
+
+/**
+ * Where a National Rail station's National Rail times stand after its last fetch: the board came
+ * back ([LIVE], so a line with no trains truly has none), the user has set no key so none was asked
+ * for ([NO_KEY]), or the board was asked for and failed ([UNAVAILABLE]).
+ */
+enum class RailFeed { LIVE, NO_KEY, UNAVAILABLE }
+
+/** What a line with no departures shows where its times would be (SPEC *Departures*). */
+enum class NoTimes {
+    /** Its source answered with no trains: a dash. */
+    NO_TRAINS,
+
+    /** A National Rail line with no key set: "No key", a tap away from Settings. */
+    NO_KEY,
+
+    /** No source answered for it (no board, or a failed one): "No data". */
+    NO_DATA,
+    ;
+
+    companion object {
+        /**
+         * TfL answered for every line but National Rail, whose times come from its own board: a
+         * National Rail line has trains to count only when that board came back.
+         */
+        fun of(row: DepartureRow): NoTimes = when {
+            !row.mode.equals(NATIONAL_RAIL_MODE, ignoreCase = true) -> NO_TRAINS
+            row.railFeed == RailFeed.LIVE -> NO_TRAINS
+            row.railFeed == RailFeed.NO_KEY -> NO_KEY
+            else -> NO_DATA
+        }
+    }
 }
 
 /**
@@ -40,7 +74,8 @@ class RailStationCodes(private val codes: Map<String, String>) {
  *
  * TfL's answer decides the stop's outcome as before: its failure fails the stop. A failed rail board
  * is logged ([warn], sanitized: the stop id and reason) and the stop keeps its TfL departures, its
- * National Rail lines showing "No data" as they did without a key. Everything else is [tfl]'s.
+ * National Rail lines' status rows saying "No data" ([RailFeed.UNAVAILABLE]). Everything else is
+ * [tfl]'s.
  */
 class RailAwareTflClient(
     private val tfl: TflClient,
@@ -65,9 +100,20 @@ class RailAwareTflClient(
     private val handoffs = HashMap<String, Pair<List<Departure>, Long>>()
     private val ownersLock = Mutex()
 
+    // Each stop's [RailFeed] from its last [arrivals]; absent when none applies (not a National Rail
+    // station, or its twin shows the board).
+    private val feeds = ConcurrentHashMap<String, RailFeed>()
+
+    override fun railFeed(stopId: String): RailFeed? = feeds[stopId]
+
     override suspend fun arrivals(stopId: String): List<Departure> {
-        if (!rail.available) return tfl.arrivals(stopId)
-        val crs = codes().crsFor(stopId) ?: return tfl.arrivals(stopId)
+        val crs = codes().crsFor(stopId)
+        if (crs == null || !rail.available) {
+            // A station a key would give National Rail times says so; any other stop has none to give.
+            if (crs != null) feeds[stopId] = RailFeed.NO_KEY else feeds.remove(stopId)
+            return tfl.arrivals(stopId)
+        }
+        feeds.remove(stopId)
         return coroutineScope {
             // The standing owner asks for its board alongside TfL, and marks its own fetch in flight;
             // any other stop claims the board only once its own TfL fetch worked. So of two twins
@@ -106,8 +152,11 @@ class RailAwareTflClient(
             outcome?.let { settle(crs, it) }
             when {
                 !shows -> fromTfl.also { early?.cancel() }
-                early != null -> fromTfl + early.await().orEmpty()
-                else -> fromTfl + (takeHandoff(crs) ?: fetchBoard(crs, stopId).orEmpty())
+                else -> {
+                    val board = if (early != null) early.await() else takeHandoff(crs) ?: fetchBoard(crs, stopId)
+                    feeds[stopId] = if (board == null) RailFeed.UNAVAILABLE else RailFeed.LIVE
+                    fromTfl + board.orEmpty()
+                }
             }
         }
     }
@@ -155,6 +204,9 @@ class RailAwareTflClient(
         const val HANDOFF_MILLIS = 30_000L
     }
 }
+
+/** TfL's mode id for National Rail lines, which a Darwin departure carries too. */
+const val NATIONAL_RAIL_MODE = "national-rail"
 
 /** The operators whose trains TfL's own feed carries, left out of a National Rail board. */
 internal val TFL_RUN_OPERATORS = setOf("LO", "XR")

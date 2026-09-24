@@ -78,8 +78,8 @@ interface AppSettings {
 
     /**
      * The user's own Rail Data Marketplace key for National Rail's live departures (SPEC *National
-     * Rail*), or null: without one, National Rail lines show "No data" as before. A credential like
-     * [userApiKey]: sent only with the user's own National Rail requests, persisted privately, never
+     * Rail*), or null: without one, a National Rail line's status row says "No key". A credential
+     * like [userApiKey]: sent only with the user's own National Rail requests, persisted privately, never
      * logged or placed in any other off-device artifact. Blank reads as null.
      */
     fun railApiKey(): Flow<String?> = flowOf(null)

@@ -73,6 +73,9 @@ object Snapshot {
         towards: String = "",
         // The stop's [Terminating.Nearer] places, saved with it for the widget's refresh.
         nearer: Terminating.Nearer = Terminating.Nearer(),
+        // Why the fresh arrivals carry no National Rail times ([TflClient.railFeed]); kept from
+        // [prior] when the arrivals are.
+        freshRailFeed: RailFeed? = null,
     ): StopArrivals? {
         val departures = freshDepartures ?: prior?.departures ?: emptyList()
         // A failed disruption fetch drops the notice (no `?: prior`), rather than aging a
@@ -112,6 +115,7 @@ object Snapshot {
             // Only a successful arrivals fetch this refresh lets a status row claim "No
             // departures"; a kept-prior or disruption-only stop has no fetched arrivals.
             arrivalsFresh = freshDepartures != null,
+            railFeed = if (freshDepartures != null) freshRailFeed else prior?.railFeed,
         )
     }
 }

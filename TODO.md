@@ -1438,8 +1438,9 @@ Builds on Phase 1's minimal line-status marking.
         station, no key in the fixture); confirm the product URL in `KtorDarwinClient`.
   - [ ] **Show delays and cancellations honestly**: a "Delayed" train with no estimate as "?",
         a cancelled one as cancelled, rather than leaving them out.
-  - [ ] **Say when the board failed**: today a failed board leaves the rail lines at "No data";
-        distinguish "couldn't check National Rail" (a bad key, rate limit) from no key at all.
+  - [x] **Say why a rail line has no times** (maintainer, 2026-09-24): a status row says "No key"
+        (opening Settings) with no key set, "No data" when the board failed or none covers it,
+        and a dash when its source answered with no trains — TfL lines included.
   - [ ] **Route pages and journeys for National Rail**: the stop list and journey matching use
         TfL's route data, which National Rail services may lack.
 
