@@ -34,3 +34,4 @@ dependencyResolutionManagement {
 rootProject.name = "StopCast"
 
 include(":app")
+include(":domain")

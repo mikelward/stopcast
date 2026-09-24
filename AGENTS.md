@@ -5,8 +5,8 @@ Conventions for AI agents working in this repository.
 `CLAUDE.md` and `GEMINI.md` are symlinks to this file, so every agent reads the same
 conventions. Edit `AGENTS.md`.
 
-StopCast is an Android app (Kotlin + Compose, single `:app` module) that shows live TfL
-departures for watched stops on the lock screen, the home screen, and in the app.
+StopCast is an Android app (Kotlin + Compose; `:app` plus a pure-Kotlin `:domain`) that shows
+live TfL departures for watched stops on the lock screen, the home screen, and in the app.
 Product and architecture decisions live in `SPEC.md`; the phased plan lives in
 `TODO.md`. This repo mirrors the engineering conventions of the sibling Android repos —
 `mikelward/simmo`, `mikelward/snoozemo`, and `mikelward/typelauncher`; when a convention
@@ -125,9 +125,9 @@ as a confirmed TfL hex. SPEC has the full scheme and rationale.
 
 ## Testing expectations
 
-- Product logic belongs in the pure `app.stopcast.domain` layer, JVM-testable without
-  Android; test it against **recorded TfL fixtures**, never the live API and never a real
-  coordinate.
+- Product logic belongs in the pure `:domain` module (`app.stopcast.domain`), JVM-testable
+  without Android; test it against **recorded TfL fixtures**, never the live API and never a
+  real coordinate.
 - Compose screens and Glance widget layouts get Robolectric + Roborazzi screenshot tests
   wired into `.github/workflows/ci.yml` — a new `*ScreenshotTest` class needs its own
   step in the CI `--tests` allow-list or it records nothing.

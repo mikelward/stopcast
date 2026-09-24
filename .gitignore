@@ -18,6 +18,7 @@
 *.iml
 /local.properties
 /build
+/domain/build
 /captures
 local.properties
 app/build
