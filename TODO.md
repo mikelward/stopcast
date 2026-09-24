@@ -1032,6 +1032,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
     - [x] **Hold back faraway journeys** (maintainer, 2026-09-24). A journey more than a mile
           from both ends of a confirmed fix waits behind a "Faraway favorites" button at the foot
           of the list, unfetched until tapped for that nearby set; the widget never pins one.
+    - [ ] **A relocate that flips a journey's direction refetches once.** A same-set relocate
+          refreshes with the journey stops the screen last reported, so when the fresh fix turns a
+          journey round (its origin is now the other end) the refresh starts on the old origin and
+          restarts when the screen reports the new one. Hand the refresh the flipped origin up
+          front, as the faraway hold-back already does for journeys crossing the mile line.
   - [ ] **Home and work, with routing** — the eventual goal: star two places, not two stations,
         and show how to get between them. Needs journey planning, a SPEC non-goal today and a
         separate product + privacy decision (it would send both places to TfL's Journey Planner).
