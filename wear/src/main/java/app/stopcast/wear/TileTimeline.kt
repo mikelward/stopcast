@@ -1,0 +1,267 @@
+package app.stopcast.wear
+
+import app.stopcast.data.WatchEnvelope
+import app.stopcast.data.toDomain
+import app.stopcast.domain.Countdown
+import app.stopcast.domain.DepartureLabels
+import app.stopcast.domain.DepartureRows
+import app.stopcast.domain.RouteTopology
+import app.stopcast.domain.Staleness
+import app.stopcast.domain.StarredRow
+import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.lineCode
+import app.stopcast.ui.BudgetedRows
+import java.time.Duration
+import java.time.Instant
+import kotlin.time.toJavaDuration
+import kotlin.time.toKotlinDuration
+
+/** One departure line of the tile: a service's pill, where it's going, and its countdowns (or `?`). */
+data class TileRow(
+    val lineName: String,
+    val lineId: String,
+    val mode: String,
+    val code: String,
+    val label: String,
+    val countdown: String,
+    val starred: Boolean,
+    val stale: Boolean,
+)
+
+/** One line of the tile's list. */
+sealed interface TileLine {
+    /** A stop header, as the widget draws above a place's rows when there's more than one place;
+     *  [spoken] keeps the direction or "towards" the short [text] drops, for a screen reader. */
+    data class Header(val text: String, val spoken: String = text) : TileLine
+
+    data class Departure(val row: TileRow) : TileLine
+
+    /** A stop with no rows, listed when no stop has any: its name and the empty form it's owed. */
+    data class EmptyStop(val stopName: String, val uncertain: Boolean) : TileLine
+}
+
+/** What the tile shows at one instant. */
+sealed interface TileFrame {
+    /** Nothing has arrived from the phone yet. */
+    data object NeverSynced : TileFrame
+
+    /** The phone sent no stops, and none failed or were left out. */
+    data object NoStops : TileFrame
+
+    /** The phone sent no stops because every one failed to load (or was left out): out of date,
+     *  never "no stops". */
+    data object NoneLoaded : TileFrame
+
+    /**
+     * The widget's lines, favorites first, under the widget's stop headers. [ageMinutes] is the
+     * freshest stop's age; [stale] once every stop is past its boundary (or the timeline withholds
+     * every countdown); [partial] when a stop failed to load or refresh, or is stale beside fresher
+     * ones; [omitted] the stops left out of the envelope for size, which the tile says are on the phone.
+     */
+    data class Rows(
+        val lines: List<TileLine>,
+        val ageMinutes: Long,
+        val stale: Boolean,
+        val partial: Boolean,
+        val omitted: Int = 0,
+    ) : TileFrame
+}
+
+/** The watch's screen, as the tile request reports it: what bounds how many lines fit. */
+data class TileScreen(val heightDp: Int, val fontScale: Float)
+
+/** A frame and the interval it's valid for; a null [end] means "until the next update". */
+data class TileEntry(val start: Instant, val end: Instant?, val frame: TileFrame)
+
+/**
+ * The tile's entries, and when to ask for a fresh set ([refreshAt], null when the entries already
+ * run to the all-stale end): set when the entry cap cut the timeline short.
+ */
+data class TileSchedule(val entries: List<TileEntry>, val refreshAt: Instant?)
+
+/**
+ * The tile's staleness timeline (dev-docs/wear-os.md *Staleness on the watch*): the system swaps
+ * entries at the right instants, so countdowns tick, departed services drop off and each stop turns
+ * stale at its own boundary, with no polling and no network. Lines come from the widget's own code
+ * ([DepartureRows.across], [DepartureRows.pinStarred], [BudgetedRows.select]) over the widget's own
+ * inputs, so the tile shows what the widget would, stop headers included.
+ */
+object TileTimeline {
+    /** The most lines the tile lists, headers included, on a screen with room for more. */
+    const val MAX_LINES = 5
+
+    /**
+     * How many lines fit under the stamp and [notes] status lines (out of date, stops left out) on
+     * [screen], never more than [MAX_LINES] nor fewer than one. The heights follow the tile's layout
+     * (24dp padding top and bottom, 12sp status text, a pill row of 11sp text in 4dp padding beside
+     * 14sp text, 4dp between lines), scaled by the font scale. Without a [screen], five less the notes.
+     */
+    fun lineBudget(screen: TileScreen?, notes: Int): Int {
+        screen ?: return (MAX_LINES - notes).coerceAtLeast(1)
+        val scale = screen.fontScale.coerceAtLeast(1f)
+        val statusDp = 12 * LINE_HEIGHT * scale
+        val lineDp = maxOf(11 * LINE_HEIGHT * scale + 2 * 4 + 2, 14 * LINE_HEIGHT * scale) + 4
+        val room = screen.heightDp - 2 * 24 - statusDp * (1 + notes)
+        return (room / lineDp).toInt().coerceIn(1, MAX_LINES)
+    }
+
+    /** A text line's height per sp of type size. */
+    private const val LINE_HEIGHT = 1.2f
+
+    /** Countdowns per row, as on the widget. */
+    private const val MAX_TIMES = 3
+
+    /** The most entries a Tiles timeline takes. */
+    const val MAX_ENTRIES = 100
+
+    /**
+     * The frame at [now]. [withhold] withholds every countdown, for the tail of a timeline the
+     * entry cap cut short, so a frame held past its time never shows a departed service or a
+     * frozen countdown as live.
+     */
+    fun frame(
+        envelope: WatchEnvelope?,
+        now: Instant,
+        topology: RouteTopology = RouteTopology.EMPTY,
+        withhold: Boolean = false,
+        screen: TileScreen? = null,
+    ): TileFrame {
+        envelope ?: return TileFrame.NeverSynced
+        if (envelope.stops.isEmpty()) {
+            val incomplete = envelope.missingStopIds.isNotEmpty() || envelope.omittedStops > 0
+            return if (incomplete) TileFrame.NoneLoaded else TileFrame.NoStops
+        }
+        val stops = envelope.stops.map { it.toDomain() }
+        val starred = envelope.starred.mapTo(HashSet()) { it.toDomain() }
+        val staleStop = stops.associate { it.stopId to (withhold || isStale(it, now)) }
+        val freshest = stops.maxOf { it.fetchedAt }
+        val allStale = stops.all { staleStop.getValue(it.stopId) }
+        val partial = envelope.missingStopIds.isNotEmpty() || stops.any { !it.arrivalsFresh } ||
+            (!allStale && staleStop.values.any { it })
+        // The status lines drawn above the list take room from it, as the widget's note does.
+        val notes = (if (allStale || partial) 1 else 0) + (if (envelope.omittedStops > 0) 1 else 0)
+        val budget = lineBudget(screen, notes)
+        // Fresh rows ahead of stale ones (as the widget orders its cap), then favorites first.
+        val ordered = DepartureRows.across(stops, now, splitPlatforms = false)
+            .sortedBy { if (staleStop[it.stopId] == true) 1 else 0 }
+        val pinned = DepartureRows.pinStarred(ordered, starred)
+        val lines = buildList {
+            for (chosen in BudgetedRows.select(pinned, budget, MAX_TIMES, topology)) {
+                chosen.header?.let { add(TileLine.Header(it.text, it.spoken)) }
+                val row = chosen.row
+                val stale = staleStop[row.stopId] == true
+                val star = StarredRow.of(row) in starred
+                val code = lineCode(row.lineName, row.mode)
+                for (group in chosen.groups) {
+                    val label = DepartureLabels.destinationLabel(group.destination, row.directionKey) ?: "—"
+                    val shown = if (group.branch != null) "$label/${group.branch}" else label
+                    val countdown = if (stale) "?" else Countdown.mergedLabel(group.times, now)
+                    add(TileLine.Departure(TileRow(row.lineName, row.lineId, row.mode, code, shown, countdown, star, stale)))
+                }
+            }
+        }.ifEmpty {
+            // No rows anywhere: each stop with its own empty form, "No departures" or, for arrivals
+            // carried from a failed refresh or past their boundary (an absence from expired data
+            // isn't current), "may be out of date" (dev-docs/wear-os.md *Stops but no rows*).
+            // One line per place, as the widget names it; uncertain if any of its stops is.
+            stops.groupBy { it.stopName }.entries.take(budget).map { (name, place) ->
+                TileLine.EmptyStop(name, uncertain = place.any { !it.arrivalsFresh || staleStop[it.stopId] == true })
+            }
+        }
+        return TileFrame.Rows(
+            lines,
+            Duration.between(freshest, now).toMinutes().coerceAtLeast(0),
+            allStale,
+            partial,
+            envelope.omittedStops,
+        )
+    }
+
+    /** The entries from [now] (see [schedule]). */
+    fun entries(envelope: WatchEnvelope?, now: Instant, topology: RouteTopology = RouteTopology.EMPTY): List<TileEntry> =
+        schedule(envelope, now, topology).entries
+
+    /**
+     * The entries from [now]: a new one at each instant the frame can change — every countdown
+     * minute, every departure, every stop's staleness boundary, every minute of the age stamp — up
+     * to the moment every stop is stale, then one open-ended stale entry. A setup frame is a single
+     * open-ended entry: no stop has a boundary.
+     *
+     * Past [MAX_ENTRIES], the timeline stops at the first instant it can't fit: from there it holds
+     * one open-ended frame with every countdown withheld, and [TileSchedule.refreshAt] asks for a
+     * fresh set at that instant. Every break is generated only between [now] and the all-stale
+     * horizon, so a stop fetched long ago costs nothing.
+     */
+    fun schedule(
+        envelope: WatchEnvelope?,
+        now: Instant,
+        topology: RouteTopology = RouteTopology.EMPTY,
+        screen: TileScreen? = null,
+    ): TileSchedule {
+        if (envelope == null || envelope.stops.isEmpty()) {
+            return TileSchedule(listOf(TileEntry(now, null, frame(envelope, now, topology, screen = screen))), refreshAt = null)
+        }
+        val stops = envelope.stops.map { it.toDomain() }
+        val threshold = Staleness.THRESHOLD.toJavaDuration()
+        val horizon = stops.maxOf { it.fetchedAt.plus(threshold) }
+        val breaks = sortedSetOf<Instant>()
+        fun add(at: Instant) {
+            if (at > now && at < horizon) breaks += at
+        }
+        for (stop in stops) {
+            add(stop.fetchedAt.plus(threshold))
+            // Each minute of this stop's age, from the first one after now.
+            val sinceFetch = Duration.between(stop.fetchedAt, now)
+            val firstMinute = if (sinceFetch.isNegative) 0L else sinceFetch.toMinutes() + 1
+            var minute = stop.fetchedAt.plusSeconds(firstMinute * 60)
+            while (minute < horizon) {
+                add(minute)
+                minute = minute.plusSeconds(60)
+            }
+            for (departure in stop.departures) {
+                val arrival = departure.expectedArrival
+                if (arrival <= now) continue
+                // It drops off the moment it departs; before that, its minute count goes down just
+                // after each whole minute left (at exactly 2:00 left it still reads "2 min"). Only
+                // the ticks between now and the horizon are generated.
+                add(arrival)
+                val beyond = Duration.between(horizon, arrival.plusMillis(1))
+                var k = if (beyond.isNegative) 1L else maxOf(1L, beyond.toMinutes() + 1)
+                var tick = arrival.minusSeconds(60 * k).plusMillis(1)
+                while (tick > now && tick >= stop.fetchedAt) {
+                    add(tick)
+                    k++
+                    tick = arrival.minusSeconds(60 * k).plusMillis(1)
+                }
+            }
+        }
+        // A break opens an entry only where the frame actually changes: a departure's tick that
+        // moves no shown countdown, or a row that can't make the five lines, spends nothing.
+        val closed = mutableListOf<TileEntry>()
+        var start = now
+        var current = frame(envelope, now, topology, screen = screen)
+        for ((evaluated, at) in breaks.withIndex()) {
+            val next = if (evaluated < MAX_CANDIDATES) frame(envelope, at, topology, screen = screen) else null
+            if (next == current) continue
+            // Room is kept for the horizon's two entries; when a change doesn't fit (or the scan's
+            // bound is reached), the timeline stops here with every countdown withheld.
+            if (next == null || closed.size + 1 > MAX_ENTRIES - 2) {
+                closed += TileEntry(start, at, current)
+                val tail = TileEntry(at, null, frame(envelope, at, topology, withhold = true, screen = screen))
+                return TileSchedule(closed + tail, refreshAt = at)
+            }
+            closed += TileEntry(start, at, current)
+            start = at
+            current = next
+        }
+        if (horizon <= now) return TileSchedule(listOf(TileEntry(now, null, current)), refreshAt = null)
+        closed += TileEntry(start, horizon, current)
+        return TileSchedule(closed + TileEntry(horizon, null, frame(envelope, horizon, topology, screen = screen)), refreshAt = null)
+    }
+
+    /** A bound on the instants examined for a change, so a pathological snapshot can't stall a render. */
+    private const val MAX_CANDIDATES = 2_000
+
+    private fun isStale(stop: StopArrivals, now: Instant): Boolean =
+        Staleness.isStale(Duration.between(stop.fetchedAt, now).toKotlinDuration())
+}

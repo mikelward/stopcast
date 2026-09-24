@@ -1827,14 +1827,18 @@ and these carry the rest as their own PRs:
         (Phase 4) adds an age-stamped status. The watch withholds each one at the same expiry.
         The envelope then carries those line statuses too: a status row (and so a rail line's
         "No key"/"No data", whose feed state `PersistedStop` already keeps) needs one.
-  - [ ] Tile: the widget's rows, the data's age, and a staleness timeline.
+  - [x] Tile: the widget's rows, the data's age, and a staleness timeline.
         - Entries break at each countdown minute, each departure time, and each stop's own
           staleness boundary.
         - No stops, or no envelope yet: an explicit one-line setup state, never a blank tile
           or the previous rows. Stops with no rows show each stop's empty form. A complication
           with nothing to show returns *no data*.
         - No **All stops** edge button until the watch app lands; that PR adds it.
-        - Add screenshot tests to CI's `--tests` allow-list.
+        - [ ] **Tile screenshot test still missing:** rendering the ProtoLayout with
+              `tiles-renderer` under Robolectric fails (`NoClassDefFoundError:
+              androidx/wear/protolayout/renderer/R$style`, as a test or debug dependency). The
+              timeline tests pin every frame's content; the look needs a device or emulator
+              check until a renderer or preview-tooling route works in CI.
   - [ ] Watch-initiated refresh: a tap asks the phone for one debounced, location-free fetch.
         - The phone answers every request with a typed outcome: refreshed, partly refreshed,
           not refreshed with a reason (such as rate-limited), or debounced. The watch says so.

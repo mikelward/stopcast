@@ -7,6 +7,18 @@
     <string name="watch_add_stops">Add stops on your phone</string>
     <!-- Some of the widget's stops failed to refresh or load. -->
     <string name="watch_partly_out_of_date">Some stops out of date</string>
+    <!-- The tile's age stamp: data fetched under a minute ago. -->
+    <string name="tile_updated_now">Updated now</string>
+    <!-- The tile's age stamp: minutes since the freshest stop was fetched. -->
+    <string name="tile_updated_ago">%d min ago</string>
+    <!-- Every stop on the tile is past the staleness threshold; countdowns show "?". -->
+    <string name="tile_out_of_date">Out of date</string>
+    <!-- A stop with no departures to show. -->
+    <string name="tile_no_departures">No departures</string>
+    <!-- A stop with no departures to show whose last refresh failed, so it may have some. -->
+    <string name="tile_may_be_out_of_date">May be out of date</string>
+    <!-- When no stop has a row: a stop's name, then its empty form ("No departures"). -->
+    <string name="tile_stop_empty">%1$s · %2$s</string>
     <!-- Stops left out because the snapshot was too big to send. -->
     <plurals name="watch_more_stops_on_phone">
         <item quantity="one">%d more stop on phone</item>
