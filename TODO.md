@@ -973,6 +973,8 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
     - [x] **One copy of the widget's pins.** Each check is applied to the stored pins in one step
           and the app's saves never write them, replacing the per-screen copy (and its restore,
           re-save and ordering machinery) that kept racing other writers.
+    - [x] **Don't repeat a journey card's rows in the near-me list** (maintainer, 2026-09-24): a row
+          the card shows in full is left out below it.
     - [x] **Other poles in the origin's stop area.** A bus journey also boards from a pole beside
           its origin (same stop area) whose line reaches the far end; its buses show under that
           pole's heading and the widget pins them from it.

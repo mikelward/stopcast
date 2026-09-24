@@ -1398,4 +1398,18 @@ class DepartureRowsTest {
         const val KNG = "940GZZLUKNG"
         const val MDN = "940GZZLUMDN"
     }
+
+    @Test
+    fun `a row a journey card shows in full is hidden below it, one it shows in part is kept`() {
+        val bank = departure("northern", "Northern", "outbound", "Morden", 60, branch = "Bank")
+        val bank2 = departure("northern", "Northern", "outbound", "Morden", 360, branch = "Bank")
+        val charingX = departure("northern", "Northern", "outbound", "Morden", 120, branch = "Charing Cross")
+        val nearby = listOf(rowWith(bank, bank2), rowWith(charingX))
+        // The card shows every Bank train: that row goes; the Charing Cross row stays.
+        assertEquals(listOf(rowWith(charingX)), DepartureRows.withoutShownAbove(nearby, listOf(rowWith(bank, bank2))))
+        // A card showing only one of the Bank trains leaves the row (with its other train) in place.
+        assertEquals(nearby, DepartureRows.withoutShownAbove(nearby, listOf(rowWith(bank))))
+        // Another stop's card changes nothing.
+        assertEquals(nearby, DepartureRows.withoutShownAbove(nearby, listOf(rowWith(bank, bank2).copy(stopId = "940GZZLUKSX"))))
+    }
 }

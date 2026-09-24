@@ -366,6 +366,21 @@ object DepartureRows {
     }
 
     /**
+     * [rows] without any timed row [shown] above them already covers in full: the same stop and line,
+     * with every one of its departures among the shown row's — a journey card's row repeated in the
+     * near-me list below it. A row the card shows only in part (some of its trains don't reach the
+     * journey's far end) stays, as does a status-only row or a closure, so nothing is lost.
+     */
+    fun withoutShownAbove(rows: List<DepartureRow>, shown: List<DepartureRow>): List<DepartureRow> {
+        if (shown.isEmpty()) return rows
+        val byStopLine = shown.groupBy { it.stopId to it.lineId }
+        return rows.filterNot { row ->
+            row.upcoming.isNotEmpty() && row.stopDisruption == null &&
+                byStopLine[row.stopId to row.lineId].orEmpty().any { it.upcoming.containsAll(row.upcoming) }
+        }
+    }
+
+    /**
      * Hide the **service alerts the user has dismissed** (SPEC *Disruptions*). A stop-status row is
      * removed when its [DismissedAlert.ofStopClosure] identity — place key + the current notice text
      * and window — is in [dismissed]. A timed row whose **line status** matches a

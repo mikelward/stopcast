@@ -573,6 +573,12 @@ pin starts from it. With live refresh on, each saved origin that isn't nearby
 adds one arrivals request per refresh (free; well within TfL's keyless budget for a few journeys),
 the same kind of request the app already makes for it — no new data leaves the device.
 
+**Not shown twice.** A near-me row that a journey card above already shows in full — the same stop
+and line, every one of its departures on the card — is left out of the list below (maintainer,
+2026-09-24); a stop left with nothing loses its heading. A row the card shows only in part (some
+trains don't reach the far end) stays, as do status-only rows, closures, and a stop's own platform
+view.
+
 **Direct only, for now.** A journey that needs a change is routing — the eventual goal is starring
 home and work, which needs it, and it stays a non-goal until then. The tap-a-stop entry point has no
 cue of its own, so a starrable stop list opens with a one-line tip ("Tap a stop to star the journey
