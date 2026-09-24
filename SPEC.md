@@ -638,7 +638,16 @@ destination costs a request only every few minutes. A failed check keeps the las
 claims nothing new. Alerts on lines with no starred journey (a separate favorite-lines list) stay a
 `TODO.md` idea.
 
-**Direct only, for now.** A journey that needs a change is routing — the eventual goal is starring
+**Change at a fork.** When a line runs only one branch from the origin (a Northern line train to
+Edgware from King's Cross, none to High Barnet), a train on the other branch that leaves before the
+next direct one is shown too, under "Change at Camden Town": the last stop its path shares with the
+route to the far end, from the route data the card already loads (maintainer, 2026-09-24). With no
+direct train at all, the card says "No direct trains" above them. It names only where to change,
+not the connecting train's time, which isn't known; a later change-train is never offered, since
+the direct one is then no slower. Rail only: a bus's path is often the route's end, too loose to
+send a rider to change on. The widget keeps showing direct trains only.
+
+**Direct only, for now.** A journey that needs a change of line is routing — the eventual goal is starring
 home and work, which needs it, and it stays a non-goal until then. The tap-a-stop entry point has no
 cue of its own, so a starrable stop list opens with a one-line tip ("Tap a stop to star the journey
 there") until the user dismisses it (maintainer, 2026-09-24); the dismissal is kept with the app's

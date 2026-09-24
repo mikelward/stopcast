@@ -193,6 +193,11 @@
     <string name="journey_title_spoken">%1$s to %2$s</string>
     <string name="journey_checking">Checking trains…</string>
     <string name="journey_none">No trains to %1$s soon</string>
+    <!-- A journey card with no train to its far end soon, above trains on another branch it can
+         change from ("Change at Camden Town"). -->
+    <string name="journey_none_direct">No direct trains to %1$s soon</string>
+    <!-- Heads a journey card's trains on another branch: the stop to change at for the far end. -->
+    <string name="journey_change_at">Change at %1$s</string>
     <string name="journey_not_checked">Couldn\'t check trains</string>
     <!-- The same journey-card notes for a bus journey. -->
     <string name="journey_checking_bus">Checking buses…</string>

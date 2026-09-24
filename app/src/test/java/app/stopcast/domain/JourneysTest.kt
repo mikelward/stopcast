@@ -88,6 +88,58 @@ class JourneysTest {
         assertEquals("TOP", Journeys.oriented(noCoords, 51.491, -0.12).from.stopId)
     }
 
+    // A line forking past a shared trunk: from "King" both branches run via "Mid" to "Fork", then
+    // one to "West End" and the other to "North End".
+    private val forked = LineSequence(
+        routes = listOf(
+            LineRoute("King ↔ West End", listOf("KING", "MID", "FORK", "WEST1", "WEST")),
+            LineRoute("King ↔ North End", listOf("KING", "MID", "FORK", "NORTH1", "NORTH")),
+        ),
+        stopNames = mapOf(
+            "KING" to "King", "MID" to "Mid", "FORK" to "Fork", "WEST1" to "West Park", "WEST" to "West End",
+            "NORTH1" to "North Park", "NORTH" to "North End",
+        ),
+    )
+
+    private val kingToNorth = StarredJourney(JourneyEnd("KING", "King"), JourneyEnd("NORTH", "North End"), "example")
+
+    @Test
+    fun `a train on the other branch is offered with where to change, only when it leaves first`() {
+        val segment = Journeys.segment(kingToNorth, forked)!!
+        val rows = rowsAt(
+            "KING",
+            departure("West End", 60), departure("North End", 300), departure("West End", 480),
+        )
+        val trains = Journeys.trains(segment, rows, mapOf("example" to forked), kingToNorth)
+        assertEquals(listOf("North End"), trains.rows.flatMap { it.upcoming }.map { it.destination })
+        val change = trains.changes.single()
+        assertEquals("FORK" to "Fork", change.stopId to change.stopName)
+        assertEquals(listOf(60L, 480L), change.row.upcoming.map { it.expectedArrival.epochSecond - now.epochSecond })
+        assertFalse("a change isn't an unresolved train", trains.unresolved)
+        // Only the West End train leaving before the first direct one is worth changing from.
+        val offered = Journeys.changesBefore(trains.rows, trains.changes).single()
+        assertEquals(listOf(60L), offered.row.upcoming.map { it.expectedArrival.epochSecond - now.epochSecond })
+        // With no direct train at all, every change-train is offered.
+        val noDirect = Journeys.trains(segment, rowsAt("KING", departure("West End", 60), departure("West End", 480)), mapOf("example" to forked), kingToNorth)
+        assertTrue(noDirect.rows.isEmpty())
+        assertEquals(2, Journeys.changesBefore(noDirect.rows, noDirect.changes).single().row.upcoming.size)
+    }
+
+    @Test
+    fun `a train sharing no stop past the origin, or a bus, isn't offered as a change`() {
+        // From Top, a Bottom B train runs via Side: nothing shared with the way to Mid.
+        val segment = Journeys.segment(journey, rail)!!
+        assertTrue(Journeys.trains(segment, rowsAt("TOP", departure("Bottom B", 60)), mapOf("example" to rail)).changes.isEmpty())
+        // A bus on the other branch gets no change: its path is too loose to send a rider on.
+        val busSegment = Journeys.segment(kingToNorth, forked)!!
+        val bus = Journeys.trains(busSegment, rowsAt("KING", departure("West End", 60, mode = "bus")), mapOf("example" to forked), kingToNorth)
+        assertTrue(bus.changes.isEmpty())
+        // Nor on a bus journey whose predictions leave the mode off.
+        val busJourney = kingToNorth.copy(mode = "bus")
+        val noMode = Journeys.trains(busSegment, rowsAt("KING", departure("West End", 60, mode = "")), mapOf("example" to forked), busJourney)
+        assertTrue(noMode.changes.isEmpty())
+    }
+
     @Test
     fun `a station journey boards and alights at its own stops both ways`() {
         assertEquals(JourneySegment("TOP", setOf("MID")), Journeys.segment(journey, rail))

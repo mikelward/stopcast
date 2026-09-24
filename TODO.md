@@ -1025,6 +1025,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
     - [x] **Other poles in the origin's stop area.** A bus journey also boards from a pole beside
           its origin (same stop area) whose line reaches the far end; its buses show under that
           pole's heading and the widget pins them from it.
+    - [x] **Change at a fork** (maintainer, 2026-09-24). When only the other branch runs from the
+          origin (Northern line trains to Edgware, none to High Barnet), a train on it that leaves
+          before the next direct one shows under "Change at Camden Town", the last stop it shares
+          with the route to the far end. Rail only; the widget stays direct-only.
   - [ ] **Home and work, with routing** — the eventual goal: star two places, not two stations,
         and show how to get between them. Needs journey planning, a SPEC non-goal today and a
         separate product + privacy decision (it would send both places to TfL's Journey Planner).
