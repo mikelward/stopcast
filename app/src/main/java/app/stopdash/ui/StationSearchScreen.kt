@@ -30,7 +30,10 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -39,7 +42,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.stopdash.R
@@ -70,6 +75,12 @@ fun StationSearchScreen(
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     if (autoFocus) LaunchedEffect(Unit) { focus.requestFocus() }
+    // The field keeps its own value, cursor included. Bound to the query as a plain String it came
+    // back from a picked station (which recomposes this screen afresh) with the cursor before the
+    // first letter, so typing on inserted there; now it arrives after the text, and while the
+    // screen stays up the cursor sits wherever the user put it. Only the query itself is typed
+    // into this field, so seeding from it once is enough to stay in step.
+    var field by remember { mutableStateOf(queryFieldValue(state.query)) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -80,8 +91,13 @@ fun StationSearchScreen(
                 },
                 title = {
                     TextField(
-                        value = state.query,
-                        onValueChange = onQueryChange,
+                        value = field,
+                        onValueChange = { value ->
+                            val edited = value.text != field.text
+                            field = value
+                            // A tap or drag that only moves the cursor isn't a new query to search.
+                            if (edited) onQueryChange(value.text)
+                        },
                         placeholder = { Text(hint ?: stringResource(R.string.station_search_hint)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -151,6 +167,9 @@ fun StationSearchScreen(
         }
     }
 }
+
+/** The search field's value for [query] on arrival: the text, with the cursor after it. */
+internal fun queryFieldValue(query: String): TextFieldValue = TextFieldValue(query, TextRange(query.length))
 
 /** The user's starred stops, then their recent opens, each under its heading. */
 @Composable
