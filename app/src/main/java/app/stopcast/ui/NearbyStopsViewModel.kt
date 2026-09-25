@@ -411,11 +411,7 @@ class NearbyStopsViewModel(
         )
     }
 
-    private fun kindOf(e: Throwable): DeparturesUiState.Error.Kind = when (e) {
-        is TflException.Offline -> DeparturesUiState.Error.Kind.OFFLINE
-        is TflException.RateLimited -> DeparturesUiState.Error.Kind.RATE_LIMITED
-        else -> DeparturesUiState.Error.Kind.UNREACHABLE
-    }
+    private fun kindOf(e: Throwable): DeparturesUiState.Error.Kind = errorKindOf(e)
 }
 
 /** The departures-view [StopRef] a nearby [StopLocation] maps to — the coordinate is dropped

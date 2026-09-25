@@ -65,6 +65,16 @@
     <string name="journey_tip_dismiss">Got it</string>
     <!-- Shown when some watched stops refreshed but at least one failed. -->
     <string name="partial_refresh">Some stops couldn\'t be refreshed</string>
+    <!-- The same banner naming the nearest stop, and how many more, when known:
+         "Oxford Circus: server error", "Oxford Circus +2: network error", or, when the stops
+         failed different ways, "Oxford Circus +2 not updated". -->
+    <string name="partial_refresh_more">%1$s +%2$d</string>
+    <string name="partial_refresh_reason">%1$s: %2$s</string>
+    <string name="partial_refresh_no_reason">%1$s not updated</string>
+    <string name="partial_reason_offline">offline</string>
+    <string name="partial_reason_rate_limited">rate limited</string>
+    <string name="partial_reason_network">network error</string>
+    <string name="partial_reason_server">server error</string>
     <!-- Shown when arrivals loaded but the disruption lookup failed, so these times'
          disruption status was never checked (SPEC Disruptions: not verified-clean). -->
     <string name="disruptions_unknown">Couldn\'t check for disruptions</string>
@@ -107,7 +117,8 @@
     <!-- Shown over the aged last-good list when a refresh failed outright. -->
     <string name="refresh_failed_offline">Couldn\'t refresh — you\'re offline</string>
     <string name="refresh_failed_rate_limited">Couldn\'t refresh — TfL is rate-limiting</string>
-    <string name="refresh_failed_unreachable">Couldn\'t refresh — can\'t reach TfL</string>
+    <string name="refresh_failed_network">Couldn\'t refresh — network error</string>
+    <string name="refresh_failed_server">Couldn\'t refresh — server error</string>
 
     <!-- Honest failure states (SPEC principles 1–2) -->
     <string name="error_offline">You\'re offline</string>

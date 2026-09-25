@@ -768,12 +768,12 @@ class KtorTflClientTest {
     }
 
     @Test
-    fun `a transport failure while online maps to Unreachable, not Offline`() {
+    fun `a transport failure while online maps to Network, not Offline or Unreachable`() {
         // A read timeout (device online, TfL slow/down) is a subclass of IOException
-        // but not UnknownHostException, so it's Unreachable — the UI must not tell an
-        // online user they're offline during a TfL outage.
+        // but not UnknownHostException, so it's Network — the UI must not tell an online
+        // user they're offline, nor blame TfL's server for a request that never completed.
         val client = throwingClient(SocketTimeoutException("read timed out"))
-        assertThrows(TflException.Unreachable::class.java) {
+        assertThrows(TflException.Network::class.java) {
             runTest { client.arrivals("940GZZLUVIC") }
         }
     }

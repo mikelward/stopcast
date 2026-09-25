@@ -1437,7 +1437,7 @@ private fun LoadedContent(
                 Banner(stringResource(refreshFailureMessage(state.refreshFailure)))
             }
             if (state.partialRefresh) {
-                Banner(stringResource(R.string.partial_refresh))
+                Banner(partialRefreshMessage(state.partialStops.values.map { it.name }.distinct(), state.partialReason))
             }
             // Arrivals loaded but their disruption status couldn't be checked — say so
             // rather than let the times read as verified-clean (SPEC *Disruptions*).
@@ -3605,13 +3605,41 @@ private fun RefreshButton(onRefresh: () -> Unit, modifier: Modifier = Modifier) 
 internal fun errorMessage(kind: DeparturesUiState.Error.Kind): Int = when (kind) {
     DeparturesUiState.Error.Kind.OFFLINE -> R.string.error_offline
     DeparturesUiState.Error.Kind.RATE_LIMITED -> R.string.error_rate_limited
-    DeparturesUiState.Error.Kind.UNREACHABLE -> R.string.error_unreachable
+    DeparturesUiState.Error.Kind.NETWORK, DeparturesUiState.Error.Kind.SERVER -> R.string.error_unreachable
+}
+
+/**
+ * The "couldn't be refreshed" banner, kept short: the nearest stop, how many more, and why when
+ * every failure agrees — "Oxford Circus +2: network error" — so a TfL outage at one station reads as
+ * that, not as the app failing somewhere unnamed (SPEC principle 6). Falls back to "Some stops
+ * couldn't be refreshed" when no stop is named.
+ */
+@Composable
+private fun partialRefreshMessage(names: List<String>, reason: DeparturesUiState.Error.Kind?): String {
+    val which = when (names.size) {
+        0 -> return stringResource(R.string.partial_refresh)
+        1 -> names[0]
+        else -> stringResource(R.string.partial_refresh_more, names[0], names.size - 1)
+    }
+    return if (reason == null) {
+        stringResource(R.string.partial_refresh_no_reason, which)
+    } else {
+        stringResource(R.string.partial_refresh_reason, which, stringResource(partialReason(reason)))
+    }
+}
+
+private fun partialReason(kind: DeparturesUiState.Error.Kind): Int = when (kind) {
+    DeparturesUiState.Error.Kind.OFFLINE -> R.string.partial_reason_offline
+    DeparturesUiState.Error.Kind.RATE_LIMITED -> R.string.partial_reason_rate_limited
+    DeparturesUiState.Error.Kind.NETWORK -> R.string.partial_reason_network
+    DeparturesUiState.Error.Kind.SERVER -> R.string.partial_reason_server
 }
 
 private fun refreshFailureMessage(kind: DeparturesUiState.Error.Kind): Int = when (kind) {
     DeparturesUiState.Error.Kind.OFFLINE -> R.string.refresh_failed_offline
     DeparturesUiState.Error.Kind.RATE_LIMITED -> R.string.refresh_failed_rate_limited
-    DeparturesUiState.Error.Kind.UNREACHABLE -> R.string.refresh_failed_unreachable
+    DeparturesUiState.Error.Kind.NETWORK -> R.string.refresh_failed_network
+    DeparturesUiState.Error.Kind.SERVER -> R.string.refresh_failed_server
 }
 
 private const val MAX_TIMES = 3

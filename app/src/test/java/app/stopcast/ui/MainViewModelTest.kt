@@ -274,6 +274,128 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `a partial refresh names the failed stop and why`() = runTest(dispatcher) {
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    // TfL answered, but with a server error (a 503).
+                    "940GZZLUKSX" to Result.failure(TflException.Unreachable("HTTP 503", null)),
+                ),
+                statuses = Result.success(listOf(status("victoria", LineStatus.GOOD_SERVICE, "Good Service"))),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(state.partialRefresh)
+        assertEquals(listOf("King's Cross St. Pancras"), state.partialStops.values.map { it.name })
+        assertEquals(DeparturesUiState.Error.Kind.SERVER, state.partialReason)
+    }
+
+    @Test
+    fun `stops failing different ways are named nearest first, with no single reason`() = runTest(dispatcher) {
+        val vm = MainViewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    "940GZZLUKSX" to Result.failure(TflException.Offline(null)),
+                    "940GZZLUVIC" to Result.failure(TflException.Unreachable("HTTP 503", null)),
+                ),
+                statuses = Result.success(listOf(status("victoria", LineStatus.GOOD_SERVICE, "Good Service"))),
+            ),
+            listOf(
+                StopRef("940GZZLUOXC", "Oxford Circus"),
+                StopRef("940GZZLUKSX", "King's Cross St. Pancras"),
+                StopRef("940GZZLUVIC", "Victoria"),
+            ),
+            clock = { now },
+            io = dispatcher,
+            // Victoria is nearer than King's Cross though it comes later in the list.
+            stopDistanceMeters = mapOf("940GZZLUOXC" to 50.0, "940GZZLUKSX" to 400.0, "940GZZLUVIC" to 100.0),
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(listOf("Victoria", "King's Cross St. Pancras"), state.partialStops.values.map { it.name })
+        // Offline for one, a server error for the other: no one reason is true of both.
+        assertEquals(null, state.partialReason)
+    }
+
+    @Test
+    fun `a failure maps to the reason the banner gives`() {
+        assertEquals(DeparturesUiState.Error.Kind.OFFLINE, errorKindOf(TflException.Offline(null)))
+        assertEquals(DeparturesUiState.Error.Kind.RATE_LIMITED, errorKindOf(TflException.RateLimited(null)))
+        // A timeout or dropped connection is a network error, not TfL's.
+        assertEquals(DeparturesUiState.Error.Kind.NETWORK, errorKindOf(TflException.Network("transport: X", null)))
+        // TfL answered with an error (a 503), or with something that couldn't be read.
+        assertEquals(DeparturesUiState.Error.Kind.SERVER, errorKindOf(TflException.Unreachable("HTTP 503", null)))
+    }
+
+    @Test
+    fun `the banner's reason is the one every named stop shares, and an unknown one breaks it`() {
+        fun loaded(vararg failed: Pair<String, DeparturesUiState.FailedStop>) =
+            DeparturesUiState.Loaded(stops = emptyList(), fetchedAt = now, partialRefresh = true, partialStops = mapOf(*failed))
+        val server = DeparturesUiState.Error.Kind.SERVER
+        assertEquals(server, loaded("A" to DeparturesUiState.FailedStop("A", server), "B" to DeparturesUiState.FailedStop("B", server)).partialReason)
+        // A retained stop whose cause is unknown (restored from disk) beside one that failed with a
+        // known cause: no single reason is true of both.
+        assertEquals(null, loaded("A" to DeparturesUiState.FailedStop("A"), "B" to DeparturesUiState.FailedStop("B", server)).partialReason)
+        assertEquals(null, loaded().partialReason)
+    }
+
+    @Test
+    fun `a complete refresh names no stop and no reason`() = runTest(dispatcher) {
+        val vm = viewModel(
+            FakeClient(
+                mapOf(
+                    "940GZZLUOXC" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                    "940GZZLUKSX" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                ),
+                statuses = Result.success(listOf(status("victoria", LineStatus.GOOD_SERVICE, "Good Service"))),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = vm.state.value as DeparturesUiState.Loaded
+        assertFalse(state.partialRefresh)
+        assertTrue(state.partialStops.isEmpty())
+        assertEquals(null, state.partialReason)
+    }
+
+    @Test
+    fun `a total failure after a partial one gives this attempt's reason, not the old one`() = runTest(dispatcher) {
+        var failure: Exception? = null
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                failure?.let { throw it }
+                if (stopId == "940GZZLUKSX") throw TflException.Offline(null)
+                return listOf(departure("victoria", "Victoria", 300))
+            }
+
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                failure?.let { throw it }
+                return emptyList()
+            }
+        }
+        val vm = viewModel(client)
+        advanceUntilIdle()
+        assertEquals(DeparturesUiState.Error.Kind.OFFLINE, (vm.state.value as DeparturesUiState.Loaded).partialReason)
+
+        failure = TflException.Unreachable("HTTP 503", null)
+        vm.refresh()
+        advanceUntilIdle()
+
+        // Still partial, and both banners now give the same, current cause.
+        val kept = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(kept.partialRefresh)
+        assertEquals(DeparturesUiState.Error.Kind.SERVER, kept.refreshFailure)
+        assertEquals(DeparturesUiState.Error.Kind.SERVER, kept.partialReason)
+    }
+
+    @Test
     fun `a total failure after a load keeps the aged last-good snapshot`() = runTest(dispatcher) {
         var failing = false
         // A genuine total failure: BOTH the arrivals and the (now-decoupled) disruption
@@ -2260,6 +2382,82 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `an opened card's failure makes the banner generic rather than named`() {
+        val list = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("E", "Near", emptyList(), now, arrivalsFresh = false)),
+            fetchedAt = now,
+            partialRefresh = true,
+            partialStops = mapOf("E" to DeparturesUiState.FailedStop("Near", DeparturesUiState.Error.Kind.SERVER)),
+        )
+        val offline = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("MB", "Farthest", emptyList(), now.minusSeconds(600))),
+            fetchedAt = now.minusSeconds(600),
+            refreshFailure = DeparturesUiState.Error.Kind.OFFLINE,
+        )
+        val shown = withOpenedFarther(list, listOf(setOf("MB") to offline))
+        assertTrue(shown.partialRefresh)
+        // Naming only "Near" would read as if it were the only stop that failed.
+        assertTrue(shown.partialStops.isEmpty())
+        assertEquals(null, shown.partialReason)
+
+        // With no card failing, the list's own failure stays named.
+        val fine = DeparturesUiState.Loaded(stops = listOf(StopArrivals("MB", "Farthest", emptyList(), now)), fetchedAt = now)
+        assertEquals(listOf("Near"), withOpenedFarther(list, listOf(setOf("MB") to fine)).partialStops.values.map { it.name })
+    }
+
+    @Test
+    fun `a stop the list couldn't load but a card shows fresh isn't named`() {
+        // The list never loaded MA (a journey origin at the farther station); the card has it fresh.
+        val list = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("E", "E", emptyList(), now)),
+            fetchedAt = now,
+            partialRefresh = true,
+            partialStops = mapOf("MA" to DeparturesUiState.FailedStop("Shared", DeparturesUiState.Error.Kind.SERVER)),
+        )
+        val card = DeparturesUiState.Loaded(stops = listOf(StopArrivals("MA", "Shared", emptyList(), now)), fetchedAt = now)
+        val shown = withOpenedFarther(list, listOf(setOf("MA") to card))
+        assertFalse("nothing shown is failed any more", shown.partialRefresh)
+        assertTrue(shown.partialStops.isEmpty())
+
+        // With another list stop still failed, only that one is named, with the list's reason.
+        val twoFailed = list.copy(partialStops = mapOf("MA" to DeparturesUiState.FailedStop("Shared", DeparturesUiState.Error.Kind.SERVER), "MB" to DeparturesUiState.FailedStop("Other", DeparturesUiState.Error.Kind.SERVER)))
+        val stillPartial = withOpenedFarther(twoFailed, listOf(setOf("MA") to card))
+        assertTrue(stillPartial.partialRefresh)
+        assertEquals(listOf("Other"), stillPartial.partialStops.values.map { it.name })
+        assertEquals(DeparturesUiState.Error.Kind.SERVER, stillPartial.partialReason)
+    }
+
+    @Test
+    fun `a list still waiting on a stop stays partial when a card shows its named one fresh`() {
+        // After a relocation: MA failed and is named; another stop is pending and can't be.
+        val list = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("E", "E", emptyList(), now)),
+            fetchedAt = now,
+            partialRefresh = true,
+            partialStops = mapOf("MA" to DeparturesUiState.FailedStop("Shared", DeparturesUiState.Error.Kind.SERVER)),
+            partialUnnamed = true,
+        )
+        val card = DeparturesUiState.Loaded(stops = listOf(StopArrivals("MA", "Shared", emptyList(), now)), fetchedAt = now)
+        val shown = withOpenedFarther(list, listOf(setOf("MA") to card))
+        assertTrue("the pending stop keeps the list partial", shown.partialRefresh)
+        assertTrue(shown.partialStops.isEmpty())
+    }
+
+    @Test
+    fun `a card's failure for a stop the list already shows fresh names nothing`() {
+        // A journey origin at the farther station: the list shows it, fresh.
+        val list = DeparturesUiState.Loaded(stops = listOf(StopArrivals("MA", "Shared", emptyList(), now)), fetchedAt = now)
+        val card = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("MA", "Shared", emptyList(), now.minusSeconds(600))),
+            fetchedAt = now.minusSeconds(600),
+            refreshFailure = DeparturesUiState.Error.Kind.OFFLINE,
+        )
+        val shown = withOpenedFarther(list, listOf(setOf("MA") to card))
+        assertTrue(shown.partialStops.isEmpty())
+        assertEquals(null, shown.partialReason)
+    }
+
+    @Test
     fun `an opened card's model is re-measured when the rider moves`() = runTest(dispatcher) {
         // The stop sits at the new fix, about 1.1 km from the old one.
         val cards = fartherCards { listOf(fartherStop.copy(latitude = 51.51)) }
@@ -2796,6 +2994,93 @@ class MainViewModelTest {
         assertTrue("E" in shownIds(vm))
         advanceUntilIdle()
         assertTrue("MA" !in shownIds(vm))
+    }
+
+    @Test
+    fun `a relocation's prune keeps naming a kept stop that failed`() = runTest(dispatcher) {
+        var failE = false
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                if (stopId == "E" && failE) throw TflException.Offline(null)
+                return listOf(departure("central", "Central", 200))
+            }
+
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = tierVm(client, listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")))
+        advanceUntilIdle()
+        vm.reveal("bus")
+        advanceUntilIdle()
+        // E's next refresh fails, so it is kept at its older age and named.
+        failE = true
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf("E"), (vm.state.value as DeparturesUiState.Loaded).partialStops.values.map { it.name })
+
+        // MA departs; E, still failing, stays named through the pending re-fetch.
+        vm.reconcile(newEager = eagerOf("E" to "bus"), newMore = emptyList())
+        val pruned = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(pruned.partialRefresh)
+        assertTrue("the replacement fetch is pending", pruned.partialUnnamed)
+        assertEquals(listOf("E"), pruned.partialStops.values.map { it.name })
+        assertEquals(DeparturesUiState.Error.Kind.OFFLINE, pruned.partialReason)
+    }
+
+    @Test
+    fun `a relocation's prune keeps naming a still-fetched stop that never loaded`() = runTest(dispatcher) {
+        val client = FakeClient(
+            mapOf(
+                "E" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                "F" to Result.failure(TflException.Offline(null)),
+                "MA" to Result.success(listOf(departure("central", "Central", 200))),
+            ),
+        )
+        val vm = tierVm(client, listOf(StopRef("E", "E"), StopRef("F", "F")), listOf(clusterOf("M1", "MA" to "bus")))
+        advanceUntilIdle()
+        vm.reveal("bus")
+        advanceUntilIdle()
+        assertEquals(listOf("F"), (vm.state.value as DeparturesUiState.Loaded).partialStops.values.map { it.name })
+
+        // MA departs; F has no row, but it is still fetched and still failing, so it stays named.
+        vm.reconcile(newEager = eagerOf("E" to "bus", "F" to "bus"), newMore = emptyList())
+        val pruned = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(listOf("F"), pruned.partialStops.values.map { it.name })
+        assertEquals(DeparturesUiState.Error.Kind.OFFLINE, pruned.partialReason)
+    }
+
+    @Test
+    fun `a relocation's prune names retained failures nearest the new fix first`() = runTest(dispatcher) {
+        val client = FakeClient(
+            mapOf(
+                "E" to Result.success(listOf(departure("victoria", "Victoria", 300))),
+                "F" to Result.failure(TflException.Offline(null)),
+                "G" to Result.failure(TflException.Offline(null)),
+                "MA" to Result.success(listOf(departure("central", "Central", 200))),
+            ),
+        )
+        val vm = MainViewModel(
+            client,
+            listOf(StopRef("E", "E"), StopRef("F", "F"), StopRef("G", "G")),
+            initialMore = listOf(clusterOf("M1", "MA" to "bus")),
+            clock = { now },
+            io = dispatcher,
+            stopDistanceMeters = mapOf("E" to 50.0, "F" to 100.0, "G" to 300.0),
+        )
+        advanceUntilIdle()
+        vm.reveal("bus")
+        advanceUntilIdle()
+        assertEquals(listOf("F", "G"), (vm.state.value as DeparturesUiState.Loaded).partialStops.values.map { it.name })
+
+        // Walk on: G is now the nearer of the two, and MA departs.
+        vm.reconcile(
+            newEager = eagerOf("E" to "bus", "F" to "bus", "G" to "bus"),
+            newMore = emptyList(),
+            newDistanceMeters = mapOf("E" to 50.0, "F" to 300.0, "G" to 100.0),
+        )
+        val pruned = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(listOf("G", "F"), pruned.partialStops.values.map { it.name })
     }
 
     @Test

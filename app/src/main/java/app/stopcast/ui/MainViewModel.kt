@@ -700,6 +700,9 @@ class MainViewModel(
         // stop it actually shows is fresh, not just any stop (a journey origin isn't on it).
         val freshArrivalStopIds: Set<String>,
         val firstError: Throwable?,
+        // Each stop whose ARRIVALS failed this batch, and how — why it "couldn't be refreshed", for the
+        // partial banner. Distinct from [firstError], which a disruption failure can set.
+        val arrivalsErrors: Map<String, DeparturesUiState.Error.Kind>,
     )
 
     /**
@@ -722,6 +725,7 @@ class MainViewModel(
         val waitedBefore = rateWaitMillis()
         val merged = mutableListOf<StopArrivals>()
         var firstError: Throwable? = null
+        val arrivalsErrors = mutableMapOf<String, DeparturesUiState.Error.Kind>()
         var anyArrivalsFailed = false
         // True once any request returned fresh data (arrivals or disruption, any stop):
         // the difference between a partial refresh (keep the fresh, age the rest) and a
@@ -852,6 +856,7 @@ class MainViewModel(
             }
             val departures = arrivalResult.getOrElse { e ->
                 if (firstError == null) firstError = e
+                arrivalsErrors[stop.id] = kindOf(e)
                 anyArrivalsFailed = true
                 warn("arrivals fetch failed for stop ${stop.id}: ${reason(e)}")
                 null
@@ -994,6 +999,7 @@ class MainViewModel(
             anyFreshData = anyFreshData,
             freshArrivalStopIds = freshArrivalStopIds,
             firstError = firstError,
+            arrivalsErrors = arrivalsErrors,
         )
     }
 
@@ -1139,6 +1145,7 @@ class MainViewModel(
             // Screen-wide "status unknown" derives from the merged set and this batch's provenance,
             // so refresh() and an incremental reveal compute it the same way ([disruptionUnknownOf]).
             val disruptionUnknown = disruptionUnknownOf(merged, determinedLineIds, stopsDisruptionUnknown)
+            val partial = if (anyFreshData) anyArrivalsFailed else priorPartial
 
             val newState = when {
                 merged.isNotEmpty() ->
@@ -1158,12 +1165,16 @@ class MainViewModel(
                         // priorPartial carries that flag whether the prior was in-memory or
                         // recovered from the store, so a store-recovered incomplete snapshot
                         // stays flagged too.
-                        partialRefresh =
-                            if (anyFreshData) {
-                                anyArrivalsFailed
-                            } else {
-                                priorPartial
-                            },
+                        partialRefresh = partial,
+                        // Which stops, and why, so the banner can say "Oxford Circus: server error" rather
+                        // than leave the rider guessing (SPEC principle 6). A stop that failed this
+                        // attempt gets this attempt's reason; one carried over unfetched keeps its own.
+                        partialStops = if (partial) {
+                            incompleteStops(merged, batch.arrivalsErrors, priorLoaded?.partialStops.orEmpty())
+                        } else {
+                            emptyMap()
+                        },
+                        partialUnnamed = partial && unnamedIncomplete(merged),
                         // Nothing fresh came back at all (every request failed) but a prior
                         // snapshot was kept — carry the failure so the screen says "couldn't
                         // refresh" rather than passing the aged rows off as fresh (SPEC D4 /
@@ -1330,6 +1341,7 @@ class MainViewModel(
             val stopsDisruptionUnknown =
                 (current.stopsDisruptionUnknown + batch.stopsDisruptionUnknown)
                     .filterTo(mutableSetOf()) { it in mergedIds }
+            val partial = isIncomplete(mergedStops)
             val newState = current.copy(
                 stops = mergedStops,
                 fetchedAt = mergedStops.maxOfOrNull { it.fetchedAt } ?: current.fetchedAt,
@@ -1337,7 +1349,14 @@ class MainViewModel(
                 // later reveal that retries and recovers an earlier missing stop CLEARS the "some stops
                 // couldn't refresh" banner instead of leaving it stuck until a full refresh. A stop
                 // still missing (its fetch failed) or carried stale keeps it set (see [isIncomplete]).
-                partialRefresh = isIncomplete(mergedStops),
+                partialRefresh = partial,
+                // This batch's failures, and each earlier one a stop the batch didn't fetch still has.
+                partialStops = if (partial) {
+                    incompleteStops(mergedStops, batch.arrivalsErrors, current.partialStops)
+                } else {
+                    emptyMap()
+                },
+                partialUnnamed = partial && unnamedIncomplete(mergedStops),
                 // Merge the new batch's line statuses, REPLACING the prior verdict for every line the
                 // batch re-queried (attemptedLineIds), not only the ones it definitively determined:
                 // a line the batch re-checked but TfL now omits (or whose lookup failed) must drop its
@@ -1479,6 +1498,13 @@ class MainViewModel(
                         stops = kept,
                         fetchedAt = kept.maxOfOrNull { it.fetchedAt } ?: loaded.fetchedAt,
                         partialRefresh = true,
+                        // A still-fetched stop that had failed still has, whether or not it has a row
+                        // yet; the stops taking the departed ones' place are pending, not failed, so
+                        // they aren't named. Re-sorted by the new fix's distances ([remeasure]).
+                        partialStops = fetchedStops.mapTo(HashSet()) { it.id }.let { still ->
+                            byDistance(loaded.partialStops.filterKeys { it in still }, stopDistanceMeters)
+                        },
+                        partialUnnamed = true,
                     )
                 }
             }
@@ -1703,6 +1729,45 @@ class MainViewModel(
             stops.any { !it.arrivalsFresh }
 
     /**
+     * The stops that make [stops] incomplete (see [isIncomplete]) — missing, or kept at an older
+     * age — nearest first ([byDistance]), each with why: its failure in [failedNow] if this fetch
+     * tried it, else the reason it already had in [prior], else unknown. Empty when none has a
+     * name, and the banner falls back to its generic wording.
+     */
+    private fun incompleteStops(
+        stops: List<StopArrivals>,
+        failedNow: Map<String, DeparturesUiState.Error.Kind> = emptyMap(),
+        prior: Map<String, DeparturesUiState.FailedStop> = emptyMap(),
+    ): Map<String, DeparturesUiState.FailedStop> {
+        fun failed(id: String, name: String) = id to DeparturesUiState.FailedStop(name, failedNow[id] ?: prior[id]?.reason)
+        val byId = stops.associateBy { it.stopId }
+        val seeded = fetchedStops.mapNotNull { seed ->
+            val shown = byId[seed.id]
+            when {
+                shown == null -> failed(seed.id, seed.name)
+                !shown.arrivalsFresh -> failed(seed.id, shown.stopName.ifBlank { seed.name })
+                else -> null
+            }
+        }
+        val seedIds = fetchedStops.mapTo(HashSet()) { it.id }
+        val unseeded = stops.filter { it.stopId !in seedIds && !it.arrivalsFresh }.map { failed(it.stopId, it.stopName) }
+        // [fetchedStops] puts every eager stop before a revealed farther one, which can be nearer
+        // than a sparse mode's eager stop, so order by distance.
+        return byDistance((seeded + unseeded).toMap(), stopDistanceMeters)
+    }
+
+    /** Whether some stop that makes [stops] incomplete has no name to show ([incompleteStops] drops it). */
+    private fun unnamedIncomplete(stops: List<StopArrivals>): Boolean {
+        val byId = stops.associateBy { it.stopId }
+        val seedIds = fetchedStops.mapTo(HashSet()) { it.id }
+        return fetchedStops.any { seed ->
+            val shown = byId[seed.id]
+            (shown == null && seed.name.isBlank()) ||
+                (shown != null && !shown.arrivalsFresh && shown.stopName.isBlank() && seed.name.isBlank())
+        } || stops.any { it.stopId !in seedIds && !it.arrivalsFresh && it.stopName.isBlank() }
+    }
+
+    /**
      * The aged last-good [DeparturesUiState.Loaded] to show from a restored [snapshot] before
      * any network. A saved snapshot can be incomplete (a missing stop, or a carried-stale
      * one), shown as partial rather than passed off as a complete, fresh whole (see
@@ -1719,6 +1784,9 @@ class MainViewModel(
             stops = snapshot.stops,
             fetchedAt = snapshot.fetchedAt,
             partialRefresh = isIncomplete(snapshot.stops),
+            // Which stops, not why: the reason isn't persisted with the snapshot, so each is unknown.
+            partialStops = incompleteStops(snapshot.stops),
+            partialUnnamed = isIncomplete(snapshot.stops) && unnamedIncomplete(snapshot.stops),
             disruptionUnknown = true,
         )
 
@@ -1771,11 +1839,12 @@ class MainViewModel(
     private fun kindOf(e: Throwable?): DeparturesUiState.Error.Kind = errorKindOf(e)
 }
 
-/** The user-facing error a failed TfL call maps to: offline, rate-limited, or else unreachable. */
+/** The user-facing error a failed TfL call maps to: offline, rate-limited, a network error, or else a server one. */
 internal fun errorKindOf(e: Throwable?): DeparturesUiState.Error.Kind = when (e) {
     is TflException.Offline -> DeparturesUiState.Error.Kind.OFFLINE
     is TflException.RateLimited -> DeparturesUiState.Error.Kind.RATE_LIMITED
-    else -> DeparturesUiState.Error.Kind.UNREACHABLE
+    is TflException.Network -> DeparturesUiState.Error.Kind.NETWORK
+    else -> DeparturesUiState.Error.Kind.SERVER
 }
 
 /**
@@ -1803,3 +1872,16 @@ internal object WidgetJourneysWrites {
 
     fun latest(): Long = generation.get()
 }
+
+/**
+ * Failed [stops] nearest first by [distanceMeters], dropping blank names. A stop with no distance
+ * (a watched or journey stop) keeps its place after those with one (a stable sort).
+ */
+private fun byDistance(
+    stops: Map<String, DeparturesUiState.FailedStop>,
+    distanceMeters: Map<String, Double>,
+): Map<String, DeparturesUiState.FailedStop> =
+    stops.entries
+        .filter { it.value.name.isNotBlank() }
+        .sortedBy { distanceMeters[it.key] ?: Double.MAX_VALUE }
+        .associateTo(LinkedHashMap()) { it.key to it.value }

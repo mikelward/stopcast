@@ -3020,6 +3020,46 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `partial refresh names the stop and why`() {
+        capture("main-partial-named.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(
+                    stops(now.minusSeconds(60)),
+                    now.minusSeconds(60),
+                    partialRefresh = true,
+                    partialStops = mapOf("940GZZLUOXC" to DeparturesUiState.FailedStop("Oxford Circus", DeparturesUiState.Error.Kind.SERVER)),
+                ),
+                now,
+                {},
+            )
+        }
+        composeRule.onNodeWithText("Oxford Circus: server error").assertExists()
+    }
+
+    @Test
+    fun `partial refresh names the nearest and counts the rest`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                MainScreen(
+                    DeparturesUiState.Loaded(
+                        stops(now.minusSeconds(60)),
+                        now.minusSeconds(60),
+                        partialRefresh = true,
+                        partialStops = mapOf(
+                            "940GZZLUOXC" to DeparturesUiState.FailedStop("Oxford Circus"),
+                            "940GZZLUBXN" to DeparturesUiState.FailedStop("Brixton"),
+                            "940GZZLUVIC" to DeparturesUiState.FailedStop("Victoria"),
+                        ),
+                    ),
+                    now,
+                    {},
+                )
+            }
+        }
+        composeRule.onNodeWithText("Oxford Circus +2 not updated").assertExists()
+    }
+
+    @Test
     fun `partial snapshot that then failed to refresh shows both notices`() {
         capture("main-partial-and-failed.png") {
             MainScreen(

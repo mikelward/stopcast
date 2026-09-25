@@ -170,29 +170,43 @@ internal fun withOpenedFarther(
     val determined = list.determinedLineIds.toHashSet()
     val disruptionUnknown = list.stopsDisruptionUnknown.toHashSet()
     val unavailable = list.unavailableStopIds.toHashSet()
-    var partial = list.partialRefresh
+    var cardPartial = false
+    // Stops of the list's that a card shows fresh, so the banner stops naming them as failed.
+    val freshFromCards = HashSet<String>()
     for ((cardIds, state) in opened) {
         when (state) {
             is DeparturesUiState.Loaded -> {
                 val added = state.stops.filter { ids.add(it.stopId) }
                 stops += added
+                if (state.refreshFailure == null) added.filter { it.arrivalsFresh }.mapTo(freshFromCards) { it.stopId }
                 lineStatuses = state.lineStatuses + lineStatuses
                 determined += state.determinedLineIds
                 disruptionUnknown += state.stopsDisruptionUnknown
                 if (state.disruptionUnknown) added.mapTo(disruptionUnknown) { it.stopId }
                 unavailable += state.unavailableStopIds
-                if (state.partialRefresh || state.refreshFailure != null) partial = true
+                if (state.partialRefresh || state.refreshFailure != null) cardPartial = true
             }
             is DeparturesUiState.Error -> unavailable += cardIds - ids
             else -> Unit
         }
     }
+    // The banner names only the list's own failed stops (less any a card now shows fresh). A card's
+    // failures aren't named: a card that failed makes the banner generic, "Some stops couldn't be
+    // refreshed", rather than risk naming the wrong stops or reason from a card's partial state.
+    val listNamed = list.partialStops.filterKeys { it !in freshFromCards }
+    // Partial only for named stops a card has since shown fresh, the list isn't any more.
+    val listPartial = list.partialRefresh &&
+        (list.partialUnnamed || list.partialStops.isEmpty() || listNamed.isNotEmpty())
+    val partial = listPartial || cardPartial
     return list.copy(
         stops = stops,
         partialRefresh = partial,
+        partialStops = if (listPartial && !cardPartial) listNamed else emptyMap(),
+        partialUnnamed = listPartial && !cardPartial && list.partialUnnamed,
         lineStatuses = lineStatuses,
         determinedLineIds = determined,
         stopsDisruptionUnknown = disruptionUnknown,
         unavailableStopIds = unavailable,
     )
 }
+
