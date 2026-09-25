@@ -122,53 +122,79 @@ class MainScreenScreenshotTest {
         branch = branch,
     )
 
-    // Each stop is stamped independently: the two default to the same age, but a caller can
-    // age one and not the other to render a mixed-age snapshot (see `mixed age`).
+    // One real place, as a rider standing there would watch it: Whitechapel's Underground, Overground
+    // and Elizabeth line stop points, and the bus stop outside — several modes and lines without every
+    // service at the station (the Elizabeth line shows only as a status row). Real line ids, termini,
+    // platform names, clusters (TfL's `stationNaptan`), and TfL's own `direction` values, as the live
+    // feed gives them (2026-09-25); the times are made up. Public infrastructure/line names only (SPEC
+    // *Privacy*).
+    //
+    // Each stop is stamped independently: all default to the same age, but a caller can age the
+    // Overground stop and not the others to render a mixed-age snapshot (see `mixed age`).
     private fun stops(
-        ksxFetchedAt: Instant,
-        oxcFetchedAt: Instant = ksxFetchedAt,
+        tubeFetchedAt: Instant,
+        railFetchedAt: Instant = tubeFetchedAt,
     ): List<StopArrivals> = listOf(
         StopArrivals(
-            "940GZZLUKSX",
-            "King's Cross St. Pancras",
+            "940GZZLUWPL",
+            "Whitechapel",
             listOf(
-                dep("victoria", "Victoria", "southbound", "Brixton", 40, "Platform 1"),
-                dep("victoria", "Victoria", "southbound", "Brixton", 240, "Platform 1"),
-                // A bus, to show the red pill and the mode-based fallback.
-                dep("73", "73", "inbound", "Victoria", 150, "", mode = "bus"),
+                dep("district", "District", "outbound", "Upminster", 40, "Eastbound - Platform 1"),
+                dep("district", "District", "outbound", "Upminster", 240, "Eastbound - Platform 1"),
+                dep("hammersmith-city", "Hammersmith & City", "outbound", "Barking", 430, "Eastbound - Platform 1"),
+                dep("hammersmith-city", "Hammersmith & City", "inbound", "Hammersmith", 150, "Westbound - Platform 2"),
+                // A branching direction: same line and platform, different destinations — the
+                // second train names its own destination rather than "Wimbledon".
+                dep("district", "District", "inbound", "Wimbledon", 180, "Westbound - Platform 2"),
+                dep("district", "District", "inbound", "Richmond", 600, "Westbound - Platform 2"),
             ),
-            fetchedAt = ksxFetchedAt,
-            // Declared lines: Circle is served here but returns no arrivals — a suspended
-            // line, so it surfaces as a status row (see statuses()).
-            lines = listOf(
-                LineRef("victoria", "Victoria", "tube"),
-                LineRef("circle", "Circle", "tube"),
-            ),
+            fetchedAt = tubeFetchedAt,
+            clusterId = "940GZZLUWPL",
         ),
         StopArrivals(
-            "940GZZLUOXC",
-            "Oxford Circus",
+            "910GWCHAPEL",
+            "Whitechapel",
             listOf(
-                // A branching direction: same line and direction, different destinations —
-                // the second train names its own destination rather than "Hainault".
-                dep("central", "Central", "eastbound", "Hainault", 180, "Platform 3"),
-                dep("central", "Central", "eastbound", "Woodford", 600, "Platform 3"),
-                dep("bakerloo", "Bakerloo", "northbound", "Harrow & Wealdstone", 300, "Platform 2"),
+                dep("windrush", "Windrush", "outbound", "Crystal Palace", 90, "Platform 6", mode = "overground"),
+                dep("windrush", "Windrush", "outbound", "West Croydon", 540, "Platform 6", mode = "overground"),
+                dep("windrush", "Windrush", "inbound", "Highbury & Islington", 300, "Platform 5", mode = "overground"),
             ),
-            fetchedAt = oxcFetchedAt,
-            // A stop-level disruption: the station is flagged (a stop-status row), while
-            // its departures still show below (marked, not suppressed).
-            disruptions = listOf(StopDisruption("Station closed until further notice")),
+            fetchedAt = railFetchedAt,
+            clusterId = "910GWCHAPEL",
+            // A stop-level disruption: the station is flagged (a stop-status row), while its
+            // departures still show below (marked, not suppressed).
+            disruptions = listOf(StopDisruption("Lift out of service: no step-free access")),
+        ),
+        // The Elizabeth line has its own stop point here. Declared lines only: it is served but
+        // returns no arrivals — a suspended line, so it surfaces as a status row (see statuses()).
+        StopArrivals(
+            "910GWCHAPXR",
+            "Whitechapel",
+            departures = emptyList(),
+            fetchedAt = tubeFetchedAt,
+            lines = listOf(LineRef("elizabeth", "Elizabeth line", "elizabeth-line")),
+            clusterId = "910GWCHAPXR",
+        ),
+        StopArrivals(
+            "490009873D",
+            "Whitechapel Station",
+            listOf(
+                dep("25", "25", "inbound", "City Thameslink", 120, "B", mode = "bus"),
+                dep("205", "205", "inbound", "Paddington", 330, "B", mode = "bus"),
+                dep("254", "254", "inbound", "Aldgate", 510, "B", mode = "bus"),
+            ),
+            fetchedAt = tubeFetchedAt,
+            clusterId = "490G000796",
         ),
     )
 
-    // Victoria is disrupted (its rows carry the chip); Circle is suspended and returns no
-    // arrivals (a status row). Other lines are clean (absent from the map). Canned line +
-    // status wording only (SPEC *Privacy*).
+    // The District is disrupted (its rows carry the ⚠); the Elizabeth line is suspended and returns
+    // no arrivals (a status row). Other lines are clean (absent from the map). Canned line + status
+    // wording only (SPEC *Privacy*).
     private fun statuses(): Map<String, LineStatus> =
         mapOf(
-            "victoria" to LineStatus("victoria", severity = 6, description = "Severe Delays"),
-            "circle" to LineStatus("circle", severity = 2, description = "Suspended"),
+            "district" to LineStatus("district", severity = 9, description = "Minor Delays"),
+            "elizabeth" to LineStatus("elizabeth", severity = 2, description = "Suspended"),
         )
 
     @Test
@@ -180,29 +206,28 @@ class MainScreenScreenshotTest {
                 {},
             )
         }
-        composeRule.onNodeWithText("Brixton").assertExists()
-        // The two Brixton times merge onto one line, the unit written once (SPEC D8).
+        composeRule.onNodeWithText("Upminster").assertExists()
+        // The two Upminster times merge onto one line, the unit written once (SPEC D8).
         composeRule.onNodeWithText("0 · 4 min").assertExists()
-        // A branching direction (Central eastbound) keeps its headline destination and its
+        // A branching direction (District westbound) keeps its headline destination and its
         // divergent one apart, so neither countdown sits under the wrong destination.
-        composeRule.onNodeWithText("Hainault").assertExists()
-        composeRule.onNodeWithText("Woodford").assertExists()
-        // The disrupted Victoria line's timed rows carry the inline ⚠ (SPEC D3) — the full status
+        composeRule.onNodeWithText("Wimbledon").assertExists()
+        composeRule.onNodeWithText("Richmond").assertExists()
+        // The disrupted District line's timed rows carry the inline ⚠ (SPEC D3) — the full status
         // wording is the glyph's content description, no longer a visible chip on a timed row.
-        composeRule.onNodeWithContentDescription("Severe Delays").assertExists()
-        // Circle is suspended and TfL answered with no Circle trains, so it surfaces as a status row
-        // with a dash where a countdown would sit, heard as "No departures" (the "Suspended" chip
-        // carries the reason).
+        composeRule.onAllNodesWithContentDescription("Minor Delays").onFirst().assertExists()
+        // The Elizabeth line is suspended and TfL answered with no Elizabeth line trains, so it
+        // surfaces as a status row with a dash where a countdown would sit, heard as "No departures"
+        // (the "Suspended" chip carries the reason).
         composeRule.onNodeWithText("Suspended").assertExists()
         composeRule.onNodeWithContentDescription("No departures").assertExists()
         composeRule.onNodeWithText("No data").assertDoesNotExist()
-        // Oxford Circus has a stop-level disruption, shown as a stop-status row.
-        composeRule.onNodeWithText("Station closed until further notice").assertExists()
+        // The Overground station has a stop-level disruption, shown as a stop-status row.
+        composeRule.onNodeWithText("Lift out of service: no step-free access").assertExists()
         // Each group gets one combined title-case header, the place name repeated per platform (SPEC
-        // D8). King's Cross splits into a Platform 1 group and a bare bus/status group; Oxford Circus
-        // into its two platforms.
-        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().assertExists()
-        composeRule.onAllNodesWithText("Oxford Circus").onFirst().assertExists()
+        // D8): the Underground and Overground stops share the place name and split by platform.
+        composeRule.onNodeWithText("– Platform 1", substring = true).assertExists()
+        composeRule.onNodeWithText("– Platform 6", substring = true).assertExists()
     }
 
     @Test
@@ -229,12 +254,12 @@ class MainScreenScreenshotTest {
                 DeparturesUiState.Loaded(stops(now.minusSeconds(30)), now.minusSeconds(30), lineStatuses = statuses()),
                 now,
                 {},
-                stationTitle = "Oxford Circus ➔ Brixton",
+                stationTitle = "Whitechapel ➔ Wimbledon",
                 onPlanTo = { planned = true },
                 tripNotice = "Some routes couldn't be checked",
             )
         }
-        composeRule.onNodeWithText("Oxford Circus ➔ Brixton").assertExists()
+        composeRule.onNodeWithText("Whitechapel ➔ Wimbledon").assertExists()
         composeRule.onNodeWithText("Some routes couldn't be checked").assertExists()
         composeRule.onNodeWithText("To…").performClick()
         assertTrue(planned)
@@ -248,12 +273,12 @@ class MainScreenScreenshotTest {
                     DeparturesUiState.Loaded(emptyList(), now.minusSeconds(30)),
                     now,
                     {},
-                    stationTitle = "Oxford Circus ➔ Brixton",
-                    emptyMessage = "No direct trips to Brixton soon",
+                    stationTitle = "Whitechapel ➔ Wimbledon",
+                    emptyMessage = "No direct trips to Wimbledon soon",
                 )
             }
         }
-        composeRule.onNodeWithText("No direct trips to Brixton soon").assertExists()
+        composeRule.onNodeWithText("No direct trips to Wimbledon soon").assertExists()
         // No To… action without a handler.
         composeRule.onNodeWithText("To…").assertDoesNotExist()
     }
@@ -261,9 +286,12 @@ class MainScreenScreenshotTest {
     @Test
     fun `a hidden mode's rows are left out under a banner that shows them again`() {
         var shownAll = false
+        // Just the Underground and the bus stop, so the bus rows would sit on screen (composed) if the
+        // filter let them through — in the full fixture they fall below the fold either way.
+        val tubeAndBus = stops(now.minusSeconds(30)).filter { it.stopId == "940GZZLUWPL" || it.stopId == "490009873D" }
         capture("main-modes-hidden.png") {
             MainScreen(
-                DeparturesUiState.Loaded(stops(now.minusSeconds(30)), now.minusSeconds(30), lineStatuses = statuses()),
+                DeparturesUiState.Loaded(tubeAndBus, now.minusSeconds(30), lineStatuses = statuses()),
                 now,
                 {},
                 hiddenModes = setOf("bus"),
@@ -271,9 +299,9 @@ class MainScreenScreenshotTest {
             )
         }
         composeRule.onNodeWithText("Bus hidden").assertExists()
-        // The 73 bus is left out; the Victoria line still shows.
-        composeRule.onNodeWithText("Brixton").assertExists()
-        composeRule.onNodeWithText("73").assertDoesNotExist()
+        // The 25 bus is left out; the District line still shows.
+        composeRule.onNodeWithText("Upminster").assertExists()
+        composeRule.onNodeWithText("25").assertDoesNotExist()
         composeRule.onNodeWithText("Show all").performClick()
         assertTrue(shownAll)
     }
@@ -973,18 +1001,18 @@ class MainScreenScreenshotTest {
                 now,
                 {},
                 stopDistanceMeters = mapOf(
-                    "940GZZLUKSX" to 120.0,
-                    "940GZZLUOXC" to 1200.0,
+                    "940GZZLUWPL" to 120.0,
+                    "910GWCHAPEL" to 160.0,
+                    "490009873D" to 40.0,
                 ),
             )
         }
-        // Meters below a kilometer, km above — each stop's own distance, not one shared value. The
-        // distance is a reserved dimmed node at the end of the one-line header; each stop splits into
-        // several groups, so its distance repeats on each of that place's group headers.
-        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().assertExists()
+        // Each stop's own distance, not one shared value. The distance is a reserved dimmed node at
+        // the end of the one-line header; each stop splits into several groups, so its distance
+        // repeats on each of that stop's group headers.
         composeRule.onAllNodesWithText("(120 m)", substring = true).onFirst().assertExists()
-        composeRule.onAllNodesWithText("Oxford Circus").onFirst().assertExists()
-        composeRule.onAllNodesWithText("(1.2 km)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("(160 m)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("(40 m)", substring = true).onFirst().assertExists()
     }
 
     @Test
@@ -996,12 +1024,12 @@ class MainScreenScreenshotTest {
                         DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), lineStatuses = statuses()),
                         now,
                         {},
-                        stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0, "940GZZLUOXC" to 1200.0),
+                        stopDistanceMeters = mapOf("940GZZLUWPL" to 120.0, "910GWCHAPEL" to 160.0),
                     )
                 }
             }
         }
-        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().assertExists()
+        composeRule.onAllNodesWithText("Whitechapel", substring = true).onFirst().assertExists()
         composeRule.onAllNodesWithText("(120 m)", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("(130 yd)", substring = true).assertCountEquals(0)
     }
@@ -1048,8 +1076,8 @@ class MainScreenScreenshotTest {
                         now,
                         {},
                         stopDistanceMeters = mapOf(
-                            "940GZZLUKSX" to 120.0,
-                            "940GZZLUOXC" to 1200.0,
+                            "940GZZLUWPL" to 120.0,
+                            "910GWCHAPEL" to 1200.0,
                         ),
                     )
                 }
@@ -2965,12 +2993,12 @@ class MainScreenScreenshotTest {
     fun `mixed age, one stop fresh and one stale`() {
         capture("main-mixed-age.png") {
             MainScreen(
-                // King's Cross refreshed 30s ago; Oxford Circus hasn't refreshed in 10 min.
-                // The whole-screen stamp stays fresh (the newest stop), while Oxford Circus
-                // withholds its own countdowns — one screen-wide flag no longer decides for
-                // both stops (SPEC D4).
+                // The Underground and bus stops refreshed 30s ago; the Overground stop hasn't
+                // refreshed in 10 min. The whole-screen stamp stays fresh (the newest stop), while
+                // the Overground stop withholds its own countdowns — one screen-wide flag no
+                // longer decides for every stop (SPEC D4).
                 DeparturesUiState.Loaded(
-                    stops(ksxFetchedAt = now.minusSeconds(30), oxcFetchedAt = now.minusSeconds(600)),
+                    stops(tubeFetchedAt = now.minusSeconds(30), railFetchedAt = now.minusSeconds(600)),
                     now.minusSeconds(30),
                     lineStatuses = statuses(),
                 ),
@@ -2980,7 +3008,7 @@ class MainScreenScreenshotTest {
         }
         // The fresh stop shows a live countdown; the stale stop withholds its own ("?")
         // while staying on screen, rather than vanishing or being shown as live.
-        composeRule.onNodeWithText("Brixton").assertExists()
+        composeRule.onNodeWithText("Upminster").assertExists()
         composeRule.onAllNodesWithText("?").onFirst().assertExists()
     }
 
@@ -3027,13 +3055,13 @@ class MainScreenScreenshotTest {
                     stops(now.minusSeconds(60)),
                     now.minusSeconds(60),
                     partialRefresh = true,
-                    partialStops = mapOf("940GZZLUOXC" to DeparturesUiState.FailedStop("Oxford Circus", DeparturesUiState.Error.Kind.SERVER)),
+                    partialStops = mapOf("910GWCHAPEL" to DeparturesUiState.FailedStop("Whitechapel", DeparturesUiState.Error.Kind.SERVER)),
                 ),
                 now,
                 {},
             )
         }
-        composeRule.onNodeWithText("Oxford Circus: server error").assertExists()
+        composeRule.onNodeWithText("Whitechapel: server error").assertExists()
     }
 
     @Test
