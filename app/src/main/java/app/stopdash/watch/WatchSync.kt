@@ -3,7 +3,7 @@ package app.stopdash.watch
 import android.content.Context
 import androidx.core.content.edit
 import android.content.SharedPreferences
-import app.stopdash.StopcastDebugLog
+import app.stopdash.StopdashDebugLog
 import app.stopdash.data.DataStoreSnapshotStore
 import app.stopdash.data.WatchComplicationRows
 import app.stopdash.data.DataStoreStarredRowsStore
@@ -109,7 +109,7 @@ object ComplicationRowsStore {
     fun load(context: Context): Set<StarredRow> =
         prefs(context).all.values.flatMapTo(LinkedHashSet()) { stored ->
             (stored as? String)?.let { WatchComplicationRows.decode(it.encodeToByteArray()) }
-                ?: emptySet<StarredRow>().also { StopcastDebugLog.warning("watch: complication rows unreadable") }
+                ?: emptySet<StarredRow>().also { StopdashDebugLog.warning("watch: complication rows unreadable") }
         }
 
     /**
@@ -130,7 +130,7 @@ object ComplicationRowsStore {
                 ?.let(WatchComplicationRows::decode)
         }
         if (rows == null) {
-            StopcastDebugLog.warning("watch: complication rows unreadable")
+            StopdashDebugLog.warning("watch: complication rows unreadable")
             return false
         }
         return if (since == null) save(context, node, rows) else saveIfUnchanged(context, node, rows, since)
@@ -205,7 +205,7 @@ object WatchSync {
                 WatchPublisher(
                     DataLayerWatchChannel(appContext, WriteGenerations(prefs)),
                     PrefsPublishMarker(prefs),
-                    log = { StopcastDebugLog.warning("watch: %s", it) },
+                    log = { StopdashDebugLog.warning("watch: %s", it) },
                 ).also { publisher = it }
             }
         }
@@ -223,7 +223,7 @@ object WatchSync {
                 throw e
             } catch (e: Exception) {
                 // A store read failed: a failed publish, which the worker retries, never a crash.
-                StopcastDebugLog.warning("watch: stored state unreadable: %s", e::class.simpleName)
+                StopdashDebugLog.warning("watch: stored state unreadable: %s", e::class.simpleName)
                 return@withLock WatchPublisher.Outcome.Failed
             }
             // The same in-process setting the widget reads, so the watch leaves out what it does;
@@ -245,7 +245,7 @@ object WatchSync {
     /** The starred rows; a set this build can't read counts as none, never as a reason not to publish. */
     fun starred(context: Context): Flow<Set<StarredRow>> =
         // The store is a process singleton that keeps its first caller's sink, and this runs first.
-        DataStoreStarredRowsStore.from(context.applicationContext, warn = { StopcastDebugLog.warning("stars: %s", it) }).starred()
+        DataStoreStarredRowsStore.from(context.applicationContext, warn = { StopdashDebugLog.warning("stars: %s", it) }).starred()
             .map { (it as? StarredRowSet.Loaded)?.starred ?: emptySet() }
 
     /** Starts publishing for the life of the process. */
@@ -255,7 +255,7 @@ object WatchSync {
             // A failed lookup is retried with backoff: an unchanged item never raises a change event,
             // so nothing else would bring the rows back. Past the last wait, the stored rows stand
             // until the next start or the watch's next change.
-            WatchPublisher.keepCollecting(log = { StopcastDebugLog.warning("watch: complication rows lookup: %s", it) }) {
+            WatchPublisher.keepCollecting(log = { StopdashDebugLog.warning("watch: complication rows lookup: %s", it) }) {
                 if (ComplicationRowsStore.recover(appContext)) WatchPublishWorker.enqueue(appContext, force = false)
             }
         }
@@ -263,7 +263,7 @@ object WatchSync {
             // A store that can't be read stops the collection, never the app; it's restarted a few
             // times with backoff, then left to the next start (or a watch reconnecting). The watch
             // keeps its last envelope meanwhile, which ages to stale on its own clock.
-            WatchPublisher.keepCollecting(log = { StopcastDebugLog.warning("watch: %s", it) }) {
+            WatchPublisher.keepCollecting(log = { StopdashDebugLog.warning("watch: %s", it) }) {
                 // Each settled change is a cue; the publish itself reads the latest stored state.
                 WatchPublisher.requests(snapshots(appContext), starred(appContext), HiddenModesSetting.changes).collect {
                     if (publishCurrent(appContext, force = false) == WatchPublisher.Outcome.Failed) {

@@ -15,13 +15,13 @@ import org.robolectric.annotation.Config
  * not just the in-memory buffer. So removing `addSink(fileSink, …)` (or the write) fails this
  * test rather than leaving production silently without persisted diagnostics.
  *
- * The suite otherwise runs [TestStopcastApp], which skips installation; this is the one test
+ * The suite otherwise runs [TestStopdashApp], which skips installation; this is the one test
  * that runs the real path. Robolectric, because the library `DebugFileSink` needs a `Context`
  * and its `cacheDir`. Deterministic via the library's own `awaitIdle` seam — no sleep.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
-class StopcastAppInstallTest {
+class StopdashAppInstallTest {
     @Test
     fun `installing the diagnostic sinks persists a warning to the file sink`() {
         val context = RuntimeEnvironment.getApplication()

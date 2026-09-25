@@ -56,7 +56,7 @@ jobs:
       - name: The Wear OS app can't be released yet
         # Its release build must fail until the maintainer renames the package and decides to
         # launch (TODO Phase 6, the release gate in wear/build.gradle.kts). This fails if anyone
-        # removes the gate, and never passes -Pstopcast.wearRelease=approved.
+        # removes the gate, and never passes -Pstopdash.wearRelease=approved.
         run: |
           if ./gradlew :wear:bundleRelease > wear-release.log 2>&1; then
             echo "::error::The Wear OS release build succeeded; its release gate is gone."
@@ -80,7 +80,7 @@ jobs:
       # hand-added dependency's license is already in the freshly regenerated working-tree
       # file, but its stale committed copy would fail the diff first — and then the generic
       # "export drifted" failure is what a reader sees, not the copyleft one this exists to
-      # catch. StopCast ships proprietary, so a copyleft or source-available license is
+      # catch. StopDash ships proprietary, so a copyleft or source-available license is
       # incompatible outright; the script's tier table and its tests are the policy
       # (scripts/check-license-inventory.mjs).
       - name: Check licenses export is up to date and policy-clean
@@ -1243,7 +1243,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.sha }}
           AAB_PATH: app/build/outputs/bundle/release/app-release.aab
-          ASSET_BASE: stopcast
+          ASSET_BASE: stopdash
         run: scripts/publish-github-release.sh
 
       - name: Compose Play Store release notes

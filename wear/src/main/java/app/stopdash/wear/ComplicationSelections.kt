@@ -23,12 +23,12 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 
 /**
- * The row each StopCast complication is set to, by its instance id, as the user picked it (none: it
+ * The row each StopDash complication is set to, by its instance id, as the user picked it (none: it
  * shows the default row). The set is synced to the phone ([WatchSyncContract.COMPLICATION_ROWS_PATH])
  * so the phone keeps those rows in every envelope; row identities only, never anything else.
  */
 object ComplicationSelections {
-    private const val TAG = "StopCast.Complication"
+    private const val TAG = "StopDash.Complication"
     private const val PREFS = "complication_rows"
     private val SYNC_TIMEOUT = 10.seconds
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

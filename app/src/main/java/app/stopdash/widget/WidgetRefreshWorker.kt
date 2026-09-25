@@ -38,7 +38,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Unique-work name so each scheduled refresh REPLACEs the previous one — at most one pending. */
-internal const val WIDGET_REFRESH_WORK = "stopcast-widget-refresh"
+internal const val WIDGET_REFRESH_WORK = "stopdash-widget-refresh"
 
 /** The cadence of the opt-in "live widget" refresh (SPEC D5). One minute matches the app's own
  *  auto-refresh (D6) and TfL's ~30 s prediction cadence, at a tiny fraction of the rate budget. */
@@ -98,7 +98,7 @@ internal suspend fun scheduleWidgetRefresh(context: Context) {
 }
 
 /** Cancels the pending refresh tick — called when the setting is turned off, and when the last
- *  widget is removed ([StopCastWidget.onDelete]). Awaited for the same reason as the enqueue. */
+ *  widget is removed ([StopDashWidget.onDelete]). Awaited for the same reason as the enqueue. */
 internal suspend fun cancelWidgetRefresh(context: Context) {
     WorkManager.getInstance(context.applicationContext).cancelUniqueWork(WIDGET_REFRESH_WORK).await()
 }
@@ -120,17 +120,17 @@ private suspend fun scheduleWidgetRefreshIfNotPending(context: Context) {
     if (!alreadyPending) scheduleWidgetRefresh(context)
 }
 
-/** True when at least one [StopCastWidget] is installed on a host. A refresh cycle with none
+/** True when at least one [StopDashWidget] is installed on a host. A refresh cycle with none
  *  installed would fetch every persisted stop each minute with no surface to update, so the
  *  chain must neither run nor reschedule without one (Codex P1 on #56). */
 private suspend fun anyWidgetInstalled(context: Context): Boolean =
     GlanceAppWidgetManager(context.applicationContext)
-        .getGlanceIds(StopCastWidget::class.java).isNotEmpty()
+        .getGlanceIds(StopDashWidget::class.java).isNotEmpty()
 
 /**
  * Restarts the live-refresh chain when a widget render shows a widget now exists (an add, or a
  * host rebind) and the setting is on — but only when no tick is already pending, so an active
- * chain isn't pushed back on every render. Armed from [StopCastWidget.provideGlance] (the render
+ * chain isn't pushed back on every render. Armed from [StopDashWidget.provideGlance] (the render
  * path, like the staleness redraw): the worker retires the chain when the last widget is removed,
  * so this is what resumes it after one is re-added (Codex P1 on #56).
  */
@@ -250,7 +250,7 @@ internal object StoredSnapshotRefresh {
             if (last.input == prior && WatchRefreshOutcome.answersAgain(last.outcome, age, ARRIVALS_REUSE)) {
                 // Still re-render, as a refresh with nothing fresh does, so the widget ages honestly.
                 try {
-                    StopCastWidget().updateAll(context)
+                    StopDashWidget().updateAll(context)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -389,7 +389,7 @@ internal suspend fun refreshStoredSnapshot(
                 if (!applied) logWidgetSnapshotWarning("widget refresh result discarded: stop set changed during fetch")
             } else {
                 // Nothing fetched fresh: re-render so the unchanged snapshot ages honestly.
-                StopCastWidget().updateAll(context)
+                StopDashWidget().updateAll(context)
             }
         } finally {
             http.close()

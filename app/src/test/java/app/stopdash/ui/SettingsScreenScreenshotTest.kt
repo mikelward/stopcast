@@ -21,7 +21,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import app.stopdash.domain.DistanceUnits
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -46,7 +46,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun settings_off() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(liveWidgetRefresh = false, onLiveWidgetRefreshChange = {}, onBack = {})
             }
         }
@@ -60,7 +60,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun settings_on() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(liveWidgetRefresh = true, onLiveWidgetRefreshChange = {}, onBack = {})
             }
         }
@@ -72,7 +72,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun settings_scheduleError() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = true,
                     onLiveWidgetRefreshChange = {},
@@ -92,7 +92,7 @@ class SettingsScreenScreenshotTest {
     fun dismissingTheError_reportsIt() {
         var dismissed = false
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = true,
                     onLiveWidgetRefreshChange = {},
@@ -111,7 +111,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun noErrorRow_whenSchedulingSucceeded() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = true,
                     onLiveWidgetRefreshChange = {},
@@ -133,7 +133,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun theSwitchIsDisabled_whileTheSettingHasNotLoaded() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     liveWidgetRefreshEnabled = false,
@@ -155,7 +155,7 @@ class SettingsScreenScreenshotTest {
     fun tappingTheRow_reportsTheToggle() {
         var latest: Boolean? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = { latest = it },
@@ -173,7 +173,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun theSwitchReflectsTheState() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(liveWidgetRefresh = true, onLiveWidgetRefreshChange = {}, onBack = {})
             }
         }
@@ -191,7 +191,7 @@ class SettingsScreenScreenshotTest {
         var telemetry by mutableStateOf<Boolean?>(null)
         var latest: Boolean? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -205,14 +205,14 @@ class SettingsScreenScreenshotTest {
         telemetry = false
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("telemetrySwitch").assertIsOff()
-        composeRule.onNodeWithText("Help make StopCast better").performClick()
+        composeRule.onNodeWithText("Help make StopDash better").performClick()
         composeRule.runOnIdle { assert(latest == true) }
     }
 
     @Test
     fun theSwitchIsOffByDefault() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(liveWidgetRefresh = false, onLiveWidgetRefreshChange = {}, onBack = {})
             }
         }
@@ -229,7 +229,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun textSizeControls_render() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(liveWidgetRefresh = false, onLiveWidgetRefreshChange = {}, onBack = {})
             }
         }
@@ -250,7 +250,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun apiKeyControl_render() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(liveWidgetRefresh = false, onLiveWidgetRefreshChange = {}, onBack = {})
             }
         }
@@ -269,7 +269,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun apiKeyField_disabled_whileNotLoaded() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -290,7 +290,7 @@ class SettingsScreenScreenshotTest {
         var rail: String? = null
         var tfl: String? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -316,7 +316,7 @@ class SettingsScreenScreenshotTest {
     fun pastingAndSaving_reportsTheKey() {
         var saved: String? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -341,7 +341,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun theKeyIsMasked_withARevealToggleWhenPresent() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -368,7 +368,7 @@ class SettingsScreenScreenshotTest {
         val stored = mutableStateOf("")
         var saved: String? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -400,7 +400,7 @@ class SettingsScreenScreenshotTest {
         val stored = mutableStateOf("A")
         var saved: String? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -427,7 +427,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun clearing_remasksTheField() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -451,7 +451,7 @@ class SettingsScreenScreenshotTest {
     fun distanceUnits_reportsTheTappedChoice() {
         var chosen: DistanceUnits? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -471,7 +471,7 @@ class SettingsScreenScreenshotTest {
     fun distanceUnits_disabledUntilLoaded_andAFailedSaveIsShown() {
         var dismissed = false
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -493,7 +493,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun noRevealToggle_whenTheFieldIsEmpty() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(liveWidgetRefresh = false, onLiveWidgetRefreshChange = {}, onBack = {})
             }
         }
@@ -507,7 +507,7 @@ class SettingsScreenScreenshotTest {
     fun saving_reportsTheTrimmedValue() {
         var saved: String? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -531,7 +531,7 @@ class SettingsScreenScreenshotTest {
     @Test
     fun save_disabledForAWhitespaceOnlyDifference() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},
@@ -551,7 +551,7 @@ class SettingsScreenScreenshotTest {
     fun clearing_reportsEmpty() {
         var saved: String? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 SettingsScreen(
                     liveWidgetRefresh = false,
                     onLiveWidgetRefreshChange = {},

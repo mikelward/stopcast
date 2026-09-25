@@ -1,6 +1,6 @@
 package app.stopdash.telemetry
 
-import app.stopdash.StopcastDebugLog
+import app.stopdash.StopdashDebugLog
 
 /**
  * Stands telemetry up at process start, failing closed: if creating the backend, registering the
@@ -24,11 +24,11 @@ internal fun startTelemetry(
         if (backend != null) registerSink()
         startLoad(backend)
     } catch (e: Exception) {
-        StopcastDebugLog.warning("telemetry: setup failed: %s", e::class.simpleName)
+        StopdashDebugLog.warning("telemetry: setup failed: %s", e::class.simpleName)
         try {
             failClosed(backend?.let { TelemetryGate(it, NoPendingMarker) })
         } catch (e2: Exception) {
-            StopcastDebugLog.warning("telemetry: fail-closed setup failed: %s", e2::class.simpleName)
+            StopdashDebugLog.warning("telemetry: fail-closed setup failed: %s", e2::class.simpleName)
         }
     }
 }

@@ -138,9 +138,9 @@ import app.stopdash.ui.StationSearchViewModel
 import app.stopdash.ui.StationStopsViewModel
 import app.stopdash.ui.StopRef
 import app.stopdash.ui.WriteFailures
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import app.stopdash.widget.LiveWidgetRefreshResult
-import app.stopdash.widget.StopCastWidget
+import app.stopdash.widget.StopDashWidget
 import app.stopdash.widget.WidgetSnapshotStore
 import app.stopdash.widget.applyLiveWidgetRefresh
 import app.stopdash.widget.syncLiveWidgetRefreshSchedule
@@ -298,14 +298,14 @@ class MainActivity : ComponentActivity() {
         val appSettings = DataStoreAppSettings.from(applicationContext, warn = ::logAppSettingsWarning)
         FontSizeSetting.warm(appSettings)
         // The user's TfL app_key holder ([UserApiKeySetting]) is warmed at process start in
-        // StopcastApp (every process, so a widget-only process has it too), not here. The request
+        // StopdashApp (every process, so a widget-only process has it too), not here. The request
         // clients read the current key per request — a paste raises the budget on the next refresh
         // without rebuilding them (SPEC D7).
         lifecycleScope.launch {
             routeTopology.value = withContext(Dispatchers.IO) { RouteTopologyStore.load(applicationContext) }
         }
         setContent {
-            StopCastAppRoot {
+            StopDashAppRoot {
                 val nearby by nearbyViewModel.state.collectAsStateWithLifecycle()
 
                 // True once a request has come back denied with the rationale suppressed —
@@ -717,7 +717,7 @@ class MainActivity : ComponentActivity() {
                             // the "don't ask again" choice — the same reason shareBugReport uses it.
                             if (dontAskAgain) {
                                 val optOutScope =
-                                    (application as? StopcastApp)?.applicationScope ?: settingsScope
+                                    (application as? StopdashApp)?.applicationScope ?: settingsScope
                                 optOutScope.launch { persistBugReportOptOut(settings) }
                             }
                             shareBugReport(bugReportRequestFor(nearby))
@@ -794,7 +794,7 @@ class MainActivity : ComponentActivity() {
      * (SPEC principle 2).
      */
     private fun shareBugReport(request: BugReportRequest) {
-        val app = application as? StopcastApp
+        val app = application as? StopdashApp
         // Null in a test Application (or if setup failed) — the report then carries no earlier
         // runs, which is exactly what a null sink means to collect().
         val sink = app?.diagnosticSink
@@ -803,7 +803,7 @@ class MainActivity : ComponentActivity() {
         // sheet, so a rotation mid-collect must not cancel the coroutine and drop the share with
         // no sheet or toast (SPEC principle 2; Codex P2 on #86). The chooser is launched with
         // FLAG_ACTIVITY_NEW_TASK by DebugReport, so the app context is fine. Falls back to the
-        // Activity scope only in a test Application that isn't StopcastApp.
+        // Activity scope only in a test Application that isn't StopdashApp.
         val scope = app?.applicationScope ?: lifecycleScope
         val context = applicationContext
         // Held only until the capture returns (early in the coroutine, before the ~10 s collect);
@@ -815,15 +815,15 @@ class MainActivity : ComponentActivity() {
             // authority are the app's (see the manifest and @xml/file_paths). A null capture is a
             // text-only report, never a dropped share.
             val screenshot = withContext(Dispatchers.IO) {
-                ReportScreenshot.capture(activity, File(context.cacheDir, "bug-reports"), StopcastDebugLog)
+                ReportScreenshot.capture(activity, File(context.cacheDir, "bug-reports"), StopdashDebugLog)
                     ?.let { file ->
-                        bugReportScreenshotUri(file, StopcastDebugLog) {
+                        bugReportScreenshotUri(file, StopdashDebugLog) {
                             FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it)
                         }
                     }
             }
             val report = withContext(Dispatchers.IO) {
-                DebugReport.collect(StopcastDebugLog, sink) {
+                DebugReport.collect(StopdashDebugLog, sink) {
                     BugReport.compose(
                         header = bugReportHeader(),
                         location = request.location,
@@ -832,14 +832,14 @@ class MainActivity : ComponentActivity() {
                         },
                         // This run's buffer, rendered in full (DEVICE fidelity) — the report is
                         // consent-gated, so it is not the redacted, location-safe export.
-                        logLines = StopcastDebugLog.snapshot(),
+                        logLines = StopdashDebugLog.snapshot(),
                         recentPositions = recentPositions.recent(SystemClock.elapsedRealtime()),
                     )
                 }
             }
             val outcome = DebugReport.deliver(
                 context = context,
-                log = StopcastDebugLog,
+                log = StopdashDebugLog,
                 report = report,
                 subject = context.getString(R.string.bug_report_subject),
                 chooserTitle = context.getString(R.string.bug_report_chooser_title),
@@ -987,7 +987,7 @@ class MainActivity : ComponentActivity() {
                             // Re-render the widget when a star changes (its pinned order — SPEC
                             // D8) or after a refresh that didn't save, so its age/staleness stays
                             // current rather than frozen at the last save (SPEC D4).
-                            redrawWidget = { StopCastWidget().updateAll(appContext) },
+                            redrawWidget = { StopDashWidget().updateAll(appContext) },
                             // A quick retry after a rate-limited refresh refetches only the
                             // stops still missing, and a stop's closure check is reused for a
                             // few minutes — both spare TfL's keyless rate budget.
@@ -1298,7 +1298,7 @@ class MainActivity : ComponentActivity() {
                             JourneyTipSession.closed = true
                             // On the application scope, like the bug-report opt-out: a rotation or
                             // Settings disposes this composition's scope, which would cancel the save.
-                            ((application as? StopcastApp)?.applicationScope ?: journeyScope).launch {
+                            ((application as? StopdashApp)?.applicationScope ?: journeyScope).launch {
                                 try {
                                     tipSettings.setJourneyTipDismissed(true)
                                 } catch (e: IOException) {
@@ -1883,7 +1883,7 @@ class MainActivity : ComponentActivity() {
                         // Not the widget's list: the near-me model keeps the journey pins.
                         ownsWidgetJourneys = false,
                         // A star set here reorders the widget's pinned rows too, so redraw it.
-                        redrawWidget = { StopCastWidget().updateAll(appContext) },
+                        redrawWidget = { StopDashWidget().updateAll(appContext) },
                         writeFailures = writeFailures,
                         onStarToggled = { row -> rememberStarredPlace(appContext, row) },
                     )
@@ -1994,7 +1994,7 @@ class MainActivity : ComponentActivity() {
     // so without this such a user would silently keep the inaccurate coarse behavior (Codex).
     // A completed approximate choice sets it too, so the user isn't nagged every open.
     private val locationPrefs by lazy {
-        getSharedPreferences("stopcast.location", MODE_PRIVATE)
+        getSharedPreferences("stopdash.location", MODE_PRIVATE)
     }
 
     private fun precisePrompted(): Boolean = locationPrefs.getBoolean(KEY_PRECISE_PROMPTED, false)
@@ -2090,7 +2090,7 @@ class MainActivity : ComponentActivity() {
                 stations = { StationIndexStore.load(context.applicationContext).stations },
             ).also { repository ->
                 routeStopsInstance = repository
-                (context.applicationContext as? StopcastApp)?.applicationScope?.launch { repository.warm() }
+                (context.applicationContext as? StopdashApp)?.applicationScope?.launch { repository.warm() }
             }
         }
     }
@@ -2170,7 +2170,7 @@ internal suspend fun persistBugReportOptOut(settings: AppSettings) {
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        StopcastDebugLog.warning("bug report: consent opt-out not saved: %s", e::class.simpleName)
+        StopdashDebugLog.warning("bug report: consent opt-out not saved: %s", e::class.simpleName)
     }
 }
 
@@ -2275,13 +2275,13 @@ internal fun nearbyPermissionAction(
  * color. Without the Surface the gate rendered over the raw window background with a black
  * default content color, unreadable in dark mode (charcoal ground, black title).
  *
- * Extracted from `onCreate` so the wrapper is unit-testable: `StopCastAppRootTest` asserts the
+ * Extracted from `onCreate` so the wrapper is unit-testable: `StopDashAppRootTest` asserts the
  * content color inside it is `onSurface`, which fails if the Surface is dropped — the existing
  * `LocationGateScreenshotTest` can't catch that, since it installs its own Surface.
  */
 @Composable
-internal fun StopCastAppRoot(content: @Composable () -> Unit) {
-    StopCastTheme {
+internal fun StopDashAppRoot(content: @Composable () -> Unit) {
+    StopDashTheme {
         Surface(modifier = Modifier.fillMaxSize()) { ProvideDistanceSystem(content) }
     }
 }
@@ -2494,7 +2494,7 @@ private fun tickingNow(): Instant {
 /**
  * The production sink for the location seam's warnings: coarse messages carrying no
  * coordinate or key (SPEC *Privacy*), so a diagnosis of a misfiring fix isn't discarded in
- * the shipped app. Routes to [StopcastDebugLog] — the shared diagnostic log, which fans out
+ * the shipped app. Routes to [StopdashDebugLog] — the shared diagnostic log, which fans out
  * to Logcat and the on-device persisted file (`docs/PRIVACY.md`). It never leaves the device;
  * a user-shareable export with travel data redacted is a later change.
  *
@@ -2503,7 +2503,7 @@ private fun tickingNow(): Instant {
  * configuration changes — so a bound reference would pin each destroyed Activity in the
  * ViewModel store (Codex). A top-level function captures nothing.
  */
-private fun logLocationWarning(message: String) = StopcastDebugLog.warning("location: %s", message)
+private fun logLocationWarning(message: String) = StopdashDebugLog.warning("location: %s", message)
 
 /**
  * The last few positions the rider's fixes and lookups placed them at (SPEC *Privacy*): in memory
@@ -2539,7 +2539,7 @@ private fun recordPosition(what: String, at: Coordinates) {
     scheduleSweep(now)
 }
 
-private fun logRouteStopsWarning(message: String) = StopcastDebugLog.warning("route stops: %s", message)
+private fun logRouteStopsWarning(message: String) = StopdashDebugLog.warning("route stops: %s", message)
 
 /**
  * The process-wide nearby-lookup cache: top-level so it outlives an Activity or ViewModel (a
@@ -2668,26 +2668,26 @@ private inline fun <T> readOrEmpty(what: String, read: () -> List<T>): List<T> =
  * `MainViewModel`'s `warn` defaulted to a no-op, so a persistent "couldn't check for
  * disruptions" left nothing in logcat to explain which line or lookup was unknown. The
  * messages are coarse — a count, a line id, an HTTP reason — with no coordinate, stop-set,
- * or key (SPEC *Privacy*: line ids are allowed). Routes to [StopcastDebugLog] like
+ * or key (SPEC *Privacy*: line ids are allowed). Routes to [StopdashDebugLog] like
  * [logLocationWarning], top-level for the same no-Activity-capture reason.
  */
-private fun logDepartureWarning(message: String) = StopcastDebugLog.warning("departures: %s", message)
+private fun logDepartureWarning(message: String) = StopdashDebugLog.warning("departures: %s", message)
 
 /**
  * The production sink for the starred-rows store's warnings — a discarded corrupt star file,
  * or a preserved newer-schema file. Without it wired the store defaulted to a no-op, so those
  * recovery paths left nothing in logcat. The messages are coarse facts (no stop/line id is
- * needed and none is logged); routed to [StopcastDebugLog] like [logLocationWarning], for the
+ * needed and none is logged); routed to [StopdashDebugLog] like [logLocationWarning], for the
  * same no-Activity-capture reason.
  */
-private fun logStarWarning(message: String) = StopcastDebugLog.warning("stars: %s", message)
+private fun logStarWarning(message: String) = StopdashDebugLog.warning("stars: %s", message)
 
 /**
  * The production sink for the Play update checker's warnings — a failed availability fetch.
- * Coarse and PII-free (an exception class name, no user data); routed to [StopcastDebugLog]
+ * Coarse and PII-free (an exception class name, no user data); routed to [StopdashDebugLog]
  * like [logLocationWarning], for the same no-Activity-capture reason.
  */
-private fun logUpdateWarning(message: String) = StopcastDebugLog.warning("update: %s", message)
+private fun logUpdateWarning(message: String) = StopdashDebugLog.warning("update: %s", message)
 
 /** One read of the saved journeys: [journeys] is null when the store couldn't be read. */
 private class JourneysRead(val journeys: List<StarredJourney>?)

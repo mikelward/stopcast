@@ -18,7 +18,7 @@ import java.nio.file.Files
  */
 class BugReportScreenshotUriTest {
 
-    private val dir: File = Files.createTempDirectory("stopcast-uri").toFile()
+    private val dir: File = Files.createTempDirectory("stopdash-uri").toFile()
 
     @After
     fun cleanUp() {

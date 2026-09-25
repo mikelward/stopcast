@@ -16,7 +16,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * A National Rail departure board as Darwin's Live Departure Board service returns it (the Rail
- * Data Marketplace's `GetDepartureBoard`): the fields stopcast reads, the rest ignored.
+ * Data Marketplace's `GetDepartureBoard`): the fields stopdash reads, the rest ignored.
  */
 @Serializable
 data class DarwinBoardDto(
@@ -46,7 +46,7 @@ data class DarwinLocationDto(
 private val UK = ZoneId.of("Europe/London")
 
 /**
- * The board's departures stopcast stands behind (SPEC principle 1): each with an expected time,
+ * The board's departures stopdash stands behind (SPEC principle 1): each with an expected time,
  * as an absolute instant so its countdown runs like a TfL prediction. Left out: a cancelled train,
  * one "Delayed" with no estimate, one with no operator, and the TfL-run services TfL's own
  * feed already carries. Times are UK clock times on the board's own date ([generatedAt]), rolled

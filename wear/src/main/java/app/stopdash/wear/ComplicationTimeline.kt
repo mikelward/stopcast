@@ -16,7 +16,7 @@ import java.time.Instant
 import kotlin.time.toJavaDuration
 import kotlin.time.toKotlinDuration
 
-/** What a StopCast complication shows over one stretch of time. */
+/** What a StopDash complication shows over one stretch of time. */
 sealed interface ComplicationContent {
     /**
      * The row's next departure, at [at], to [destination], counted down by the system. [uncertain]

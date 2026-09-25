@@ -12,7 +12,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.stopdash.domain.Coordinates
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
 import org.junit.Test
@@ -112,7 +112,7 @@ class LocationGateScreenshotTest {
     @Test
     fun `the locating spinner has no update button when none is available`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     LocationGate(NearbyStopsViewModel.State.Locating, onAllow = {}, onRetry = {}, onOpenSettings = {})
                 }
@@ -174,7 +174,7 @@ class LocationGateScreenshotTest {
     fun `a stuck state offers the bug report action and reports the tap`() {
         var sent = false
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     LocationGate(
                         NearbyStopsViewModel.State.NoLocation,
@@ -193,7 +193,7 @@ class LocationGateScreenshotTest {
     @Test
     fun `the first-run permission prompt has no bug report action`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     LocationGate(
                         NearbyStopsViewModel.State.PermissionRequired,
@@ -211,7 +211,7 @@ class LocationGateScreenshotTest {
 
     private fun capture(name: String, dark: Boolean = false, content: @Composable () -> Unit) {
         composeRule.setContent {
-            StopCastTheme(darkTheme = dark, dynamicColor = false) {
+            StopDashTheme(darkTheme = dark, dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) { content() }
             }
         }

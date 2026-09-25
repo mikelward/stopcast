@@ -11,7 +11,7 @@ build; whether a build can collect depends on its config, and whether it does de
 - **Never in a debug build**, config or not: `app/build.gradle.kts` disables the debug variant's
   google-services and mapping tasks and purges any previously generated resources, so the unit and
   screenshot suites (which run against debug) can't send anything.
-- **Only while the user has opted in** — *Help make StopCast better* in Settings, off by default.
+- **Only while the user has opted in** — *Help make StopDash better* in Settings, off by default.
   The manifest starts both SDKs off; `TelemetryConsentHolder` stores each change and applies it
   (`TelemetryGate`) before the tap returns, and on each start trusts the stored choice only while
   the SDKs agree with it — any mismatch loads as off.
@@ -39,7 +39,7 @@ Crash-report breadcrumbs are the log's `Destination.OFF_DEVICE` rendering: andro
 argument not wrapped in `safe(...)` with `•••` and strips exception messages. Never wrap a stop ID,
 line id, coordinate, search text or the API key in `safe(...)`; `CrashlyticsLogSinkTest` pins the
 redaction. A fatal crash goes through the same redaction: `RedactingCrashHandler` sits directly in
-front of Crashlytics' own uncaught-exception handler (installed first in `StopcastApp.onCreate`, so
+front of Crashlytics' own uncaught-exception handler (installed first in `StopdashApp.onCreate`, so
 the on-device file sink still records the original), and telemetry stays off if it couldn't be
 installed. `RedactingCrashHandlerTest` pins it. Custom analytics events (`TODO.md`) carry categories and bucketed counts only.
 

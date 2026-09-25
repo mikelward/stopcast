@@ -34,12 +34,12 @@ import kotlinx.coroutines.withContext
  * envelope, never the network, and is pushed a fresh timeline when a new one arrives
  * ([requestUpdate]); there's no update period.
  */
-class StopCastComplicationService : SuspendingTimelineComplicationDataSourceService() {
+class StopDashComplicationService : SuspendingTimelineComplicationDataSourceService() {
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationDataTimeline? {
         val id = request.complicationInstanceId
         val (envelope, topology, row) = try {
             withContext(Dispatchers.IO) {
-                val context = this@StopCastComplicationService
+                val context = this@StopDashComplicationService
                 val store = WatchEnvelopeStore.from(context)
                 store.load()
                 // A complication added before any other surface ran looks up what the phone already
@@ -75,12 +75,12 @@ class StopCastComplicationService : SuspendingTimelineComplicationDataSourceServ
     }
 
     companion object {
-        private const val TAG = "StopCast.Complication"
+        private const val TAG = "StopDash.Complication"
 
-        /** Asks the system for a fresh timeline for every StopCast complication, after a new envelope. */
+        /** Asks the system for a fresh timeline for every StopDash complication, after a new envelope. */
         fun requestUpdate(context: Context) {
             ComplicationDataSourceUpdateRequester
-                .create(context, ComponentName(context, StopCastComplicationService::class.java))
+                .create(context, ComponentName(context, StopDashComplicationService::class.java))
                 .requestUpdateAll()
         }
     }

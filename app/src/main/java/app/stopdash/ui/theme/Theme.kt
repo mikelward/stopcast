@@ -20,7 +20,7 @@ import app.stopdash.ui.LocalFontSizeState
 import app.stopdash.ui.pinchFontSize
 import app.stopdash.ui.rememberFontSizeState
 
-// StopCast's brand accent is red — a nod to the London transit palette — applied the
+// StopDash's brand accent is red — a nod to the London transit palette — applied the
 // Material way: it seeds `primary` (and its container/secondary/tertiary partners), so it
 // surfaces as an accent on buttons, the refresh and progress indicators, and selection,
 // over otherwise-neutral surfaces. It is deliberately *not* the app-bar container, to keep
@@ -65,11 +65,11 @@ private val DarkColors = darkColorScheme(
 private val LightStarredBorder = Color(0xFFB8860B)
 private val DarkStarredBorder = Color(0xFFE7C34C)
 
-/** The gold border for a starred card, resolved to the current theme (see [StopCastTheme]). */
+/** The gold border for a starred card, resolved to the current theme (see [StopDashTheme]). */
 val LocalStarredBorderColor = staticCompositionLocalOf { LightStarredBorder }
 
 /**
- * The app theme. Uses the stopcast red-accent scheme (light or dark by the system setting), and
+ * The app theme. Uses the stopdash red-accent scheme (light or dark by the system setting), and
  * sizes the whole app from the user's chosen text size (SPEC *Display size*).
  *
  * Dynamic color (Material You) is **off by default**: it would let the device wallpaper
@@ -84,7 +84,7 @@ val LocalStarredBorderColor = staticCompositionLocalOf { LightStarredBorder }
  * [LocalFontSizeState] so the slider and the gesture move one value.
  */
 @Composable
-fun StopCastTheme(
+fun StopDashTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
     fontSize: FontSizeState = rememberFontSizeState(),

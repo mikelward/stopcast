@@ -108,7 +108,7 @@ class WatchEnvelopeStore(
     }
 
     companion object {
-        private const val TAG = "StopCast.Watch"
+        private const val TAG = "StopDash.Watch"
 
         @Volatile
         private var instance: WatchEnvelopeStore? = null

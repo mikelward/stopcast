@@ -6,15 +6,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The privacy invariant that makes [StopcastDebugLog] safe to add a Crashlytics (off-device)
+ * The privacy invariant that makes [StopdashDebugLog] safe to add a Crashlytics (off-device)
  * sink to later: a warning's message renders in full for an on-device sink, but its `String`
  * argument is withheld (rendered as the library's placeholder) for an off-device sink, because
  * the seams pass a format literal with `%s` per value rather than interpolating.
  *
  * Pure JVM (logging-core is Android-free); uses a fresh [DebugLog] rather than the
- * [StopcastDebugLog] singleton so nothing leaks between tests.
+ * [StopdashDebugLog] singleton so nothing leaks between tests.
  */
-class StopcastDebugLogTest {
+class StopdashDebugLogTest {
     @Test
     fun `a warning shows on-device but is withheld off-device`() {
         val log = DebugLog()

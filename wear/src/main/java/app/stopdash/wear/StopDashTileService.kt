@@ -40,11 +40,11 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * The StopCast tile (dev-docs/wear-os.md *Surfaces*): the widget's rows, favorites first, as many as
+ * The StopDash tile (dev-docs/wear-os.md *Surfaces*): the widget's rows, favorites first, as many as
  * fit, with their age, as a timeline the system steps through on its own ([TileTimeline]). It
  * renders only from the stored envelope, never the network; a new envelope asks for a re-render.
  */
-class StopCastTileService : TileService() {
+class StopDashTileService : TileService() {
     /** The envelope and route-topology reads run here, never on the request's calling thread. */
     private val worker = Executors.newSingleThreadExecutor()
 
@@ -91,7 +91,7 @@ class StopCastTileService : TileService() {
                     completer.setException(e)
                 }
             }
-            "stopcast-tile"
+            "stopdash-tile"
         }
 
     /**
@@ -117,7 +117,7 @@ class StopCastTileService : TileService() {
     ): ListenableFuture<ResourceBuilders.Resources> =
         CallbackToFutureAdapter.getFuture { completer ->
             completer.set(ResourceBuilders.Resources.Builder().setVersion(RESOURCES_VERSION).build())
-            "stopcast-tile-resources"
+            "stopdash-tile-resources"
         }
 
     override fun onDestroy() {
@@ -127,7 +127,7 @@ class StopCastTileService : TileService() {
 
     companion object {
         private const val RESOURCES_VERSION = "1"
-        private const val TAG = "StopCast.Tile"
+        private const val TAG = "StopDash.Tile"
 
         /** A floor on the re-render interval, so a cut a moment away can't ask for a tight loop. */
         private const val MIN_FRESHNESS_MS = 60_000L
@@ -136,7 +136,7 @@ class StopCastTileService : TileService() {
 
         /** Asks the system to re-render the tile, after a new envelope arrives. */
         fun requestUpdate(context: Context) {
-            getUpdater(context).requestUpdate(StopCastTileService::class.java)
+            getUpdater(context).requestUpdate(StopDashTileService::class.java)
         }
     }
 }

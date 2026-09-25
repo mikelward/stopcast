@@ -122,7 +122,7 @@ exercises the whole spine the widget later renders from.
   - `/StopPoint/{id}/Disruption` for the watched stops: **[landed, PR #15]** a stop's own
     disruption surfaces as a stop-level status row (sorted above the line-status and timed
     rows) even when its lines' status is normal, so a closed stop isn't shown with
-    valid-looking departures. StopCast **marks** (keeps the departures, adds the row) rather
+    valid-looking departures. StopDash **marks** (keeps the departures, adds the row) rather
     than suppresses — TfL's closure data is coarse and often absent, so hiding departures on
     it would risk dropping valid ones; and it surfaces **any** stop disruption rather than
     classifying closures (that's Phase 3). A closed stop with zero predictions still surfaces
@@ -139,20 +139,20 @@ exercises the whole spine the widget later renders from.
       the log ships. Landed: `docs/PRIVACY.md` is the source of truth for what leaves the
       device (the TfL requests the product needs, the optional user `app_key` → TfL if set,
       and the platform backup/transfer channel that carries persisted config including the
-      key — no off-device channel stopcast adds beyond TfL but the opt-in crash reports and
+      key — no off-device channel stopdash adds beyond TfL but the opt-in crash reports and
       usage stats), what the on-device log carries
       (coarse stop/line IDs, HTTP status, location fix outcomes — never a coordinate or
       key), and that a shareable export redacts travel data. See the doc for the precise,
       canonical wording — this line is a pointer, not a second inventory to keep in sync.
   - [x] **Adopt the shared logger (`mikelward/androidlog`) with an on-device persisted file
-        sink.** `StopcastDebugLog` (the shared `DebugLog` buffer) is registered in a new
-        `StopcastApp` with the library `LogcatSink` and `DebugFileSink` (a rotating file in
+        sink.** `StopdashDebugLog` (the shared `DebugLog` buffer) is registered in a new
+        `StopdashApp` with the library `LogcatSink` and `DebugFileSink` (a rotating file in
         `cacheDir`, chained crash handler — the seam Crashlytics hangs off later). The
         location / departures / stars / update / settings / widget warning seams now route
         through it, so every warning is both in Logcat and persisted on-device
         (`docs/PRIVACY.md`). Built on-device only; its one off-device sink since is the opt-in
         Crashlytics one below, fed only redacted lines. Logcat tags consolidated to
-        one `StopCast` tag with an area prefix (e.g. `location: …`).
+        one `StopDash` tag with an area prefix (e.g. `location: …`).
   - [ ] **Wire the shared logger into the `DataStoreWatchedStopsStore` corruption handler**
         once that store is actually constructed (it has no construction site yet, so there is
         nothing to wire — its `warn` defaults to a no-op). `DataStoreSnapshotStore`'s handler
@@ -160,9 +160,9 @@ exercises the whole spine the widget later renders from.
         discard is the higher-stakes one — it loses the user's own config (though the set also
         rides Android backup). SPEC principle 2 / *never fail silently*; Codex P2 on PR #26.
   - [x] **Crashlytics — off-device crash + breadcrumb reporting** (requested 2026-09-21; built
-        2026-09-24). A Crashlytics `Destination.OFF_DEVICE` sink on `StopcastDebugLog` (androidlog
+        2026-09-24). A Crashlytics `Destination.OFF_DEVICE` sink on `StopdashDebugLog` (androidlog
         redacts every argument not marked `safe(...)`), logged exceptions as non-fatals, and
-        Firebase Analytics, all behind the **Help make StopCast better** opt-in (off by default,
+        Firebase Analytics, all behind the **Help make StopDash better** opt-in (off by default,
         Settings). Inert without `google-services.json`; debug builds never collect. SPEC
         *Privacy*, `docs/PRIVACY.md`, `dev-docs/firebase.md`.
     - [ ] **Human setup before it collects anything** (`dev-docs/firebase.md`): after the package
@@ -189,7 +189,7 @@ exercises the whole spine the widget later renders from.
           SDKs are off, the switch shows off and each failure is logged. If it ever bites, the
           narrower step is to hold a pending opt-in in the SDKs' own state (Analytics on,
           Crashlytics off) so a withdrawal also changes a third, SDK-managed file.
-    - [ ] **Invite the opt-in once on the home screen**, as simmo does, since stopcast has no
+    - [ ] **Invite the opt-in once on the home screen**, as simmo does, since stopdash has no
           onboarding to ask it in: a dismissible card; off stays the default.
   - [ ] **Log recent process-exit reasons at startup** into the shared log
         (`ActivityManager.getHistoricalProcessExitReasons`), as the siblings do
@@ -1106,7 +1106,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
 - [ ] Per-stop line/direction filters (D2).
 - [ ] **Filter or rank by a destination the user enters, and let them save favorite
       destinations** — the user names where they're going (or picks a saved favorite) and
-      stopcast surfaces the rows that get them there, complementing starring. Scope it to
+      stopdash surfaces the rows that get them there, complementing starring. Scope it to
       **on-device matching** against each row's retained destination text, so the
       destination is never sent to any network service. (The resolved destination and now
       the via-branch (`Departure.branch`) are both retained, so matching can key on either;
@@ -1121,7 +1121,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       the Journey API a non-goal; it would change the Play Data Safety answers), not
       assumed by this item.
 - [ ] **Working hours / trip windows** (requested 2026-09-19, on-device). Let the user say
-      when they commute (a morning window toward work, an evening one home), so stopcast can
+      when they commute (a morning window toward work, an evening one home), so stopdash can
       emphasize the relevant direction at the relevant time and scope commute announcements
       (Phase 3) to those windows. Matching stays on-device, tied to favorite destinations
       above; the windows persist with the rest of the config and so ride Android backup /
@@ -1235,7 +1235,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       it, so the maintainer picked it (2026-09-24) from the route-map legend in Wikipedia's *West
       Midlands Trains* article over an unsourced `#00BF6F`, after seeing both rendered. Matched
       by name prefix, like its pill code, since the rail feed's exact spelling is unconfirmed.
-- [ ] (Later) **Revisit auto-locate-on-open and the location states.** StopCast
+- [ ] (Later) **Revisit auto-locate-on-open and the location states.** StopDash
       resolves location once on open (a `LaunchedEffect` gated on `PermissionRequired`) and
       the nearby set never re-resolves afterward except via the temporary crosshair button.
       Work out the intended behavior across the states — first open, permission
@@ -1248,7 +1248,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       check location on open, then re-check periodically and on a location-change event while
       the app is open. This deliberately **supersedes** `SPEC.md`'s on-demand-location promise
       (§62-63, D1) and the "keep re-location behind a deliberate near-me action" requirement
-      above (`TODO.md:376-379`): update `SPEC.md` to state that stopcast uses live/automatic
+      above (`TODO.md:376-379`): update `SPEC.md` to state that stopdash uses live/automatic
       location, and disclose it fully — the **Play Data Safety** declaration plus clear
       user-facing wording that location is used continuously while open (a coordinate goes to
       TfL automatically and more often, not only on a manual tap). Then the build work: design
@@ -1346,7 +1346,7 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       via a `geo:0,0?q=lat,lng(Name)` intent (a labeled pin at TfL's published stop position, never
       the user's fix). No new dependency and $0; with no maps app a toast says so. The stop's
       position and name reach an app the user picked, only on their tap — user-initiated sharing,
-      not collection by StopCast, so no Play Data Safety change.
+      not collection by StopDash, so no Play Data Safety change.
 
 ## Phase 3 — Full disruptions
 
@@ -1650,7 +1650,7 @@ and these carry the rest as their own PRs:
       2026-09-21).** The widget re-implements the departure-row shape (destination + branch
       label, countdown, pill) in Glance rather than sharing the in-app card's composable, so a
       rendering rule has to be applied twice and can drift — the branch-join format was just
-      changed in both `MainScreen` and `StopCastWidget.widgetLineLabel` for exactly this reason.
+      changed in both `MainScreen` and `StopDashWidget.widgetLineLabel` for exactly this reason.
       Factor the shared row/label logic into one place and drive the genuine differences
       (Glance vs. Compose primitives, the widget's no-width-measurement constraint, its pill
       fallbacks) through parameters. Reduces the two-surface drift the branch format, the
@@ -1689,7 +1689,7 @@ and these carry the rest as their own PRs:
       now, script-rendered via `scripts/render-store-icon.py`.
 - [ ] **Fan out the release-notes-walk hardenings to the siblings** (Codex, PR #58): the
       "Build release notes" walk in `ci.yml`'s `deploy` job — copied verbatim from the
-      sibling Android repos — carried several latent bugs that stopcast's copy now fixes
+      sibling Android repos — carried several latent bugs that stopdash's copy now fixes
       and simmo / snoozemo / typelauncher / clothescast still have: (1) both the outer
       workflow-runs query and the per-run jobs query used `… || true`, masking an API
       failure as "no runs / not published" and risking a wrong range base (dropped or
@@ -1730,7 +1730,7 @@ and these carry the rest as their own PRs:
       is subject to the same rule as any other artifact that leaves the machine
       (`AGENTS.md` *Privacy*). `docs/PRIVACY.md` already commits to this redaction; this is
       the item that implements it. **Cost £0** (a user-initiated share via the platform
-      sheet, no service stopcast runs); the hand-off is a **Play Data Safety** consideration —
+      sheet, no service stopdash runs); the hand-off is a **Play Data Safety** consideration —
       a new off-device channel even after redaction — so the redaction is what keeps it a
       no-op for the declaration rather than a new data type collected, confirmed when built.
       **Note (maintainer, 2026-09-20):** removing the stop/line IDs does keep this export
@@ -1752,7 +1752,7 @@ and these carry the rest as their own PRs:
       `DebugReport.deliver(screenshot = …)` argument, and 2.2 added the capture itself as the
       shared `ReportScreenshot.capture(activity, dir, log)` — a PixelCopy of the Activity's own
       window (which excludes the consent dialog's separate window), the off-main buffer, the
-      age-based prune, and the recycle. stopcast pins `2.2.69` and calls it off the main thread,
+      age-based prune, and the recycle. stopdash pins `2.2.69` and calls it off the main thread,
       minting the `FileProvider` URI from the returned file and handing it to `deliver`. A failed
       capture is a text-only report, never a dropped share. The `FileProvider` +
       `res/xml/file_paths.xml` (cache path) stay app-side, and the screenshot is named on the
@@ -1785,15 +1785,24 @@ and these carry the rest as their own PRs:
       tile-only first release) can be settled as each step comes up.
       Steps, one PR each:
   - [x] **Release gate (lands with the `:wear` module):** `:wear`'s release tasks fail
-        unless the build is run with `-Pstopcast.wearRelease=approved` (it also refused the
+        unless the build is run with `-Pstopdash.wearRelease=approved` (it also refused the
         pre-rename `app.stopcast` ID until the rename). CI builds only `:app`'s release and never
         passes the flag, so a deploy can't ship the watch app by accident, and a CI step asserts
         that `:wear:bundleRelease` fails without it. Lift it only after the launch decision, in
         the same PR as the Play step below.
   - [x] **Package rename:** the application ID and every Kotlin package are `app.stopdash`
-        (phone and watch together, as the Data Layer pairs by ID). The display name stays
-        StopCast. A new ID is a new app on devices and a new Play listing; see the Play item
-        above.
+        (phone and watch together, as the Data Layer pairs by ID), and the app is named
+        StopDash everywhere (display name, strings, class and file names, Data Layer paths,
+        docs). A new ID is a new app on devices and a new Play listing; see the Play item
+        above. The repo's URLs (and its Pages privacy URL) point at `mikelward/stopdash`,
+        ahead of the maintainer renaming the GitHub repo.
+    - [ ] **Station builders still say "stopcast"** (`scripts/build_crs_index.py`,
+          `scripts/build_station_index.py`: docstrings and User-Agents). Any change to them
+          triggers `station-index.yml`, which rebuilds from live data, and today's NaPTAN/TfL
+          data maps the Overground twin `910GCLPHMJ1` to `CLJ`, which the builder's
+          Overground-twin dedup should drop (`RailStationCodesStoreTest` asserts it has no code).
+          Fix the dedup for the new data first, then rename them in the same PR. The weekly
+          `station-index-refresh.yml` PR will hit the same failure until then.
   - [x] Extract `app.stopdash.domain` into a pure-Kotlin `:domain` module (refactor only; the
         package already had no Android imports).
   - [x] Move `route_topology.json` and
@@ -1877,11 +1886,11 @@ and these carry the rest as their own PRs:
 
 ## Beyond MVP (not planned)
 
-Directions that would change what stopcast *is*, not steps in the London MVP. Recorded so
+Directions that would change what stopdash *is*, not steps in the London MVP. Recorded so
 they aren't re-derived; none is scheduled, and each needs the maintainer's go-ahead.
 
 - [ ] (Later, open call) **Other cities beyond London** (recorded 2026-09-19 at the
-      maintainer's request). StopCast is TfL-specific today: the data layer talks only to
+      maintainer's request). StopDash is TfL-specific today: the data layer talks only to
       the TfL Unified API, and line colors/codes are TfL's. The **domain layer**
       (`app.stopdash.domain` — stops, departures, staleness) is *shaped* around one
       departures model much of a multi-city version would reuse, but it is **not already
@@ -1895,7 +1904,7 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
       which in practice is three feeds, not one — the static **Schedule** (the stop/route/
       trip catalog nearby-stop discovery and labels need), **Realtime trip updates** (live
       times keyed by the Schedule's IDs), and a **disruption source** (GTFS-Realtime
-      *Service Alerts*, which are optional and sometimes a separate operator API): stopcast's
+      *Service Alerts*, which are optional and sometimes a separate operator API): stopdash's
       honesty floor warns about a closed line or stop even with no predictions (SPEC
       principle 1; `lineStatuses`/`stopDisruptions`), so a provider lacking an alerts feed
       needs an honest fallback, never unverified-shown-as-clean. Plus per-city line styling
@@ -1914,7 +1923,7 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
       voice assistant — so "when's my bus?" is answered without opening the phone. It means a
       new integration surface (Assistant/Home APIs or a local hub) with materially different
       cost and failure modes, and a **Play Data Safety** consequence (departures and possibly
-      the watched set crossing to another system), and it changes what stopcast *is* beyond the
+      the watched set crossing to another system), and it changes what stopdash *is* beyond the
       London MVP. Direction only; needs the maintainer's go-ahead and its own scoping — which
       must record the chosen surface's **dollar cost** (hosted API vs. a local hub differ
       sharply; marked unknown until the surface is picked) and its degraded/offline behavior
@@ -2028,7 +2037,7 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
 - **App-bar action row is temporarily crowded by the launcher icon — accepted for now
   (maintainer, 2026-09-20).** PR #67 adds the app icon in the `TopAppBar` nav slot. In the
   production loaded state (`onLocateHere` non-null) the bar also carries the freshness stamp
-  plus locate + refresh + overflow buttons, so on a 411dp phone the "StopCast" title is
+  plus locate + refresh + overflow buttons, so on a 411dp phone the "StopDash" title is
   squeezed and can ellipsize (Codex P2 on #67, deferred with maintainer's sign-off). Accepted
   as-is; the fix is to **slim the action row**. **Partly done:** the crosshairs/locate button
   is now gone (refresh + pull-to-refresh re-locate as well as re-fetch — the milestone-C
@@ -2155,8 +2164,8 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   clear; retained writer saving after an Empty-path clear; cancellation mid-`updateAll`
   skipping the retry). The same shape recurring — this activity-effect clear racing the
   concurrent per-set writer lifecycle — is evidence about the design rather than seven separate
-  bugs (the sibling repos' AGENTS.md codify that as a rule; stopcast's own does not, so this is
-  the escalation's reasoning, not a stopcast policy citation). A design change is the
+  bugs (the sibling repos' AGENTS.md codify that as a rule; stopdash's own does not, so this is
+  the escalation's reasoning, not a stopdash policy citation). A design change is the
   maintainer's call — so this is escalated rather than patched an eighth time. The three
   options, cheapest-to-revisit first:
   - **Defer (chosen).** Close #53, keep the per-row withhold + aging stamp as the honesty
@@ -2215,7 +2224,7 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
     generation and only prune if the stored set still matches, mirroring `saveIfStopsMatch`. Left
     as a follow-up under this class rather than added mid-PR (the same concurrent-writer race).
 - **About/Licenses entry point is an overflow menu → About dialog → full-screen Licenses
-  overlay, reachable from every state** (autopilot, licenses-screen PR). StopCast has no nav
+  overlay, reachable from every state** (autopilot, licenses-screen PR). StopDash has no nav
   graph and, until now, no About/Settings surface, so the licenses screen needed a home.
   Chosen: a `MoreVert` overflow in the departures top bar, **and** an "About" button on the
   location gate, both open the shared About dialog (app name + version); its one action opens
@@ -2296,7 +2305,7 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   the required `lanes` gate until `repo setup` provisions `CI_COMMIT_ARTIFACT_TOKEN`
   post-merge, so its bootstrap failure doesn't block that PR.
 - **Brand accent = red, and Material You (dynamic color) off by default** (maintainer
-  "let's try red", 2026-09-19). `StopCastTheme` now seeds a red `primary` (with its
+  "let's try red", 2026-09-19). `StopDashTheme` now seeds a red `primary` (with its
   container/secondary/tertiary partners) so red reads as an accent on buttons and the
   refresh/progress indicators over neutral surfaces — deliberately *not* the app-bar
   container, to keep it an accent not a wash. Dynamic color is off so the wallpaper can't
@@ -2341,5 +2350,5 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   never-leaves-the-device wording). **Not MVP-scope work**: there is nothing to
   implement — the platform default already backs up and transfers, so no data-extraction
   rules and no `allowBackup=false`. Cost £0; no Play Data Safety change (Android Auto
-  Backup is a platform feature, not data stopcast collects or transmits). Recorded in
+  Backup is a platform feature, not data stopdash collects or transmits). Recorded in
   SPEC *Privacy*.

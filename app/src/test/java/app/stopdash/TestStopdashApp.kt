@@ -2,14 +2,14 @@ package app.stopdash
 
 /**
  * The [android.app.Application] Robolectric instantiates for the unit-test suite (wired via
- * `src/test/resources/robolectric.properties`), in place of [StopcastApp].
+ * `src/test/resources/robolectric.properties`), in place of [StopdashApp].
  *
- * It skips [StopcastApp.installDiagnosticLog] so the suite does not, per test, stand up the
+ * It skips [StopdashApp.installDiagnosticLog] so the suite does not, per test, stand up the
  * on-device file sink, spin up its writer thread, and chain a process-wide uncaught-exception
- * handler — none of which a screen or domain test needs. Tests exercise [StopcastDebugLog]
+ * handler — none of which a screen or domain test needs. Tests exercise [StopdashDebugLog]
  * directly, and the library's own tests cover the file sink and crash handler.
  */
-class TestStopcastApp : StopcastApp() {
+class TestStopdashApp : StopdashApp() {
     override fun installDiagnosticLog() {
         // Intentionally empty — see the class comment. Not a swallowed failure: there is no
         // work to do here, by design.

@@ -6,7 +6,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import java.time.Instant
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -39,7 +39,7 @@ class MainScreenAboutTest {
     fun overflowMenu_opensAbout_thenLicenses() {
         var licensesOpened = false
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loading,
                     now = now,
@@ -65,7 +65,7 @@ class MainScreenAboutTest {
     @Test
     fun aboutDialog_creditsTheDataSources() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(state = DeparturesUiState.Loading, now = now, onRefresh = {})
             }
         }
@@ -86,7 +86,7 @@ class MainScreenAboutTest {
     fun aboutDialog_closeDismissesWithoutNavigating() {
         var licensesOpened = false
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loading,
                     now = now,

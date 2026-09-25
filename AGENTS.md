@@ -5,7 +5,7 @@ Conventions for AI agents working in this repository.
 `CLAUDE.md` and `GEMINI.md` are symlinks to this file, so every agent reads the same
 conventions. Edit `AGENTS.md`.
 
-StopCast is an Android app (Kotlin + Compose; `:app`, a pure-Kotlin `:domain`, `:shared`,
+StopDash is an Android app (Kotlin + Compose; `:app`, a pure-Kotlin `:domain`, `:shared`,
 and a Wear OS `:wear`) that shows live TfL departures for watched stops on the lock screen,
 the home screen, the watch, and in the app.
 Product and architecture decisions live in `SPEC.md`; the phased plan lives in
@@ -30,7 +30,7 @@ biting.
 ## Project documentation
 
 - Keep `SPEC.md` current when changing product behavior, architecture, persistence,
-  permissions, navigation, or testing strategy. `SPEC.md` records *what* stopcast does
+  permissions, navigation, or testing strategy. `SPEC.md` records *what* stopdash does
   and *why* a design was chosen — not low-level implementation detail. Ask "would this
   still be true if the implementation were rewritten?"; if not, it's a code comment, not
   spec.
@@ -42,7 +42,7 @@ biting.
 ## Engineering quality bar
 
 The `SPEC.md` *Engineering quality bar* is the source of truth; in priority order:
-never show a departure stopcast doesn't stand behind, never fail silently, do the work
+never show a departure stopdash doesn't stand behind, never fail silently, do the work
 ahead of time, jank-free UI, respect the battery, say why. Where a rule below conflicts
 with a principle, the principle wins.
 
@@ -92,7 +92,7 @@ as a confirmed TfL hex. SPEC has the full scheme and rationale.
 
 - **Never put user data in any artifact that leaves this machine** — commit subjects and
   bodies, PR titles/descriptions/comments, review replies, branch names, code comments,
-  test fixtures, screenshots, or logs. For stopcast that means **coordinates, the set of
+  test fixtures, screenshots, or logs. For stopdash that means **coordinates, the set of
   stops a user watches, a home/work stop, and the user's TfL `app_key`** — together they
   reveal where someone lives and travels. Use stock stand-ins (`(51.5, -0.12)` only as
   an obviously-synthetic fixture, `490000…` style example stop IDs, `app_key=EXAMPLE`).
@@ -257,7 +257,7 @@ and place names stay as TfL spells them.
 ## Cost and reliability
 
 Call out cost and reliability up front when adding infrastructure or an external call.
-StopCast's one dependency (TfL Unified API) is free (£0; ~50 req/min keyless, ~500 with a
+StopDash's one dependency (TfL Unified API) is free (£0; ~50 req/min keyless, ~500 with a
 user key) — anything new that leaves the device is a distribution/privacy decision, named
 alongside its dollar figure and its Play Data Safety consequence. Battery is the user's
 running cost: a new wakeup, location request, or refresh interval is a battery change and

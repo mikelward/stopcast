@@ -217,7 +217,7 @@ class StationStopsViewModel(
         data object Loading : State
         /** The station's stops, and its [center] (null when TfL placed none) — where From… stands. */
         data class Ready(val stops: List<StopRef>, val center: Coordinates? = null) : State
-        /** TfL knows the station but nothing under it carries departures stopcast shows. */
+        /** TfL knows the station but nothing under it carries departures stopdash shows. */
         data object NoStops : State
         data class Failed(val kind: DeparturesUiState.Error.Kind) : State
     }

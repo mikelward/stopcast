@@ -16,7 +16,7 @@ import kotlin.time.toKotlinDuration
 import kotlinx.coroutines.CancellationException
 
 /** Unique-work name so each scheduled redraw REPLACEs the previous one — at most one pending. */
-internal const val WIDGET_STALENESS_WORK = "stopcast-widget-staleness-redraw"
+internal const val WIDGET_STALENESS_WORK = "stopdash-widget-staleness-redraw"
 
 /**
  * Arms (or cancels) the one-shot render-only redraw at the staleness boundary of the snapshot
@@ -84,7 +84,7 @@ class WidgetStalenessWorker(appContext: Context, params: WorkerParameters) :
     CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result =
         try {
-            StopCastWidget().updateAll(applicationContext)
+            StopDashWidget().updateAll(applicationContext)
             Result.success()
         } catch (e: CancellationException) {
             throw e

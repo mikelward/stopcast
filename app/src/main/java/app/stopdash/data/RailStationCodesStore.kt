@@ -24,12 +24,12 @@ object RailStationCodesStore {
     fun load(context: Context): RailStationCodes {
         cached?.let { return it }
         val codes = try {
-            parse(context.assets.open(ASSET).bufferedReader().use { it.readText() }) { Log.w("StopCast.Rail", it) }
+            parse(context.assets.open(ASSET).bufferedReader().use { it.readText() }) { Log.w("StopDash.Rail", it) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // Static asset, no user data in the failure.
-            Log.w("StopCast.Rail", "station codes load failed: ${e::class.simpleName}")
+            Log.w("StopDash.Rail", "station codes load failed: ${e::class.simpleName}")
             RailStationCodes.EMPTY
         }
         cached = codes

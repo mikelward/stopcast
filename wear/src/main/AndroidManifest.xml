@@ -27,7 +27,7 @@
         </activity>
 
         <service
-            android:name=".StopCastTileService"
+            android:name=".StopDashTileService"
             android:exported="true"
             android:label="@string/app_name"
             android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
@@ -42,7 +42,7 @@
         <!-- Updated by push only (a new snapshot), never on a period: its timeline counts down
              and turns stale on its own. -->
         <service
-            android:name=".StopCastComplicationService"
+            android:name=".StopDashComplicationService"
             android:exported="true"
             android:icon="@drawable/ic_launcher_foreground"
             android:label="@string/complication_label"
@@ -80,21 +80,21 @@
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
                 <data
                     android:host="*"
-                    android:pathPrefix="/stopcast/snapshot"
+                    android:pathPrefix="/stopdash/snapshot"
                     android:scheme="wear" />
             </intent-filter>
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
                 <data
                     android:host="*"
-                    android:pathPrefix="/stopcast/refresh-result"
+                    android:pathPrefix="/stopdash/refresh-result"
                     android:scheme="wear" />
             </intent-filter>
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
                 <data
                     android:host="*"
-                    android:pathPrefix="/stopcast/refresh-ack"
+                    android:pathPrefix="/stopdash/refresh-ack"
                     android:scheme="wear" />
             </intent-filter>
         </service>

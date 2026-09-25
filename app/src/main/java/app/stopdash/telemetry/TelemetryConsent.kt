@@ -1,14 +1,14 @@
 package app.stopdash.telemetry
 
 import android.content.Context
-import app.stopdash.StopcastDebugLog
+import app.stopdash.StopdashDebugLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.io.IOException
 
-/** Where the "Help make StopCast better" choice is kept. */
+/** Where the "Help make StopDash better" choice is kept. */
 interface ConsentStore {
     /** The stored choice, or null if the user has never answered. Blocking. */
     fun read(): Boolean?
@@ -60,17 +60,17 @@ class FilePendingMarker(private val file: File) : PendingMarker {
     override fun read(): Boolean = try {
         file.exists()
     } catch (e: SecurityException) {
-        StopcastDebugLog.warning("telemetry: pending opt-in unreadable: %s", e::class.simpleName)
+        StopdashDebugLog.warning("telemetry: pending opt-in unreadable: %s", e::class.simpleName)
         false
     }
 
     override fun save(pending: Boolean): Boolean = try {
         if (pending) file.exists() || file.createNewFile() else !file.exists() || file.delete()
     } catch (e: IOException) {
-        StopcastDebugLog.warning("telemetry: pending opt-in write failed: %s", e::class.simpleName)
+        StopdashDebugLog.warning("telemetry: pending opt-in write failed: %s", e::class.simpleName)
         false
     } catch (e: SecurityException) {
-        StopcastDebugLog.warning("telemetry: pending opt-in write failed: %s", e::class.simpleName)
+        StopdashDebugLog.warning("telemetry: pending opt-in write failed: %s", e::class.simpleName)
         false
     }
 
@@ -138,17 +138,17 @@ class TelemetryConsentHolder {
                 val consistent = gate == null || gate.collecting == stored || (stored && gate.pendingOptIn)
                 (stored && consistent).also { choice ->
                     if (choice != stored && !store.save(choice)) {
-                        StopcastDebugLog.warning("telemetry: could not store the reset opt-in")
+                        StopdashDebugLog.warning("telemetry: could not store the reset opt-in")
                     }
                 }
             } catch (e: Exception) {
-                StopcastDebugLog.warning("telemetry: consent load failed: %s", e::class.simpleName)
+                StopdashDebugLog.warning("telemetry: consent load failed: %s", e::class.simpleName)
                 false
             }
             try {
                 gate?.apply(choice)
             } catch (e: Exception) {
-                StopcastDebugLog.warning("telemetry: applying consent failed: %s", e::class.simpleName)
+                StopdashDebugLog.warning("telemetry: applying consent failed: %s", e::class.simpleName)
                 if (choice) {
                     // The full withdrawal, not just a switch-off: each failing step is logged, and the
                     // stored yes is replaced (or deleted), so the next start can't read it back as on.
@@ -168,7 +168,7 @@ class TelemetryConsentHolder {
         synchronized(lock) {
             this.gate = gate
             runCatching { gate?.apply(false) }
-                .onFailure { StopcastDebugLog.warning("telemetry: fail-closed switch-off failed: %s", it::class.simpleName) }
+                .onFailure { StopdashDebugLog.warning("telemetry: fail-closed switch-off failed: %s", it::class.simpleName) }
             _state.value = false
         }
     }
@@ -177,7 +177,7 @@ class TelemetryConsentHolder {
     // withdraw it now, visibly, rather than show a yes that isn't collecting and will be reset.
     private fun optInLost() {
         synchronized(lock) {
-            StopcastDebugLog.warning("telemetry: pending opt-in could not be saved; switched off")
+            StopdashDebugLog.warning("telemetry: pending opt-in could not be saved; switched off")
             withdraw()
         }
     }
@@ -194,13 +194,13 @@ class TelemetryConsentHolder {
             val saved = try {
                 store?.save(true) == true
             } catch (e: Exception) {
-                StopcastDebugLog.warning("telemetry: opt-in write threw: %s", e::class.simpleName)
+                StopdashDebugLog.warning("telemetry: opt-in write threw: %s", e::class.simpleName)
                 false
             }
             if (!saved) {
                 // Not durable, so not applied: the switch stays off rather than collect on a choice
                 // the next start can't see.
-                StopcastDebugLog.warning("telemetry: opt-in write failed; left off")
+                StopdashDebugLog.warning("telemetry: opt-in write failed; left off")
                 _state.value = false
                 return
             }
@@ -209,7 +209,7 @@ class TelemetryConsentHolder {
             try {
                 gate?.apply(true)
             } catch (e: Exception) {
-                StopcastDebugLog.warning("telemetry: applying the opt-in failed: %s", e::class.simpleName)
+                StopdashDebugLog.warning("telemetry: applying the opt-in failed: %s", e::class.simpleName)
                 withdraw()
             }
         }
@@ -226,12 +226,12 @@ class TelemetryConsentHolder {
         try {
             gate?.apply(false)
         } catch (e: Exception) {
-            StopcastDebugLog.warning("telemetry: switching the SDKs off failed: %s", e::class.simpleName)
+            StopdashDebugLog.warning("telemetry: switching the SDKs off failed: %s", e::class.simpleName)
         }
         val saved = try {
             store?.save(false) != false
         } catch (e: Exception) {
-            StopcastDebugLog.warning("telemetry: opt-out write threw: %s", e::class.simpleName)
+            StopdashDebugLog.warning("telemetry: opt-out write threw: %s", e::class.simpleName)
             false
         }
         if (saved) return
@@ -241,10 +241,10 @@ class TelemetryConsentHolder {
         val forgotten = try {
             store?.forget() == true
         } catch (e: Exception) {
-            StopcastDebugLog.warning("telemetry: forgetting the opt-in threw: %s", e::class.simpleName)
+            StopdashDebugLog.warning("telemetry: forgetting the opt-in threw: %s", e::class.simpleName)
             false
         }
-        StopcastDebugLog.warning(
+        StopdashDebugLog.warning(
             if (forgotten) "telemetry: opt-out write failed; stored choice deleted instead"
             else "telemetry: opt-out write and delete failed; the SDKs are off",
         )

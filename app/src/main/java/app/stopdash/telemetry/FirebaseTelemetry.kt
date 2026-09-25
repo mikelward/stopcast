@@ -116,7 +116,7 @@ class CrashlyticsLogSink internal constructor(
         sendLine = { FirebaseCrashlytics.getInstance().log(it) },
         sendException = { FirebaseCrashlytics.getInstance().recordException(it) },
         deliver = worker()::execute,
-        onFailure = { Log.w("StopCast", "telemetry: $it") },
+        onFailure = { Log.w("StopDash", "telemetry: $it") },
     )
 
     override fun log(line: String) = log(line, ' ', null)
@@ -167,7 +167,7 @@ class CrashlyticsLogSink internal constructor(
 
     private companion object {
         fun worker() = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue()) { runnable ->
-            Thread(runnable, "stopcast-crashlytics-log").apply { isDaemon = true }
+            Thread(runnable, "stopdash-crashlytics-log").apply { isDaemon = true }
         }
     }
 }

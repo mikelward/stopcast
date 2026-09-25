@@ -9,7 +9,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.stopdash.domain.StationMatch
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -39,7 +39,7 @@ class StationSearchScreenshotTest {
 
     private fun show(state: StationSearchViewModel.State, onOpen: (StationMatch) -> Unit = {}) {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 StationSearchScreen(
                     state = state,
                     onQueryChange = {},
@@ -76,7 +76,7 @@ class StationSearchScreenshotTest {
     @Test
     fun station_search_to() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 StationSearchScreen(
                     state = StationSearchViewModel.State(yoursRead = true),
                     onQueryChange = {},
@@ -127,7 +127,7 @@ class StationSearchScreenshotTest {
     @Test
     fun station_loading() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 StationPlaceholderScreen(
                     title = "King's Cross St. Pancras",
                     state = StationStopsViewModel.State.Loading,

@@ -1,6 +1,6 @@
 package app.stopdash.telemetry
 
-import app.stopdash.StopcastDebugLog
+import app.stopdash.StopdashDebugLog
 
 /**
  * What the gate needs from the crash and analytics SDKs — a seam, so the consent logic is
@@ -127,7 +127,7 @@ class TelemetryGate(private val backend: TelemetryBackend, private val pending: 
                     }
                 }
             } catch (e: Exception) {
-                StopcastDebugLog.warning("telemetry: completing the opt-in failed: %s", e::class.simpleName)
+                StopdashDebugLog.warning("telemetry: completing the opt-in failed: %s", e::class.simpleName)
                 false
             }
             if (!kept) onOptInLost()

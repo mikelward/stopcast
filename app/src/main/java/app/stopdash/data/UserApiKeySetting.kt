@@ -157,7 +157,7 @@ open class StoredSettingHolder<T>(
     /**
      * Begins reading the stored value into [current], off the main thread, and keeps it live for
      * later writes. Idempotent — a second call is ignored — so it can be called from
-     * `StopcastApp.onCreate` without stacking collectors. Reads before the warm read lands see
+     * `StopdashApp.onCreate` without stacking collectors. Reads before the warm read lands see
      * [initial] (for a key, keyless: the safe default, since a real key only raises the budget).
      */
     fun warm(appSettings: AppSettings) {

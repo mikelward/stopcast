@@ -90,7 +90,7 @@ class WidgetSnapshotStore(context: Context) : SnapshotStore {
      */
     private suspend fun pokeWidget() {
         try {
-            StopCastWidget().updateAll(appContext)
+            StopDashWidget().updateAll(appContext)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

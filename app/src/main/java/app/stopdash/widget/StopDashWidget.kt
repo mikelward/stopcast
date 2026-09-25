@@ -36,7 +36,7 @@ import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import app.stopdash.MainActivity
-import app.stopdash.StopcastDebugLog
+import app.stopdash.StopdashDebugLog
 import app.stopdash.data.HiddenModesSetting
 import app.stopdash.data.DataStoreSnapshotStore
 import app.stopdash.data.DataStoreStarredRowsStore
@@ -82,7 +82,7 @@ import kotlinx.coroutines.flow.first
  * `MainActivity`), so the widget shows "the stops near where you last opened the app". Phase 2
  * replaces that with the watched stops; a live-refresh cadence for the widget is D5.
  */
-class StopCastWidget : GlanceAppWidget() {
+class StopDashWidget : GlanceAppWidget() {
     // Size buckets, so the layout fits the cell it's given: two widths (a narrow widget shortens its
     // stamp rather than clip it, see WIDGET_COMPACT_WIDTH) by a ladder of heights (the line budget
     // grows with the height, see widgetLineBudget). The host picks the largest bucket that fits.
@@ -178,7 +178,7 @@ class StopCastWidget : GlanceAppWidget() {
         // own installed-widget guard is the reliable backstop on the next save; here we catch
         // the removed-while-app-closed case. Cancellation rethrown; other failures logged.
         try {
-            if (GlanceAppWidgetManager(context).getGlanceIds(StopCastWidget::class.java).isEmpty()) {
+            if (GlanceAppWidgetManager(context).getGlanceIds(StopDashWidget::class.java).isEmpty()) {
                 cancelWidgetStalenessRedraw(context)
                 // Also retire the opt-in live-refresh chain — a widgetless user isn't left with a
                 // ~1/min fetch loop (Codex P1 on #56). The worker's own installed-widget guard is
@@ -677,10 +677,10 @@ private fun WidgetPill(row: DepartureRow, fontScale: Float) {
 /**
  * Sanitized log sink for the widget's snapshot read — a discarded corrupt file, or a read
  * that threw. Class name / a fixed reason only, never a stop id or coordinate (SPEC Privacy).
- * A top-level function so both [StopCastWidget.provideGlance] and [WidgetSnapshotStore] can
+ * A top-level function so both [StopDashWidget.provideGlance] and [WidgetSnapshotStore] can
  * wire it into `DataStoreSnapshotStore.from`, which keeps the first caller's sink.
  */
-internal fun logWidgetSnapshotWarning(message: String) = StopcastDebugLog.warning("widget: %s", message)
+internal fun logWidgetSnapshotWarning(message: String) = StopdashDebugLog.warning("widget: %s", message)
 
 /**
  * The widget line pill's fixed label width — every pill is the same size down the column so
@@ -697,7 +697,7 @@ private val WIDGET_PILL_LABEL_WIDTH = 48.dp
  */
 private const val WIDGET_PILL_MAX_SCALE = 1.15f
 
-/** The provider's `minWidth` x `minHeight` (`stopcast_widget_info.xml`) — the smallest size. */
+/** The provider's `minWidth` x `minHeight` (`stopdash_widget_info.xml`) — the smallest size. */
 private val WIDGET_MIN_WIDTH = 180.dp
 private val WIDGET_MIN_HEIGHT = 110.dp
 
@@ -785,7 +785,7 @@ private val WIDGET_PILL_TEXT_HEIGHT = 16.dp
  */
 internal val WIDGET_COMPACT_WIDTH = 220.dp
 
-/** The [StopCastWidget.sizeMode] buckets: the minimum and compact widths, and a ladder of heights
+/** The [StopDashWidget.sizeMode] buckets: the minimum and compact widths, and a ladder of heights
  *  from the minimum up (each rung about two more departure lines). */
 private val WIDGET_BUCKET_WIDTHS = listOf(WIDGET_MIN_WIDTH, WIDGET_COMPACT_WIDTH)
 private val WIDGET_BUCKET_HEIGHTS = listOf(WIDGET_MIN_HEIGHT, 180.dp, 250.dp, 320.dp, 400.dp)

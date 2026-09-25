@@ -8,7 +8,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import app.stopdash.StopcastDebugLog
+import app.stopdash.StopdashDebugLog
 import app.stopdash.data.WatchRefreshOutcome
 import app.stopdash.data.WatchRefreshReply
 import app.stopdash.data.WatchSyncContract
@@ -39,7 +39,7 @@ class WatchRefreshWorker(appContext: Context, params: WorkerParameters) : Corout
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            StopcastDebugLog.warning("watch: refresh failed: %s", e::class.simpleName)
+            StopdashDebugLog.warning("watch: refresh failed: %s", e::class.simpleName)
             WatchRefreshOutcome.UNREACHABLE
         }
         try {
@@ -50,7 +50,7 @@ class WatchRefreshWorker(appContext: Context, params: WorkerParameters) : Corout
             throw e
         } catch (e: Exception) {
             // The watch times out and says the phone is out of reach, which is then true enough.
-            StopcastDebugLog.warning("watch: refresh reply failed: %s", e::class.simpleName)
+            StopdashDebugLog.warning("watch: refresh reply failed: %s", e::class.simpleName)
         }
         return Result.success()
     }

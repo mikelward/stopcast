@@ -13,7 +13,7 @@ import app.stopdash.domain.DepartureRows
 import app.stopdash.domain.LineRef
 import app.stopdash.domain.StarredRow
 import app.stopdash.domain.StopArrivals
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -61,7 +61,7 @@ class StarLongPressTest {
     fun `long-pressing an unstarred card invokes the callback for that row`() {
         var toggled: DepartureRow? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = loaded(),
                     now = now,
@@ -81,7 +81,7 @@ class StarLongPressTest {
     fun `long-pressing a starred card invokes the callback to unpin it`() {
         var toggled: DepartureRow? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = loaded(),
                     now = now,
@@ -100,7 +100,7 @@ class StarLongPressTest {
         var toggled: DepartureRow? = null
         var hidden: String? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = loaded(),
                     now = now,
@@ -131,7 +131,7 @@ class StarLongPressTest {
             lines = listOf(LineRef("victoria", "Victoria", "tube"), LineRef("73", "73", "bus")),
         )
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loaded(stops = listOf(mixed), fetchedAt = now),
                     now = now,
@@ -163,7 +163,7 @@ class StarLongPressTest {
             clusterId = "HUBEXAMPLE",
         )
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loaded(stops = listOf(here, sibling), fetchedAt = now),
                     now = now,
@@ -185,7 +185,7 @@ class StarLongPressTest {
         // long-press must not toggle (and there's no gold border to falsely imply a pin).
         var toggled: DepartureRow? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = loaded(),
                     now = now,
