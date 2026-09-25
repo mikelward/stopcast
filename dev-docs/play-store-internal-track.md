@@ -164,18 +164,16 @@ revises these forms periodically).
   fix outcomes — **never a raw coordinate or the `app_key`** (`docs/PRIVACY.md`).
   Stays on the device; a future shareable export redacts travel data.
 
-> **TODO (maintainer): complete the Play Data Safety form (and the rest of the
-> App content questionnaires — Ads, App access, Content rating, Target audience,
-> Government/News/Financial/Health) from these facts — pending sign-off.** Do
-> not treat the facts above as filled-in form answers; the finalized store-facing
-> disclosure is `TODO.md` Phase 5.
+> **TODO (maintainer): complete the Play Data Safety form and the rest of the
+> App content questionnaires.** The drafted answers are in
+> `docs/play-store/listing.md`, pending sign-off.
 
 ## Store listing copy
 
-The Play listing text (title, short/full description) is **maintained separately
-and is pending maintainer approval** — it is not in this repository yet, and is
-not part of this deploy pipeline. Paste it into Play Console → Grow → Store
-presence → Main store listing when it is signed off.
+The Play listing text (title, short and full description) is drafted in
+`docs/play-store/listing.md`, **pending maintainer approval**. It isn't part of this deploy
+pipeline: paste it into Play Console → Grow → Store presence → Main store listing once it's
+signed off.
 
 Release notes do **not** live with the listing copy: `whatsnew-en-US` is
 generated per release from commit subjects by the deploy job (see "Release
