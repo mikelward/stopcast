@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build stopcast's bundled National Rail station codes from NaPTAN (SPEC *National Rail*).
+"""Build stopdash's bundled National Rail station codes from NaPTAN (SPEC *National Rail*).
 
 Writes the JSON the app reads as `assets/stations/crs_codes.json`: for every active rail
 station in NaPTAN (the DfT's stop database, area 910), its railway location code (TIPLOC) and
@@ -33,7 +33,7 @@ RETRY_DELAYS = (5, 15, 45)
 
 def fetch(url=URL, retry_delays=RETRY_DELAYS):
     """GET NaPTAN's rail XML as bytes, retrying a timeout or a 5xx."""
-    request = urllib.request.Request(url, headers={"User-Agent": "stopcast-crs-index"})
+    request = urllib.request.Request(url, headers={"User-Agent": "stopdash-crs-index"})
     for attempt, delay in enumerate((0,) + tuple(retry_delays)):
         if delay:
             print(f"retrying NaPTAN in {delay}s", file=sys.stderr)
@@ -78,8 +78,8 @@ def _iterparse(xml_bytes):
 
 def one_per_crs(codes, stations=None):
     """Drops the TIPLOCs of a station TfL lists under several ids that aren't its National Rail
-    one (Clapham Junction's Overground-only id beside its National Rail one), so that station's
-    board shows under its National Rail stop, not twice. Kept: every id TfL's station list
+    one (an Overground-only id beside a National Rail one), so that station's board shows under
+    its National Rail stop, not twice. Kept: every id TfL's station list
     ([stations], id -> modes) gives the national-rail mode; else every id in that list; else the
     first alphabetically (a station outside it, which the app doesn't show). Two National Rail ids
     for one CRS (St Pancras) both stay: the app shares one board between them."""

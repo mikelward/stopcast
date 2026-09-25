@@ -13,12 +13,13 @@ class RailStationCodesStoreTest {
         assertEquals("WAT", codes.crsFor("910GWATRLMN"))
         assertEquals("KGX", codes.crsFor("910GKNGX"))
         assertNull("a tube station has none", codes.crsFor("940GZZLUWLO"))
-        // A station TfL lists under two National Rail ids keeps both; an Overground-only
-        // twin of a National Rail id is dropped, so its board shows under one stop.
+        // A station TfL lists under two National Rail ids keeps both, and the app shows one board
+        // between them (St Pancras; Clapham Junction, whose second id TfL now gives South Western
+        // Railway too). The builder's test covers dropping an Overground-only twin.
         assertEquals("STP", codes.crsFor("910GSTPX"))
         assertEquals("STP", codes.crsFor("910GSTPADOM"))
         assertEquals("CLJ", codes.crsFor("910GCLPHMJC"))
-        assertNull(codes.crsFor("910GCLPHMJ1"))
+        assertEquals("CLJ", codes.crsFor("910GCLPHMJ1"))
     }
 
     @Test
