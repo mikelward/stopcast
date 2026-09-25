@@ -4,8 +4,8 @@ package app.stopcast.domain
  * One station or interchange in the bundled index (SPEC *Finding stops → Find a station*): its
  * TfL [id], cleaned [name], the [modes] it serves, and the interchange it belongs to ([hubId],
  * blank for none — and for a hub itself). A station also carries its public position and its
- * [tubeLines] (null/empty on an index built before they were), for [FartherStations]. Public TfL
- * facts, never user data.
+ * [lines] by mode (null/empty on an index built before they were), for [FartherStations]. Public
+ * TfL facts, never user data.
  */
 data class IndexedStation(
     val id: String,
@@ -14,7 +14,8 @@ data class IndexedStation(
     val hubId: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val tubeLines: List<String> = emptyList(),
+    // Mode → line ids: tube lines, National Rail services, Overground lines, and so on.
+    val lines: Map<String, List<String>> = emptyMap(),
 )
 
 /**

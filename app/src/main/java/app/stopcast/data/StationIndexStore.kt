@@ -70,7 +70,7 @@ object StationIndexStore {
                         hubId = it.hub,
                         latitude = it.lat,
                         longitude = it.lon,
-                        tubeLines = it.lines,
+                        lines = it.modeLines,
                     )
                 },
         )
@@ -91,6 +91,8 @@ object StationIndexStore {
         // Added without a version bump: an older index simply lacks them (no "From …" buttons).
         val lat: Double? = null,
         val lon: Double? = null,
-        val lines: List<String> = emptyList(),
+        // Mode → line ids. Not "lines": an earlier build wrote that as a tube-only list, which this
+        // ignores (ignoreUnknownKeys) rather than failing the whole index on.
+        val modeLines: Map<String, List<String>> = emptyMap(),
     )
 }
