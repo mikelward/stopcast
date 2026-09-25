@@ -1,7 +1,9 @@
 package app.stopdash.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PreciseFixMemoryTest {
@@ -24,6 +26,16 @@ class PreciseFixMemoryTest {
         val recalled = memory.instead(origin, 400f, nowElapsedMillis = 3 * minute)
         assertEquals(north(250.0), recalled?.coordinates)
         assertEquals(3 * minute, recalled?.ageMillis)
+    }
+
+    @Test
+    fun `a recall no older than the fast path's cache stands as current`() {
+        val memory = PreciseFixMemory()
+        memory.remember(north(10.0), atElapsedMillis = 0)
+        // Exactly as old as a cached fix the fast path would still use: stands.
+        assertTrue(memory.instead(origin, 150f, FixSelection.FRESH_ENOUGH_MILLIS)!!.standsAsCurrent)
+        // Any older and it is only a guess, to be shown as approximate and checked.
+        assertFalse(memory.instead(origin, 150f, FixSelection.FRESH_ENOUGH_MILLIS + 1)!!.standsAsCurrent)
     }
 
     @Test

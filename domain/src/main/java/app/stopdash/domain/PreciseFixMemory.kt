@@ -94,7 +94,18 @@ class PreciseFixMemory {
         val ageMillis: Long,
         val provider: String,
         val accuracyMeters: Float?,
-    )
+    ) {
+        /**
+         * Young enough to stand as the current position, with no banner and no GPS check: a cached
+         * precise fix this old takes [FixSelection]'s instant fast path unquestioned, so the same
+         * fix recalled on a re-locate — and corroborated by the coarse fix, whose circle holds it —
+         * is at least as trustworthy. Older, it may be where the rider was rather than is, so the
+         * list shows from it as approximate while GPS confirms it (SPEC *Finding stops*;
+         * maintainer bug report, 2026-09-25: a 12 m fix from half a minute earlier read as
+         * "Approximate location" indoors, where GPS never answers to clear it).
+         */
+        val standsAsCurrent: Boolean get() = ageMillis <= FixSelection.FRESH_ENOUGH_MILLIS
+    }
 
     /**
      * The remembered fix set against a coarse one: [apartMeters] from it, and whether it is [used]

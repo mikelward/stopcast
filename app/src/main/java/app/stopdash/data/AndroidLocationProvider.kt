@@ -134,10 +134,11 @@ class AndroidLocationProvider(
             }
             val recalled = considered?.takeIf { it.used }?.recalled
             if (recalled != null) {
-                // Still flagged coarse: the rider may have moved within the circle, so the list
-                // shows from the precise point but GPS is still asked to confirm it or move it
-                // (a forced refresh included), rather than the recall standing unchecked.
-                return LocationFix(recalled.coordinates, isFallback = false, isCoarse = true)
+                // A recall young enough for the instant fast path stands, as that path's fix would.
+                // An older one stays flagged coarse: the rider may have moved within the circle, so
+                // the list shows from the precise point but GPS is still asked to confirm it or move
+                // it (a forced refresh included), rather than the recall standing unchecked.
+                return LocationFix(recalled.coordinates, isFallback = false, isCoarse = !recalled.standsAsCurrent)
             }
         }
         return coordinates?.let { LocationFix(it, isFallback = fromFallback, isCoarse = isCoarse) }
