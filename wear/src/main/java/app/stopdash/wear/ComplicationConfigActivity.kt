@@ -77,7 +77,7 @@ object ComplicationChoices {
 }
 
 /**
- * Picks the row a StopCast complication shows (opened from the watch face's complication editor).
+ * Picks the row a StopDash complication shows (opened from the watch face's complication editor).
  * Picking one saves it and syncs it to the phone ([ComplicationSelections]); "Top row" goes back to
  * the default. Renders from the stored envelope at once; the read runs off the main thread.
  */
@@ -110,7 +110,7 @@ class ComplicationConfigActivity : ComponentActivity() {
             }
             ComplicationPickerScreen(choices, current) { row ->
                 ComplicationSelections.set(this, id, row)
-                StopCastComplicationService.requestUpdate(this)
+                StopDashComplicationService.requestUpdate(this)
                 setResult(Activity.RESULT_OK)
                 finish()
             }

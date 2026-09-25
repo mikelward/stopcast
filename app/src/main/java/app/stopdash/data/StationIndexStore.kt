@@ -33,14 +33,14 @@ object StationIndexStore {
         val index = try {
             val text = context.assets.open(ASSET).bufferedReader().use { it.readText() }
             // Static public data: a failure carries nothing about the user, so naming it is safe.
-            parse(text) { Log.w("StopCast.Stations", it) }
+            parse(text) { Log.w("StopDash.Stations", it) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: FileNotFoundException) {
-            Log.w("StopCast.Stations", "no bundled station index; searching TfL only")
+            Log.w("StopDash.Stations", "no bundled station index; searching TfL only")
             StationIndex.EMPTY
         } catch (e: Exception) {
-            Log.w("StopCast.Stations", "station index load failed: ${e::class.simpleName}")
+            Log.w("StopDash.Stations", "station index load failed: ${e::class.simpleName}")
             StationIndex.EMPTY
         }
         cached = index

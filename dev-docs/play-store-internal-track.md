@@ -8,7 +8,7 @@ It is the only channel a *device* installs a build from, and the route to
 alpha/beta/production later.
 
 The same signed bundle is also published as a **GitHub prerelease**, tagged
-`v<versionCode>` with `stopcast-<versionCode>.aab` attached and the same "What's
+`v<versionCode>` with `stopdash-<versionCode>.aab` attached and the same "What's
 new" notes. It is not a second way to install anything — nobody installs an
 AAB — it is the durable record of what shipped: the workflow artifact expires
 and is reachable only from its own run's page, and the Actions list titles a run
@@ -57,7 +57,7 @@ every release build, not only in CI.
 
 https://play.google.com/console → "Create app":
 
-- **App name**: `StopCast`
+- **App name**: `StopDash`
 - **Default language**: English (United States)
 - **App or game**: App; **Free or paid**: Free
 - **Package name**: `app.stopdash` (must match `applicationId` in
@@ -86,7 +86,7 @@ Console.
 RELEASE_KEYSTORE_FILE=/path/to/release.keystore \
 RELEASE_KEYSTORE_PASSWORD=<password> \
 RELEASE_KEY_PASSWORD=<password> \
-RELEASE_KEY_ALIAS=stopcast \
+RELEASE_KEY_ALIAS=stopdash \
 ./gradlew :app:bundleRelease
 ```
 
@@ -124,7 +124,7 @@ roles needed) → Keys tab → Add key → JSON. The downloaded JSON becomes the
 ### 6. Grant the service account access in Play Console
 
 Play Console → Users and permissions → Invite new users → the service account
-email. On "App permissions", add StopCast and grant **Releases: Release to
+email. On "App permissions", add StopDash and grant **Releases: Release to
 testing tracks** — the minimum for an internal-track upload. Propagation can
 take a few minutes.
 
@@ -140,8 +140,8 @@ revises these forms periodically).
 
 - **Privacy policy**: the published copy of `docs/PRIVACY.md` (confirm the
   hosted URL before submitting — e.g. a GitHub Pages copy at
-  `https://mikelward.github.io/stopcast/PRIVACY.html`).
-- **What stopcast sends off the device** (`docs/PRIVACY.md`, SPEC *Privacy*):
+  `https://mikelward.github.io/stopdash/PRIVACY.html`).
+- **What stopdash sends off the device** (`docs/PRIVACY.md`, SPEC *Privacy*):
   - **Approximate or precise location → Transport for London**, on demand only,
     when the user asks for "near me now": the device coordinates are sent to
     TfL's `/StopPoint` lookup to find nearby stops. Precise where the user
@@ -152,14 +152,14 @@ revises these forms periodically).
   - **The typed stop-name or line query → TfL**, for stop/line search (Phase 2).
   - **An optional user-supplied TfL `app_key`**, if the user sets one, sent as
     their own credential with their own TfL calls and nowhere else.
-  - **Nothing else leaves the device to stopcast** unless the user opts in to *Help
-    make StopCast better* (off by default): then crash reports and usage stats go to
+  - **Nothing else leaves the device to stopdash** unless the user opts in to *Help
+    make StopDash better* (off by default): then crash reports and usage stats go to
     Firebase, with the Data Safety categories listed in `docs/PRIVACY.md` and
     `dev-docs/firebase.md`. Otherwise no Firebase, no analytics, no crash reporter, no
-    third-party tracker, no server of stopcast's own. (The
+    third-party tracker, no server of stopdash's own. (The
     user's own Android backup / device-to-device transfer carries their saved
     config; that is a platform feature under the user's control, not data
-    stopcast collects or transmits — no Data Safety change, `docs/PRIVACY.md`.)
+    stopdash collects or transmits — no Data Safety change, `docs/PRIVACY.md`.)
 - **On-device diagnostic log**: coarse stop/line IDs, HTTP status, and location
   fix outcomes — **never a raw coordinate or the `app_key`** (`docs/PRIVACY.md`).
   Stays on the device; a future shareable export redacts travel data.
@@ -194,11 +194,11 @@ Play App Signing at the seed upload (step 2) is what keeps a lost key that cheap
 KEYSTORE_PASSWORD=$(openssl rand -hex 24)
 keytool -genkeypair \
   -keystore release.keystore \
-  -alias stopcast \
+  -alias stopdash \
   -storetype PKCS12 \
   -storepass "$KEYSTORE_PASSWORD" \
   -keypass "$KEYSTORE_PASSWORD" \
-  -dname "CN=StopCast Release, O=StopCast, C=US" \
+  -dname "CN=StopDash Release, O=StopDash, C=US" \
   -validity 36500 \
   -keyalg RSA \
   -keysize 2048
@@ -235,7 +235,7 @@ only entry here that cannot be regenerated equivalently.
 | `RELEASE_KEYSTORE_BASE64` | Base64-encoded PKCS12 keystore bytes (`base64 -w0 release.keystore`). |
 | `RELEASE_KEYSTORE_PASSWORD` | Random hex string set when the keystore was generated. |
 | `RELEASE_KEY_PASSWORD` | Same value as `RELEASE_KEYSTORE_PASSWORD` (PKCS12 convention). |
-| `RELEASE_KEY_ALIAS` | Key alias inside the keystore. Use `stopcast` to match the snippet above. |
+| `RELEASE_KEY_ALIAS` | Key alias inside the keystore. Use `stopdash` to match the snippet above. |
 | `PLAY_SERVICE_ACCOUNT_JSON` | Full JSON contents of the service account key from step 5. |
 
 ## Release notes

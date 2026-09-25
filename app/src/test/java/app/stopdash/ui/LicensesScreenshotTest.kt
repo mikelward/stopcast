@@ -10,7 +10,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.stopdash.R
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.mikepenz.aboutlibraries.Libs
 import com.mikepenz.aboutlibraries.util.withJson
@@ -37,7 +37,7 @@ class LicensesScreenshotTest {
     @Test
     fun licenses() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 LicensesContent(loadLibraries())
             }
         }
@@ -57,7 +57,7 @@ class LicensesScreenshotTest {
     fun licenseDialog_showsVersionAndOpensLicenseUrl() {
         var openedUrl: String? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 LicensesContent(loadLibraries(), onOpenLicenseUrl = { openedUrl = it })
             }
         }
@@ -90,7 +90,7 @@ class LicensesScreenshotTest {
     @Test
     fun licenseDialog_namesEveryAuthor_orNoneWhenTheComponentNamesNobody() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 LicensesContent(Libs.Builder().withJson(ATTRIBUTION_FIXTURE).build())
             }
         }
@@ -119,7 +119,7 @@ class LicensesScreenshotTest {
     @Test
     fun licenseDialog_snapshot() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 LicensesContent(loadLibraries())
             }
         }

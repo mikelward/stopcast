@@ -197,7 +197,7 @@
     <string name="station_search_recent">Recent</string>
     <!-- Under the station matches when TfL's search (which covers bus stops) failed. -->
     <string name="station_search_bus_stops_missing">Bus stops not searched</string>
-    <!-- A searched station that has no stops stopcast shows departures for. -->
+    <!-- A searched station that has no stops stopdash shows departures for. -->
     <string name="station_no_departures">No departures here</string>
     <string name="settings_title">Settings</string>
     <string name="settings_live_widget_refresh_title">Refresh widget every minute</string>
@@ -214,7 +214,7 @@
     <string name="settings_text_size_value">%1$d%%</string>
     <string name="settings_text_size_reset">Reset</string>
     <string name="settings_text_size_content_description">Text size, %1$d percent</string>
-    <string name="settings_telemetry_title">Help make StopCast better</string>
+    <string name="settings_telemetry_title">Help make StopDash better</string>
     <string name="settings_telemetry_summary">Share crash reports and usage stats. Never your stops, journeys or precise location.</string>
     <string name="settings_pinch_title">Pinch to resize text</string>
     <string name="settings_pinch_summary">Spread or pinch two fingers anywhere in the app to change the text size.</string>
@@ -226,7 +226,7 @@
     <string name="settings_distance_units_feet">Feet</string>
     <string name="settings_distance_units_write_failed">Couldn\'t save that; it resets when StopDash restarts</string>
 
-    <!-- Optional user TfL app_key (SPEC D7). StopCast works keyless; a user's own free key raises
+    <!-- Optional user TfL app_key (SPEC D7). StopDash works keyless; a user's own free key raises
          the request budget. The key is a credential, kept on-device and never logged. -->
     <string name="settings_api_key_title">TfL API key</string>
     <string name="settings_api_key_summary">Optional. Paste your own free TfL API key for a higher refresh limit.</string>

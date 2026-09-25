@@ -136,7 +136,7 @@ internal fun ingestExisting(context: Context, store: WatchEnvelopeStore): Boolea
     }
 }
 
-private const val TAG = "StopCast.Watch"
+private const val TAG = "StopDash.Watch"
 
 /** The watch's glanceable surfaces, which render the stored envelope and are told when it changes. */
 internal object WatchSurfaces {
@@ -170,9 +170,9 @@ internal object WatchSurfaces {
         }
     }
 
-    /** Asks the tile and every StopCast complication to re-render from the stored envelope. */
+    /** Asks the tile and every StopDash complication to re-render from the stored envelope. */
     fun requestUpdate(context: Context) {
-        StopCastTileService.requestUpdate(context)
-        StopCastComplicationService.requestUpdate(context)
+        StopDashTileService.requestUpdate(context)
+        StopDashComplicationService.requestUpdate(context)
     }
 }

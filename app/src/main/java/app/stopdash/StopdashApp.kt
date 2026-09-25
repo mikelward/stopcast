@@ -19,7 +19,7 @@ import app.stopdash.telemetry.TelemetryConsent
 import app.stopdash.telemetry.TelemetryGate
 import app.stopdash.telemetry.startTelemetry
 import app.stopdash.watch.WatchSync
-import app.stopdash.widget.StopCastWidget
+import app.stopdash.widget.StopDashWidget
 import com.mikelward.androidlog.DebugLog
 import com.mikelward.androidlog.android.DebugFileSink
 import com.mikelward.androidlog.android.LogcatSink
@@ -30,7 +30,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
-private const val LOGCAT_TAG = "StopCast"
+private const val LOGCAT_TAG = "StopDash"
 
 // How long a fatal crash waits for queued breadcrumbs to reach Crashlytics before it is reported.
 private const val FATAL_DRAIN_MILLIS = 500L
@@ -61,7 +61,7 @@ internal fun installDiagnosticSinks(
 }
 
 /**
- * The Application. Its one job today is to stand up the diagnostic log ([StopcastDebugLog]) at
+ * The Application. Its one job today is to stand up the diagnostic log ([StopdashDebugLog]) at
  * process start — before any Activity, refresh, or widget update runs — so every warning after
  * startup is both visible in Logcat and persisted on-device.
  *
@@ -70,7 +70,7 @@ internal fun installDiagnosticSinks(
  * (`docs/PRIVACY.md`, `TODO.md`). The one off-device sink is Crashlytics, registered only in a
  * build with a Firebase config and fed only while the user has opted in ([installTelemetry]).
  */
-open class StopcastApp : Application() {
+open class StopdashApp : Application() {
     /**
      * The persisted diagnostic sink once it is stood up — the shared logger's on-device file
      * store. Handed to the consent-gated bug report so it can bundle (and, once shared, consume)
@@ -117,7 +117,7 @@ open class StopcastApp : Application() {
         try {
             WatchSync.start(this, applicationScope)
         } catch (e: Exception) {
-            StopcastDebugLog.warning("watch: sync start failed: %s", e::class.simpleName)
+            StopdashDebugLog.warning("watch: sync start failed: %s", e::class.simpleName)
         }
     }
 
@@ -140,7 +140,7 @@ open class StopcastApp : Application() {
         crashRedacted = try {
             FirebaseTelemetryBackend.installCrashRedaction(
                 this,
-                StopcastDebugLog::offDeviceThrowable,
+                StopdashDebugLog::offDeviceThrowable,
                 beforeReport = { crashlyticsSink?.drain(FATAL_DRAIN_MILLIS) },
             )
         } catch (e: Exception) {
@@ -156,7 +156,7 @@ open class StopcastApp : Application() {
                 // Fails closed through startTelemetry: without redaction, the SDKs are switched off.
                 check(crashRedacted) { "crash redaction not installed" }
                 val sink = CrashlyticsLogSink { TelemetryConsent.optedIn }
-                StopcastDebugLog.addSink(sink, DebugLog.Destination.OFF_DEVICE)
+                StopdashDebugLog.addSink(sink, DebugLog.Destination.OFF_DEVICE)
                 crashlyticsSink = sink
             },
             startLoad = { backend ->
@@ -165,8 +165,8 @@ open class StopcastApp : Application() {
                 applicationScope.launch(Dispatchers.IO) {
                     var gate: TelemetryGate? = null
                     try {
-                        val store = PrefsConsentStore(this@StopcastApp)
-                        gate = backend?.let { TelemetryGate(it, FilePendingMarker(this@StopcastApp)) }
+                        val store = PrefsConsentStore(this@StopdashApp)
+                        gate = backend?.let { TelemetryGate(it, FilePendingMarker(this@StopdashApp)) }
                         TelemetryConsent.load(store, gate)
                     } catch (e: Exception) {
                         // Fail closed: SDKs off and the switch shown off, so an earlier opt-in can't
@@ -203,7 +203,7 @@ open class StopcastApp : Application() {
                 .drop(1)
                 .collect {
                     try {
-                        StopCastWidget().updateAll(this@StopcastApp)
+                        StopDashWidget().updateAll(this@StopdashApp)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -232,7 +232,7 @@ open class StopcastApp : Application() {
         // worker, never here. Guarded so a failure to stand up the log is logged and swallowed
         // rather than crashing the app it exists to diagnose (nothing acquired to clean up here).
         try {
-            diagnosticSink = installDiagnosticSinks(StopcastDebugLog, this)
+            diagnosticSink = installDiagnosticSinks(StopdashDebugLog, this)
         } catch (e: Exception) {
             Log.w(LOGCAT_TAG, "diagnostic log setup failed: ${e::class.simpleName}")
         }

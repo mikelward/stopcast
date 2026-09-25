@@ -71,17 +71,17 @@ tasks.withType<Test>().configureEach {
 
 // Release gate (maintainer, 2026-09-24; TODO Phase 6). The package is renamed; the watch app still
 // waits on the launch decision, so nothing here may be released by accident: every release
-// packaging task fails unless the build is run with -Pstopcast.wearRelease=approved. CI never
+// packaging task fails unless the build is run with -Pstopdash.wearRelease=approved. CI never
 // passes the flag, and asserts that :wear:bundleRelease fails without it. Lift it only in the PR
 // that releases the watch app.
-val wearReleaseApproved = providers.gradleProperty("stopcast.wearRelease").orNull == "approved"
+val wearReleaseApproved = providers.gradleProperty("stopdash.wearRelease").orNull == "approved"
 val releaseGate = tasks.register("checkWearReleaseGate") {
     description = "Fails a Wear OS release build until the maintainer lifts the release gate."
     val approved = wearReleaseApproved
     doLast {
         check(approved) {
             "The Wear OS app isn't released yet (TODO Phase 6): build it with " +
-                "-Pstopcast.wearRelease=approved only once the maintainer has decided to launch."
+                "-Pstopdash.wearRelease=approved only once the maintainer has decided to launch."
         }
     }
 }

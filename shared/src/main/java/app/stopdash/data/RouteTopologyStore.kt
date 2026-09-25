@@ -45,11 +45,11 @@ object RouteTopologyStore {
         val topology = try {
             val text = context.assets.open(ASSET).bufferedReader().use { it.readText() }
             // Static asset, no user data in a failure — safe to name the failure mode in the log.
-            parse(text) { Log.w("StopCast.Topology", it) }
+            parse(text) { Log.w("StopDash.Topology", it) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w("StopCast.Topology", "route topology load failed: ${e::class.simpleName}")
+            Log.w("StopDash.Topology", "route topology load failed: ${e::class.simpleName}")
             RouteTopology.EMPTY
         }
         cached = topology

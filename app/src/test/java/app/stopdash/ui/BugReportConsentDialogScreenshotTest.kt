@@ -7,7 +7,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -34,7 +34,7 @@ class BugReportConsentDialogScreenshotTest {
     @Test
     fun consent_spellsOutWhatIsShared() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 BugReportConsentDialog(onConfirm = {}, onDismiss = {})
             }
         }
@@ -56,7 +56,7 @@ class BugReportConsentDialogScreenshotTest {
     fun confirming_withoutTicking_reportsNoOptOut() {
         var latest: Boolean? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 BugReportConsentDialog(onConfirm = { latest = it }, onDismiss = {})
             }
         }
@@ -70,7 +70,7 @@ class BugReportConsentDialogScreenshotTest {
     fun tickingDontAskAgain_thenConfirming_reportsTheOptOut() {
         var latest: Boolean? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 BugReportConsentDialog(onConfirm = { latest = it }, onDismiss = {})
             }
         }
@@ -86,7 +86,7 @@ class BugReportConsentDialogScreenshotTest {
         var dismissed = false
         var confirmed = false
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 BugReportConsentDialog(onConfirm = { confirmed = true }, onDismiss = { dismissed = true })
             }
         }

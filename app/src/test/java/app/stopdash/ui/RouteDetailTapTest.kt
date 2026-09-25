@@ -13,7 +13,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import app.stopdash.domain.Departure
 import app.stopdash.domain.StopArrivals
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import java.time.Instant
 import org.junit.Rule
 import org.junit.Test
@@ -52,7 +52,7 @@ class RouteDetailTapTest {
     @Test
     fun `tapping a card opens the route detail with its star`() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(state = loaded(), now = now, onRefresh = {})
             }
         }
@@ -77,7 +77,7 @@ class RouteDetailTapTest {
             fetchedAt = now,
         )
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loaded(stops = listOf(branching), fetchedAt = now),
                     now = now,
@@ -98,7 +98,7 @@ class RouteDetailTapTest {
         // disruptionUnknown is set by some OTHER line, but this row's line was determined (good
         // service): its detail must not claim "couldn't check" — that's the per-line fix (Codex).
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loaded(
                         stops = listOf(stop),
@@ -122,7 +122,7 @@ class RouteDetailTapTest {
         // closure/move) failed — the two axes are independent. The detail must not claim the row
         // is clean when a stop-level disruption was never checked (SPEC principle 1, Codex on #100).
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loaded(
                         stops = listOf(stop),
@@ -144,7 +144,7 @@ class RouteDetailTapTest {
     @Test
     fun `an unchecked line's detail says couldnt check`() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loaded(
                         stops = listOf(stop),
@@ -174,7 +174,7 @@ class RouteDetailTapTest {
         )
         var current by mutableStateOf<DeparturesUiState>(present)
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(state = current, now = now, onRefresh = {})
             }
         }
@@ -196,7 +196,7 @@ class RouteDetailTapTest {
     @Test
     fun `pressing back closes the detail`() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(state = loaded(), now = now, onRefresh = {})
             }
         }

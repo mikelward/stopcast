@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * TfL's `/StopPoint?lat=&lon=&radius=` response — the nearby-stops search behind the
- * in-app "near me now" list (SPEC *Finding stops*). Only the fields stopcast maps are
+ * in-app "near me now" list (SPEC *Finding stops*). Only the fields stopdash maps are
  * declared; the client's `Json { ignoreUnknownKeys = true }` drops the rest (TfL returns
  * ~20 per stop, plus a paging envelope), so the DTO stays small and tolerant of fields
  * TfL adds later.
@@ -50,7 +50,7 @@ data class TflStopPointDto(
     // per-pole bus header (SPEC D8: "King's Cross Station (D)"). Blank for a stop with no letter (a
     // station, or a bus stop TfL gives none). A public fact about the stop, never a coordinate.
     val stopLetter: String = "",
-    // TfL's per-stop key/value extras. stopcast reads the **CompassPoint** (the pole's bearing,
+    // TfL's per-stop key/value extras. stopdash reads the **CompassPoint** (the pole's bearing,
     // "E"/"SW" — [compassBearing]) and **Towards** (the pole's direction description, "Farringdon Or
     // Holborn Circus" — [towards]), the bus header's direction cues.
     val additionalProperties: List<TflAdditionalPropertyDto> = emptyList(),
@@ -61,7 +61,7 @@ data class TflStopPointDto(
     val children: List<TflStopPointDto> = emptyList(),
 )
 
-/** One TfL `additionalProperties` entry — stopcast reads the `CompassPoint` and `Towards` [key]s. */
+/** One TfL `additionalProperties` entry — stopdash reads the `CompassPoint` and `Towards` [key]s. */
 @Serializable
 data class TflAdditionalPropertyDto(
     val category: String = "",
@@ -119,7 +119,7 @@ data class TflLineModeGroupDto(
 
 /**
  * Maps a nearby-search stop to the domain [StopLocation], or null when it lacks the
- * identity stopcast needs (a blank id, or no usable name). The name is cleaned of TfL's
+ * identity stopdash needs (a blank id, or no usable name). The name is cleaned of TfL's
  * type suffix ([cleanStopName]); each line's mode is recovered from [lineModeGroups],
  * falling back to the stop's primary mode, so a line still colors correctly at a
  * single-mode stop where the groups are redundant.

@@ -262,7 +262,7 @@ class WidgetScreenshotTest {
             ),
             fetchedAt = now.minusSeconds(30),
         )
-        // The same budgets StopCastWidget.provideGlance derives for this size and font.
+        // The same budgets StopDashWidget.provideGlance derives for this size and font.
         val stacked = widgetRowsStacked(size.width, fontScale)
         val model = widgetModel(
             snapshot,

@@ -1,7 +1,7 @@
 package app.stopdash.watch
 
 import android.content.Context
-import app.stopdash.StopcastDebugLog
+import app.stopdash.StopdashDebugLog
 import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -33,7 +33,7 @@ class WatchPublishWorker(appContext: Context, params: WorkerParameters) : Corout
         if (outcome != WatchPublisher.Outcome.Failed) return Result.success()
         if (runAttemptCount + 1 < MAX_ATTEMPTS) return Result.retry()
         // Given up for now: the next snapshot, star change, app start or reconnect tries again.
-        StopcastDebugLog.warning("watch: publish retries exhausted")
+        StopdashDebugLog.warning("watch: publish retries exhausted")
         return Result.failure()
     }
 
@@ -79,14 +79,14 @@ class PhoneWearListenerService : WearableListenerService() {
         if (event.path != WatchSyncContract.REFRESH_PATH) return
         val requestId = WatchRefreshReply.decodeRequest(event.data)
         if (requestId == null) {
-            StopcastDebugLog.warning("watch: refresh request unreadable")
+            StopdashDebugLog.warning("watch: refresh request unreadable")
             return
         }
         WatchRefreshWorker.enqueue(this, event.sourceNodeId, requestId)
         // Acknowledged at once, so the watch knows the phone is in reach while the refresh queues.
         Wearable.getMessageClient(this)
             .sendMessage(event.sourceNodeId, WatchSyncContract.REFRESH_ACK_PATH, WatchRefreshReply.encodeRequest(requestId))
-            .addOnFailureListener { e -> StopcastDebugLog.warning("watch: refresh ack failed: %s", e::class.simpleName) }
+            .addOnFailureListener { e -> StopdashDebugLog.warning("watch: refresh ack failed: %s", e::class.simpleName) }
     }
 
     /** The rows the watch's complications are set to changed: keep them, and republish if so. */

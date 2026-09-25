@@ -31,7 +31,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "StopCast"
+rootProject.name = "StopDash"
 
 include(":app")
 include(":domain")

@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.width
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -62,7 +62,7 @@ class LinePillWidthTest {
 
     @Test
     fun `every code, two-digit through four-character, is the same width`() {
-        composeRule.setContent { StopCastTheme { Pills() } }
+        composeRule.setContent { StopDashTheme { Pills() } }
         val bus = widthOf("12")
         val tube = widthOf("Victoria")
         val wide = widthOf("Hammersmith & City")
@@ -80,7 +80,7 @@ class LinePillWidthTest {
         // cap: if the pill (fixed box) is at least as wide as the unconstrained text, the
         // code fits and nothing is dropped.
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 Surface {
                     Row {
                         LinePill(lineName = "N550", lineId = "n550", mode = "bus")
@@ -114,7 +114,7 @@ class LinePillWidthTest {
         // window's width (the app never puts more than one pill in a row), which would clamp
         // the trailing pill and defeat the uniformity check.
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = base.density, fontScale = 2f),

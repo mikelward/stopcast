@@ -41,7 +41,7 @@ import okhttp3.Dispatcher
  *
  * [appKey] is read per request, not captured at construction, so a key the user pastes
  * in Settings takes effect on the next refresh without rebuilding the long-lived clients
- * (SPEC D7). A null/blank result means keyless access: stopcast ships no baked-in key, and
+ * (SPEC D7). A null/blank result means keyless access: stopdash ships no baked-in key, and
  * a user may supply their own for the higher rate limit. `expectSuccess` makes a non-2xx
  * (e.g. 429 rate-limited) throw, which the caller turns into the honest user-facing state
  * rather than a silent empty list.

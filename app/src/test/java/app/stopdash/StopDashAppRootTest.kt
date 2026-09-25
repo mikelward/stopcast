@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Guards the dark-mode contrast fix: [StopCastAppRoot] must wrap content in a themed `Surface`,
+ * Guards the dark-mode contrast fix: [StopDashAppRoot] must wrap content in a themed `Surface`,
  * so a screen without its own background paints on `colorScheme.surface` and inherits
  * `onSurface` as its content color. Drop the Surface and `LocalContentColor` falls back to the
  * black default — the unreadable-in-dark-mode bug this PR fixes. `LocationGateScreenshotTest`
@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
-class StopCastAppRootTest {
+class StopDashAppRootTest {
     @get:Rule
     val composeRule = createComposeRule()
 
@@ -29,7 +29,7 @@ class StopCastAppRootTest {
         var contentColor = Color.Unspecified
         var onSurface = Color.Unspecified
         composeRule.setContent {
-            StopCastAppRoot {
+            StopDashAppRoot {
                 contentColor = LocalContentColor.current
                 onSurface = MaterialTheme.colorScheme.onSurface
             }

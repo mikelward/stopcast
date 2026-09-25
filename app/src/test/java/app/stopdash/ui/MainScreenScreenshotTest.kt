@@ -65,7 +65,7 @@ import app.stopdash.domain.RouteSequenceSource
 import app.stopdash.domain.LineSequence
 import app.stopdash.domain.LineRoute
 import app.stopdash.domain.StopDisruption
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import java.time.Duration
 import java.time.Instant
@@ -214,7 +214,7 @@ class MainScreenScreenshotTest {
             now.minusSeconds(30),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 MainScreen(DeparturesUiState.Loaded(listOf(busOnly), now.minusSeconds(30)), now, {}, hiddenModes = setOf("bus"))
             }
         }
@@ -243,7 +243,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `an empty To… page says nothing goes there directly`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 MainScreen(
                     DeparturesUiState.Loaded(emptyList(), now.minusSeconds(30)),
                     now,
@@ -492,7 +492,7 @@ class MainScreenScreenshotTest {
         var overlayOpen by mutableStateOf(false)
         composeRule.setContent {
             listState = rememberLazyListState()
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     if (!overlayOpen) {
                         MainScreen(DeparturesUiState.Loaded(stops, now.minusSeconds(60)), now, {}, listState = listState)
@@ -530,7 +530,7 @@ class MainScreenScreenshotTest {
         )
         val restoration = StateRestorationTester(composeRule)
         restoration.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(DeparturesUiState.Loaded(listOf(station, turnpikeLaneSouth()), now.minusSeconds(60)), now, {})
                 }
@@ -553,7 +553,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `tapping a platform header shows just that platform, and back returns to the list`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(
@@ -589,7 +589,7 @@ class MainScreenScreenshotTest {
         // King's Cross' platforms all come from one TfL stop id, so the drill-down must keep the
         // tapped platform's group, not every row of the stop.
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(kingsCrossStPancras()), now.minusSeconds(60)),
@@ -623,7 +623,7 @@ class MainScreenScreenshotTest {
         )
         var state by mutableStateOf<DeparturesUiState>(clear)
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
             }
         }
@@ -645,7 +645,7 @@ class MainScreenScreenshotTest {
         val station = kingsCrossStPancras()
         var state by mutableStateOf<DeparturesUiState>(DeparturesUiState.Loaded(listOf(station), now.minusSeconds(60)))
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
             }
         }
@@ -669,7 +669,7 @@ class MainScreenScreenshotTest {
         val dismissed = mutableStateOf(emptySet<DismissedAlert>())
         val closed = manorHouse().copy(disruptions = listOf(StopDisruption("Station closed until further notice")))
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(turnpikeLaneNorth(), closed), now.minusSeconds(60)),
@@ -698,7 +698,7 @@ class MainScreenScreenshotTest {
     fun `tapping a suspended line's header opens the whole stop, not just the warning`() {
         val station = kingsCrossStPancras().let { it.copy(lines = it.lines + LineRef("jubilee", "Jubilee", "tube")) }
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(
@@ -737,7 +737,7 @@ class MainScreenScreenshotTest {
             DeparturesUiState.Loaded(listOf(pole("Palmers Green")), now.minusSeconds(60)),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
             }
         }
@@ -754,7 +754,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `tapping the station name shows the whole station, the rest of the header one platform`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(kingsCrossStPancras(), manorHouse()), now.minusSeconds(60)),
@@ -777,7 +777,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `a platform tapped in a station view shows just that platform, and back returns to the station`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(kingsCrossStPancras(), manorHouse()), now.minusSeconds(60)),
@@ -818,7 +818,7 @@ class MainScreenScreenshotTest {
         val both = DeparturesUiState.Loaded(listOf(kingsCrossStPancras(), manorHouse()), now.minusSeconds(60))
         var state by mutableStateOf<DeparturesUiState>(both)
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
             }
         }
@@ -844,7 +844,7 @@ class MainScreenScreenshotTest {
     fun `tapping a header's distance shows that stop on a map, not the platform`() {
         var opened: Pair<String, String>? = null
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
@@ -876,7 +876,7 @@ class MainScreenScreenshotTest {
             clusterId = "490G0TPL",
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(north, farPole, manorHouse()), now.minusSeconds(60)),
@@ -911,7 +911,7 @@ class MainScreenScreenshotTest {
             DeparturesUiState.Loaded(listOf(turnpikeLaneNorth(), manorHouse()), now.minusSeconds(60)),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) { MainScreen(state, now, {}) }
             }
         }
@@ -940,7 +940,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(nearer, farther), now.minusSeconds(60)),
@@ -990,7 +990,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `no distance shows until the stored units are read`() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 CompositionLocalProvider(LocalDistanceSystem provides null) {
                     MainScreen(
                         DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), lineStatuses = statuses()),
@@ -1011,7 +1011,7 @@ class MainScreenScreenshotTest {
         // One unsplit place shows its header only for its distance; withholding the label while the
         // units load must not take the place's name with it.
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 CompositionLocalProvider(LocalDistanceSystem provides null) {
                     MainScreen(
                         DeparturesUiState.Loaded(
@@ -1041,7 +1041,7 @@ class MainScreenScreenshotTest {
         // Not captured: the baselines stay metric (the default outside the app root), and this pins
         // only that the header reads the provided system (SPEC *Finding stops*).
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 CompositionLocalProvider(LocalDistanceSystem provides DistanceSystem.YARDS) {
                     MainScreen(
                         DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), lineStatuses = statuses()),
@@ -1112,7 +1112,7 @@ class MainScreenScreenshotTest {
         val notice = "Station closed until further notice. Visit tfl.gov.uk/status-updates for more."
         val closed = manorHouse().copy(disruptions = listOf(StopDisruption(notice)))
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(DeparturesUiState.Loaded(listOf(closed), now.minusSeconds(60)), now, {})
                 }
@@ -1212,7 +1212,7 @@ class MainScreenScreenshotTest {
         )
         var dismissedRow: DepartureRow? = null
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 MainScreen(
                     DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
                     now,
@@ -1239,7 +1239,7 @@ class MainScreenScreenshotTest {
             clusterId = "490G000EXAMPLE",
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
@@ -1279,7 +1279,7 @@ class MainScreenScreenshotTest {
         // When the nearest clusters return nothing, the farther ones are most useful — the "More"
         // controls render in the empty loaded state too (SPEC principle 2). Logic-only, no baseline.
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(emptyList(), now.minusSeconds(30)),
@@ -1301,7 +1301,7 @@ class MainScreenScreenshotTest {
         // The footer button hands its mode to onReveal, so the ViewModel pages that mode's clusters.
         var revealed: String? = null
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
@@ -1353,7 +1353,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `a farther station's distance follows the chosen units`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 CompositionLocalProvider(LocalDistanceSystem provides DistanceSystem.FEET) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
@@ -1376,7 +1376,7 @@ class MainScreenScreenshotTest {
         var opened: CollapsedPlaces.Place? = null
         val place = fartherPlace("940GZZLUWHM", "West Ham", 1_600.0, Triple("district", "District", "tube"))
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
@@ -1401,7 +1401,7 @@ class MainScreenScreenshotTest {
         val place = fartherPlace("940GZZLUWHM", "West Ham", 1_600.0, Triple("district", "District", "tube"))
         val opened = StopArrivals("940GZZLUWHM", "West Ham", emptyList(), fetchedAt = now.minusSeconds(60))
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(opened), now.minusSeconds(60)),
@@ -1467,7 +1467,7 @@ class MainScreenScreenshotTest {
         var savedKnown by mutableStateOf(true)
         var savedLoading by mutableStateOf(false)
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalRouteStops provides repository) {
                         MainScreen(
@@ -1542,7 +1542,7 @@ class MainScreenScreenshotTest {
         // More than a mile from both ends (the distance is the caller's; synthetic here).
         val origins = mutableListOf<List<StopRef>>()
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(
                         LocalRouteStops provides RouteStopsRepository(
@@ -1591,7 +1591,7 @@ class MainScreenScreenshotTest {
     fun `revealed faraway favorites are held back again after leaving their nearby set`() {
         var nearbyKey by mutableStateOf("940GZZLUMRH")
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
@@ -1629,7 +1629,7 @@ class MainScreenScreenshotTest {
         val restoration = StateRestorationTester(composeRule)
         restoration.setContent {
             val nearbyKey = remember { restoreKey }
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
@@ -1664,7 +1664,7 @@ class MainScreenScreenshotTest {
         composeRule.setContent {
             // Hoisted as MainActivity does, above the Settings/Licenses/search switch.
             val farReveal = rememberFarReveal("940GZZLUMRH")
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     if (listShown) {
                         MainScreen(
@@ -1699,7 +1699,7 @@ class MainScreenScreenshotTest {
         journey: StarredJourney = victoriaToWarrenStreet,
     ) {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalRouteStops provides RouteStopsRepository(source)) {
                         MainScreen(
@@ -1807,7 +1807,7 @@ class MainScreenScreenshotTest {
         )
         var screenNow by mutableStateOf(now)
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalRouteStops provides repository) {
                         MainScreen(
@@ -1854,7 +1854,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(
                         LocalRouteStops provides RouteStopsRepository(
@@ -1892,7 +1892,7 @@ class MainScreenScreenshotTest {
             disruptions = listOf(StopDisruption("Station Closed")),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(
                         LocalRouteStops provides RouteStopsRepository(
@@ -1927,7 +1927,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(
                         LocalRouteStops provides RouteStopsRepository(
@@ -1963,7 +1963,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(
                         LocalRouteStops provides RouteStopsRepository(
@@ -2002,7 +2002,7 @@ class MainScreenScreenshotTest {
         )
         var dismissed by mutableStateOf(emptySet<DismissedAlert>())
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(
                         LocalRouteStops provides RouteStopsRepository(
@@ -2058,7 +2058,7 @@ class MainScreenScreenshotTest {
         )
         var origins: List<StopRef> = emptyList()
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(
                         LocalRouteStops provides RouteStopsRepository(
@@ -2115,7 +2115,7 @@ class MainScreenScreenshotTest {
         var origins: List<StopRef> = emptyList()
         var stops by mutableStateOf(listOf(manorHouse(), pole("490000001L", "L", "b1", 120), pole("490000001K", "K", "b3", 240)))
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalRouteStops provides RouteStopsRepository(source)) {
                         MainScreen(
@@ -2159,7 +2159,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(
                         LocalRouteStops provides RouteStopsRepository(
@@ -2217,7 +2217,7 @@ class MainScreenScreenshotTest {
         )
         var journeys by mutableStateOf(listOf(victoriaToWarrenStreet))
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(
                         LocalRouteStops provides RouteStopsRepository(
@@ -2261,7 +2261,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `a journey whose origin couldn't be fetched says so, not that it's checking`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(
@@ -2319,7 +2319,7 @@ class MainScreenScreenshotTest {
             JourneyEnd("940GZZLUMRH", "Manor House"), JourneyEnd("940GZZLUKSX", "King's Cross St. Pancras"), "piccadilly",
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(manorHouse()), now.minusSeconds(60)),
@@ -2349,7 +2349,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
@@ -2378,7 +2378,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = base.density, fontScale = 2f),
@@ -2416,7 +2416,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = base.density, fontScale = 2f),
@@ -2460,7 +2460,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60), clusterId = "940GZZLUKSX",
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(stop, other), now.minusSeconds(60)),
@@ -2493,7 +2493,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)),
@@ -2525,7 +2525,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60), stopLetter = "E", clusterId = "490G00247",
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.requiredWidth(411.dp).fillMaxHeight()) {
                     MainScreen(
                         DeparturesUiState.Loaded(listOf(poleD, poleE), now.minusSeconds(60)),
@@ -2557,7 +2557,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = base.density, fontScale = 2.5f),
@@ -2601,7 +2601,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60), clusterId = "940GZZLUKSX",
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 MainScreen(
                     DeparturesUiState.Loaded(listOf(north, south), now.minusSeconds(60)),
                     now,
@@ -2674,7 +2674,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = base.density, fontScale = 2f),
@@ -2710,7 +2710,7 @@ class MainScreenScreenshotTest {
         // reuse a value cached on the label alone. Public line/place names only (SPEC *Privacy*).
         val fontScale = mutableFloatStateOf(1f)
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = base.density, fontScale = fontScale.floatValue),
@@ -2771,7 +2771,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
                 }
@@ -2826,7 +2826,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalRouteTopology provides topology) {
                         MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
@@ -3039,7 +3039,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `partial refresh names the nearest and counts the rest`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 MainScreen(
                     DeparturesUiState.Loaded(
                         stops(now.minusSeconds(60)),
@@ -3131,7 +3131,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(600),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(DeparturesUiState.Loaded(listOf(fresh, stale), now.minusSeconds(30)), now, {})
                 }
@@ -3160,7 +3160,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = base.density, fontScale = 2f),
@@ -3197,7 +3197,7 @@ class MainScreenScreenshotTest {
         // it still shows a stamp ("Loading…") so the top bar is present from the first frame
         // and fills in with the real age when the snapshot arrives (SPEC snapshot-render).
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(DeparturesUiState.Loading, now, {})
                 }
@@ -3224,7 +3224,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(DeparturesUiState.Loaded(listOf(stop), now.minusSeconds(60)), now, {})
                 }
@@ -3248,7 +3248,7 @@ class MainScreenScreenshotTest {
             fetchedAt = now.minusSeconds(60),
         )
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = base.density, fontScale = 2f),
@@ -3282,7 +3282,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `no update dot when no update is available`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(stops(now.minusSeconds(120)), now.minusSeconds(120)),
@@ -3308,7 +3308,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `the loading screen has no update button when none is available`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(DeparturesUiState.Loading, now, {})
                 }
@@ -3335,7 +3335,7 @@ class MainScreenScreenshotTest {
     @Test
     fun `no location banner when the fix is current`() {
         composeRule.setContent {
-            StopCastTheme(dynamicColor = false) {
+            StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
                         DeparturesUiState.Loaded(stops(now.minusSeconds(30)), now.minusSeconds(30)),
@@ -3351,7 +3351,7 @@ class MainScreenScreenshotTest {
 
     private fun capture(name: String, dark: Boolean = false, content: @Composable () -> Unit) {
         composeRule.setContent {
-            StopCastTheme(darkTheme = dark, dynamicColor = false) {
+            StopDashTheme(darkTheme = dark, dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) { content() }
             }
         }

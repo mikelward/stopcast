@@ -7,7 +7,7 @@ import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.Serializer
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStoreFile
-import app.stopdash.StopcastDebugLog
+import app.stopdash.StopdashDebugLog
 import app.stopdash.domain.AppSettings
 import app.stopdash.domain.DEFAULT_FONT_SCALE
 import app.stopdash.domain.DistanceUnits
@@ -194,7 +194,7 @@ class DataStoreAppSettings internal constructor(
  * by the production callers so a silent reset-to-defaults leaves a diagnostic (Codex P2 on #56).
  * A top-level function so every caller passes the same sink (the singleton keeps the first).
  */
-internal fun logAppSettingsWarning(message: String) = StopcastDebugLog.warning("settings: %s", message)
+internal fun logAppSettingsWarning(message: String) = StopdashDebugLog.warning("settings: %s", message)
 
 /**
  * The persisted settings shape. Every field carries a default so a file written by an older

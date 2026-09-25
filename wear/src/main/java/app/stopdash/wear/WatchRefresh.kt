@@ -154,7 +154,7 @@ object RefreshPolicy {
  * Every change asks the tile to re-render, so its Refresh line follows.
  */
 object WatchRefresh {
-    private const val TAG = "StopCast.Watch"
+    private const val TAG = "StopDash.Watch"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow<RefreshState>(RefreshState.Idle)
     val state: StateFlow<RefreshState> = _state.asStateFlow()
@@ -221,7 +221,7 @@ object WatchRefresh {
                 }
             }
         }
-        StopCastTileService.requestUpdate(appContext)
+        StopDashTileService.requestUpdate(appContext)
         scope.launch { send(appContext, pending.id) }
         timeOut(appContext, pending)
     }
@@ -232,7 +232,7 @@ object WatchRefresh {
             val left = Duration.between(Instant.now(), RefreshPolicy.deadline(pending))
             delay(left.toMillis().coerceAtLeast(0L))
             if (_state.compareAndSet(pending, RefreshState.OutOfReach(Instant.now(), pending.id))) {
-                StopCastTileService.requestUpdate(context)
+                StopDashTileService.requestUpdate(context)
             }
         }
     }
@@ -253,7 +253,7 @@ object WatchRefresh {
         }
         // The earlier timeout no longer matches the state, so it won't fire; this one replaces it.
         timeOut(appContext, acked)
-        StopCastTileService.requestUpdate(appContext)
+        StopDashTileService.requestUpdate(appContext)
     }
 
     /** The phone's answer; one to a request no longer pending is ignored. */
@@ -270,7 +270,7 @@ object WatchRefresh {
                 putLong(KEY_ANSWERED_AT, answered.at.toEpochMilli())
             }
         }
-        StopCastTileService.requestUpdate(context.applicationContext)
+        StopDashTileService.requestUpdate(context.applicationContext)
     }
 
     private suspend fun send(context: Context, id: Long) {
@@ -311,7 +311,7 @@ object WatchRefresh {
                 }
                 true
             }
-            if (changed) StopCastTileService.requestUpdate(context)
+            if (changed) StopDashTileService.requestUpdate(context)
         }
     }
 }

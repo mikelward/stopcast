@@ -4,7 +4,7 @@ import java.time.Instant
 
 /**
  * A single predicted departure from a watched stop. TfL's feed calls these
- * "arrivals"; stopcast says departures throughout (SPEC *Departures*).
+ * "arrivals"; stopdash says departures throughout (SPEC *Departures*).
  *
  * Holds the **absolute** [expectedArrival], not the fetch-relative countdown TfL
  * returns, so the countdown recomputes client-side from the current clock as time

@@ -5,7 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -32,7 +32,7 @@ class LocationGateAboutTest {
     fun about_isReachableAndOpensLicenses_whenPermanentlyDenied() {
         var licensesOpened = false
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 LocationGate(
                     state = NearbyStopsViewModel.State.PermissionRequired,
                     onAllow = {},

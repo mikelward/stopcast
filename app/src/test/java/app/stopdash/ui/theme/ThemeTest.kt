@@ -11,7 +11,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Pins the brand: [StopCastTheme]'s red `primary` in both themes, and that dynamic color is
+ * Pins the brand: [StopDashTheme]'s red `primary` in both themes, and that dynamic color is
  * **off by default** so the wallpaper can't override the brand (the reason the app read as a
  * neutral charcoal on-device before). The screenshot job only records — it doesn't diff — so
  * these assertions, not a snapshot, are what fail if the palette or the default regresses.
@@ -30,9 +30,9 @@ class ThemeTest {
                 primary = MaterialTheme.colorScheme.primary
             }
             if (dynamicColor == null) {
-                StopCastTheme(darkTheme = darkTheme) { capture() }
+                StopDashTheme(darkTheme = darkTheme) { capture() }
             } else {
-                StopCastTheme(darkTheme = darkTheme, dynamicColor = dynamicColor) { capture() }
+                StopDashTheme(darkTheme = darkTheme, dynamicColor = dynamicColor) { capture() }
             }
         }
         composeRule.waitForIdle()

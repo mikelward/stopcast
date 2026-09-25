@@ -6,7 +6,7 @@ package app.stopdash.data
  */
 object WatchSyncContract {
     /** The `DataItem` path the phone writes the latest [WatchEnvelope] to. */
-    const val SNAPSHOT_PATH = "/stopcast/snapshot"
+    const val SNAPSHOT_PATH = "/stopdash/snapshot"
 
     /** The envelope's key in that item: a byte array, or an `Asset` when it's too big for one. */
     const val ENVELOPE_KEY = "envelope"
@@ -19,22 +19,22 @@ object WatchSyncContract {
 
     /** The `DataItem` path a watch writes the rows its complications are set to, so the phone
      *  keeps them in every envelope ([WatchComplicationRows]). */
-    const val COMPLICATION_ROWS_PATH = "/stopcast/complication-rows"
+    const val COMPLICATION_ROWS_PATH = "/stopdash/complication-rows"
 
     /** The rows' key in that item: [WatchComplicationRows.encode]'s bytes. */
     const val COMPLICATION_ROWS_KEY = "rows"
 
     /** The message path a watch sends to ask the phone for one refresh of the widget's stops. */
-    const val REFRESH_PATH = "/stopcast/refresh"
+    const val REFRESH_PATH = "/stopdash/refresh"
 
     /** The message path the phone acknowledges a refresh request on the moment it arrives, with
      *  the request's id, so the watch knows it's in reach even while the refresh is queued. */
-    const val REFRESH_ACK_PATH = "/stopcast/refresh-ack"
+    const val REFRESH_ACK_PATH = "/stopdash/refresh-ack"
 
     /** The message path the phone answers a refresh request on, with a [WatchRefreshOutcome]. */
-    const val REFRESH_RESULT_PATH = "/stopcast/refresh-result"
+    const val REFRESH_RESULT_PATH = "/stopdash/refresh-result"
 
     /** Declared by the watch app (res/values/wear.xml), so the phone publishes only when a paired
      *  watch has it installed. */
-    const val WATCH_CAPABILITY = "stopcast_watch"
+    const val WATCH_CAPABILITY = "stopdash_watch"
 }

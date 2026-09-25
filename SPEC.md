@@ -1,6 +1,6 @@
-# StopCast
+# StopDash
 
-StopCast shows live London transport departures for the stops you care about, at a
+StopDash shows live London transport departures for the stops you care about, at a
 glance — on the Android **lock screen**, on the home screen, and in full in the app.
 It reads Transport for London's live prediction feed and answers one question fast:
 *what's leaving the stops near me, and when?* — plus the disruptions (delays,
@@ -19,23 +19,23 @@ logic, persistence — that the widget then renders from. The widget follows onc
 spine is proven. `TODO.md` phases it this way.
 
 Minimum supported version: Android 14 (API 34), the device floor across the sibling
-fleet. The lock-screen *placement* needs Android 16 QPR; stopcast's widget is a
+fleet. The lock-screen *placement* needs Android 16 QPR; stopdash's widget is a
 standard widget that becomes lock-screen-eligible where the OS allows it, so there is
 no separate lock-screen code path.
 
-Coverage is London / TfL only. StopCast is not affiliated with Transport for London,
+Coverage is London / TfL only. StopDash is not affiliated with Transport for London,
 and uses the free, public TfL Unified API.
 
 ## Product behavior
 
-StopCast watches a small set of **stops** and, for each, shows the next few departures
+StopDash watches a small set of **stops** and, for each, shows the next few departures
 and any disruption that would change whether you'd trust them. A "stop" is a TfL
 `StopPoint`: a bus stop, an Underground/Overground/Elizabeth-line/DLR station, a tram
 stop, or a pier.
 
 ### Watched stops
 
-The user builds a short list of **watched stops** — the stops stopcast shows. A watched
+The user builds a short list of **watched stops** — the stops stopdash shows. A watched
 stop can be narrowed to specific **lines** and/or a **direction** (inbound/outbound,
 or a named platform), so a surface shows only the departures the user actually takes —
 "Victoria line southbound at Warren Street", not every service through the station.
@@ -48,7 +48,7 @@ decision **D1** for why the widget renders watched stops rather than "nearest to
 
 The app finds stops two ways:
 
-- **Near me now** — with location permission, stopcast lists the stops nearest the
+- **Near me now** — with location permission, stopdash lists the stops nearest the
   user's current position (TfL `/StopPoint` by coordinates) so pinning the right ones
   is one tap. It asks for **precise location** (`ACCESS_FINE_LOCATION`): a coarse fix
   can be off by up to ~1 km, enough to read a stop half a mile away as the nearest, so
@@ -195,7 +195,7 @@ The app finds stops two ways:
   seconds rather than after each accurate provider in turn has timed out (~10 s; maintainer bug
   report, 2026-09-23). If a fresh fix
   is slow or absent, a *somewhat-stale* cached one substitutes for it rather than making the
-  user wait or fail — but only within a bounded age, past which stopcast reports "couldn't get
+  user wait or fail — but only within a bounded age, past which stopdash reports "couldn't get
   your location" rather than showing a previous location's stops as current (a user who has
   traveled would be misled). A failure to get a fix is always logged, and so is each fix the
   app uses — which provider supplied it, the accuracy radius it reported, and its age, never the
@@ -364,7 +364,7 @@ The app finds stops two ways:
 
 ### Departures
 
-For each watched stop, stopcast shows the next few departures: **line**, **destination**
+For each watched stop, stopdash shows the next few departures: **line**, **destination**
 (where the service is headed), and a **countdown**. Countdowns render as minutes — "0 min"
 when imminent, "3 min", "12 min" — sorted soonest-first.
 
@@ -565,7 +565,7 @@ board for a National Rail line), **"No data"** when no source answered for it (a
 whose board failed, or that no board covers), and **"No key"** for a National Rail line at a
 station a key would cover when none is set — a tap on it opens Settings.
 
-The list shows the **watched stops'** rows (D1) — stopcast renders the stops the user
+The list shows the **watched stops'** rows (D1) — stopdash renders the stops the user
 chose ahead of time, not "nearest to me" — ordered **location-free** so the view works
 with location denied: soonest-first, with **starred** rows pinned to the top. Starring is
 ranking only, separate from which stops are watched (add/remove membership). A star keys on
@@ -667,7 +667,7 @@ the place name, never the rider's own fix (maintainer, 2026-09-23; like the name
 target). With no maps app installed it says so rather than doing nothing.
 
 TfL's endpoint is named "Arrivals"; for a bus stop these are departures *from* that
-stop, which is what a rider wants. StopCast calls them departures throughout the UI.
+stop, which is what a rider wants. StopDash calls them departures throughout the UI.
 
 Each service wears its line's identity: a pill filled with the line's official TfL color
 carries the line's **three-letter code** (its first three letters, uppercased — VIC, BAK,
@@ -816,7 +816,7 @@ kept on the device with the rest of the user's config and never logged (*Privacy
 
 A departure time is worse than useless if the service is cancelled or the stop is
 closed — showing the number alone is the "quietly wrong" failure (see *Engineering
-quality bar*). So stopcast surfaces, for watched stops and their lines:
+quality bar*). So stopdash surfaces, for watched stops and their lines:
 
 - **Line status** — minor/severe delays, part-suspended, suspended (TfL line status).
 - **Stop closures and stop-level disruptions** — a closed entrance, a moved stop.
@@ -915,13 +915,13 @@ On a glance surface a disruption is a one-line summary plus a count ("Victoria l
 severe delays"); in the app it's the full text. A disrupted line/stop is marked even
 when its predictions still look normal, because the prediction is the thing not to be
 trusted — **and even when it has no predictions at all.** A suspended line often returns
-zero arrivals, so stopcast retains the watched stop→line mapping independently of the
+zero arrivals, so stopdash retains the watched stop→line mapping independently of the
 predictions and shows a line's status from that mapping; otherwise the surface would say
 "no departures" for a suspended line and leave the user waiting for a service that isn't
 coming — the quietly-wrong failure in its purest form.
 
 Disruption and arrivals are separate requests, so a refresh can get one and not the
-other. When the disruption lookup fails but arrivals succeed, stopcast does **not** present
+other. When the disruption lookup fails but arrivals succeed, stopdash does **not** present
 those departures as verified-clean: it keeps the last-good disruption state (aged and
 stamped like any other data) or marks the affected departures "status unknown", rather
 than showing normal-looking times whose disruption status was never actually checked.
@@ -967,7 +967,7 @@ about when data has gone stale.
 
 ### When something is wrong
 
-StopCast never blanks or lies when it can't get fresh data. If TfL is unreachable, the
+StopDash never blanks or lies when it can't get fresh data. If TfL is unreachable, the
 rate limit is hit, or location is denied, the surface says which ("offline", "can't
 reach TfL", "location off") and shows the last good data stamped with its age, rather
 than an empty box or unlabeled stale numbers.
@@ -977,7 +977,7 @@ than an empty box or unlabeled stale numbers.
 An overflow menu in the departures top bar opens an About dialog naming the app and its
 installed version. Its one action is the open-source licenses screen — the transitive
 dependency graph, and for each component its version, authors, and license identity —
-which stopcast ships to meet those licenses' attribution terms (Apache-2.0 §4 among them).
+which stopdash ships to meet those licenses' attribution terms (Apache-2.0 §4 among them).
 That attribution is exported at build time and bundled, so the list itself renders with no
 network. The full license *text* is not bundled (following the sibling repos' export, which
 omits it): each license links out to its canonical text, one tap to the browser.
@@ -991,7 +991,7 @@ the Open Government Licence v3.0. A test pins the credits so a rewording can't d
 
 An overflow-menu entry opens a Settings screen, hosted at the activity top level like the
 licenses screen (an overlay whose own Back closes it) rather than through a navigation graph
-— stopcast still has no nav library. Its first setting is the opt-in "refresh widget every
+— stopdash still has no nav library. Its first setting is the opt-in "refresh widget every
 minute" toggle (D5). The screen composable is UI-only: it reflects the setting and reports a
 change, while persistence (a typed DataStore, mirroring the starred-rows store) and the
 refresh scheduler (WorkManager) are wired by the activity, so the screen stays
@@ -1007,15 +1007,15 @@ screen.
 
 ### Display size
 
-The user can make StopCast's text bigger or smaller than everything else on the phone — a
+The user can make StopDash's text bigger or smaller than everything else on the phone — a
 glance surface is read at arm's length and from a pocket. The size is a **factor on top of the
 system's own font scale**, not a replacement for it, so an accessibility setting made in
-Android is still respected and StopCast only says how much larger or smaller it should be than
+Android is still respected and StopDash only says how much larger or smaller it should be than
 the rest of the device. It multiplies only text: paddings, icons, and touch targets keep the
 4dp-grid layout, so larger text grows what is read without breaking what is tapped. The
 offered range is 80%–160% of the system size — wide enough to help a low-vision reader,
 bounded so a departure card's one-line countdown still lays out beside its line pill at the
-top of the range (D8). The default is the system's own size (100%): StopCast follows the
+top of the range (D8). The default is the system's own size (100%): StopDash follows the
 platform setting until the user chooses otherwise, so the dense default layout stays as-is and
 scaling is opt-in.
 
@@ -1050,7 +1050,7 @@ app, so it would only ever fail. An inconclusive check (Play absent or erroring)
 dot rather than guessing — the worst case is a missed nudge, and Play still updates the app
 on its own schedule regardless.
 
-This is stopcast's one off-device call that is not a TfL request. The Play In-App Update
+This is stopdash's one off-device call that is not a TfL request. The Play In-App Update
 library (`com.google.android.play:app-update`) is **free** and its check is off every render
 path (a background Play `Task`). It sends **no user data** — no location, no watched stops,
 no API key: it is a Play Services query about the app's *own* update availability (the
@@ -1104,7 +1104,7 @@ spells them.
 
 ## Data source, cost, and reliability
 
-StopCast's one required **data** dependency is the **TfL Unified API** — free and public; National
+StopDash's one required **data** dependency is the **TfL Unified API** — free and public; National
 Rail's boards are an optional second one, used only with the user's key (below). (A
 release build also makes one non-data Play Services call to check for app updates — see
 *Update indicator* above; it is free, carries no user data, and adds no Data Safety
@@ -1117,7 +1117,7 @@ surface.)
   Disruption` for disruptions.
 - **Cost: £0.** Anonymous access is limited to ~50 requests/min; a free, user-supplied
   `app_key` raises it to ~500/min.
-- **D7 — stopcast ships no baked-in key.** It works keyless out of the box, and a user
+- **D7 — stopdash ships no baked-in key.** It works keyless out of the box, and a user
   may paste their own free `app_key` in settings for the higher limit. A shared, baked-in
   key would pool every user's traffic into one 500/min bucket and put a credential in
   the APK; a per-user key does neither.
@@ -1126,7 +1126,7 @@ surface.)
   Marketplace key pasted in settings (maintainer, 2026-09-24), a rail station's departures also
   come from National Rail's own live departure boards (Darwin's `GetDepartureBoard`, by the
   station's three-letter CRS code), alongside TfL's; without one, a disrupted line's status row there says "No
-  key" and opens Settings (*Departures*). Like D7, stopcast ships no key. TfL's `910G` ids end in the station's TIPLOC, and
+  key" and opens Settings (*Departures*). Like D7, stopdash ships no key. TfL's `910G` ids end in the station's TIPLOC, and
   NaPTAN (DfT, Open Government Licence v3.0) pairs each TIPLOC with its CRS, so the app bundles
   that table (rebuilt weekly with the station list) and the two join exactly, never by name.
   Where TfL lists one station under two National Rail ids, its board is fetched once and shown
@@ -1141,7 +1141,7 @@ surface.)
   user's own key for that service, sent at their request; `docs/PRIVACY.md` names National Rail as
   a recipient, and the Data Safety form and privacy-policy link are re-checked before the release
   that ships it.
-- **Reliability:** one required dependency, so if TfL is down or throttling, stopcast shows
+- **Reliability:** one required dependency, so if TfL is down or throttling, stopdash shows
   stamped last-good data and an offline/rate-limited notice (never a blank or an
   unlabeled stale number). Added latency lives off every render path (snapshot-render,
   above).
@@ -1195,7 +1195,7 @@ There is one widget. On Android 16 QPR and later, where the OS re-added widgets 
 phone lock screen, it is eligible to sit there; everywhere else it is a home-screen
 widget. Both use the standard AppWidget/Glance API — a lock-screen widget is just a
 widget the host is allowed to place on the keyguard — so there is no lock-screen-specific
-code path to maintain. StopCast does **not** opt out of lock-screen placement (the
+code path to maintain. StopDash does **not** opt out of lock-screen placement (the
 `not_keyguard` category). The app and its home-screen widget run on the fleet floor
 (Android 14 / API 34); the lock-screen *placement* simply appears on devices new enough
 to offer it.
@@ -1272,8 +1272,8 @@ location-free fetch as a widget refresh and sends the result the usual way. Why 
 
 ## Privacy
 
-StopCast handles location and the set of stops the user watches — which together reveal
-where they live, work, and travel. StopCast itself sends none of it anywhere except the
+StopDash handles location and the set of stops the user watches — which together reveal
+where they live, work, and travel. StopDash itself sends none of it anywhere except the
 TfL requests that *are* the product (and, with the user's National Rail key, a rail station's
 code to National Rail, below): a nearby-stops lookup necessarily sends coordinates
 to TfL — **precise** where the user granted precise and an accurate fix is available,
@@ -1286,18 +1286,18 @@ a star is listed by name), in the app's no-backup storage: never logged, sent, o
 Play Data Safety type the nearby action may collect (and so declares), not a claim that
 every fix sent is precise.
 
-All of stopcast's persisted config — watched stops, per-stop filters, row stars, starred
+All of stopdash's persisted config — watched stops, per-stop filters, row stars, starred
 journeys, any saved favorite destinations, the user's `app_key` — and the last-good snapshot (all but
 the crash-report opt-in, which is per install, and the rows paired watches' complications show,
 relearned from the watches still paired) travel through
-**Android's own backup and device-to-device transfer** — stopcast allows
+**Android's own backup and device-to-device transfer** — stopdash allows
 both, deliberately, so a phone swap keeps the user's setup rather than losing it
 (maintainer, 2026-09-18; the fleet's "never lose the user's work" over a literal
 never-leaves-the-device wording). This is the platform's user-controlled channel tied to
-the user's own Google account, not an off-device channel stopcast adds: cost £0, and no
-Play Data Safety change (Android Auto Backup is a platform feature, not data stopcast
+the user's own Google account, not an off-device channel stopdash adds: cost £0, and no
+Play Data Safety change (Android Auto Backup is a platform feature, not data stopdash
 collects or transmits). The guarantee is therefore precise, not absolute — the only **user data**
-*stopcast* sends off the device on its own goes in its TfL requests, and its National Rail
+*stopdash* sends off the device on its own goes in its TfL requests, and its National Rail
 requests when the user has added a key (*Data source*) (its one other network
 call, the release-only Play update check, carries none — see *Update indicator*); the user's
 own backup/transfer carries their config under their control; and a **consent-gated bug
@@ -1318,7 +1318,7 @@ debug log carries coarse diagnostics only: a stop ID, a line id, an HTTP status,
 failed Play update check's exception class — never a raw coordinate or the user's API key.
 
 **The Wear OS watch sync** (dev-docs/wear-os.md; maintainer, 2026-09-24): when a paired watch has
-the StopCast watch app, the phone sends it the widget's snapshot — its stops' names and IDs, their
+the StopDash watch app, the phone sends it the widget's snapshot — its stops' names and IDs, their
 departures, the nearer-stop lists the terminating filter compares against (location-derived place
 data), the starred-row keys and the hidden modes — never a coordinate or a key. The watch sends back the rows its
 complications show and its refresh requests. It goes over Google Play services' Wearable Data Layer,
@@ -1333,7 +1333,7 @@ TfL `app_key`: never logged or placed in any other off-device artifact.
 
 **Crash reports and usage stats are opt-in** (maintainer, 2026-09-24, following `mikelward/simmo`).
 Firebase Crashlytics and Analytics are compiled in but collect only while the persisted **Help make
-StopCast better** setting is on — **off by default**, since data leaving the device waits for the
+StopDash better** setting is on — **off by default**, since data leaving the device waits for the
 user to agree. A build without a Firebase config never starts Firebase, and a debug build never has
 one. Crash reports carry the diagnostic log's **off-device** rendering (`mikelward/androidlog`),
 where any argument not explicitly marked safe — a stop ID, a line id, a coordinate — is replaced
@@ -1354,12 +1354,12 @@ facing disclosure and the Play Data Safety source.
 
 In priority order; where a rule below conflicts with a principle, the principle wins.
 
-1. **Never show a departure stopcast doesn't stand behind.** The worst outcome is the
-   user missing a bus, or running for a cancelled one, because stopcast showed a number
+1. **Never show a departure stopdash doesn't stand behind.** The worst outcome is the
+   user missing a bus, or running for a cancelled one, because stopdash showed a number
    it shouldn't have trusted. Stale-but-unlabeled, or a normal-looking prediction for a
    suspended line, is worse than an honest "can't refresh" or "severe delays". Every
    surface is honest about age and disruption.
-2. **Never fail silently.** If stopcast can't refresh — offline, rate-limited, location
+2. **Never fail silently.** If stopdash can't refresh — offline, rate-limited, location
    denied — it says so where the user is looking and shows stamped last-good data,
    rather than a blank or a silent stale render.
 3. **Do the work ahead of time.** A surface renders from the persisted snapshot; the
@@ -1400,7 +1400,7 @@ Mirrors the sibling fleet:
 - **A bug report leaves the device only under explicit consent.** The overflow's *Send bug
   report* composes the log plus the **exact location**, per-stop distances, and a **screenshot of
   the reporting screen** and hands it to the platform share sheet — user-initiated, £0, no service
-  of stopcast's own. Because it carries the location the log itself never does, it is gated by a
+  of stopdash's own. Because it carries the location the log itself never does, it is gated by a
   consent screen that names exactly what leaves, with a persisted "don't ask again"; nothing is
   assembled until the user passes it. It is the *honest* report, not a location-safe one — a
   routing bug is diagnosed from where you were, so it says so rather than stripping that context (a
@@ -1410,7 +1410,7 @@ Mirrors the sibling fleet:
 
 ## Non-goals
 
-- **Journey planning / routing** (the TfL Journey API). StopCast answers "what's next
+- **Journey planning / routing** (the TfL Journey API). StopDash answers "what's next
   from here", not "how do I get there".
 - **Non-TfL operators** outside the Unified API (coach, etc.), National Rail aside: its
   times come from National Rail's own feed once the user adds a key (*Data source*). Without
@@ -1418,7 +1418,7 @@ Mirrors the sibling fleet:
   shows only as its status row, saying "No key" where times would be (*Departures*); one in good
   service isn't listed.
 - **Ticketing**, Oyster/contactless balances, and service maps.
-- **Writing to TfL.** StopCast is read-only.
+- **Writing to TfL.** StopDash is read-only.
 - **Continuous background location / geofencing.** Location is used on demand in the
   app to find nearby stops, never tracked in the background.
 

@@ -8,7 +8,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.stopdash.domain.ModeGroups
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -35,7 +35,7 @@ class ModeMenuTest {
     fun `the overflow menu lists each mode group, ticked when shown, and toggles one`() {
         var toggled: Pair<String, Boolean>? = null
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loading,
                     now = now,

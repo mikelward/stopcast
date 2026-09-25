@@ -4,7 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -33,7 +33,7 @@ class MainScreenLocateTest {
     fun crosshairs_nearMe_relocates() {
         var refreshes = 0
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(state = DeparturesUiState.Loading, now = now, onRefresh = { refreshes++ })
             }
         }
@@ -48,7 +48,7 @@ class MainScreenLocateTest {
         var refreshes = 0
         var located = 0
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loading,
                     now = now,
@@ -71,7 +71,7 @@ class MainScreenLocateTest {
     fun crosshairs_stationPlaceholder_returnsToNearMe() {
         var located = 0
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 StationPlaceholderScreen(
                     title = "Example Station",
                     state = StationStopsViewModel.State.NoStops,

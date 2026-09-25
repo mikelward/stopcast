@@ -5,7 +5,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import app.stopdash.ui.theme.StopCastTheme
+import app.stopdash.ui.theme.StopDashTheme
 import java.time.Instant
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -34,7 +34,7 @@ class MainScreenFromMenuTest {
     fun overflowMenu_fromOpensStationSearch() {
         var searchOpened = false
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loading,
                     now = now,
@@ -53,7 +53,7 @@ class MainScreenFromMenuTest {
     @Test
     fun overflowMenu_hidesFromWithoutASearch() {
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(state = DeparturesUiState.Loading, now = now, onRefresh = {})
             }
         }
@@ -66,7 +66,7 @@ class MainScreenFromMenuTest {
     fun overflowMenu_toPlansATripFromHere() {
         var planned = false
         composeRule.setContent {
-            StopCastTheme {
+            StopDashTheme {
                 MainScreen(
                     state = DeparturesUiState.Loading,
                     now = now,
