@@ -220,6 +220,141 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `a blank direction takes its platform's one direction, so a service stays one row`() {
+        // Kentish Town West, from the live feed: the Mildmay line's Platform 1 trains to Clapham
+        // Junction came back both `outbound` and with no direction. The blank one belongs to the
+        // same row, not a second "Clapham Junction" row keyed on its platform.
+        val tagged = departure("mildmay", "Mildmay", "outbound", "Clapham Junction", 360, platform = "Platform 1", mode = "overground")
+        val blank = departure("mildmay", "Mildmay", "", "Clapham Junction", 1800, platform = "Platform 1", mode = "overground")
+        val richmond = departure("mildmay", "Mildmay", "outbound", "Richmond (London)", 60, platform = "Platform 1", mode = "overground")
+
+        val rows = DepartureRows.forStop("910GKNTSHTW", "Kentish Town West", listOf(blank, tagged, richmond), now)
+
+        assertEquals(1, rows.size)
+        assertEquals("outbound", rows[0].direction)
+        assertEquals(listOf(richmond, tagged, blank.copy(direction = "outbound")), rows[0].upcoming)
+    }
+
+    @Test
+    fun `a blank direction takes its direction from a train the terminating filter hides`() {
+        // The tagged train is hidden (synthetic: its terminus id is marked nearer the rider), but it
+        // is still evidence for the same service's blank train: the kept one keys `outbound`, as a
+        // star or pick on it expects.
+        val hidden = departure("mildmay", "Mildmay", "outbound", "Clapham Junction", 60, platform = "Platform 1", mode = "overground")
+            .copy(destinationId = "910GCMDNRD")
+        val kept = departure("mildmay", "Mildmay", "", "Clapham Junction", 300, platform = "Platform 1", mode = "overground")
+        val stop = StopArrivals(
+            "910GKNTSHTW", "Kentish Town West", listOf(hidden, kept), fetchedAt = now,
+            nearer = Terminating.Nearer(ids = setOf("910GCMDNRD")),
+        )
+
+        val row = DepartureRows.across(listOf(stop), now).single()
+
+        assertEquals("Clapham Junction", row.destination)
+        assertEquals("outbound", row.directionKey)
+    }
+
+    @Test
+    fun `a blank direction matches its platform however TfL spells it`() {
+        // "Westbound - Platform 1" and a bare "Platform 1" are the same platform: the blank train
+        // joins the tagged one's row rather than keying on its own spelling.
+        val tagged = departure("district", "District", "inbound", "Richmond", 60, platform = "Westbound - Platform 1")
+        val blank = departure("district", "District", "", "Richmond", 300, platform = "Platform 1")
+
+        val rows = DepartureRows.forStop("940GZZLUEXA", "Example", listOf(tagged, blank), now)
+
+        assertEquals(1, rows.size)
+        assertEquals("inbound", rows.single().direction)
+    }
+
+    @Test
+    fun `a blank direction keeps its inferred direction after the tagged trains leave`() {
+        // Same snapshot, clock advanced past the only tagged train: the blank one must stay on the
+        // `outbound` row rather than fall back to a "Platform 1" key (a star on it would unpin).
+        val tagged = departure("mildmay", "Mildmay", "outbound", "Clapham Junction", 360, platform = "Platform 1", mode = "overground")
+        val blank = departure("mildmay", "Mildmay", "", "Clapham Junction", 1800, platform = "Platform 1", mode = "overground")
+
+        val rows = DepartureRows.forStop("910GKNTSHTW", "Kentish Town West", listOf(tagged, blank), now.plusSeconds(600))
+
+        assertEquals("outbound", rows.single().direction)
+        assertEquals("outbound", rows.single().directionKey)
+    }
+
+    @Test
+    fun `a blank direction on Platform Unknown takes nothing, even from one tagged train`() {
+        // "Platform Unknown" is TfL's placeholder for trains either way, not one platform: a lone
+        // `outbound` there must not relabel a blank inbound train and merge the two directions.
+        val out = departure("mildmay", "Mildmay", "outbound", "Richmond (London)", 60, platform = "Platform Unknown", mode = "overground")
+        val blank = departure("mildmay", "Mildmay", "", "Stratford (London)", 120, platform = "Platform Unknown", mode = "overground")
+
+        val rows = DepartureRows.forStop("910GKNTSHTW", "Kentish Town West", listOf(out, blank), now)
+
+        assertEquals(2, rows.size)
+        assertEquals("", rows.single { it.destination == "Stratford (London)" }.direction)
+    }
+
+    @Test
+    fun `a blank direction takes nothing from a train heading elsewhere on its platform`() {
+        // A single platform can serve the line both ways: an `outbound` train to Richmond there says
+        // nothing about a blank one to Stratford, so the two stay apart rather than merge.
+        val out = departure("mildmay", "Mildmay", "outbound", "Richmond (London)", 60, platform = "Platform 1", mode = "overground")
+        val blank = departure("mildmay", "Mildmay", "", "Stratford (London)", 120, platform = "Platform 1", mode = "overground")
+
+        val rows = DepartureRows.forStop("910GEXAMPLE", "Example", listOf(out, blank), now)
+
+        assertEquals(2, rows.size)
+        assertEquals("", rows.single { it.destination == "Stratford (London)" }.direction)
+    }
+
+    @Test
+    fun `a blank direction takes nothing from a same-named terminus with another id`() {
+        // Two termini can share a display name; TfL's destination ids tell them apart.
+        val out = departure("mildmay", "Mildmay", "outbound", "Example", 60, platform = "Platform 1", mode = "overground")
+            .copy(destinationId = "910GEXAMPLA")
+        val blank = departure("mildmay", "Mildmay", "", "Example", 120, platform = "Platform 1", mode = "overground")
+            .copy(destinationId = "910GEXAMPLB")
+
+        val rows = DepartureRows.forStop("910GEXAMPLE", "Example", listOf(out, blank), now)
+
+        assertEquals(listOf(blank), rows.single { it.direction.isEmpty() }.upcoming)
+    }
+
+    @Test
+    fun `a blank direction with no destination takes nothing`() {
+        // With the destination missing too, a shared platform's two directions look the same.
+        val out = departure("mildmay", "Mildmay", "outbound", "", 60, platform = "Platform 1", mode = "overground")
+        val blank = departure("mildmay", "Mildmay", "", "", 120, platform = "Platform 1", mode = "overground")
+
+        val rows = DepartureRows.forStop("910GEXAMPLE", "Example", listOf(out, blank), now)
+
+        assertEquals(listOf(blank), rows.single { it.direction.isEmpty() }.upcoming)
+    }
+
+    @Test
+    fun `a blank direction stays apart where its platform's tagged trains disagree`() {
+        // The same service tagged both ways (a TfL inconsistency) gives no single direction to take.
+        val out = departure("mildmay", "Mildmay", "outbound", "Clapham Junction", 60, platform = "Platform 3", mode = "overground")
+        val back = departure("mildmay", "Mildmay", "inbound", "Clapham Junction", 120, platform = "Platform 3", mode = "overground")
+        val blank = departure("mildmay", "Mildmay", "", "Clapham Junction", 180, platform = "Platform 3", mode = "overground")
+
+        val rows = DepartureRows.forStop("910GEXAMPLE", "Example", listOf(out, back, blank), now)
+
+        assertEquals(listOf(blank), rows.single { it.direction.isEmpty() }.upcoming)
+    }
+
+    @Test
+    fun `a blank direction takes nothing from another line at its platform`() {
+        // King's Cross Platform 8: the Metropolitan is tagged, the Hammersmith & City blank — a
+        // different line's direction is no evidence (TfL tags one platform differently per line).
+        val met = departure("metropolitan", "Metropolitan", "inbound", "Uxbridge", 60, platform = "Westbound - Platform 8")
+        val hc = departure("hammersmith-city", "Hammersmith & City", "", "Hammersmith", 120, platform = "Westbound - Platform 8")
+
+        val rows = DepartureRows.forStop("940GZZLUKSX", "King's Cross St. Pancras", listOf(met, hc), now)
+
+        assertEquals("", rows.single { it.lineId == "hammersmith-city" }.direction)
+    }
+
+    @Test
     fun `blank direction and no platform falls back to destination`() {
         val toPimlico = departure("24", "24", "", "Pimlico", 90)
         val toHampstead = departure("24", "24", "", "Hampstead Heath", 150)
