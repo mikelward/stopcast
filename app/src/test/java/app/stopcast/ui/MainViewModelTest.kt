@@ -2130,6 +2130,17 @@ class MainViewModelTest {
         }
 
     @Test
+    fun `the more tier tracks what a reveal has paged in`() = runTest(dispatcher) {
+        val more = listOf(clusterOf("M1", "MA" to "bus"))
+        val vm = tierVm(twoStopClient(), listOf(StopRef("E", "E")), more)
+        advanceUntilIdle()
+        assertEquals(NearbySelection.MoreTier(more, emptySet()), vm.moreTier.value)
+        vm.reveal("bus")
+        advanceUntilIdle()
+        assertEquals(NearbySelection.MoreTier(more, setOf("M1")), vm.moreTier.value)
+    }
+
+    @Test
     fun `reveal fetches the more cluster and drops its More button`() = runTest(dispatcher) {
         val vm = tierVm(twoStopClient(), listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")))
         advanceUntilIdle()

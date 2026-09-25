@@ -133,6 +133,7 @@ import app.stopcast.domain.DestinationAbbreviations
 import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.HiddenModes
 import app.stopcast.domain.ModeGroups
+import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.NoTimes
 import app.stopcast.domain.RelativeTime
 import app.stopcast.domain.StationMatch
@@ -288,6 +289,9 @@ fun MainScreen(
     // foot of the near-me list. Empty by default so a location-free or fully-revealed list shows
     // none. [onReveal] is called with the tapped mode.
     revealableModes: Set<String> = emptySet(),
+    // The `more` tier behind [revealableModes]: given, a station mode's "More" is offered only when a
+    // farther station adds a line the near-me rows shown don't cover both ways (SPEC *Near me now*).
+    moreTier: NearbySelection.MoreTier? = null,
     onReveal: (String) -> Unit = {},
     // The nearest station of each tube line or rail mode the list doesn't reach (SPEC *Finding stops
     // → Farther stations*): a "From ‹station›…" button each at the foot of the near-me list, opening
@@ -700,6 +704,13 @@ fun MainScreen(
             }
         // Hide the service alerts the user has dismissed (until their content changes).
         DepartureRows.withoutDismissed(ordered, dismissed)
+    }
+    // The "More" buttons that would add something: against the near-me rows shown now (so not a
+    // journey's own stop, and not a departure that has since left), a station mode's farther
+    // stations must carry a line those rows don't cover both ways.
+    val moreModes = remember(revealableModes, moreTier, nearbyRows) {
+        moreTier?.let { NearbySelection.revealableBuckets(it.more, it.revealed, NearbySelection.coveredLineIds(nearbyRows)) }
+            ?: revealableModes
     }
     // Without the rows a journey card above already shows in full, then with the user's starred
     // services lifted to the top (SPEC D8). Warnings still lead on the location-free watched list; on
@@ -1185,7 +1196,7 @@ fun MainScreen(
                     revealableModes = if (platformRows != null) {
                         emptySet()
                     } else {
-                        revealableModes.filterNotTo(LinkedHashSet()) { HiddenModes.isHidden(it, hiddenModes) }
+                        moreModes.filterNotTo(LinkedHashSet()) { HiddenModes.isHidden(it, hiddenModes) }
                     },
                     hiddenModes = hiddenModes,
                     onHideMode = onHideMode,
