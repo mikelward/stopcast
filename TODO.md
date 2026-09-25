@@ -1038,6 +1038,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [x] **Farther bus cards replace "More bus stops"** (maintainer, 2026-09-25). A bus place in
         the *more* tier that adds a route the list doesn't show gets a collapsed card naming those
         routes, at most four, below the station cards within a mile. Offering them costs no request.
+  - [ ] **Consider a cap per route and direction, with one "More" that raises it** (maintainer,
+        2026-09-25, undecided). Show the nearest two places per unique route, direction and
+        orientation of each mode. A single "More" at the very foot of the list raises that cap, and
+        what the higher cap lets in arrives as tap-to-load cards, like today's farther cards. Keep
+        both a count (small pages) and a distance limit (the mile for buses, 3 mi for stations).
+        Direction is the one the list already splits rows by; the cap just keeps it.
   - [ ] **Delete the now-unreachable "More" reveal path.** Nothing calls `MainViewModel.reveal`
         any more: remove it with `moreState`, `revealedKeys`, `fetchIncremental`, the revealed-
         cluster handling in `reconcile`, `NearbySelection.nextReveal` / `revealableBuckets` /
