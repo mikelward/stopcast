@@ -204,6 +204,13 @@
     <string name="settings_telemetry_summary">Share crash reports and usage stats. Never your stops, journeys or precise location.</string>
     <string name="settings_pinch_title">Pinch to resize text</string>
     <string name="settings_pinch_summary">Spread or pinch two fingers anywhere in the app to change the text size.</string>
+    <!-- Settings: the units near-me distances are written in. "Auto" follows the phone's language. -->
+    <string name="settings_distance_units_title">Distance units</string>
+    <string name="settings_distance_units_auto">Auto</string>
+    <string name="settings_distance_units_meters">Meters</string>
+    <string name="settings_distance_units_yards">Yards</string>
+    <string name="settings_distance_units_feet">Feet</string>
+    <string name="settings_distance_units_write_failed">Couldn\'t save that; it resets when StopDash restarts</string>
 
     <!-- Optional user TfL app_key (SPEC D7). StopCast works keyless; a user's own free key raises
          the request budget. The key is a credential, kept on-device and never logged. -->

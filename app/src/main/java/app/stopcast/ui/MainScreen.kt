@@ -1653,6 +1653,9 @@ private fun DepartureList(
     nearbyEmptyNote: String? = null,
     modifier: Modifier,
 ) {
+    // The units near-me distances are written in: the Settings choice, resolved against the locale;
+    // null (no labels) until the stored choice has been read.
+    val distanceSystem = LocalDistanceSystem.current
     // Stop-closure alerts render as standalone cards at the top of the list — warnings lead (the
     // caller ordered them first). Each carries its own place heading (its interchange, else its
     // stop), so it needs no group header and no distance label above it (SPEC *Disruptions*). The
@@ -1707,7 +1710,7 @@ private fun DepartureList(
                             firstOnScreen = index == 0,
                             onSwap = { onFlipJourney(card.journey) },
                             onOpen = onOpenJourney?.let { open -> { open(card.journey) } },
-                            distanceLabel = farMeters?.get(card.journey.key)?.let(StopDistance::label),
+                            distanceLabel = distanceSystem?.let { system -> farMeters?.get(card.journey.key)?.let { StopDistance.label(it, system) } },
                         )
                     }
                 }
@@ -1844,13 +1847,14 @@ private fun DepartureList(
             // present only when this place's stops are in the map (D1). A place groups several stops (a
             // junction's poles, a station's platforms), so it shows the distance to the *closest* of
             // them — the one a rider walks to (placeDistanceMeters).
-            val distanceLabel = placeDistanceMeters[group.placeKey]?.let(StopDistance::label)
+            val distanceLabel = distanceSystem?.let { system -> placeDistanceMeters[group.placeKey]?.let { StopDistance.label(it, system) } }
             // Draw the header when the grouping distinguishes this place (>1 place, a split into
             // platforms/poles, a closure) OR there's a distance to promise. A lone bare near-me place
             // still shows its name and distance, else a one-place result would drop both (Codex, PR
             // #82). The first group on screen takes no extra top break — unless a closure alert precedes
-            // it.
-            if (group.showHeader || distanceLabel != null) {
+            // it. Keyed on the raw distance, not the label, so a lone place keeps its name while the
+            // units are still being read (the label alone is withheld then).
+            if (group.showHeader || placeDistanceMeters[group.placeKey] != null) {
                 item(key = "header|${group.key}") {
                     StopGroupHeader(
                         group.stopName,
@@ -1999,11 +2003,13 @@ private fun FartherCardView(card: FartherCard, cue: FartherCue, onOpen: (Collaps
     )
     val cueSpoken = if (cue == FartherCue.NO_DEPARTURES) stringResource(R.string.status_no_departures_description) else cueText
     val tappable = cue.tappable
+    // In the chosen units, like every near-me header; none while the stored choice is being read.
+    val distanceSystem = LocalDistanceSystem.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StopGroupHeader(
             place.name,
             qualifier = null,
-            distanceLabel = StopDistance.label(place.meters),
+            distanceLabel = distanceSystem?.let { StopDistance.label(place.meters, it) },
             firstOnScreen = false,
         )
         OutlinedCard(

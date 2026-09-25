@@ -69,6 +69,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.stopcast.data.AndroidLocationProvider
 import app.stopcast.data.DataStoreAppSettings
+import app.stopcast.data.DistanceUnitsSetting
 import app.stopcast.data.logAppSettingsWarning
 import app.stopcast.data.DataStoreDismissedAlertsStore
 import app.stopcast.data.DataStoreStarredRowsStore
@@ -126,6 +127,7 @@ import app.stopcast.domain.CollapsedPlaces
 import app.stopcast.domain.FixedLocation
 import app.stopcast.ui.hereTripTiers
 import app.stopcast.ui.HereTripTiers
+import app.stopcast.ui.ProvideDistanceSystem
 import app.stopcast.ui.SettingsScreen
 import app.stopcast.ui.StationPlaceholderScreen
 import app.stopcast.ui.StationSearchScreen
@@ -425,6 +427,9 @@ class MainActivity : ComponentActivity() {
                 val skipBugReportConsent: Boolean by settings.skipBugReportConsent()
                     .collectAsStateWithLifecycle(initialValue = false)
                 val telemetryOptIn: Boolean? by TelemetryConsent.state.collectAsStateWithLifecycle()
+                val distanceUnits by DistanceUnitsSetting.changes.collectAsStateWithLifecycle()
+                val distanceUnitsLoaded by DistanceUnitsSetting.isLoaded.collectAsStateWithLifecycle()
+                val distanceUnitsWriteFailed by DistanceUnitsSetting.writeFailed.collectAsStateWithLifecycle()
 
                 // The user's TfL app_key for the Settings field. Read from the store (the source of
                 // truth), so an external change — a restore, or the warmed holder's own write —
@@ -541,6 +546,12 @@ class MainActivity : ComponentActivity() {
                                 // (SPEC *Privacy*); the holder applies it at once, the gate follows.
                                 telemetryOptIn = telemetryOptIn,
                                 onTelemetryOptInChange = TelemetryConsent::set,
+                                // Applied in memory at once (the list re-labels), persisted in order.
+                                distanceUnits = distanceUnits,
+                                onDistanceUnitsChange = DistanceUnitsSetting::set,
+                                distanceUnitsLoaded = distanceUnitsLoaded,
+                                distanceUnitsWriteFailed = distanceUnitsWriteFailed,
+                                onDismissDistanceUnitsError = DistanceUnitsSetting::writeFailureShown,
                                 onBack = { settingsOpen = false },
                             )
                         }
@@ -2223,7 +2234,7 @@ internal fun nearbyPermissionAction(
 @Composable
 internal fun StopCastAppRoot(content: @Composable () -> Unit) {
     StopCastTheme {
-        Surface(modifier = Modifier.fillMaxSize()) { content() }
+        Surface(modifier = Modifier.fillMaxSize()) { ProvideDistanceSystem(content) }
     }
 }
 

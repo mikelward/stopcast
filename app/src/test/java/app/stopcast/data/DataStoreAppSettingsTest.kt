@@ -1,6 +1,7 @@
 package app.stopcast.data
 
 import androidx.datastore.core.DataStore
+import app.stopcast.domain.DistanceUnits
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -32,6 +33,20 @@ class DataStoreAppSettingsTest {
         assertTrue(store.hiddenModes().first().isEmpty())
         store.setHiddenModes(setOf("bus", "national-rail"))
         assertEquals(setOf("bus", "national-rail"), store.hiddenModes().first())
+    }
+
+    @Test
+    fun `distance units follow the locale by default and persist a change`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(null))
+        assertEquals(DistanceUnits.AUTOMATIC, store.distanceUnits().first())
+        store.setDistanceUnits(DistanceUnits.YARDS)
+        assertEquals(DistanceUnits.YARDS, store.distanceUnits().first())
+    }
+
+    @Test
+    fun `a distance unit this build doesn't know reads as automatic`() = runTest {
+        val store = DataStoreAppSettings(FakeDataStore(PersistedSettings(distanceUnits = "NAUTICAL")))
+        assertEquals(DistanceUnits.AUTOMATIC, store.distanceUnits().first())
     }
 
     @Test

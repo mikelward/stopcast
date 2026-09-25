@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import androidx.glance.appwidget.updateAll
 import app.stopcast.data.DataStoreAppSettings
+import app.stopcast.data.DistanceUnitsSetting
 import app.stopcast.data.HiddenModesSetting
 import app.stopcast.data.RailApiKeySetting
 import app.stopcast.data.UserApiKeySetting
@@ -192,6 +193,7 @@ open class StopcastApp : Application() {
         UserApiKeySetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
         RailApiKeySetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
         HiddenModesSetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
+        DistanceUnitsSetting.warm(DataStoreAppSettings.from(this, warn = ::logAppSettingsWarning))
         // Redraw the widget when the hidden modes change, so it leaves out what the list does without
         // waiting for the next refresh. Process-wide, so a change made just before the user leaves
         // for Settings or a search still reaches it; keyed on the in-process set the widget reads,

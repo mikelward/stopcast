@@ -1,6 +1,7 @@
 package app.stopcast.data
 
 import app.stopcast.domain.AppSettings
+import app.stopcast.domain.DistanceUnits
 import app.stopcast.domain.ModeGroups
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -114,6 +115,15 @@ open class StoredSettingHolder<T>(
     // Completed once [current] holds the stored value (the warm read landed) or the user's own.
     private val loadedSignal = CompletableDeferred<Unit>()
 
+    private val _isLoaded = MutableStateFlow(false)
+
+    /**
+     * True once [current] holds the stored value or the user's own: a screen offering the setting
+     * disables its control until then, so a tap can't act on (and then overwrite the store with a
+     * choice made over) [initial] shown in place of the stored value.
+     */
+    val isLoaded: StateFlow<Boolean> = _isLoaded.asStateFlow()
+
     /**
      * The value in force right now ([initial] until [warm] reads the stored one). Volatile so a
      * background request coroutine sees the latest change without synchronization.
@@ -130,8 +140,9 @@ open class StoredSettingHolder<T>(
     private val _writeFailed = MutableStateFlow(false)
 
     /**
-     * True once a write failed: the value holds in memory but won't survive the process, so a
-     * screen that offers the setting says so (SPEC principle 2). Cleared by [writeFailureShown].
+     * True while the latest write has failed: the value holds in memory but won't survive the
+     * process, so a screen that offers the setting says so (SPEC principle 2). Cleared by
+     * [writeFailureShown], or by a later write that succeeds.
      */
     val writeFailed: StateFlow<Boolean> = _writeFailed.asStateFlow()
 
@@ -156,6 +167,8 @@ open class StoredSettingHolder<T>(
                 for (value in writes) {
                     try {
                         write(settings, value)
+                        // The latest choice is saved, so an earlier failure no longer describes it.
+                        _writeFailed.value = false
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -178,6 +191,7 @@ open class StoredSettingHolder<T>(
                     if (!userHasSet) current = stored
                 }
                 loadedSignal.complete(Unit)
+                _isLoaded.value = true
             }
         }
     }
@@ -204,6 +218,7 @@ open class StoredSettingHolder<T>(
             current = normalized
         }
         loadedSignal.complete(Unit)
+        _isLoaded.value = true
         writes.trySend(normalized)
     }
 
@@ -276,9 +291,42 @@ object HiddenModesSetting {
     /** Shows every mode again. */
     fun showAll() = holder.set(emptySet())
 
-    /** True once a change failed to save (it holds until the app restarts); see [writeFailureShown]. */
+    /** True while the latest change failed to save (cleared by a later successful save); see [writeFailureShown]. */
     val writeFailed: StateFlow<Boolean> get() = holder.writeFailed
 
     /** The list has told the user a change didn't save. */
+    fun writeFailureShown() = holder.writeFailureShown()
+}
+
+/**
+ * The distance-units choice (SPEC *Finding stops*), held in memory for the list to read on its
+ * first frame and persisted in order. Starts at [DistanceUnits.AUTOMATIC] — the stored default —
+ * so a frame drawn before [warm] lands follows the locale, as a user who never chose would see.
+ */
+object DistanceUnitsSetting {
+    private val holder = StoredSettingHolder(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        initial = DistanceUnits.AUTOMATIC,
+        read = AppSettings::distanceUnits,
+        write = { settings, units -> settings.setDistanceUnits(units) },
+        label = "distance units",
+    )
+
+    /** [DistanceUnits] as a flow, for the list's labels and the Settings row. */
+    val changes: StateFlow<DistanceUnits> get() = holder.changes
+
+    /** Begins reading the stored choice. Idempotent. */
+    fun warm(appSettings: AppSettings) = holder.warm(appSettings)
+
+    /** Whether the stored choice has been read, so Settings can hold its row until then. */
+    val isLoaded: StateFlow<Boolean> get() = holder.isLoaded
+
+    /** The user chose [units]: applied at once, persisted in order. */
+    fun set(units: DistanceUnits) = holder.set(units)
+
+    /** True while the latest choice failed to save (a later successful save clears it); Settings says so. */
+    val writeFailed: StateFlow<Boolean> get() = holder.writeFailed
+
+    /** Settings has told the user a choice didn't save. */
     fun writeFailureShown() = holder.writeFailureShown()
 }

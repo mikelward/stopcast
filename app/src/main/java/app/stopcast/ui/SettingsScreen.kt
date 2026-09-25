@@ -2,6 +2,8 @@ package app.stopcast.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -36,11 +39,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.stopcast.R
 import app.stopcast.domain.DEFAULT_FONT_SCALE
+import app.stopcast.domain.DistanceUnits
 import app.stopcast.domain.MAX_FONT_SCALE
 import app.stopcast.domain.MIN_FONT_SCALE
 import app.stopcast.domain.fontScalePercent
@@ -86,6 +91,14 @@ fun SettingsScreen(
     // choice is read, when the switch is disabled so a slow read can't present "off" to act on.
     telemetryOptIn: Boolean? = false,
     onTelemetryOptInChange: (Boolean) -> Unit = {},
+    // The distance-units choice (SPEC *Finding stops*) and a report of a new one. Disabled until the
+    // stored choice is read, so a cold start's default can't be shown as the choice, or tapped over
+    // it and overwrite it. [distanceUnitsWriteFailed] says a choice didn't save.
+    distanceUnits: DistanceUnits = DistanceUnits.AUTOMATIC,
+    onDistanceUnitsChange: (DistanceUnits) -> Unit = {},
+    distanceUnitsLoaded: Boolean = true,
+    distanceUnitsWriteFailed: Boolean = false,
+    onDismissDistanceUnitsError: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -127,6 +140,17 @@ fun SettingsScreen(
                         switchTestTag = "pinchSwitch",
                     )
                 }
+                DistanceUnitsRow(
+                    selected = distanceUnits,
+                    onSelect = onDistanceUnitsChange,
+                    enabled = distanceUnitsLoaded,
+                )
+                if (distanceUnitsWriteFailed) {
+                    SettingErrorRow(
+                        text = stringResource(R.string.settings_distance_units_write_failed),
+                        onDismiss = onDismissDistanceUnitsError,
+                    )
+                }
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_live_widget_refresh_title),
                     summary = stringResource(R.string.settings_live_widget_refresh_summary),
@@ -139,7 +163,10 @@ fun SettingsScreen(
                 // DataStore or WorkManager error) — the choice is kept and self-heals, but the user
                 // is told rather than left guessing (SPEC principle 2: fail visibly, not silently).
                 if (liveWidgetRefreshFailed) {
-                    LiveWidgetRefreshErrorRow(onDismiss = onDismissLiveWidgetRefreshError)
+                    SettingErrorRow(
+                        text = stringResource(R.string.settings_live_widget_refresh_failed),
+                        onDismiss = onDismissLiveWidgetRefreshError,
+                    )
                 }
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_telemetry_title),
@@ -313,9 +340,9 @@ private fun ApiKeyRow(
     }
 }
 
-/** The "couldn't update live refresh" notice with a Dismiss action, shown under the toggle. */
+/** A setting's failure notice ([text]) with a Dismiss action, shown under its control. */
 @Composable
-private fun LiveWidgetRefreshErrorRow(onDismiss: () -> Unit) {
+private fun SettingErrorRow(text: String, onDismiss: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -324,7 +351,7 @@ private fun LiveWidgetRefreshErrorRow(onDismiss: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            text = stringResource(R.string.settings_live_widget_refresh_failed),
+            text = text,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier.weight(1f),
@@ -387,6 +414,51 @@ private fun TextSizeRow(
                     .testTag("textSizeSlider")
                     .semantics { contentDescription = sliderDescription },
             )
+        }
+    }
+}
+
+/**
+ * The distance-units choice: a title over four radio rows — Auto (the phone's language decides),
+ * Meters, Yards, Feet. Each names the short unit; the long one follows (km, mi, mi). Rows rather
+ * than segments so every option keeps its full width at the largest text size, and each whole row
+ * is the tap target. Nothing is selected while [enabled] is false (the stored choice isn't read
+ * yet), so the default can't pass for it.
+ */
+@Composable
+private fun DistanceUnitsRow(selected: DistanceUnits, onSelect: (DistanceUnits) -> Unit, enabled: Boolean) {
+    val options = listOf(
+        DistanceUnits.AUTOMATIC to stringResource(R.string.settings_distance_units_auto),
+        DistanceUnits.METERS to stringResource(R.string.settings_distance_units_meters),
+        DistanceUnits.YARDS to stringResource(R.string.settings_distance_units_yards),
+        DistanceUnits.FEET to stringResource(R.string.settings_distance_units_feet),
+    )
+    Column(modifier = Modifier.fillMaxWidth().selectableGroup()) {
+        Text(
+            text = stringResource(R.string.settings_distance_units_title),
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+        )
+        options.forEach { (units, label) ->
+            val isSelected = enabled && units == selected
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = isSelected,
+                        enabled = enabled,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(units) },
+                    )
+                    .testTag("distanceUnits-${units.name}")
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // The row handles the tap; the button only shows the state.
+                RadioButton(selected = isSelected, onClick = null, enabled = enabled)
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            }
         }
     }
 }

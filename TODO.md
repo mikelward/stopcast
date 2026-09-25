@@ -762,13 +762,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         watched list stays location-free and shows none (D1). Interim unit is **metric, m/km**
         via the pure `StopDistance.label` (nearest 10 m below 1 km, nearest 0.1 km above, floored
         at "10 m" so a fix on the stop doesn't read "0 m"). SPEC *Finding stops* updated.
-  - [ ] **Distance unit: follow the user's locale, and switch to a fractional large unit past
-        ~500 m** (maintainer, 2026-09-21). The header distance should use the **locale** — meters
-        or **yards** for short distances, **km or miles** for long — and switch from the small
-        unit to a **fraction of the large unit at ~500 m** ("0.6 km" / "0.4 mi") rather than
-        staying in the small unit up to ~1 km as the interim `StopDistance.label` does. Feed the
-        locale/unit choice into the pure formatter (don't read locale inside it) so the rounding
-        stays JVM-testable. Until then the interim metric m/km ships.
+  - [x] **Distance units setting, following the locale by default, with a fractional large unit
+        past ~500 m** (maintainer, 2026-09-21 / 2026-09-25). Settings → *Distance units*: Auto /
+        Meters / Yards / Feet. Auto reads the locale's CLDR measurement system (UK → yd+mi, US →
+        ft+mi, else m+km); the pure `StopDistance.label` takes the system, switching to the long
+        unit at ~500 m (feet at 0.1 mi). Screenshot baselines stay in meters (the default outside
+        the app root); the bug report keeps meters for diagnostics.
 - [x] **Hide services that end where the rider is** (maintainer, 2026-09-24): a departure whose
       terminus (TfL `destinationNaptanId`, else its name) is a nearby place no farther than its
       boarding stop is dropped before the merge (`Terminating`), so the list and widget agree.

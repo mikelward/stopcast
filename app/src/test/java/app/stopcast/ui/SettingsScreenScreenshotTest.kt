@@ -8,6 +8,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -18,8 +20,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import app.stopcast.domain.DistanceUnits
 import app.stopcast.ui.theme.StopCastTheme
 import com.github.takahirom.roborazzi.captureRoboImage
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -440,6 +444,49 @@ class SettingsScreenScreenshotTest {
         composeRule.onNodeWithTag("apiKeyField").performTextInput("NEW")
         // Masked again: the toggle offers Show, not Hide.
         composeRule.onNodeWithText("Show").assertIsDisplayed()
+    }
+
+    /** Tapping a distance-units segment reports that choice; the stored one shows selected. */
+    @Test
+    fun distanceUnits_reportsTheTappedChoice() {
+        var chosen: DistanceUnits? = null
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    distanceUnits = DistanceUnits.METERS,
+                    onDistanceUnitsChange = { chosen = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("distanceUnits-METERS").assertIsSelected()
+        composeRule.onNodeWithTag("distanceUnits-FEET").performScrollTo().performClick()
+        assertEquals(DistanceUnits.FEET, chosen)
+    }
+
+    /** Until the stored choice is read the segments are disabled; a failed save says so. */
+    @Test
+    fun distanceUnits_disabledUntilLoaded_andAFailedSaveIsShown() {
+        var dismissed = false
+        composeRule.setContent {
+            StopCastTheme {
+                SettingsScreen(
+                    liveWidgetRefresh = false,
+                    onLiveWidgetRefreshChange = {},
+                    onBack = {},
+                    distanceUnitsLoaded = false,
+                    distanceUnitsWriteFailed = true,
+                    onDismissDistanceUnitsError = { dismissed = true },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("distanceUnits-FEET").assertIsNotEnabled()
+        composeRule.onNodeWithTag("distanceUnits-AUTOMATIC").assertIsNotSelected()
+        composeRule.onNodeWithText("Couldn't save that", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").performScrollTo().performClick()
+        assertEquals(true, dismissed)
     }
 
     /** No reveal toggle on an empty field — nothing to reveal. */
