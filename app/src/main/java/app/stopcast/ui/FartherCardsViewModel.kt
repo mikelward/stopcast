@@ -1,0 +1,198 @@
+package app.stopcast.ui
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import app.stopcast.domain.CollapsedPlaces
+import app.stopcast.domain.Coordinates
+import app.stopcast.domain.NearestStops
+import app.stopcast.domain.StopLocation
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * The near-me list's opened farther stations (SPEC *Finding stops → Farther stations*): each card
+ * the rider taps open gets its own departures model, as a *From…* page's station does, fetching
+ * just that station and refreshed with the list. It is kept apart from the list's own model on
+ * purpose: an opened station never joins the list's fetched set, its widget snapshot, its restore
+ * after a restart, or its refresh warnings. A card closes when the list stops offering it (the
+ * rider moved) or with this model, whose store is the nearby set's; nothing about it is saved.
+ */
+class FartherCardsViewModel(
+    // Looks up a farther station's stops when its card is tapped.
+    private val stationStops: suspend (String) -> List<StopLocation>,
+    // Builds the departures model for an opened station's stops, with each one's distance from the
+    // fix (the app's is a *From…* page's).
+    private val newModel: (List<StopRef>, Map<String, Double>) -> MainViewModel,
+    private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val warn: (String) -> Unit = {},
+) : ViewModel() {
+    private val _cards = MutableStateFlow<Map<String, FartherLoad>>(emptyMap())
+
+    /** Where each tapped card stands, by card key; a card never tapped (or collapsed) is absent. */
+    val cards: StateFlow<Map<String, FartherLoad>> = _cards.asStateFlow()
+
+    // Each opened card's model lives in its own store, cleared when the card closes.
+    private val stores = HashMap<String, ViewModelStore>()
+    private val models = HashMap<String, MainViewModel>()
+    private val lookups = HashMap<String, Job>()
+
+    // The latest fix: a lookup finishing after a relocation measures from it, not from its tap's.
+    private var from: Coordinates? = null
+
+    /**
+     * Open [place]'s card: look up its station's stops, then give them their own departures model.
+     * A tap on a card that is open already retries its fetch; on a failed one, the lookup.
+     */
+    fun open(place: CollapsedPlaces.Place, fix: Coordinates) {
+        from = fix
+        if (_cards.value[place.key] is FartherLoad.Open) {
+            models[place.key]?.refresh()
+            return
+        }
+        if (lookups[place.key]?.isActive == true) return
+        _cards.value = _cards.value + (place.key to FartherLoad.Loading)
+        lookups[place.key] = viewModelScope.launch {
+            val stops = try {
+                withContext(io) { stationStops(place.stationId) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                warn("farther station lookup failed for ${place.stationId}: ${e::class.simpleName}")
+                _cards.value = _cards.value + (place.key to FartherLoad.Failed)
+                return@launch
+            }
+            if (stops.isEmpty()) {
+                warn("farther station ${place.stationId} has no stops with departures")
+                _cards.value = _cards.value + (place.key to FartherLoad.Failed)
+                return@launch
+            }
+            val store = ViewModelStore()
+            stores[place.key] = store
+            val refs = stops.map { it.toStopRef() }
+            val distances = distancesFrom(stops, from ?: fix)
+            val model = ViewModelProvider.create(
+                store,
+                viewModelFactory { initializer { newModel(refs, distances) } },
+            )[place.key, MainViewModel::class]
+            models[place.key] = model
+            _cards.value = _cards.value + (place.key to FartherLoad.Open(stops, distances))
+        }
+    }
+
+    // Close [key]'s card: its model and departures go, and it reads as never tapped.
+    private fun close(key: String) {
+        lookups.remove(key)?.cancel()
+        models.remove(key)
+        stores.remove(key)?.clear()
+        _cards.value = _cards.value - key
+    }
+
+    /**
+     * Keep only the cards still offered ([places], re-picked after a relocation), re-measured from
+     * the new fix [fix]; the rest collapse.
+     */
+    fun retain(places: List<CollapsedPlaces.Place>, fix: Coordinates) {
+        from = fix
+        val keys = places.mapTo(HashSet()) { it.key }
+        for (key in _cards.value.keys + lookups.keys) if (key !in keys) close(key)
+        _cards.value = _cards.value.mapValues { (key, load) ->
+            if (load is FartherLoad.Open) {
+                // The card's model takes the new distances too: its rows hide terminating services
+                // by where the rider is, and its far stops refresh less often.
+                val distances = distancesFrom(load.stops, fix)
+                models[key]?.remeasure(distances)
+                load.copy(distanceMeters = distances)
+            } else {
+                load
+            }
+        }
+    }
+
+    /** The departures model of [key]'s card, while it is open. */
+    fun model(key: String): MainViewModel? = models[key]
+
+    /** Refresh every opened card's departures, as the list refreshes its own. */
+    fun refresh() {
+        for (model in models.values) model.refresh()
+    }
+
+    override fun onCleared() {
+        for (store in stores.values) store.clear()
+        stores.clear()
+        models.clear()
+    }
+
+    private fun distancesFrom(stops: List<StopLocation>, fix: Coordinates): Map<String, Double> =
+        stops.associate { it.id to NearestStops.distanceMeters(fix.latitude, fix.longitude, it.latitude, it.longitude) }
+}
+
+/**
+ * Where a farther station's card stands (SPEC *Finding stops → Farther stations*): its stops being
+ * looked up, the lookup failed (tap to try again), or open, with its stops and each one's distance
+ * from the fix; its departures come from its model ([FartherCardsViewModel.model]).
+ */
+sealed interface FartherLoad {
+    data object Loading : FartherLoad
+    data object Failed : FartherLoad
+    data class Open(val stops: List<StopLocation>, val distanceMeters: Map<String, Double>) : FartherLoad
+}
+
+/**
+ * [list] with each opened farther card's departures added (SPEC *Finding stops → Farther
+ * stations*), so the screen renders them through the list's own rows, grouping and dedupe. Each of
+ * [opened] is a card's stop ids and its model's state: loaded stops join the list (a stop the list
+ * has already keeps the list's copy), with their line statuses where the list has none; a failed
+ * card marks its stops unavailable, so its card offers a retry; a loading one adds nothing yet.
+ * The list keeps its own stamp and failure, but a card whose last refresh failed or came back
+ * incomplete marks the list partial (SPEC principle 2): its rows are older than the stamp says,
+ * so the screen says some stops couldn't refresh. A card whose disruptions are unknown marks its
+ * own stops so.
+ */
+internal fun withOpenedFarther(
+    list: DeparturesUiState.Loaded,
+    opened: List<Pair<Set<String>, DeparturesUiState>>,
+): DeparturesUiState.Loaded {
+    if (opened.isEmpty()) return list
+    val ids = list.stops.mapTo(HashSet()) { it.stopId }
+    val stops = list.stops.toMutableList()
+    var lineStatuses = list.lineStatuses
+    val determined = list.determinedLineIds.toHashSet()
+    val disruptionUnknown = list.stopsDisruptionUnknown.toHashSet()
+    val unavailable = list.unavailableStopIds.toHashSet()
+    var partial = list.partialRefresh
+    for ((cardIds, state) in opened) {
+        when (state) {
+            is DeparturesUiState.Loaded -> {
+                val added = state.stops.filter { ids.add(it.stopId) }
+                stops += added
+                lineStatuses = state.lineStatuses + lineStatuses
+                determined += state.determinedLineIds
+                disruptionUnknown += state.stopsDisruptionUnknown
+                if (state.disruptionUnknown) added.mapTo(disruptionUnknown) { it.stopId }
+                unavailable += state.unavailableStopIds
+                if (state.partialRefresh || state.refreshFailure != null) partial = true
+            }
+            is DeparturesUiState.Error -> unavailable += cardIds - ids
+            else -> Unit
+        }
+    }
+    return list.copy(
+        stops = stops,
+        partialRefresh = partial,
+        lineStatuses = lineStatuses,
+        determinedLineIds = determined,
+        stopsDisruptionUnknown = disruptionUnknown,
+        unavailableStopIds = unavailable,
+    )
+}

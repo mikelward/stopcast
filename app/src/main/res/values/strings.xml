@@ -272,9 +272,11 @@
          (SPEC *Finding stops → Near me now*). One per mode still holding an unrevealed cluster.
          PROVISIONAL WORDING — pending the maintainer's sign-off before translation. -->
     <string name="more_stops">More stops</string>
-    <!-- A button at the foot of the near-me list naming the nearest station of a tube line or rail
-         mode the list doesn't reach; opens it as a From… page. -->
-    <string name="from_station">From %1$s…</string>
+    <!-- A farther station's collapsed card on the near-me list: the cue where its times would be,
+         and while it loads or if it failed. Open with nothing running, it shows a line row's dash. -->
+    <string name="farther_tap_to_see">Tap to see</string>
+    <string name="farther_loading">Loading…</string>
+    <string name="farther_retry">Tap to retry</string>
     <string name="more_stops_bus">More bus stops</string>
     <string name="more_stops_tube">More Tube stations</string>
     <string name="more_stops_dlr">More DLR stations</string>

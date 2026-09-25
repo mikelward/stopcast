@@ -40,6 +40,18 @@ class StationIndexStoreTest {
         assertEquals(mapOf("national-rail" to listOf("thameslink")), rail.lines)
         assertEquals(mapOf("thameslink" to listOf("910GNORTH", "910GSOUTH")), rail.routeEnds)
         assertTrue(tube.routeEnds.isEmpty())
+        assertTrue("an older index has no line names", index.lineNames.isEmpty())
+    }
+
+    @Test
+    fun `line names are read as TfL spells them`() {
+        val index = StationIndexStore.parse(
+            """
+            {"version":1,"stations":[{"id":"940GZZLUEXA","name":"Example","modes":["tube"]}],
+             "lineNames":{"hammersmith-city":"Hammersmith & City","elizabeth":"Elizabeth line"}}
+            """.trimIndent(),
+        )
+        assertEquals(mapOf("hammersmith-city" to "Hammersmith & City", "elizabeth" to "Elizabeth line"), index.lineNames)
     }
 
     @Test

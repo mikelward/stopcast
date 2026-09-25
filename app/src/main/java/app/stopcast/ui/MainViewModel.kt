@@ -193,6 +193,9 @@ class MainViewModel(
     // cluster's stops join the fetched set once its key is revealed.
     private var eagerStops: List<StopRef> = seedStops
     private var stopDistanceMeters: Map<String, Double> = stopDistanceMeters
+
+    // Each stop's distance as this model last took it ([remeasure]), for tests.
+    internal val distanceMeters: Map<String, Double> get() = stopDistanceMeters
     private var more: List<NearbySelection.NearbyCluster> = initialMore
     private var revealedKeys: Set<String> = emptySet()
 
@@ -1444,7 +1447,6 @@ class MainViewModel(
         // then [journeyStopsReported]) and runs once with them, rather than now and again then.
         awaitJourneyStops: Boolean = false,
     ) {
-        newDistanceMeters?.let { stopDistanceMeters = it }
         val before = fetchedStops.mapTo(mutableSetOf()) { it.id }
         if (dropJourneyStopIds.isNotEmpty()) journeyStops = journeyStops.filter { it.id !in dropJourneyStopIds }
         eagerStops = newEager.flatMap { cluster -> cluster.stops.map { it.toStopRef() } }
@@ -1459,20 +1461,7 @@ class MainViewModel(
         val presentKeys = (newEager + newMore).mapTo(mutableSetOf()) { it.key }
         revealedKeys = revealedKeys intersect presentKeys
         publishMore()
-        // The shown stops take their new nearer places now, before any refetch returns, so the rows
-        // hide by where the rider is rather than where they were ([Terminating]); and the widget's
-        // stored copy too, whether or not that refetch succeeds.
-        (_state.value as? DeparturesUiState.Loaded)?.let { loaded ->
-            val places = nearbyPlaces()
-            val moved = loaded.stops.map { stop ->
-                val nearer = Terminating.nearer(stop.stopId, places)
-                if (nearer == stop.nearer) stop else stop.copy(nearer = nearer)
-            }
-            if (moved != loaded.stops) {
-                _state.value = loaded.copy(stops = moved)
-                updateWidgetNearer(moved.associate { it.stopId to it.nearer })
-            }
-        }
+        remeasure(newDistanceMeters ?: stopDistanceMeters)
         val departed = before - fetchedStops.mapTo(mutableSetOf()) { it.id }
         if (departed.isNotEmpty()) {
             (_state.value as? DeparturesUiState.Loaded)?.let { loaded ->
@@ -1503,6 +1492,28 @@ class MainViewModel(
             pruneDepartedFromWidget(departed)
         }
         if (awaitJourneyStops) refreshAwaitsJourneyStops = true else refresh()
+    }
+
+    /**
+     * Take each stop's distance from a new fix ([newDistanceMeters]), without refetching: the stops
+     * past the walking reach refresh less often, and the shown stops take their new nearer places
+     * now, before any refetch returns, so the rows hide by where the rider is rather than where they
+     * were ([Terminating]); the widget's stored copy too, whether or not that refetch succeeds.
+     * [reconcile] runs it; so does an opened farther card's model when the rider moves.
+     */
+    fun remeasure(newDistanceMeters: Map<String, Double>) {
+        stopDistanceMeters = newDistanceMeters
+        (_state.value as? DeparturesUiState.Loaded)?.let { loaded ->
+            val places = nearbyPlaces()
+            val moved = loaded.stops.map { stop ->
+                val nearer = Terminating.nearer(stop.stopId, places)
+                if (nearer == stop.nearer) stop else stop.copy(nearer = nearer)
+            }
+            if (moved != loaded.stops) {
+                _state.value = loaded.copy(stops = moved)
+                updateWidgetNearer(moved.associate { it.stopId to it.nearer })
+            }
+        }
     }
 
     /**

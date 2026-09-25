@@ -32,6 +32,9 @@ class StationIndex(
     // The user's own stops (starred or opened, [YourStops.ownIds]): each leads its tier, and so does
     // the interchange it folds into, so a starred stop ranks above an equally good stranger.
     own: Set<String> = emptySet(),
+    // Each line's name as TfL spells it ("Hammersmith & City"), by id, for a line the index carries
+    // by id alone. Empty in an older index.
+    val lineNames: Map<String, String> = emptyMap(),
 ) {
     /**
      * The stations matching [query], best first ([rank]), at most [limit]. A station whose
@@ -107,7 +110,7 @@ class StationIndex(
         if (yours.all.isEmpty()) return this
         val indexed = stations.mapTo(HashSet()) { it.id }
         val extra = yours.all.filter { it.id !in indexed }.map { IndexedStation(it.id, it.name, it.modes) }
-        return StationIndex(stations + extra, yours.ownIds)
+        return StationIndex(stations + extra, yours.ownIds, lineNames)
     }
 
     companion object {

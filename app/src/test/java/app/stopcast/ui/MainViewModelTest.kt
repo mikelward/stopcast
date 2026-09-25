@@ -9,6 +9,8 @@ import app.stopcast.domain.DismissedAlert
 import app.stopcast.domain.DismissedAlertsStore
 import app.stopcast.domain.HubInfo
 import app.stopcast.domain.JourneyCall
+import app.stopcast.domain.CollapsedPlaces
+import app.stopcast.domain.Coordinates
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.LineStatus
 import app.stopcast.domain.NearbySelection
@@ -2128,6 +2130,145 @@ class MainViewModelTest {
             advanceUntilIdle()
             assertTrue("the stop with the live route whose earlier prediction expired is revealed", "N" in shownIds(vm))
         }
+
+    private val fartherPlace = CollapsedPlaces.Place("station:FS", "FS", "Farther", 1_600.0, listOf(LineRef("central", "Central", "tube")))
+    private val fartherStop = StopLocation(id = "MA", name = "Farther", latitude = 0.0, longitude = 0.0)
+
+    private fun fartherCards(client: TflClient = twoStopClient(), lookup: suspend (String) -> List<StopLocation>) =
+        FartherCardsViewModel(
+            stationStops = lookup,
+            newModel = { stops, distances ->
+                MainViewModel(client, stops, clock = { now }, io = dispatcher, stopDistanceMeters = distances)
+            },
+            io = dispatcher,
+        )
+
+    private fun openModel(cards: FartherCardsViewModel) = cards.model(fartherPlace.key)!!
+
+    @Test
+    fun `opening a farther card gives its station its own departures`() = runTest(dispatcher) {
+        val cards = fartherCards { id ->
+            assertEquals("FS", id)
+            listOf(fartherStop)
+        }
+        cards.open(fartherPlace, Coordinates(0.0, 0.0))
+        advanceUntilIdle()
+        val load = cards.cards.value[fartherPlace.key]
+        assertTrue("open after the lookup: $load", load is FartherLoad.Open)
+        assertEquals(setOf("MA"), (load as FartherLoad.Open).distanceMeters.keys)
+        assertEquals(listOf("MA"), shownIds(openModel(cards)))
+    }
+
+    @Test
+    fun `a failed farther lookup can be tried again`() = runTest(dispatcher) {
+        var fail = true
+        val cards = fartherCards {
+            if (fail) throw java.io.IOException("offline")
+            listOf(fartherStop)
+        }
+        cards.open(fartherPlace, Coordinates(0.0, 0.0))
+        advanceUntilIdle()
+        assertEquals(FartherLoad.Failed, cards.cards.value[fartherPlace.key])
+        fail = false
+        cards.open(fartherPlace, Coordinates(0.0, 0.0))
+        advanceUntilIdle()
+        assertTrue(cards.cards.value[fartherPlace.key] is FartherLoad.Open)
+    }
+
+    @Test
+    fun `a lookup finishing after a relocation measures from the new fix`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        // The stop sits at the new fix.
+        val cards = fartherCards {
+            gate.await()
+            listOf(fartherStop.copy(latitude = 51.51))
+        }
+        cards.open(fartherPlace, Coordinates(51.5, 0.0))
+        advanceUntilIdle()
+        cards.retain(listOf(fartherPlace), Coordinates(51.51, 0.0))
+        gate.complete(Unit)
+        advanceUntilIdle()
+        val open = cards.cards.value[fartherPlace.key] as FartherLoad.Open
+        assertEquals(0.0, open.distanceMeters.getValue("MA"), 1.0)
+    }
+
+    @Test
+    fun `a farther station no longer offered closes, and its model with it`() = runTest(dispatcher) {
+        val cards = fartherCards { listOf(fartherStop) }
+        cards.open(fartherPlace, Coordinates(0.0, 0.0))
+        advanceUntilIdle()
+        val model = openModel(cards)
+        cards.retain(emptyList(), Coordinates(0.0, 0.0))
+        assertTrue(cards.cards.value.isEmpty())
+        assertFalse("the closed card's model is cleared", model.viewModelScope.coroutineContext[kotlinx.coroutines.Job]!!.isActive)
+    }
+
+    @Test
+    fun `a lookup for a card closed meanwhile opens nothing`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val cards = fartherCards {
+            gate.await()
+            listOf(fartherStop)
+        }
+        cards.open(fartherPlace, Coordinates(0.0, 0.0))
+        advanceUntilIdle()
+        cards.retain(emptyList(), Coordinates(0.0, 0.0))
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(cards.cards.value.isEmpty())
+    }
+
+    @Test
+    fun `an opened card's departures show through the list, which keeps its own stamp`() {
+        val list = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("E", "E", emptyList(), now)),
+            fetchedAt = now,
+            unavailableStopIds = setOf("J"),
+        )
+        val card = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("MA", "Farther", emptyList(), now.minusSeconds(30))),
+            fetchedAt = now.minusSeconds(30),
+            disruptionUnknown = true,
+            lineStatuses = mapOf("central" to LineStatus("central", LineStatus.GOOD_SERVICE, "Good Service")),
+            unavailableStopIds = setOf("MB"),
+        )
+        val shown = withOpenedFarther(
+            list,
+            listOf(setOf("MA", "MB") to card, setOf("X") to DeparturesUiState.Error(DeparturesUiState.Error.Kind.OFFLINE), setOf("Y") to DeparturesUiState.Loading),
+        )
+        assertEquals(listOf("E", "MA"), shown.stops.map { it.stopId })
+        assertEquals(now, shown.fetchedAt)
+        assertFalse("a complete card leaves the list whole", shown.partialRefresh)
+        assertEquals(setOf("MA"), shown.stopsDisruptionUnknown)
+        assertEquals(mapOf("central" to LineStatus("central", LineStatus.GOOD_SERVICE, "Good Service")), shown.lineStatuses)
+        // A failed card's stops read as failed, so its card offers a retry; a loading one's don't.
+        assertEquals(setOf("J", "MB", "X"), shown.unavailableStopIds)
+    }
+
+    @Test
+    fun `an opened card whose refresh failed marks the list partial`() {
+        val list = DeparturesUiState.Loaded(stops = listOf(StopArrivals("E", "E", emptyList(), now)), fetchedAt = now)
+        val failed = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("MA", "Farther", emptyList(), now.minusSeconds(600))),
+            fetchedAt = now.minusSeconds(600),
+            refreshFailure = DeparturesUiState.Error.Kind.OFFLINE,
+        )
+        val incomplete = DeparturesUiState.Loaded(stops = emptyList(), fetchedAt = now, partialRefresh = true)
+        assertTrue(withOpenedFarther(list, listOf(setOf("MA") to failed)).partialRefresh)
+        assertTrue(withOpenedFarther(list, listOf(setOf("MB") to incomplete)).partialRefresh)
+        assertEquals(now, withOpenedFarther(list, listOf(setOf("MA") to failed)).fetchedAt)
+    }
+
+    @Test
+    fun `an opened card's model is re-measured when the rider moves`() = runTest(dispatcher) {
+        // The stop sits at the new fix, about 1.1 km from the old one.
+        val cards = fartherCards { listOf(fartherStop.copy(latitude = 51.51)) }
+        cards.open(fartherPlace, Coordinates(51.5, 0.0))
+        advanceUntilIdle()
+        assertEquals(1_112.0, openModel(cards).distanceMeters.getValue("MA"), 5.0)
+        cards.retain(listOf(fartherPlace), Coordinates(51.51, 0.0))
+        assertEquals(0.0, openModel(cards).distanceMeters.getValue("MA"), 1.0)
+    }
 
     @Test
     fun `the more tier tracks what a reveal has paged in`() = runTest(dispatcher) {
