@@ -988,31 +988,91 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("Palmers Green").assertExists()
     }
 
+    // Around London Zoo, the near-me list a rider standing at the zoo's gate sees: the 274 from the
+    // bus stops either side of the road, the Northern line (both branches) at Chalk Farm, and the
+    // Mildmay line at Kentish Town West. Real stop ids, clusters (TfL's `stationNaptan`: the zoo's
+    // two poles are in different stop areas), pole letters, platforms, termini, branches,
+    // and TfL's `direction` values from the live arrivals feed (2026-09-25); the distances place the
+    // rider at the zoo's gate, a public landmark rather than anyone's home or route. Public
+    // infrastructure/line names only (SPEC *Privacy*); "Zsl" is TfL's own spelling.
+    private fun mins(vararg minutes: Long) = minutes.map { it * 60 + 20 }
+
+    private fun londonZoo(): List<StopArrivals> {
+        fun deps(times: List<Long>, make: (Long) -> Departure) = times.map(make)
+        return listOf(
+            StopArrivals(
+                "490009291A",
+                "Zsl London Zoo",
+                deps(mins(7, 19, 29)) { dep("274", "274", "outbound", "Lancaster Gate", it, "B", mode = "bus") },
+                fetchedAt = now.minusSeconds(10),
+                stopLetter = "B",
+                clusterId = "490G00002443",
+            ),
+            StopArrivals(
+                "490009291B",
+                "Albert Terrace / Zsl London Zoo",
+                deps(mins(11, 23)) { dep("274", "274", "inbound", "Islington Angel", it, "J", mode = "bus") },
+                fetchedAt = now.minusSeconds(10),
+                stopLetter = "J",
+                clusterId = "490G00009291",
+            ),
+            StopArrivals(
+                "940GZZLUCFM",
+                "Chalk Farm",
+                deps(mins(0, 7, 18)) {
+                    dep("northern", "Northern", "inbound", "Battersea Power", it, "Southbound - Platform 2", branch = "Charing X")
+                } + deps(mins(3, 10, 16)) {
+                    dep("northern", "Northern", "inbound", "Morden", it, "Southbound - Platform 2", branch = "Bank")
+                } + deps(mins(1, 3, 4)) {
+                    dep("northern", "Northern", "outbound", "Edgware", it, "Northbound - Platform 1")
+                } + deps(mins(11)) {
+                    dep("northern", "Northern", "outbound", "Golders Green", it, "Northbound - Platform 1", branch = "Charing X")
+                },
+                fetchedAt = now.minusSeconds(10),
+                clusterId = "940GZZLUCFM",
+            ),
+            StopArrivals(
+                "910GKNTSHTW",
+                "Kentish Town West",
+                deps(mins(1, 11, 35)) {
+                    dep("mildmay", "Mildmay", "outbound", "Richmond (London)", it, "Platform 1", mode = "overground")
+                } + deps(mins(6, 18, 30)) {
+                    dep("mildmay", "Mildmay", "outbound", "Clapham Junction", it, "Platform 1", mode = "overground")
+                },
+                fetchedAt = now.minusSeconds(10),
+                clusterId = "910GKNTSHTW",
+            ),
+        )
+    }
+
     @Test
     fun `near-me headers show each stop's distance`() {
         // On the near-me list (distances present) each stop's header carries its own distance in
         // parens after the name, so a rider can judge which nearby stop to walk to; the watched
         // list (no distances) shows none (D1). Captured as a baseline so the near-me header
-        // layout is covered visually (Codex, PR #82), not only by the assertions below. Synthetic
-        // distances and public stop ids/names only (SPEC *Privacy*).
+        // layout is covered visually (Codex, PR #82), not only by the assertions below. In yards
+        // and miles, as the app's UK riders see it.
         capture("main-near-me.png") {
-            MainScreen(
-                DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), lineStatuses = statuses()),
-                now,
-                {},
-                stopDistanceMeters = mapOf(
-                    "940GZZLUWPL" to 120.0,
-                    "910GWCHAPEL" to 160.0,
-                    "490009873D" to 40.0,
-                ),
-            )
+            CompositionLocalProvider(LocalDistanceSystem provides DistanceSystem.YARDS) {
+                MainScreen(
+                    DeparturesUiState.Loaded(londonZoo(), now.minusSeconds(10)),
+                    now,
+                    {},
+                    stopDistanceMeters = mapOf(
+                        "490009291A" to 9.0,
+                        "490009291B" to 91.0,
+                        "940GZZLUCFM" to 805.0,
+                        "910GKNTSHTW" to 1127.0,
+                    ),
+                )
+            }
         }
         // Each stop's own distance, not one shared value. The distance is a reserved dimmed node at
-        // the end of the one-line header; each stop splits into several groups, so its distance
-        // repeats on each of that stop's group headers.
-        composeRule.onAllNodesWithText("(120 m)", substring = true).onFirst().assertExists()
-        composeRule.onAllNodesWithText("(160 m)", substring = true).onFirst().assertExists()
-        composeRule.onAllNodesWithText("(40 m)", substring = true).onFirst().assertExists()
+        // the end of the one-line header, repeated on each of a stop's group headers.
+        composeRule.onAllNodesWithText("(10 yd)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("(100 yd)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("(0.5 mi)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("(0.7 mi)", substring = true).onFirst().assertExists()
     }
 
     @Test
