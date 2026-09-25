@@ -110,9 +110,12 @@ The app finds stops two ways:
   report, 2026-09-25). Two things keep that from standing (maintainer, 2026-09-25):
   - **The last precise fix is remembered for 10 minutes**, in memory only. A coarse fix whose own
     accuracy circle still contains it — the rider may well not have moved — defers to it, and the
-    list is built from the precise fix. It is still only a guess (the rider may have moved within
-    the circle), so it is treated as the coarse case below: banner, and a GPS check that confirms
-    or moves it.
+    list is built from the precise fix. A precise fix **no older than two minutes** — the age at
+    which a cached one is used outright on open — stands as the current position, with no banner:
+    the coarse fix agrees with it, and indoors GPS never answers to clear a banner, so it stayed up
+    over a 12 m fix from half a minute before (maintainer bug report, 2026-09-25). An older one is
+    still only a guess (the rider may have moved within the circle), so it is treated as the coarse
+    case below: banner, and a GPS check that confirms or moves it.
   - Otherwise the list is shown from the coarse fix at once, under an **"Approximate location"**
     banner, and GPS is **asked again** for a few more seconds. A precise fix within 100 m confirms
     the list and clears the banner; a farther one **moves the list** to it, re-picked as a refresh

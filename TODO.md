@@ -2138,7 +2138,9 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   **Shipped, second increment (maintainer bug report, 2026-09-25):** a fresh **coarse** fix
   (network/passive under a precise grant, GPS missed the grace) defers to the last precise fix
   when that is under 10 minutes old and inside the coarse fix's accuracy circle
-  (`PreciseFixMemory`); otherwise the list shows an "Approximate location" banner and a GPS-only
+  (`PreciseFixMemory`) — with no banner when that precise fix is under 2 minutes old (the fast
+  path's own age; maintainer bug report, 2026-09-25), else still flagged approximate and checked
+  by GPS; otherwise the list shows an "Approximate location" banner and a GPS-only
   follow-up (`LocationProvider.precise`, 8 s) confirms it (within 100 m) or moves the list.
 - [ ] **Merge the stops around a remembered precise fix and a new coarse one** (maintainer,
       2026-09-25) — rather than picking one fix, show the union, with each distance either marked
