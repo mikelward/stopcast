@@ -911,6 +911,13 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         2026-09-25). An uncached 1-mile stop search in the City took TfL 7–11 s to start
         answering, past OkHttp's 10 s read timeout. That search now waits up to 30 s, and asks
         only for the Direction properties it reads, cutting its response by about two thirds.
+  - [x] **A National Rail route page said "can't reach TfL"** (maintainer bug report,
+        2026-09-25). A National Rail line's route sequence (~600 KB) took TfL 4–15 s to start
+        answering when uncached, past the same 10 s timeout. It now waits up to 30 s too.
+  - [ ] **A line TfL doesn't know still reads "can't reach TfL"** on its route page, with a
+        Retry that can never work: a 404 for the line id (a National Rail operator TfL has no
+        line for, e.g. `lnr-wmr`) maps to Unreachable. It should say the stops aren't available
+        for that line, with no Retry.
   - [x] **A "More" tap fetches only the newly revealed page, not the whole set** (landed). `reveal()`
         no longer calls `refresh()`; it fetches just the stops not already shown and merges them into
         the current `Loaded` via `fetchIncremental`, persisting the widened set only when the fetch
