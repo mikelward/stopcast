@@ -10,6 +10,7 @@ import androidx.datastore.dataStoreFile
 import app.stopcast.StopcastDebugLog
 import app.stopcast.domain.AppSettings
 import app.stopcast.domain.DEFAULT_FONT_SCALE
+import app.stopcast.domain.DistanceUnits
 import app.stopcast.domain.FontSizeSettings
 import app.stopcast.domain.clampFontScale
 import java.io.IOException
@@ -100,6 +101,13 @@ class DataStoreAppSettings internal constructor(
 
     override suspend fun setHiddenModes(modes: Set<String>) {
         dataStore.updateData { (it ?: PersistedSettings()).copy(hiddenModes = modes) }
+    }
+
+    override fun distanceUnits(): Flow<DistanceUnits> =
+        persisted().map { DistanceUnits.fromStored(it?.distanceUnits) }
+
+    override suspend fun setDistanceUnits(units: DistanceUnits) {
+        dataStore.updateData { (it ?: PersistedSettings()).copy(distanceUnits = units.name) }
     }
 
     // The shared read flow: DataStore's `data`, with a transient I/O read failure retried rather
@@ -194,6 +202,9 @@ data class PersistedSettings(
     val railApiKey: String? = null,
     // The transport modes hidden from the near-me list. Defaulted, so an older file hides none.
     val hiddenModes: Set<String> = emptySet(),
+    // The distance-units choice by enum name, or null for the default (follow the locale). A string,
+    // not the enum, so a value a newer build adds reads back as the default rather than corrupting.
+    val distanceUnits: String? = null,
 )
 
 /**

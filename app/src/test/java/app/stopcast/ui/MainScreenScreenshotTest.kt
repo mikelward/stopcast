@@ -1,5 +1,6 @@
 package app.stopcast.ui
 
+import app.stopcast.domain.DistanceSystem
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.swipeUp
@@ -987,6 +988,79 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `no distance shows until the stored units are read`() {
+        composeRule.setContent {
+            StopCastTheme {
+                CompositionLocalProvider(LocalDistanceSystem provides null) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), lineStatuses = statuses()),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0, "940GZZLUOXC" to 1200.0),
+                    )
+                }
+            }
+        }
+        composeRule.onAllNodesWithText("King's Cross St. Pancras").onFirst().assertExists()
+        composeRule.onAllNodesWithText("(120 m)", substring = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("(130 yd)", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a lone place keeps its header while the stored units are read`() {
+        // One unsplit place shows its header only for its distance; withholding the label while the
+        // units load must not take the place's name with it.
+        composeRule.setContent {
+            StopCastTheme {
+                CompositionLocalProvider(LocalDistanceSystem provides null) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(
+                            listOf(
+                                StopArrivals(
+                                    "940GZZLUEXA",
+                                    "Example Station",
+                                    listOf(dep("victoria", "Victoria", "southbound", "Brixton", 150, "")),
+                                    fetchedAt = now.minusSeconds(60),
+                                ),
+                            ),
+                            now.minusSeconds(60),
+                        ),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUEXA" to 120.0),
+                    )
+                }
+            }
+        }
+        composeRule.onAllNodesWithText("Example Station", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("(120 m)", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `near-me headers follow the chosen distance units`() {
+        // Not captured: the baselines stay metric (the default outside the app root), and this pins
+        // only that the header reads the provided system (SPEC *Finding stops*).
+        composeRule.setContent {
+            StopCastTheme {
+                CompositionLocalProvider(LocalDistanceSystem provides DistanceSystem.YARDS) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), lineStatuses = statuses()),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf(
+                            "940GZZLUKSX" to 120.0,
+                            "940GZZLUOXC" to 1200.0,
+                        ),
+                    )
+                }
+            }
+        }
+        composeRule.onAllNodesWithText("(130 yd)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("(0.7 mi)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("(120 m)", substring = true).assertCountEquals(0)
+    }
+
+    @Test
     fun `a hub-wide alert repeated across an interchange shows once, titled by the interchange`() {
         // TfL reports a hub-wide notice (a lift outage) against every stop point in an
         // interchange, so the near-me set carries the identical text once per member. Those
@@ -1274,6 +1348,27 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("Tap to see").assertExists()
         composeRule.onNodeWithText("Loading…").assertExists()
         composeRule.onNodeWithText("Tap to retry").assertExists()
+    }
+
+    @Test
+    fun `a farther station's distance follows the chosen units`() {
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                CompositionLocalProvider(LocalDistanceSystem provides DistanceSystem.FEET) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
+                        farther = listOf(
+                            FartherCard(fartherPlace("940GZZLUWHM", "West Ham", 1_600.0, Triple("district", "District", "tube"))),
+                        ),
+                    )
+                }
+            }
+        }
+        composeRule.onAllNodesWithText("(1.0 mi)", substring = true).onFirst().assertExists()
+        composeRule.onAllNodesWithText("(1.6 km)", substring = true).assertCountEquals(0)
     }
 
     @Test

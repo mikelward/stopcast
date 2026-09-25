@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -66,6 +67,22 @@ class UserApiKeyHolderTest {
     }
 
     @Test
+    fun `isLoaded turns true when the store is read, or the user sets a value first`() = runTest {
+        val stored = MutableSharedFlow<String?>()
+        val holder = eagerHolder()
+        holder.warm(FakeSettings(stored))
+        runCurrent()
+        assertFalse("nothing read yet", holder.isLoaded.value)
+        stored.emit("EXAMPLE")
+        assertTrue(holder.isLoaded.value)
+
+        val early = eagerHolder()
+        early.warm(FakeSettings(MutableSharedFlow()))
+        early.set("EXAMPLE")
+        assertTrue("the user's own value counts as loaded", early.isLoaded.value)
+    }
+
+    @Test
     fun `a failed write is reported until the screen has shown it`() = runTest {
         val holder = eagerHolder()
         val failing = object : AppSettings by FakeSettings(flowOf(null)) {
@@ -79,6 +96,25 @@ class UserApiKeyHolderTest {
         assertTrue(holder.writeFailed.value)
         holder.writeFailureShown()
         assertEquals(false, holder.writeFailed.value)
+    }
+
+    @Test
+    fun `a later successful write clears an earlier failure`() = runTest {
+        val holder = eagerHolder()
+        var fail = true
+        val flaky = object : AppSettings by FakeSettings(flowOf(null)) {
+            override suspend fun setUserApiKey(key: String?) {
+                if (fail) throw java.io.IOException("disk full")
+            }
+        }
+        holder.warm(flaky)
+        holder.set("EXAMPLE")
+        advanceUntilIdle()
+        assertTrue(holder.writeFailed.value)
+        fail = false
+        holder.set("EXAMPLE2")
+        advanceUntilIdle()
+        assertFalse("the latest value is saved", holder.writeFailed.value)
     }
 
     @Test

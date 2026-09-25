@@ -7,4 +7,5 @@
     <string name="settings_licenses_title">Open source licences</string>
     <string name="journeys_faraway">Faraway favourites</string>
     <string name="licenses_link_failed">No app to open the licence page</string>
+    <string name="settings_distance_units_meters">Metres</string>
 </resources>

@@ -96,6 +96,15 @@ interface AppSettings {
     /** Set [hiddenModes] to [modes]. Suspending, off the main thread; best-effort. */
     suspend fun setHiddenModes(modes: Set<String>) {}
 
+    /**
+     * The units the near-me distances are written in (SPEC *Finding stops*): follow the phone's
+     * locale ([DistanceUnits.AUTOMATIC], the default), or always metric or imperial.
+     */
+    fun distanceUnits(): Flow<DistanceUnits> = flowOf(DistanceUnits.AUTOMATIC)
+
+    /** Set [distanceUnits]. Suspending, off the main thread; best-effort. */
+    suspend fun setDistanceUnits(units: DistanceUnits) {}
+
     companion object {
         /** A store that persists nothing and always reads the defaults — the default for tests
          *  and a build with no wired DataStore, so the app runs identically minus persistence. */
