@@ -857,6 +857,8 @@ class MainActivity : ComponentActivity() {
         // The departures list's scroll position, hoisted by the caller so it survives the overlays.
         listState: LazyListState = rememberLazyListState(),
         farReveal: FarRevealState? = null,
+        // The crosshairs, where it doesn't re-locate here: a From… station page's return to near me.
+        onLocate: (() -> Unit)? = null,
         // A searched station's page (From…) is this same list around the station: its own retained
         // models ([storesKey]), never the widget's list ([forWidget] false), titled with the station
         // and closed by back ([stationTitle], [onCloseStation]).
@@ -1106,6 +1108,7 @@ class MainActivity : ComponentActivity() {
                     // to the foreground runs, so the refresh control and reopening the app both move
                     // the nearby set to the current position.
                     onRefresh = onRelocate,
+                    onLocate = onLocate,
                     refreshing = refreshing,
                     // From "near me now": collapse a line served by several adjacent nearby stops
                     // to its nearest stop (SPEC *Finding stops → Near me now*). Spans both tiers, so
@@ -1311,12 +1314,19 @@ class MainActivity : ComponentActivity() {
             if (ready == null || center == null) {
                 // No stops yet (or none TfL placed, so nowhere to stand): the station's own page.
                 if (ready == null) {
-                    StationPlaceholderScreen(title = stationName, state = stops, onRetry = stopsModel::retry, onBack = closeStation)
+                    StationPlaceholderScreen(
+                        title = stationName,
+                        state = stops,
+                        onRetry = stopsModel::retry,
+                        onBack = closeStation,
+                        onLocate = closeSearch,
+                    )
                 } else {
                     LookDepartures(
                         stops = ready.stops,
                         title = stationName,
                         onClose = closeStation,
+                        onLocate = closeSearch,
                         onPlanTo = null,
                         destination = null,
                         destinationName = "",
@@ -1331,6 +1341,7 @@ class MainActivity : ComponentActivity() {
                 center = center,
                 stationStopIds = ready.stops.mapTo(HashSet()) { it.id },
                 onClose = closeStation,
+                onBackToNearMe = closeSearch,
                 tripPicking = tripPicking,
                 tripToId = tripToId,
                 tripToName = tripToName,
@@ -1356,6 +1367,8 @@ class MainActivity : ComponentActivity() {
         center: Coordinates,
         stationStopIds: Set<String>,
         onClose: () -> Unit,
+        // The crosshairs: "use my location" leaves the station for the near-me list.
+        onBackToNearMe: () -> Unit,
         tripPicking: Boolean,
         tripToId: String?,
         tripToName: String,
@@ -1421,6 +1434,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onRetry = fromNearby::locate,
                 onBack = onClose,
+                onLocate = onBackToNearMe,
             )
             return
         }
@@ -1455,6 +1469,7 @@ class MainActivity : ComponentActivity() {
                 locationBanner = fromNearby.locationBanner,
                 keyPrefix = "from",
                 fromName = stationName,
+                onLocate = onBackToNearMe,
             )
         } else {
             DeparturesForStops(
@@ -1480,6 +1495,7 @@ class MainActivity : ComponentActivity() {
                 forWidget = false,
                 stationTitle = stationName,
                 onCloseStation = onClose,
+                onLocate = onBackToNearMe,
             )
         }
     }
@@ -1522,6 +1538,8 @@ class MainActivity : ComponentActivity() {
         // searched station's (From…), whose trip is titled "‹station› ➔ ‹to›" by [fromName].
         keyPrefix: String = "here",
         fromName: String? = null,
+        // The crosshairs from a From… station's trip: back to the near-me list. Null re-locates.
+        onLocate: (() -> Unit)? = null,
     ) {
         val appContext = applicationContext
         val originKey = remember(origin) { origin.map { it.id }.sorted().joinToString(",") }
@@ -1597,7 +1615,14 @@ class MainActivity : ComponentActivity() {
         val to by toModel.state.collectAsStateWithLifecycle()
         val destination = (to as? StationStopsViewModel.State.Ready)?.stops
         if (destination == null) {
-            StationPlaceholderScreen(title = title, state = to, onRetry = toModel::retry, onBack = close)
+            StationPlaceholderScreen(
+                title = title,
+                state = to,
+                onRetry = toModel::retry,
+                onBack = close,
+                // From a From… station, back to near me; from here, re-locate, as the trip's page does.
+                onLocate = onLocate ?: relocate,
+            )
             return
         }
         // Keyed on the origin set, so a relocation that changes it fetches the new stops afresh.
@@ -1628,6 +1653,7 @@ class MainActivity : ComponentActivity() {
                 // moved-to set works the origins out again.
                 onRefresh = relocate,
                 relocating = relocating,
+                onLocate = onLocate,
                 distanceMeters = distanceMeters,
                 hiddenModes = hiddenModes,
                 onShowAllModes = showAllModes,
@@ -1661,6 +1687,8 @@ class MainActivity : ComponentActivity() {
         // In place of a plain refresh (the trip from here re-locates first), and its fix in flight.
         onRefresh: (() -> Unit)? = null,
         relocating: StateFlow<Boolean>? = null,
+        // The crosshairs; null re-runs [onRefresh] (a trip from here re-locates).
+        onLocate: (() -> Unit)? = null,
         distanceMeters: Map<String, Double> = emptyMap(),
         hiddenModes: Set<String> = emptySet(),
         onShowAllModes: () -> Unit = HiddenModesSetting::showAll,
@@ -1765,6 +1793,7 @@ class MainActivity : ComponentActivity() {
                 state = trip?.state ?: state,
                 now = now,
                 onRefresh = onRefresh ?: { viewModel.refresh() },
+                onLocate = onLocate,
                 refreshing = refreshing || relocatingNow,
                 starred = starred,
                 onToggleStar = viewModel::toggleStar,

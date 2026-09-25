@@ -254,6 +254,9 @@ fun StationPlaceholderScreen(
     state: StationStopsViewModel.State,
     onRetry: () -> Unit,
     onBack: () -> Unit,
+    // The crosshairs, as on the page this stands in for (SPEC *Finding stops*): from a From…
+    // station, back to the near-me list, so a station TfL can't place isn't a dead end. Null hides it.
+    onLocate: (() -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
     Scaffold(
@@ -265,6 +268,13 @@ fun StationPlaceholderScreen(
                     }
                 },
                 title = { Text(title, maxLines = 1) },
+                actions = {
+                    if (onLocate != null) {
+                        IconButton(onClick = onLocate) {
+                            Icon(CrosshairIcon, contentDescription = stringResource(R.string.locate_here))
+                        }
+                    }
+                },
             )
         },
     ) { padding ->
