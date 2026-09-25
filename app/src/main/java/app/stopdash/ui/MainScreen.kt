@@ -3055,6 +3055,14 @@ internal fun RouteDetailScreen(
             .mapNotNull { DepartureLabels.destinationLabel(it.destination, row.directionKey) }
             .distinct()
     }
+    // The followed train's branch as the card labels it ("Hainault/Newbury Park"), so the title names
+    // the same route the tapped row did; null where the card shows no branch (it makes no difference
+    // from this stop, or the row has none).
+    val titleBranch = if (focus != null && followed != null && destinations.size == 1) {
+        topology.grouping(row.lineId, row.stopId, followed.destination, followed.branch).label
+    } else {
+        null
+    }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -3073,7 +3081,13 @@ internal fun RouteDetailScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LinePill(lineName = row.lineName, lineId = row.lineId, mode = row.mode)
-                        if (destinations.isNotEmpty()) {
+                        if (titleBranch != null) {
+                            DestinationLabelContent(
+                                label = destinations.single(),
+                                branch = titleBranch,
+                                modifier = Modifier.weight(1f).padding(start = 8.dp),
+                            )
+                        } else if (destinations.isNotEmpty()) {
                             Text(
                                 text = destinations.joinToString(", "),
                                 style = MaterialTheme.typography.titleMedium,

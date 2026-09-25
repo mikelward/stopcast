@@ -586,7 +586,7 @@ and the page follows that row's trains (its destination, and its branch where th
 destination by branch), not whichever of the line's trains is soonest
 (once the tapped route has no trains left it falls back to the soonest, and the title follows, so the
 title and stop list always name the same train) — its own app bar naming the route (line pill +
-destination) and
+destination, with the branch where the card showed one, "Hainault/Newbury Park") and
 carrying the star (so the long-press is the shortcut, the page the discoverable path), then, heading
 the body, the service's **full name** — "Victoria line", "London Northwestern Railway" — so a short
 pill code is never a puzzle (left off where the pill already is the name: a bus number, DLR), then

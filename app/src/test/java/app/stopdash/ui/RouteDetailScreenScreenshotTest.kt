@@ -22,6 +22,7 @@ import app.stopdash.domain.DepartureRows
 import app.stopdash.domain.JourneyEnd
 import app.stopdash.domain.LineRef
 import app.stopdash.domain.LineStatus
+import app.stopdash.domain.RouteFocus
 import app.stopdash.domain.RouteStop
 import app.stopdash.domain.LineRoute
 import app.stopdash.domain.LineSequence
@@ -119,6 +120,50 @@ class RouteDetailScreenScreenshotTest {
         composeRule.onNodeWithText("2 · 5 · 7 · 10 · 12 · 15 · 17 min").assertIsDisplayed()
 
         captureSnapshot("route-detail-many-departures.png")
+    }
+
+    @Test
+    fun aTappedBranchRoute_namesItsBranchInTheTitle() {
+        // A loop line whose two routes share a terminus: the card splits them by branch
+        // ("Hainault/Newbury Park"), so the page opened from one names the branch too, not just
+        // the terminus both routes share.
+        val stop = StopArrivals(
+            stopId = "940GZZLUOXC",
+            stopName = "Oxford Circus",
+            departures = listOf(
+                Departure("central", "Central", "outbound", "Hainault", null, now.plusSeconds(240), "tube"),
+                Departure(
+                    "central", "Central", "outbound", "Hainault", null, now.plusSeconds(420), "tube",
+                    branch = "Newbury Park",
+                ),
+            ),
+            fetchedAt = now,
+        )
+        val row = DepartureRows.across(listOf(stop), now).first { it.upcoming.isNotEmpty() }
+        composeRule.setContent {
+            StopDashTheme {
+                RouteDetailScreen(
+                    row = row,
+                    isStarred = false,
+                    starrable = true,
+                    disruptionUnknown = false,
+                    stale = false,
+                    now = now,
+                    onToggleStar = {},
+                    onBack = {},
+                    routeStops = RouteStopsUi.Loading,
+                    focus = RouteFocus("Hainault", "Newbury Park"),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Hainault").assertIsDisplayed()
+        composeRule.onNodeWithText("Newbury Park", substring = true).assertIsDisplayed()
+        // The page follows that branch's train, not the sooner one on the other route.
+        composeRule.onNodeWithText("7 min").assertIsDisplayed()
+
+        captureSnapshot("route-detail-branch-title.png")
     }
 
     @Test
