@@ -56,6 +56,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.HasDefaultViewModelProviderFactory
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -894,7 +895,7 @@ class MainActivity : ComponentActivity() {
         // ViewModel — preserving a revealed "More" expansion, which a rebuild would drop.
         val stopsKey = remember(ready) { ready.clusterSetKey }
         val stores: NearbyDeparturesStores = if (storesKey == null) viewModel() else viewModel(key = storesKey)
-        val storeOwner = remember(stores, stopsKey) { stores.ownerFor(stopsKey) }
+        val storeOwner = remember(stores, stopsKey) { stores.ownerFor(stopsKey, this@MainActivity) }
         // Shared with a searched station's page, so a write failure there surfaces here too.
         val writeFailures = viewModel<WriteFailuresHolder>().failures
         CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
@@ -1301,7 +1302,7 @@ class MainActivity : ComponentActivity() {
             )
             return
         }
-        val storeOwner = remember(stationId) { stores.ownerFor(stationId) }
+        val storeOwner = remember(stationId) { stores.ownerFor(stationId, this@MainActivity) }
         CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
             val stopsModel: StationStopsViewModel = viewModel(
                 factory = viewModelFactory {
@@ -1605,7 +1606,7 @@ class MainActivity : ComponentActivity() {
         } else {
             stringResource(R.string.journey_title, fromName, toName)
         }
-        val toOwner = remember(toId) { toStores.ownerFor(toId) }
+        val toOwner = remember(toId) { toStores.ownerFor(toId, this@MainActivity) }
         val toModel: StationStopsViewModel = viewModel(
             viewModelStoreOwner = toOwner,
             factory = viewModelFactory {
@@ -1640,7 +1641,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         // Keyed on the origin set, so a relocation that changes it fetches the new stops afresh.
-        val owner = remember(originKey) { stores.ownerFor(originKey) }
+        val owner = remember(originKey) { stores.ownerFor(originKey, this@MainActivity) }
         CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
             LookDepartures(
                 stops = origin,
@@ -2050,13 +2051,27 @@ internal class TakenRepick(var id: Long?) : androidx.lifecycle.ViewModel()
 internal class NearbyDeparturesStores : androidx.lifecycle.ViewModel() {
     private val stores = mutableMapOf<String, ViewModelStore>()
 
-    /** The retained store for [key], clearing any other set's store first. */
-    fun ownerFor(key: String): ViewModelStoreOwner {
+    /**
+     * The retained store for [key], clearing any other set's store first.
+     *
+     * With [defaults] (the activity), the owner also carries the activity's creation extras, so a
+     * model made inside it can take a [androidx.lifecycle.SavedStateHandle]: a bare store has no
+     * saved-state registry, and `createSavedStateHandle()` throws — which crashed To… from a
+     * searched station, whose To search lives inside that station's store.
+     */
+    fun ownerFor(key: String, defaults: HasDefaultViewModelProviderFactory? = null): ViewModelStoreOwner {
         val stale = stores.keys.filter { it != key }
         for (k in stale) stores.remove(k)?.clear()
         val store = stores.getOrPut(key) { ViewModelStore() }
-        return object : ViewModelStoreOwner {
+        if (defaults == null) {
+            return object : ViewModelStoreOwner {
+                override val viewModelStore = store
+            }
+        }
+        return object : ViewModelStoreOwner, HasDefaultViewModelProviderFactory {
             override val viewModelStore = store
+            override val defaultViewModelProviderFactory get() = defaults.defaultViewModelProviderFactory
+            override val defaultViewModelCreationExtras get() = defaults.defaultViewModelCreationExtras
         }
     }
 
