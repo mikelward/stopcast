@@ -2779,12 +2779,12 @@ class MainScreenScreenshotTest {
         }
         composeRule.waitForIdle()
         captureSnapshot("main-via-branch-equal.png")
-        // The branch stands alone and bare — its board form with no leading slash — and the accessible
-        // label keeps BOTH the full terminus and the branch, so a screen reader can still tell the
+        // The branch stands alone and bare — its short form with no leading slash — and the accessible
+        // label keeps BOTH the full terminus and the full branch, so a screen reader can still tell the
         // Bank and Charing Cross trains apart (Codex P2).
         composeRule.onNodeWithText("Charing X").assertExists()
         composeRule.onNodeWithText("/Charing X").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("High Barnet via Charing X").assertExists()
+        composeRule.onNodeWithContentDescription("High Barnet via Charing Cross").assertExists()
     }
 
     @Test

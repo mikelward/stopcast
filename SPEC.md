@@ -546,12 +546,15 @@ common whole words to a compact form (`East`→`E.`, `Street`→`St`, and the re
 `DestinationAbbreviations`), then, for a name no word maps, drops to its **floor** — the first word
 in full with each later word an initial (`Battersea Power`→`Battersea P.`) — and only below the
 floor does it **elide with a single `…`** — never a mid-glyph cut, and the **terminus yields before
-the branch**. The full branch is kept while the terminus floor fits beside it, else its board short
-form ("Charing X"). So a tight row reads "Battersea P. /Charing X"; at the largest font scales, where
-the whole branch fills the row and not even the terminus's first glyph fits beside it, the branch
-stands **alone and bare** — its board form with no leading slash, so no orphaned "/". Only an
-unusually long branch (an unabbreviated loop branch, e.g. "Newbury Park") standing alone in that
-narrowest row can itself reach the single-`…` last resort — there is nothing left to yield, and a
+the branch**. **Both sides are abbreviated before either is cut** (maintainer, 2026-09-25): the
+full branch is kept while the terminus, in full or abbreviated, fits beside it; otherwise the branch
+takes its abbreviated form too ("Charing X", "Newbury Pk"), and only then does the terminus drop to
+its floor or elide. A branch abbreviates with the terminus's own word forms (`South`→`S.`,
+`Road`→`Rd`, `Park`→`Pk`, …) plus the board's `Cross`→`X`. So a tight row reads "Battersea P.
+/Charing X"; at the largest font scales, where the whole branch fills the row and not even the
+terminus's first glyph fits beside it, the branch stands **alone and bare** — its abbreviated form
+with no leading slash, so no orphaned "/". Only an
+unusually long branch standing alone in that narrowest row can itself reach the single-`…` last resort — there is nothing left to yield, and a
 clean elision beats a mid-glyph cut. The full name shows whenever it fits and stays the accessible
 label throughout. This supersedes an earlier proportional-split rule
 that clipped both halves mid-glyph and a no-ellipsis preference alongside it (maintainer,

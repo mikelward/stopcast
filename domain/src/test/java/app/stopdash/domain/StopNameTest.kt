@@ -121,6 +121,15 @@ class StopNameTest {
     }
 
     @Test
+    fun `abbreviateBranch uses the destination's word forms too`() {
+        // The same map a terminus shortens with, so both sides of "Hainault/Newbury Park" shrink
+        // alike before either is cut.
+        assertEquals("Newbury Pk", abbreviateBranch("Newbury Park"))
+        assertEquals("S. Harrow", abbreviateBranch("South Harrow"))
+        assertEquals("Kilburn H. Rd", abbreviateBranch("Kilburn High Road"))
+    }
+
+    @Test
     fun `abbreviateBranch leaves a branch with nothing safe to shorten unchanged`() {
         assertEquals("Bank", abbreviateBranch("Bank"))
         assertEquals("Battersea", abbreviateBranch("Battersea"))

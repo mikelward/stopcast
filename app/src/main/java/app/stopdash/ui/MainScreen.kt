@@ -3418,10 +3418,10 @@ private fun RowScope.DestinationLabelContent(label: String, branch: String?, mod
         // The branch is the cue that tells a branching line's two trunks apart, so it is kept whole:
         // the branch lays out at its natural width and the terminus takes the leftover, shrinking
         // (word-abbreviated, then floored) and eliding with a single "…" before it would cut — never
-        // mid-glyph (SPEC destination-label). The branch's own label is already the board short form
-        // ("Charing X"), so [abbreviateBranch] is a no-op here; a fuller rider-readable form is a
-        // follow-up (TODO). branchedLabel turns the measured widths into the strings, so the rule is
-        // unit-tested apart from the render.
+        // mid-glyph (SPEC destination-label). A branch TfL already gives in board form ("Charing X")
+        // is unchanged by [abbreviateBranch]; a spelled-out one shortens ("Newbury Park" → "Newbury
+        // Pk"). A fuller rider-readable form is a follow-up (TODO). branchedLabel turns the measured
+        // widths into the strings, so the rule is unit-tested apart from the render.
         BoxWithConstraints(modifier = modifier) {
             val style = MaterialTheme.typography.titleMedium
             val measurer = rememberTextMeasurer()
@@ -3441,7 +3441,6 @@ private fun RowScope.DestinationLabelContent(label: String, branch: String?, mod
                 maxWidth = constraints.maxWidth,
                 labelWidth = remember(label, style, fontScale) { widthOf(label) },
                 abbrevLabelWidth = remember(abbreviatedLabel, style, fontScale) { widthOf(abbreviatedLabel) },
-                floorLabelWidth = remember(floorLabel, style, fontScale) { widthOf(floorLabel) },
                 fullBranchWidth = remember(branch, style, fontScale) { widthOf("/$branch") },
                 abbrevBranchWidth = remember(shortBranch, style, fontScale) { widthOf("/$shortBranch") },
                 minStubWidth = remember(floorLabel, style, fontScale) { widthOf("${floorLabel.take(1)}…") },
@@ -3477,16 +3476,13 @@ private fun RowScope.DestinationLabelContent(label: String, branch: String?, mod
                     // branch standing alone in the narrowest row (nothing left to yield).
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
-                    // When the branch stands alone (no terminus shown), its contentDescription carries
-                    // BOTH the full terminus and the branch, so a screen reader can still tell two
-                    // otherwise-identical Bank and Charing Cross rows apart (Codex P2).
-                    modifier = if (resolved.terminus.isEmpty()) {
-                        resolved.contentDescription?.let { full ->
-                            Modifier.semantics { contentDescription = "$full via ${resolved.branch}" }
-                        } ?: Modifier
-                    } else {
-                        Modifier
-                    },
+                    // A shortened branch keeps its full name for a screen reader ("via Newbury Park"),
+                    // and a branch standing alone (no terminus shown) carries BOTH the full terminus
+                    // and the full branch, so two otherwise-identical Bank and Charing Cross rows
+                    // stay distinguishable (Codex P2).
+                    modifier = resolved.branchDescription?.let { spoken ->
+                        Modifier.semantics { contentDescription = spoken }
+                    } ?: Modifier,
                 )
             }
         }
