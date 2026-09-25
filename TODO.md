@@ -1938,6 +1938,12 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   from the new fix. Buses as cards, the loaded-places order, and the pick rule (the nearest station
   of each line in each direction, maintainer 2026-09-25) are next. *Alternative:* open a From…
   page on tap, as the buttons did. **Reversible:** `FartherCardView` and `FartherCardsViewModel`.
+- **Farther stations the other way, by bearing (maintainer, 2026-09-25).** Each line also offers
+  its nearest station more than 90 degrees round from its nearest one, seen from the rider, and the
+  cap rose from five cards to eight (two tube lines, each either way). *Alternative:* the order of
+  stations along each line from TfL's line sequences, exact at branches but a build-time download
+  and a heavier bundled list; switch if bearing picks badly where a line branches. **Reversible:**
+  `FartherStations.OTHER_DIRECTION_DEGREES`, `MAX_BUTTONS`.
 - **Opened farther cards: saved, and on the widget (maintainer, 2026-09-25; to do).** An opened
   card has its own departures model for now, held for the session only: a restart closes it and the
   widget never shows it. The maintainer's follow-up is to treat an opened card as a nearby stop
