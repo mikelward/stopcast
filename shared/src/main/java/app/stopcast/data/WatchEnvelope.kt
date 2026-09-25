@@ -128,12 +128,15 @@ object WatchEnvelopes {
             val ids = kept.mapTo(HashSet()) { it.stopId }
             return allKeys.filter { it.stopId in ids }
         }
-        // A star on a hidden mode's row protects nothing: the watch leaves that row out, as the widget does.
-        val visibleStops = HiddenModes.rows(
-            DepartureRows.across(snapshot.stops, now, splitPlatforms = false),
-            hiddenModes,
-        ).mapTo(HashSet()) { it.stopId }
-        val protectedStops = (starred + selected).map { it.stopId }.filterTo(HashSet()) { it in visibleStops }
+        // A star or a complication's pick protects its stop while the widget would still show its
+        // row ([DepartureRows.shows]): a stop with no predictions right now still counts (the watch
+        // shows the row's empty form), but a hidden mode's row, or one whose services the
+        // terminating filter removes, protects nothing: the watch leaves it out.
+        fun shown(row: StarredRow): Boolean {
+            val stop = snapshot.stops.firstOrNull { it.stopId == row.stopId } ?: return false
+            return DepartureRows.shows(stop, row, hiddenModes, now)
+        }
+        val protectedStops = (starred + selected).filter(::shown).mapTo(HashSet()) { it.stopId }
         val missing = (snapshot.missingStopIds - snapshot.journeyOnlyStopIds).sorted()
 
         val hidden = hiddenModes.sorted()
@@ -206,8 +209,18 @@ object WatchEnvelopes {
      * via branch), so every coarser group keeps at least [cap] too; a branch keeps its own [cap], and
      * a service the terminating filter later hides ([PersistedDeparture.destinationId]) can't crowd
      * out one to a same-named terminus it keeps.
+     *
+     * The exception: before [boundaryMillis], a row direction (line and direction key) with nothing
+     * still to come keeps its departed services. No surface counts them down, but they're the
+     * evidence [DepartureRows.shows] judges the row on, so a row the terminating filter removed
+     * stays removed on the watch after its services leave, as it does on the phone.
      */
     private fun trim(departures: List<PersistedDeparture>, boundaryMillis: Long, nowMillis: Long, cap: Int): List<PersistedDeparture> {
+        fun rowOf(d: PersistedDeparture) = d.lineId to DepartureRows.directionKeyOf(d.toDomain())
+        val live = departures.filter { it.expectedArrivalMillis > nowMillis }.mapTo(HashSet(), ::rowOf)
+        val evidence = if (nowMillis >= boundaryMillis) emptySet() else departures.withIndex()
+            .filter { (_, d) -> d.expectedArrivalMillis <= nowMillis && rowOf(d) !in live }
+            .mapTo(HashSet()) { it.index }
         val upcoming = departures.withIndex().filter { it.value.expectedArrivalMillis > nowMillis }
         val afterBoundary = upcoming
             .filter { it.value.expectedArrivalMillis >= boundaryMillis }
@@ -216,6 +229,7 @@ object WatchEnvelopes {
             .flatMap { group -> group.sortedBy { it.value.expectedArrivalMillis }.take(cap) }
             .mapTo(HashSet()) { it.index }
         val kept = upcoming.filter { it.value.expectedArrivalMillis < boundaryMillis || it.index in afterBoundary }
-        return kept.map { it.value }
+            .mapTo(HashSet()) { it.index } + evidence
+        return departures.filterIndexed { index, _ -> index in kept }
     }
 }

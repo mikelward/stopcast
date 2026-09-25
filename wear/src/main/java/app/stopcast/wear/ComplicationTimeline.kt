@@ -64,21 +64,36 @@ object ComplicationTimeline {
      */
     fun defaultRow(envelope: WatchEnvelope?, now: Instant): StarredRow? {
         envelope ?: return null
-        val stops = envelope.stops.map { it.toDomain() }
         val starred = envelope.starred.map { it.toDomain() }
+        widgetRows(envelope, now).firstOrNull()?.let { return StarredRow.of(it) }
+        return starred.firstOrNull { shows(envelope, it, now) }
+    }
+
+    /**
+     * The service rows the widget shows at [now], in its order, as the tile orders them: fresh
+     * stops' rows before stale ones', hidden modes left out, starred rows pinned first (D8). A
+     * stop's disruption notice is a status line, not a service, so it's never a complication's row.
+     */
+    fun widgetRows(envelope: WatchEnvelope, now: Instant): List<DepartureRow> {
+        val stops = envelope.stops.map { it.toDomain() }
         val stale = stops.associate { it.stopId to isStale(it, now) }
         val ordered = DepartureRows.across(stops, now, splitPlatforms = false)
+            .filter { it.stopDisruption == null }
             .sortedBy { if (stale[it.stopId] == true) 1 else 0 }
         val shown = HiddenModes.rows(ordered, envelope.hiddenModes.toSet())
-        DepartureRows.pinStarred(shown, starred.toSet()).firstOrNull()?.let { return StarredRow.of(it) }
-        val hidden = envelope.hiddenModes.toSet()
-        return starred.firstOrNull { star ->
-            val stop = stops.firstOrNull { it.stopId == star.stopId } ?: return@firstOrNull false
-            val mode = stop.departures.firstOrNull { it.lineId == star.lineId }?.mode
-                ?: stop.lines.firstOrNull { it.id == star.lineId }?.mode
-                ?: return@firstOrNull false
-            !HiddenModes.isHidden(mode, hidden)
-        }
+        return DepartureRows.pinStarred(shown, envelope.starred.mapTo(HashSet()) { it.toDomain() })
+    }
+
+    /**
+     * Whether the widget would still show [row] at [now]: its stop was sent, the stop still serves
+     * its line, the line's mode isn't hidden, and the widget's terminating filter hasn't removed the
+     * line's services here (a nearer stop serves the rider first). A line with no predictions right
+     * now still counts: the row shows its empty form. A star or a pick never adds a service the
+     * widget leaves out.
+     */
+    fun shows(envelope: WatchEnvelope, row: StarredRow, now: Instant): Boolean {
+        val stop = envelope.stops.firstOrNull { it.stopId == row.stopId }?.toDomain() ?: return false
+        return DepartureRows.shows(stop, row, envelope.hiddenModes.toSet(), now)
     }
 
     /**
@@ -94,7 +109,9 @@ object ComplicationTimeline {
     ): List<ComplicationEntry> {
         val noData = listOf(ComplicationEntry(now, null, ComplicationContent.NoData))
         envelope ?: return noData
-        val chosen = row?.takeIf { key -> envelope.stops.any { it.stopId == key.stopId } }
+        // A pick the widget no longer shows (its stop gone, or its mode hidden on the phone) gives
+        // way to the default row; the pick itself is kept, so un-hiding the mode brings it back.
+        val chosen = row?.takeIf { shows(envelope, it, now) }
             ?: defaultRow(envelope, now)
             ?: return noData
         val stop = envelope.stops.first { it.stopId == chosen.stopId }.toDomain()

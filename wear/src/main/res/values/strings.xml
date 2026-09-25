@@ -49,6 +49,16 @@
     <string name="complication_long_unsure">%1$s: may be out of date</string>
     <!-- Long complication: the row's stop is past the staleness threshold. -->
     <string name="complication_long_stale">%1$s: out of date</string>
+    <!-- The complication row picker's title. -->
+    <string name="complication_pick_title">Show which row?</string>
+    <!-- The picker's default: the widget's top row. -->
+    <string name="complication_pick_default">Top row</string>
+    <!-- Under the default: how the top row is chosen. -->
+    <string name="complication_pick_default_detail">Starred first</string>
+    <!-- A row in the picker: line code, then destination. -->
+    <string name="complication_pick_row">%1$s · %2$s</string>
+    <!-- The picker has no rows to offer yet. -->
+    <string name="complication_pick_none">No rows to pick yet</string>
     <!-- Stops left out because the snapshot was too big to send. -->
     <plurals name="watch_more_stops_on_phone">
         <item quantity="one">%d more stop on phone</item>

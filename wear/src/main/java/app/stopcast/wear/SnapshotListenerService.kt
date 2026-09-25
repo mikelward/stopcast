@@ -16,9 +16,11 @@ import com.google.android.gms.wearable.WearableListenerService
 import java.io.IOException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -44,6 +46,9 @@ class SnapshotListenerService : WearableListenerService() {
             .filter { it.type == DataEvent.TYPE_CHANGED && it.dataItem.uri.path == WatchSyncContract.SNAPSHOT_PATH }
             .count { event -> envelopeBytesRetrying(this, event.dataItem)?.let(store::ingest) == true }
         if (ingested > 0) WatchSurfaces.requestUpdate(this)
+        // Re-sends the complications' rows (dropped by the Data Layer when unchanged): heals a
+        // write lost with the process, such as the last complication's removal.
+        if (ingested > 0) ComplicationSelections.syncNow(this)
     }
 
     private companion object {
@@ -147,6 +152,22 @@ internal object WatchSurfaces {
         if (!lookedUp.compareAndSet(false, true)) return
         val appContext = context.applicationContext
         scope.launch { if (!ingestExisting(appContext, store)) lookedUp.set(false) }
+    }
+
+    /** The waits before each retry of [lookUpRetrying]; after the last, the next start (or a publish) tries again. */
+    val LOOKUP_RETRIES = listOf(5.seconds, 15.seconds, 45.seconds)
+
+    /**
+     * Looks up the phone's latest item ([ingestExisting]), retrying a lookup that failed (logged) a
+     * few times: for a screen while it's started, so a transient failure doesn't leave it empty.
+     */
+    suspend fun lookUpRetrying(context: Context, store: WatchEnvelopeStore) {
+        var looked = ingestExisting(context, store)
+        for (wait in LOOKUP_RETRIES) {
+            if (looked) break
+            delay(wait)
+            looked = ingestExisting(context, store)
+        }
     }
 
     /** Asks the tile and every StopCast complication to re-render from the stored envelope. */

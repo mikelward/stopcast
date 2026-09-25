@@ -232,6 +232,8 @@ jobs:
       # pipeline records, diffs and commits them.
       - name: Run WatchHome screenshot tests
         run: ./gradlew :wear:testDebugUnitTest --tests "app.stopcast.wear.WatchHomeScreenshotTest" -Proborazzi.test.record=true
+      - name: Run ComplicationPicker screenshot tests
+        run: ./gradlew :wear:testDebugUnitTest --tests "app.stopcast.wear.ComplicationPickerScreenshotTest" -Proborazzi.test.record=true
       - name: Print failing test details
         if: failure()
         run: |

@@ -56,7 +56,22 @@
             <meta-data
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
                 android:value="0" />
+            <meta-data
+                android:name="android.support.wearable.complications.PROVIDER_CONFIG_ACTION"
+                android:value="app.stopcast.wear.CONFIGURE_COMPLICATION" />
         </service>
+
+        <!-- The complication's row picker, opened from the watch face's editor. -->
+        <activity
+            android:name=".ComplicationConfigActivity"
+            android:exported="true"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="app.stopcast.wear.CONFIGURE_COMPLICATION" />
+                <category android:name="android.support.wearable.complications.category.PROVIDER_CONFIG" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".SnapshotListenerService"

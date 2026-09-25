@@ -17,6 +17,13 @@ object WatchSyncContract {
      *  them to the watch in order. */
     const val GENERATION_KEY = "generation"
 
+    /** The `DataItem` path a watch writes the rows its complications are set to, so the phone
+     *  keeps them in every envelope ([WatchComplicationRows]). */
+    const val COMPLICATION_ROWS_PATH = "/stopcast/complication-rows"
+
+    /** The rows' key in that item: [WatchComplicationRows.encode]'s bytes. */
+    const val COMPLICATION_ROWS_KEY = "rows"
+
     /** The message path a watch sends to ask the phone for one refresh of the widget's stops. */
     const val REFRESH_PATH = "/stopcast/refresh"
 

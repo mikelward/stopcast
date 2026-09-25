@@ -169,6 +169,59 @@ class WatchEnvelopeTest {
     }
 
     @Test
+    fun `a picked row's stop with no predictions right now is still protected`() {
+        val busy = (1..10).map { stop("940GSTOP$it", listOf(departure(2))) }
+        val quiet = StopArrivals(
+            stopId = "940GQUIET",
+            stopName = "Stop 940GQUIET",
+            departures = emptyList(),
+            fetchedAt = now,
+            lines = listOf(LineRef("victoria", "Victoria", "tube")),
+        )
+        val snapshot = DeparturesSnapshot(stops = busy + quiet, fetchedAt = now)
+        val full = WatchEnvelopes.build(snapshot, emptySet(), now = now).bytes.size
+        val pick = StarredRow("940GQUIET", "victoria", "inbound")
+        val envelope = decoded(WatchEnvelopes.build(snapshot, emptySet(), selected = setOf(pick), dataItemBudget = 100, transferCeiling = full / 2, now = now))
+        assertTrue(envelope.omittedStops > 0)
+        assertTrue("the complication shows its empty form, not the default", envelope.stops.any { it.stopId == "940GQUIET" })
+        // A pick on a line the stop doesn't serve protects nothing.
+        val stray = StarredRow("940GQUIET", "central", "inbound")
+        val without = decoded(WatchEnvelopes.build(snapshot, emptySet(), selected = setOf(stray), dataItemBudget = 100, transferCeiling = full / 2, now = now))
+        assertFalse(without.stops.any { it.stopId == "940GQUIET" })
+    }
+
+    @Test
+    fun `a pick whose services all terminate nearer protects nothing`() {
+        val busy = (1..10).map { stop("940GSTOP$it", listOf(departure(2))) }
+        val ending = departure(2, destination = "Near").copy(destinationId = "940GNEAR")
+        val filtered = stop("940GFILTERED", listOf(ending)).copy(nearer = Terminating.Nearer(ids = setOf("940GNEAR")))
+        val snapshot = DeparturesSnapshot(stops = busy + filtered, fetchedAt = now)
+        val full = WatchEnvelopes.build(snapshot, emptySet(), now = now).bytes.size
+        val pick = StarredRow("940GFILTERED", "victoria", "inbound")
+        val envelope = decoded(WatchEnvelopes.build(snapshot, emptySet(), selected = setOf(pick), dataItemBudget = 100, transferCeiling = full / 2, now = now))
+        assertTrue(envelope.omittedStops > 0)
+        assertFalse(envelope.stops.any { it.stopId == "940GFILTERED" })
+    }
+
+    @Test
+    fun `a row the terminating filter removed stays removed after its services leave`() {
+        // Fetched 2 min ago: the one service ending nearer has departed, the stop is still fresh.
+        val ending = departure(-1, destination = "Near").copy(destinationId = "940GNEAR")
+        val other = departure(3, destination = "Walthamstow Central", direction = "outbound")
+        val filtered = stop("940GFILTERED", listOf(ending, other), fetchedAt = now.minusSeconds(120))
+            .copy(nearer = Terminating.Nearer(ids = setOf("940GNEAR")))
+        val row = StarredRow("940GFILTERED", "victoria", "inbound")
+        assertFalse(DepartureRows.shows(filtered, row, emptySet(), now))
+
+        val republished = decoded(WatchEnvelopes.build(DeparturesSnapshot(listOf(filtered), now), emptySet(), now = now)).stops.single()
+        assertFalse(DepartureRows.shows(republished.toDomain(), row, emptySet(), now))
+        // It carries no departed service a live direction doesn't need, and none past the boundary.
+        assertEquals(1, republished.departures.count { it.expectedArrivalMillis <= now.toEpochMilli() })
+        val stale = decoded(WatchEnvelopes.build(DeparturesSnapshot(listOf(filtered), now), emptySet(), now = now.plusSeconds(240))).stops.single()
+        assertEquals(0, stale.departures.count { it.expectedArrivalMillis <= now.plusSeconds(240).toEpochMilli() })
+    }
+
+    @Test
     fun `an envelope from a newer phone is refused, not misread`() {
         val newer = """{"version":${WatchEnvelope.CURRENT_VERSION + 1},"stops":[{"somethingNew":1}]}"""
         assertEquals(WatchDecode.UnsupportedVersion(WatchEnvelope.CURRENT_VERSION + 1), WatchEnvelopes.decode(newer.encodeToByteArray()))

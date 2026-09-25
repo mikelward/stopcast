@@ -215,7 +215,7 @@ private fun Departure.toPersisted(): PersistedDeparture =
         destinationId = destinationId,
     )
 
-private fun PersistedDeparture.toDomain(): Departure =
+internal fun PersistedDeparture.toDomain(): Departure =
     Departure(
         lineId = lineId,
         lineName = lineName,

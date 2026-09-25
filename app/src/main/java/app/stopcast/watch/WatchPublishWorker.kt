@@ -12,6 +12,8 @@ import androidx.work.workDataOf
 import app.stopcast.data.WatchRefreshReply
 import app.stopcast.data.WatchSyncContract
 import com.google.android.gms.wearable.CapabilityInfo
+import com.google.android.gms.wearable.DataEvent
+import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
@@ -85,6 +87,15 @@ class PhoneWearListenerService : WearableListenerService() {
         Wearable.getMessageClient(this)
             .sendMessage(event.sourceNodeId, WatchSyncContract.REFRESH_ACK_PATH, WatchRefreshReply.encodeRequest(requestId))
             .addOnFailureListener { e -> StopcastDebugLog.warning("watch: refresh ack failed: %s", e::class.simpleName) }
+    }
+
+    /** The rows the watch's complications are set to changed: keep them, and republish if so. */
+    override fun onDataChanged(events: DataEventBuffer) {
+        var changed = false
+        for (event in events) {
+            if (ComplicationRowsStore.ingest(this, event.dataItem, deleted = event.type == DataEvent.TYPE_DELETED)) changed = true
+        }
+        if (changed) WatchPublishWorker.enqueue(this, force = false)
     }
 
     override fun onCapabilityChanged(info: CapabilityInfo) {
