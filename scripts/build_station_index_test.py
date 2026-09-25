@@ -3,9 +3,13 @@
 import os
 import sys
 import unittest
+import urllib.error
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from build_station_index import build_index, checked_hub_batch, modes_without_lines, required_points, station_points  # noqa: E402
+from build_station_index import (  # noqa: E402
+    add_route_ends, build_index, fetch, checked_hub_batch, modes_without_lines, required_points, route_ends, station_points,
+)
 
 
 def stop(sid, name, modes, stop_type="NaptanMetroStation", hub="", lat=51.5, lon=-0.12):
@@ -81,6 +85,26 @@ class BuildIndexTest(unittest.TestCase):
         dlr["lineModeGroups"] = [{"modeName": "dlr", "lineIdentifier": ["dlr"]}]
         self.assertEqual([], modes_without_lines(build_index([tube, dlr], [])))
 
+    def test_each_rail_station_carries_the_ends_of_the_routes_it_is_on(self):
+        # Thameslink from two stations: one on the Bedford route, one on the Cambridge route.
+        sequences = [{"orderedLineRoutes": [
+            {"name": "Brighton - Bedford", "naptanIds": ["910GSOUTH", "910GTOWN", "910GNORTHA"]},
+            {"name": "Brighton - Cambridge", "naptanIds": ["910GSOUTH", "910GPARK", "910GNORTHB"]},
+            {"name": "Stub", "naptanIds": ["910GALONE"]},
+        ]}, None]
+        ends = route_ends(sequences)
+        self.assertEqual({"910GSOUTH", "910GNORTHA"}, ends["910GTOWN"])
+        self.assertEqual({"910GSOUTH", "910GNORTHB"}, ends["910GPARK"])
+        self.assertNotIn("910GALONE", ends, "a one-stop route has no ends")
+        self.assertEqual({"910GNORTHA", "910GNORTHB"}, ends["910GSOUTH"], "a terminus reaches the far ends, not itself")
+
+        town = stop("910GTOWN", "Town Rail Station", ["national-rail"], "NaptanRailStation")
+        town["lineModeGroups"] = [{"modeName": "national-rail", "lineIdentifier": ["thameslink", "other"]}]
+        index = add_route_ends(build_index([town], []), {"thameslink": ends})
+        entry = index["stations"][0]
+        self.assertEqual({"thameslink": ["910GNORTHA", "910GSOUTH"]}, entry["routeEnds"],
+                         "a service without route data is left to count by line")
+
     def test_far_away_platform_and_modeless_stops_are_left_out(self):
         index = build_index(
             [
@@ -124,6 +148,33 @@ class BuildIndexTest(unittest.TestCase):
         for found in ([hub_a], [], None):
             with self.assertRaises(SystemExit):
                 checked_hub_batch(["HUBEXA", "HUBEXB"], found)
+
+class FetchTest(unittest.TestCase):
+    def http_error(self, code, retry_after=None):
+        headers = {"Retry-After": retry_after} if retry_after else {}
+        return urllib.error.HTTPError("https://api.tfl.gov.uk/x", code, "error", headers, None)
+
+    def test_a_rate_limit_waits_and_retries(self):
+        body = mock.MagicMock()
+        body.__enter__.return_value.read.return_value = b'{"ok": true}'
+        waits = []
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=[self.http_error(429, "90"), self.http_error(429), body]):
+            self.assertEqual({"ok": True}, fetch("/x", retry_delays=(5, 15), sleep=waits.append))
+        self.assertEqual([90, 60], waits, "TfL's Retry-After, else a minute")
+
+    def test_a_client_error_is_not_retried(self):
+        waits = []
+        with mock.patch("urllib.request.urlopen", side_effect=[self.http_error(404)]):
+            with self.assertRaises(urllib.error.HTTPError):
+                fetch("/x", retry_delays=(5,), sleep=waits.append)
+        self.assertEqual([], waits)
+
+    def test_a_rate_limit_that_persists_fails_the_build(self):
+        with mock.patch("urllib.request.urlopen", side_effect=[self.http_error(429)] * 2):
+            with self.assertRaises(urllib.error.HTTPError):
+                fetch("/x", retry_delays=(5,), sleep=lambda _: None)
+
 
 if __name__ == "__main__":
     unittest.main()

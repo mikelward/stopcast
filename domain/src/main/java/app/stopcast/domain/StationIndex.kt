@@ -16,6 +16,9 @@ data class IndexedStation(
     val longitude: Double? = null,
     // Mode → line ids: tube lines, National Rail services, Overground lines, and so on.
     val lines: Map<String, List<String>> = emptyMap(),
+    // National Rail service → the ends of the routes this station is on (station ids), where TfL
+    // gave route data: one service runs to different places from different stations.
+    val routeEnds: Map<String, List<String>> = emptyMap(),
 )
 
 /**

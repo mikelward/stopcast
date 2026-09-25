@@ -1923,12 +1923,12 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   Branches aren't split (TfL has no branch ids for National Rail). *Alternatives:* per mode for
   non-tube, a branch rule, a larger cap, a distance line, a TfL lookup. **Reversible:**
   `FartherStations` constants and the footer.
-  **Follow-up:** count **routes, not lines** (maintainer, 2026-09-25): Thameslink through one
-  station runs to different ends (Luton, Bedford) than through another (Cambridge, Peterborough),
-  so the second is a real choice a line rule drops. TfL's `/Line/{id}/Route/Sequence` names each
-  route by its ends; the index builder could record each station's routes (build-time requests
-  only) and `FartherStations` offer a station on a route nothing nearby is on. Watch the noise at
-  busy south London junctions, where the five-button cap would do the work.
+  **Routes, not lines, for National Rail (autopilot, 2026-09-25):** a station counts per route end
+  its services run to, from TfL's `/Line/{id}/Route/Sequence` at index build time. Taken for National
+  Rail only; tube branches, the Elizabeth line's branches and Overground lines stay by line (the
+  Overground's named lines are already route-sized). *Alternative:* branches for the tube too, or
+  whole route names as keys. Watch the noise at busy south London junctions, where the five-button
+  cap does the work. **Reversible:** `FartherStations.reasonsOf`.
 - **From… stands at the middle of the station's stops (autopilot, 2026-09-24).** The maintainer
   asked for From… to be "like setting your location to there"; the point used is the mean of the
   station's placed stops, and the near-me list's picking (nearest of each mode within a mile, the

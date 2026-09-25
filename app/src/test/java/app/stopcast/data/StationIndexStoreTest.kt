@@ -27,7 +27,8 @@ class StationIndexStoreTest {
             """
             {"version":1,"stations":[
               {"id":"940GZZLUEXA","name":"Example","modes":["tube"],"lat":51.5,"lon":-0.12,"modeLines":{"tube":["northern"]}},
-              {"id":"910GEXAMPLE","name":"Example Rail","modes":["national-rail"],"lines":["northern"]}
+              {"id":"910GEXAMPLE","name":"Example Rail","modes":["national-rail"],"lines":["northern"],
+               "modeLines":{"national-rail":["thameslink"]},"routeEnds":{"thameslink":["910GNORTH","910GSOUTH"]}}
             ]}
             """.trimIndent(),
         )
@@ -36,7 +37,9 @@ class StationIndexStoreTest {
         assertEquals(-0.12, tube.longitude!!, 0.0)
         assertEquals(mapOf("tube" to listOf("northern")), tube.lines)
         assertEquals(null, rail.latitude)
-        assertTrue(rail.lines.isEmpty())
+        assertEquals(mapOf("national-rail" to listOf("thameslink")), rail.lines)
+        assertEquals(mapOf("thameslink" to listOf("910GNORTH", "910GSOUTH")), rail.routeEnds)
+        assertTrue(tube.routeEnds.isEmpty())
     }
 
     @Test

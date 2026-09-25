@@ -972,8 +972,14 @@ class MainActivity : ComponentActivity() {
                     value = emptyList()
                     return@produceState
                 }
-                val reached = ready.nearbyStops.flatMap { it.lines }
-                    .mapTo(HashSet()) { FartherStations.Line(it.mode.lowercase(), it.id) }
+                // Each nearby stop's lines, and its ids: its index record says which route ends its
+                // services reach.
+                val reached = ready.nearbyStops.map { stop ->
+                    FartherStations.ReachedStop(
+                        ids = setOf(stop.id, stop.clusterId, stop.hubId).filterTo(HashSet()) { it.isNotBlank() },
+                        lines = stop.lines.mapTo(HashSet()) { FartherStations.Line(it.mode.lowercase(), it.id) },
+                    )
+                }
                 value = withContext(Dispatchers.IO) {
                     FartherStations.pick(StationIndexStore.load(appContext).stations, ready.location, reached, hiddenModes)
                         .map { it.station }
