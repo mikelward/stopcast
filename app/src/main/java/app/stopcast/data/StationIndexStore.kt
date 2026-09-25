@@ -62,7 +62,17 @@ object StationIndexStore {
         return StationIndex(
             file.stations
                 .filter { it.id.isNotBlank() && it.name.isNotBlank() }
-                .map { IndexedStation(id = it.id, name = cleanStopName(it.name), modes = it.modes, hubId = it.hub) },
+                .map {
+                    IndexedStation(
+                        id = it.id,
+                        name = cleanStopName(it.name),
+                        modes = it.modes,
+                        hubId = it.hub,
+                        latitude = it.lat,
+                        longitude = it.lon,
+                        tubeLines = it.lines,
+                    )
+                },
         )
     }
 
@@ -78,5 +88,9 @@ object StationIndexStore {
         val name: String = "",
         val modes: List<String> = emptyList(),
         val hub: String = "",
+        // Added without a version bump: an older index simply lacks them (no "From …" buttons).
+        val lat: Double? = null,
+        val lon: Double? = null,
+        val lines: List<String> = emptyList(),
     )
 }

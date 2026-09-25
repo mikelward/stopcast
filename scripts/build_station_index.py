@@ -4,7 +4,8 @@
 Writes the JSON the app reads as `assets/stations/station_index.json`: every tube, DLR,
 Overground, Elizabeth line, tram, National Rail and pier station in and around London, plus
 the interchanges ("hubs") that group them, each with its TfL id, name as TfL spells it (the
-app cleans it), modes, and hub. Bus stops are left to TfL's live search: there are ~20,000.
+app cleans it), modes, and hub; a station also carries its position and its tube lines, so the
+near-me list can name the nearest station of a line or mode it doesn't reach ("From …"). Bus stops are left to TfL's live search: there are ~20,000.
 
 Built from TfL's per-mode stop lists (`/StopPoint/Mode/{mode}`), one mode at a time, and its
 rail-station listing for National Rail. Every listing is required: a failed or empty one stops
@@ -100,7 +101,13 @@ def build_index(stops, hubs):
         if not sid or not name or not modes or stop.get("stopType") not in STOP_TYPES or not in_london(stop):
             continue
         hub = stop.get("hubNaptanCode") or ""
-        stations[sid] = {"id": sid, "name": name, "modes": modes, **({"hub": hub} if hub else {})}
+        lines = tube_lines(stop)
+        stations[sid] = {
+            "id": sid, "name": name, "modes": modes, **({"hub": hub} if hub else {}),
+            # Five decimals is about a meter: plenty to measure how far a station is.
+            "lat": round(stop["lat"], 5), "lon": round(stop["lon"], 5),
+            **({"lines": lines} if lines else {}),
+        }
         if hub:
             hub_modes.setdefault(hub, set()).update(modes)
     for hub in hubs:
@@ -110,6 +117,15 @@ def build_index(stops, hubs):
             stations[hid] = {"id": hid, "name": name, "modes": sorted(hub_modes[hid])}
     # Sorted by id so a refresh's diff shows only what TfL changed.
     return {"version": FORMAT_VERSION, "stations": [stations[k] for k in sorted(stations)]}
+
+
+def tube_lines(stop):
+    """The tube lines serving [stop], from TfL's lineModeGroups (sorted ids; empty for none)."""
+    lines = set()
+    for group in stop.get("lineModeGroups") or []:
+        if group.get("modeName") == "tube":
+            lines.update(group.get("lineIdentifier") or [])
+    return sorted(lines)
 
 
 def fetch_hubs(hub_ids):
@@ -159,6 +175,9 @@ def main(argv):
     # Only the hubs of stations the index can keep: a far-off rail station's hub isn't needed.
     hub_ids = {s.get("hubNaptanCode") for s in stops if s.get("hubNaptanCode") and in_london(s)}
     index = build_index(stops, fetch_hubs(hub_ids))
+    if not any(s.get("lines") for s in index["stations"]):
+        # TfL answered without line groups: the index would name no line's nearest station.
+        sys.exit("no tube station carries its lines; refusing to write an index without them")
     if len(index["stations"]) < 200:
         # A near-empty result means TfL answered oddly; keep the committed index rather than
         # shipping a list that can't find most stations.
