@@ -53,7 +53,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -189,6 +188,9 @@ fun MainScreen(
     now: Instant,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
+    // The app bar's crosshairs: "use my location". Null runs [onRefresh], which on the near-me list
+    // and a trip from here re-locates; a From… station page passes a return to the near-me list.
+    onLocate: (() -> Unit)? = null,
     // The full list's scroll position. Hoisted by the caller above the route page and the overlays,
     // which take this screen (or its list) out of composition, so a return lands where it was.
     listState: LazyListState = rememberLazyListState(),
@@ -990,11 +992,10 @@ fun MainScreen(
                 },
                 actions = {
                     FreshnessStamp(state, now, onRefresh)
-                    // Refresh re-resolves the nearby set (a fresh location fix) as well as
-                    // re-fetching departures, so walking to the next stop and pulling to refresh
-                    // updates both — there's no separate locate control (SPEC *Finding stops*).
-                    IconButton(onClick = onRefresh) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
+                    // Crosshairs: "use my location" (SPEC *Finding stops*). Near me it re-locates, as
+                    // pull-to-refresh does; on a From… station page it goes back to the near-me list.
+                    IconButton(onClick = onLocate ?: onRefresh) {
+                        Icon(CrosshairIcon, contentDescription = stringResource(R.string.locate_here))
                     }
                     // A station's "To…": pick where to, and keep only the departures that go there.
                     if (stationTitle != null && onPlanTo != null && platformRows == null && !journeyViewOpen) {

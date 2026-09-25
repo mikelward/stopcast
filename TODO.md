@@ -1983,8 +1983,9 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   squeezed and can ellipsize (Codex P2 on #67, deferred with maintainer's sign-off). Accepted
   as-is; the fix is to **slim the action row**. **Partly done:** the crosshairs/locate button
   is now gone (refresh + pull-to-refresh re-locate as well as re-fetch — the milestone-C
-  auto-locate work), which frees one slot. Remaining if the bar is still tight: drop the
-  refresh button too (pull-to-refresh covers it), moving anything left to the overflow menu.
+  auto-locate work), which frees one slot. The refresh button has since become a crosshairs
+  ("use my location"; on a From… station, back to near me), so the row is no wider than before.
+  Remaining if the bar is still tight: move anything left to the overflow menu.
   Reversible — layout-only, no data path.
 - [x] **Re-locate on a return to the foreground (between C and A)** — shipped (PR #134). Reopening
       the app after it was backgrounded now runs the same re-locate as the refresh control (a fresh

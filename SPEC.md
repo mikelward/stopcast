@@ -63,7 +63,7 @@ The app finds stops two ways:
   on-demand action, never a background one.
 
   The fix is taken when the near-me view first resolves, **on every refresh**, and **on a
-  return to the foreground** (maintainer, 2026-09-23): the refresh control and pull-to-refresh
+  return to the foreground** (maintainer, 2026-09-23): the crosshairs and pull-to-refresh
   re-resolve the nearby set as well as re-fetching departures, and reopening the app after it was
   backgrounded does the same, so a user walking from stop to stop sees the set follow them without
   a manual pull (the common "walk to the next stop and check" case). It stays **foreground and
@@ -87,8 +87,13 @@ The app finds stops two ways:
   honestly, not swallowed** (principles 1–2): a failed fix, an unreachable lookup, or an
   out-of-range "no stops nearby" replaces the list rather than leaving a previous location's
   stops on screen as if current (cards omit the stop name, so a stale set is
-  indistinguishable from the real one). There is therefore **no separate "locate" control** —
-  the refresh control and a foreground return both do it.
+  indistinguishable from the real one). The app bar carries a **crosshairs** ("use my location")
+  in place of a refresh button (maintainer, 2026-09-25): a Refresh button that also moved the
+  list read as unclear. On the near-me list, and a trip from here, it re-locates as above; on a
+  **From…** station page, and a trip from it — loading, failed or empty included — it leaves the
+  station for the near-me list. The
+  one-minute auto-refresh keeps departures live, and pull-to-refresh still refreshes (re-locating
+  near me), so no separate refresh control is needed.
 
   A fix the device can't refresh — the fresh attempt failed and a **bounded last-known** fix is
   used instead (no GPS underground, where a station's Wi-Fi also places the network provider at a

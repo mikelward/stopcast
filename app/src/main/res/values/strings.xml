@@ -20,6 +20,8 @@
          trust — say it may be out of date and prompt a refresh (SPEC D4). -->
     <string name="departures_stale_empty">Departures may be out of date</string>
     <string name="refresh">Refresh</string>
+    <!-- The app bar's crosshairs: re-locate, or back to the near-me list from a From… station. -->
+    <string name="locate_here">Use my location</string>
     <!-- Star (pin-to-top) on a departure card, toggled by a long-press on the card; a pinned
          card is marked by a gold border, not an in-row element. `star` / `unstar` are the
          long-press action labels, so they flip with the state (a screen reader hears what the
