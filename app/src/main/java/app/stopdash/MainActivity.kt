@@ -122,6 +122,7 @@ import app.stopdash.ui.MainViewModel
 import app.stopdash.ui.NearbyStopsViewModel
 import app.stopdash.domain.NearbySelection
 import app.stopdash.domain.SnapshotStore
+import app.stopdash.domain.FartherBuses
 import app.stopdash.domain.FartherStations
 import app.stopdash.ui.FartherLoad
 import app.stopdash.ui.DeparturesUiState
@@ -1024,15 +1025,19 @@ class MainActivity : ComponentActivity() {
             val loadedStopIds = (state as? DeparturesUiState.Loaded)?.stops?.mapTo(HashSet()) { it.stopId }
             val reachedStops = remember(shownNearStops, loadedStopIds) { fartherReached(shownNearStops, loadedStopIds) }
             // Every list offers them, near me and a From… station's page alike (SPEC *Finding stops
-            // → Farther stations*): only buses keep a "More", so the cards are how stations page in.
+            // → Farther stations*): the cards are how farther stations and bus stops page in.
             val farther by produceState<List<CollapsedPlaces.Place>?>(null, ready, hiddenModes, reachedStops) {
                 // Each shown nearby stop's lines, and its ids: its index record says which route
                 // ends its services reach.
                 val reached = reachedStops
+                // The candidate bus places come from the nearby lookup's farther tier, already in
+                // memory; the screen narrows them to the cards to show, against the rows it draws.
+                val buses = FartherBuses.candidates(ready.more, hiddenModes).map { CollapsedPlaces.of(it) }
                 value = withContext(Dispatchers.IO) {
                     val index = StationIndexStore.load(appContext)
-                    FartherStations.pick(index.stations, ready.location, reached, hiddenModes)
+                    val stations = FartherStations.pick(index.stations, ready.location, reached, hiddenModes)
                         .map { CollapsedPlaces.of(it, index.lineNames) }
+                    CollapsedPlaces.ordered(stations, buses)
                 }
             }
             val hiddenModesWriteFailed by HiddenModesSetting.writeFailed.collectAsStateWithLifecycle()
@@ -1081,8 +1086,6 @@ class MainActivity : ComponentActivity() {
             val starWriteFailed by viewModel.starWriteFailed.collectAsStateWithLifecycle()
             val dismissed by viewModel.dismissed.collectAsStateWithLifecycle()
             val dismissWriteFailed by viewModel.dismissWriteFailed.collectAsStateWithLifecycle()
-            // The "More" buttons to offer — modes with a farther cluster still to page in.
-            val revealableModes by viewModel.moreState.collectAsStateWithLifecycle()
             // Each farther station's collapsed card and where it stands; a relocation keeps the ones
             // still offered open, measured from the new fix.
             // An opened card has its own departures model, as a From… page's station does, kept in
@@ -1343,13 +1346,10 @@ class MainActivity : ComponentActivity() {
                     },
                     updateAvailable = updateAvailable,
                     onOpenAppListing = onOpenAppListing,
-                    revealableModes = revealableModes,
                     farther = fartherCards,
-                    // Ignored while a relocation's fresh fix is in flight, like "More".
+                    // Ignored while a relocation's fresh fix is in flight, so a tap can't open a card
+                    // picked from the pre-fix set.
                     onOpenFarther = { place -> if (!relocatingNow) fartherModels.open(place, ready.location) },
-                    // Ignore a "More" tap while a relocation's fresh fix is in flight, so it can't
-                    // page the pre-fix set as current (matches the cancel-on-relocate discipline).
-                    onReveal = { mode -> if (!relocatingNow) viewModel.reveal(mode) },
                     onSendBugReport = onSendBugReport,
                     locationBanner = locationBannerNow,
                     // Hiding filters the list at once; the hidden mode's stops stop being fetched

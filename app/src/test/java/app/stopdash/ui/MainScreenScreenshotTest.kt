@@ -1344,82 +1344,93 @@ class MainScreenScreenshotTest {
     }
 
     @Test
-    fun `the near-me list shows per-mode More controls`() {
-        // At a dense corner the farther bus clusters wait behind a "More bus stops" control at the
-        // foot of the list (SPEC *Finding stops → Near me now*); stations have the farther-station
-        // cards instead, so a station mode's pending cluster adds no button. Captured as a baseline so the footer layout is covered visually; a
-        // short (one-stop) list keeps the footer on screen. Public names, synthetic distance.
-        capture("main-more-controls.png") {
-            MainScreen(
-                DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
-                now,
-                {},
-                stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
-                revealableModes = setOf("bus", "tube"),
-            )
-        }
-        composeRule.onNodeWithText("More bus stops").assertExists()
-        composeRule.onNodeWithText("More Tube stations").assertDoesNotExist()
-    }
-
-    @Test
-    fun `More stays reachable when the near-me list is empty`() {
-        // When the nearest clusters return nothing, the farther ones are most useful — the "More"
-        // controls render in the empty loaded state too (SPEC principle 2). Logic-only, no baseline.
+    fun `a farther bus card names only routes the list doesn't show, and a dismissed alert doesn't count`() {
+        // The near stop runs route 73 and has a status alert for 390 (no 390 departures). The farther
+        // place serves both, so while both show it has nothing to add; once the 390 alert is dismissed
+        // the list no longer shows 390, and the card offers it (SPEC *Finding stops → Farther
+        // stations*). Synthetic ids and a stand-in name. Logic-only, no baseline.
+        val diverted = LineStatus("390", 3, "Diverted")
+        val near = StopArrivals(
+            "490000001A", "Example Road",
+            listOf(dep("73", "73", "outbound", "Stoke Newington", 120, "", mode = "bus")),
+            fetchedAt = now.minusSeconds(60),
+            lines = listOf(LineRef("73", "73", "bus"), LineRef("390", "390", "bus")),
+        )
+        var dismissed by mutableStateOf(emptySet<DismissedAlert>())
         composeRule.setContent {
             StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
-                        DeparturesUiState.Loaded(emptyList(), now.minusSeconds(30)),
+                        DeparturesUiState.Loaded(listOf(near), now.minusSeconds(60), lineStatuses = mapOf("390" to diverted)),
                         now,
                         {},
-                        stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
-                        revealableModes = setOf("bus"),
+                        stopDistanceMeters = mapOf("490000001A" to 40.0),
+                        farther = listOf(FartherCard(busPlace("490G00000009", "Farther Road", 650.0, "73", "390"))),
+                        dismissed = dismissed,
                     )
                 }
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("No upcoming departures").assertExists()
-        composeRule.onNodeWithText("More bus stops").assertExists()
+        composeRule.onAllNodesWithText("Diverted", substring = true).onFirst().assertExists()
+        composeRule.onNodeWithText("Farther Road").assertDoesNotExist()
+
+        dismissed = setOf(DismissedAlert.ofLineStatus(diverted))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Farther Road").assertExists()
+        composeRule.onNodeWithText("390").assertExists()
     }
 
     @Test
-    fun `tapping a More control reveals that mode`() {
-        // The footer button hands its mode to onReveal, so the ViewModel pages that mode's clusters.
-        var revealed: String? = null
+    fun `a route an opened bus card turns out to run isn't offered again by a later card`() {
+        // The opened card's place listed only 30, but its pole has a live 55 (TfL can run a route a
+        // stop didn't list). A later card offering 55 would repeat what's already on screen under the
+        // opened card, so it goes; the opened card stays. Synthetic ids and stand-in names.
+        val nearStop = StopArrivals(
+            "490000001A", "Example Road",
+            listOf(dep("73", "73", "outbound", "Stoke Newington", 120, "", mode = "bus")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        val openedStop = StopArrivals(
+            "490000009A", "Farther Road",
+            listOf(dep("55", "55", "outbound", "Oxford Circus", 240, "", mode = "bus")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        val opened = busPlace("490G00000009", "Farther Road", 650.0, "30")
         composeRule.setContent {
             StopDashTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MainScreen(
-                        DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
+                        DeparturesUiState.Loaded(listOf(nearStop, openedStop), now.minusSeconds(60)),
                         now,
                         {},
-                        stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
-                        revealableModes = setOf("bus"),
-                        onReveal = { revealed = it },
+                        stopDistanceMeters = mapOf("490000001A" to 40.0, "490000009A" to 650.0),
+                        farther = listOf(
+                            FartherCard(opened, FartherLoad.Open(emptyList(), mapOf("490000009A" to 650.0))),
+                            FartherCard(busPlace("490G00000010", "Further Lane", 800.0, "55")),
+                        ),
                     )
                 }
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("More bus stops").performClick()
-        composeRule.runOnIdle { assertEquals("bus", revealed) }
+        composeRule.onAllNodesWithText("Oxford Circus", substring = true).onFirst().assertExists()
+        composeRule.onNodeWithText("Further Lane").assertDoesNotExist()
     }
 
     @Test
     fun `the near-me list shows farther stations as collapsed cards`() {
         // Below the loaded places, a collapsed card each for the nearest station of a line nothing
-        // nearby reaches: its name and distance, the lines it adds, and a cue (SPEC *Finding stops →
-        // Farther stations*). One is loading and one failed, to show those cues. Public station
-        // names as stand-ins, not anyone's surroundings.
+        // nearby reaches, and for a farther bus place with routes the list doesn't show: its name
+        // and distance, the lines it adds, and a cue (SPEC *Finding stops → Farther stations*). The
+        // bus place sits below the stations within a mile. One card is loading and one failed, to
+        // show those cues. Public station names as stand-ins, not anyone's surroundings.
         capture("main-farther-stations.png") {
             MainScreen(
                 DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
                 now,
                 {},
                 stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
-                revealableModes = setOf("bus"),
                 farther = listOf(
                     FartherCard(fartherPlace(
                         "940GZZLUWHM", "West Ham", 1_600.0,
@@ -1427,13 +1438,16 @@ class MainScreenScreenshotTest {
                         Triple("hammersmith-city", "Hammersmith & City", "tube"),
                         Triple("c2c", "c2c", "national-rail"),
                     )),
+                    FartherCard(busPlace("490G00000001", "King's Cross Station", 650.0, "73", "390")),
                     FartherCard(fartherPlace("910GMRYLAND", "Maryland", 2_100.0, Triple("elizabeth", "Elizabeth line", "elizabeth-line")), FartherLoad.Loading),
                     FartherCard(fartherPlace("910GCLPHMJC", "Clapham Junction", 4_200.0, Triple("southern", "Southern", "national-rail")), FartherLoad.Failed),
                 ),
             )
         }
         composeRule.onNodeWithText("West Ham").assertExists()
-        composeRule.onNodeWithText("Tap to see").assertExists()
+        composeRule.onNodeWithText("King's Cross Station").assertExists()
+        composeRule.onNodeWithText("73").assertExists()
+        composeRule.onAllNodesWithText("Tap to see").assertCountEquals(2)
         composeRule.onNodeWithText("Loading…").assertExists()
         composeRule.onNodeWithText("Tap to retry").assertExists()
     }
@@ -1506,6 +1520,16 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithContentDescription("No departures").assertExists()
         composeRule.onNodeWithText("Loading…").assertDoesNotExist()
     }
+
+    private fun busPlace(id: String, name: String, meters: Double, vararg routes: String) =
+        CollapsedPlaces.Place(
+            key = "bus:$id",
+            stationId = "",
+            name = name,
+            meters = meters,
+            lines = routes.map { LineRef(it, it, "bus") },
+            stops = listOf(StopLocation("${id}A", name, 0.0, 0.0, routes.map { LineRef(it, it, "bus") }, clusterId = id)),
+        )
 
     private fun fartherPlace(id: String, name: String, meters: Double, vararg lines: Triple<String, String, String>) =
         CollapsedPlaces.Place(

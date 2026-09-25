@@ -291,10 +291,6 @@
     <!-- Toast when a device has no browser to open a license's full text online. -->
     <string name="licenses_link_failed">No app to open the license page</string>
 
-    <!-- The "More" control at the foot of the near-me list: reveal the farther bus clusters
-         (SPEC *Finding stops → Near me now*). Stations have the farther-station cards instead.
-         PROVISIONAL WORDING — pending the maintainer's sign-off before translation. -->
-    <string name="more_stops_bus">More bus stops</string>
     <!-- A farther station's collapsed card on the near-me list: the cue where its times would be,
          and while it loads or if it failed. Open with nothing running, it shows a line row's dash. -->
     <string name="farther_tap_to_see">Tap to see</string>

@@ -2284,6 +2284,32 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `opening a farther bus card uses the poles it carries, with no lookup`() = runTest(dispatcher) {
+        val cards = fartherCards { error("a bus place needs no lookup") }
+        val bus = CollapsedPlaces.Place("bus:J1", "", "Farther", 600.0, emptyList(), stops = listOf(fartherStop))
+        cards.open(bus, Coordinates(0.0, 0.0))
+        advanceUntilIdle()
+        val load = cards.cards.value[bus.key]
+        assertTrue("open with its own poles: $load", load is FartherLoad.Open)
+        assertEquals(listOf("MA"), shownIds(cards.model(bus.key)!!))
+    }
+
+    @Test
+    fun `an opened bus card whose poles change is rebuilt from the new ones`() = runTest(dispatcher) {
+        val cards = fartherCards { error("a bus place needs no lookup") }
+        val bus = CollapsedPlaces.Place("bus:J1", "", "Farther", 600.0, emptyList(), stops = listOf(fartherStop))
+        cards.open(bus, Coordinates(0.0, 0.0))
+        advanceUntilIdle()
+        val moved = bus.copy(stops = listOf(fartherStop.copy(id = "E")))
+        cards.retain(listOf(moved), Coordinates(0.0, 0.0))
+        advanceUntilIdle()
+        val load = cards.cards.value[bus.key]
+        assertTrue("reopened on the new poles: $load", load is FartherLoad.Open)
+        assertEquals(setOf("E"), (load as FartherLoad.Open).distanceMeters.keys)
+        assertEquals(listOf("E"), shownIds(cards.model(bus.key)!!))
+    }
+
+    @Test
     fun `a failed farther lookup can be tried again`() = runTest(dispatcher) {
         var fail = true
         val cards = fartherCards {

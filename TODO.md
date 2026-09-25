@@ -1035,6 +1035,14 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         the Tube, DLR, Overground, Elizabeth line, tram and rail "More" buttons only duplicated
         them. Coach, river-bus and the generic "More stops" (a modeless, mostly route-less stop)
         went with them; "More bus stops" stays, since buses get no farther card.
+  - [x] **Farther bus cards replace "More bus stops"** (maintainer, 2026-09-25). A bus place in
+        the *more* tier that adds a route the list doesn't show gets a collapsed card naming those
+        routes, at most four, below the station cards within a mile. Offering them costs no request.
+  - [ ] **Delete the now-unreachable "More" reveal path.** Nothing calls `MainViewModel.reveal`
+        any more: remove it with `moreState`, `revealedKeys`, `fetchIncremental`, the revealed-
+        cluster handling in `reconcile`, `NearbySelection.nextReveal` / `revealableBuckets` /
+        `MAX_REVEAL_PER_TAP` / `BUS_MODE`, and their tests. Kept out of the bus-cards change to
+        keep that one reviewable; behavior is unchanged either way.
   - [ ] **Decide "More" progression from fetched/rendered rows, not declared metadata** (Codex P2,
         PR #98). `nextReveal` decides how far to page from cluster *declared* lines, before fetching —
         so a nearer cluster that declares a not-shown route but returns no live departure is counted

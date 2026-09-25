@@ -134,9 +134,8 @@ The app finds stops two ways:
     London locate effectively always has a stop within a mile — if somehow none does, an honest
     "couldn't find stops" beats reaching arbitrarily far. The list shows the **nearest two
     clusters of each mode**, which keeps a dense interchange scannable and caps how many
-    clusters are fetched; farther bus stops are reached through a **"More bus stops"** control
-    at the foot of the list, each tap paging the next ones in, and farther stations through the
-    *farther-station* cards (see below);
+    clusters are fetched; farther stations and bus stops are reached through the *farther*
+    cards at the foot of the list (see below);
   - it is **by line, both directions shown** for now — paired stops across a road serve a line
     in opposite directions, so neither direction is dropped; narrowing by direction or
     destination is a later refinement tied to *favorite destinations*;
@@ -159,7 +158,7 @@ The app finds stops two ways:
   eager without the eager set reaching a mile out for every mode (maintainer, 2026-09-23: "the
   nearest two of each mode" fetched a second Overground station 1.3 km from a big interchange). The
   stop lookup itself still covers the mile — one request for every stop's name and routes, no
-  departures — so the fallback and "More" have the whole reach to draw on. A stop TfL lists **no routes** for (a disused or
+  departures — so the fallback and the farther bus cards have the whole reach to draw on. A stop TfL lists **no routes** for (a disused or
   unserved stop) is **never eager**: it has no departures to show, and auto-fetching it spent two
   requests a pole of the rate budget the running stops need (a big interchange pulled in route-less
   stops a kilometer off), and it isn't offered at all, since it has nothing to show. The cap is two rather than more because
@@ -168,29 +167,13 @@ The app finds stops two ways:
   fetched — sharply fewer than "everything in reach" at a dense corner. It bounds the cluster
   *count*, not the request count: one large junction cluster is still an arrivals request per
   pole, so a hard per-cluster fetch budget is a `TODO.md` follow-up. The clusters beyond the cap
-  are the *more* tier. **Only buses page it, through a "More bus stops" control** at the foot of
-  the list (maintainer, 2026-09-25): a tap pages the next bus clusters in and merges them beside the
-  eager ones. Every other mode had its own "More" until the *farther-station* cards arrived; those
-  offer the next station of each line the list doesn't serve, both ways along it and out to 3 mi,
-  so a station "More" only duplicated them. Coach and river-bus "More" went too, and
-  so did the generic "More stops" for a stop TfL gives no mode. Buses get no farther card (every
-  stop has them), and a farther pole of a shown route can be its other direction, so their button
-  stays whenever anything is left to page. Because a route shows once from its nearest stop
-  (above), **a tap reaches through to the first farther cluster that adds a route not already on
-  the list** — a run of nearer stops that only repeat routes already shown would otherwise make a
-  tap appear to do nothing — so tapping it always surfaces something new when the reach holds
-  one, rather than a dead tap followed by a working one. Each tap stays **bounded** — it reaches
-  through only so many clusters before the next tap continues — so a dense redundant corridor never
-  fans out one oversized fetch that could hit TfL's rate limit. A **revealed expansion survives a relocation** — the near-me set re-resolves on a user
-  refresh or a return to the foreground, and the retained view is keyed on the *whole* nearby cluster set (both
-  tiers, order-independent), so a small move that only reorders the clusters, or shifts one across
-  the eager/more boundary while all stay in range, keeps what the user opened. When a relocation
-  drops a revealed cluster (or one of its poles leaves range), that stop leaves the list at once
-  and the reduced set is persisted, so it can't linger as current (D4). **The widget mirrors the
-  app's current view** — eager plus whatever is revealed, not eager-only — so an in-app expansion
-  grows the set the widget persists and its background refresh keeps polling, until the next
-  relocation resets it (maintainer's lean, 2026-09-21; reversible to an eager-only widget snapshot
-  — `TODO.md`).
+  are the *more* tier, and **no "More" button pages it** (maintainer, 2026-09-25): its bus places
+  come in through the *farther* bus cards (*Farther stations*, below), which name the routes a tap
+  would add, and its stations through the farther-station cards. Every mode once had a "More"
+  button at the foot of the list; the station ones went when the farther-station cards arrived,
+  since those offer the next station of each line both ways along it and out to 3 mi, and "More bus
+  stops" went when the bus cards replaced it. **The widget mirrors the near-me list's own stops**:
+  an opened card is never on it.
 
   To keep the lookup fast and honest: a recent cached position is used at once. A fresh fix asks
   **every location provider at once**: an accurate (fused/GPS) fix is used as soon as it arrives,
@@ -214,7 +197,7 @@ The app finds stops two ways:
 
   Both tiers draw from one TfL `/StopPoint` lookup within the **~1 mile reach** (the lookup's
   own radius); the eager clusters' stops are fetched for arrivals at once, and a *more* cluster's
-  stops are fetched when "More bus stops" pages it in (above). **The reach and the two-per-mode cap are
+  stops are fetched only when its farther card is tapped (*Farther stations*). **The reach and the two-per-mode cap are
   not yet validated on a device** — whether either wants tuning at a real interchange lives in
   `TODO.md`; what is durable is the two-tier shape and the constraints above. **The near-me list is ordered
   closest stop first**, with soonest-first breaking a same-stop tie (a stop's several services
@@ -248,8 +231,8 @@ The app finds stops two ways:
   its name and modes; picking one opens **the near-me list as if you stood at that station**
   (maintainer, 2026-09-24): the station's own stops (distance 0) and the other stops around it,
   chosen, ordered and folded exactly as near me is, with distances from the station, and the same
-  *More*, *farther-station* and hidden-mode behavior (maintainer, 2026-09-25: the cards replace the
-  station *More* buttons there too). The station's position (the middle of its stops) stands in for
+  *farther* cards and hidden-mode behavior (maintainer, 2026-09-25: the cards replace the
+  *More* buttons there too). The station's position (the middle of its stops) stands in for
   the device's, so the page shares the near-me list's code rather than keeping a second copy of it;
   a station TfL places nowhere falls back to its own stops alone. The page is titled by the
   station, back returns to the search with its matches kept, and it refreshes while shown (a
@@ -343,7 +326,19 @@ The app finds stops two ways:
   would be a new tap target on the card). Nothing is fetched to offer the cards:
   the positions, lines and route ends come from the bundled station list, worked out on the
   device, so they cost no request and send nothing (*Privacy*); a tap costs one stop lookup plus
-  each stop's departures, as a *More* reveal does.
+  each stop's departures.
+
+  **Farther bus places** (maintainer, 2026-09-25) get the same collapsed card, replacing the "More
+  bus stops" button, so the rider sees which routes a tap brings in. A bus place — a junction's
+  poles, or an interchange's same-named ones (a card is named after its nearest pole, so a
+  differently named stop gets its own) — within the nearby lookup's mile, beyond the list's nearest two, earns
+  a card when a pole serves a **bus route the list doesn't already show** and no nearer card
+  already offers it; the card names just those routes. **At most four** bus cards, nearest first.
+  They sit **below the station cards within a mile and above the farther ones** (maintainer,
+  2026-09-25). A farther pole of a route the list already shows, running the other way, earns no
+  card (the route's own page shows its stops both ways); a route-less stop earns none, and hiding
+  buses hides the cards too. Offering them costs no request: the nearby lookup already listed each
+  stop's routes, and a tap fetches just the place's poles, which it already knows, with no lookup.
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run); arrives with watched stops.
 - **Hiding a mode** (maintainer, 2026-09-24) — a busy place can fill the near-me list with a mode
@@ -756,8 +751,8 @@ its trains with each group headed by where it boards (the platform or pole), ren
 snapshot as the list; unstarring closes it.
 
 A journey more than **a mile from both ends** of the rider's fix is **held back** (maintainer,
-2026-09-24): the foot of the list has a **Faraway favorites** button, styled like and just above the
-"More bus stops" one (that stays last, as the stop list's own control), and until it's tapped those
+2026-09-24): the foot of the list, below the farther cards, has a **Faraway favorites** button, and
+until it's tapped those
 journeys aren't fetched — sparing the request budget and battery for trains the rider can't be
 catching. A tap shows them in full at the foot of the list, each heading carrying its distance,
 until the rider moves to a new set of nearby stops. The widget never pins a far journey, tapped or
