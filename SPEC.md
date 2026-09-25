@@ -1071,7 +1071,7 @@ spells them.
 ## Architecture
 
 - **Kotlin + Jetpack Compose**: an `:app` module (mirroring simmo and Type Launcher), with
-  all product logic in a pure-Kotlin **`:domain` module** (`app.stopcast.domain`) that is
+  all product logic in a pure-Kotlin **`:domain` module** (`app.stopdash.domain`) that is
   testable on the JVM with no Android, and that a Wear OS app can share
   (`dev-docs/wear-os.md`): nearest-stop ranking,
   arrival→countdown formatting, disruption summarization, and staleness

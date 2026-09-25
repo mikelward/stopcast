@@ -21,7 +21,7 @@ easy to repeat.
 
 `./gradlew :app:bundleRelease` produces
 `app/build/outputs/bundle/release/app-release.aab` and the action uploads it to
-the `internal` track on the `app.stopcast` listing. Play App Signing re-signs the
+the `internal` track on the `app.stopdash` listing. Play App Signing re-signs the
 AAB with its managed app-signing key before delivery, so the upload key
 generated below only authenticates to Play — it doesn't sign what testers run.
 
@@ -60,7 +60,7 @@ https://play.google.com/console → "Create app":
 - **App name**: `StopCast`
 - **Default language**: English (United States)
 - **App or game**: App; **Free or paid**: Free
-- **Package name**: `app.stopcast` (must match `applicationId` in
+- **Package name**: `app.stopdash` (must match `applicationId` in
   `app/build.gradle.kts`)
 
 Complete the required declarations under "App content" using the facts recorded
@@ -266,7 +266,7 @@ by a shallow clone.
   with `fetch-depth: 0`.
 - **`The caller does not have permission`** — the service account lacks
   "Release to testing tracks" on the app, or the invite hasn't propagated.
-- **`Package not found: app.stopcast`** — the listing doesn't exist yet, or the
+- **`Package not found: app.stopdash`** — the listing doesn't exist yet, or the
   first AAB hasn't been uploaded manually (step 2).
 - **`Upload to Play Store internal track` is skipped** — `PLAY_SERVICE_ACCOUNT_JSON`
   isn't set, or nothing release-worthy is queued. The GitHub prerelease is

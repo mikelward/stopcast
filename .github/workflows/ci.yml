@@ -172,7 +172,7 @@ jobs:
         run: |
           # The allow-list is what THIS job's own steps actually run, scoped by
           # the job block rather than matched across the file, and fully
-          # qualified on both sides (`app.stopcast.ui.X` and `app.stopcast.X`
+          # qualified on both sides (`app.stopdash.ui.X` and `app.stopdash.X`
           # are different classes to Gradle).
           allow=$(awk '
             /^  screenshot-tests:/ { in_job = 1; next }
@@ -213,27 +213,27 @@ jobs:
       # the PNGs that `sync-screenshots` commits back and `post-screenshot-diff`
       # embeds for review.
       - name: Run MainScreen screenshot tests
-        run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.MainScreenScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :app:testDebugUnitTest --tests "app.stopdash.ui.MainScreenScreenshotTest" -Proborazzi.test.record=true
       - name: Run LocationGate screenshot tests
-        run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.LocationGateScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :app:testDebugUnitTest --tests "app.stopdash.ui.LocationGateScreenshotTest" -Proborazzi.test.record=true
       - name: Run Widget screenshot tests
-        run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.widget.WidgetScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :app:testDebugUnitTest --tests "app.stopdash.widget.WidgetScreenshotTest" -Proborazzi.test.record=true
       - name: Run Licenses screenshot tests
-        run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.LicensesScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :app:testDebugUnitTest --tests "app.stopdash.ui.LicensesScreenshotTest" -Proborazzi.test.record=true
       - name: Run Settings screenshot tests
-        run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.SettingsScreenScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :app:testDebugUnitTest --tests "app.stopdash.ui.SettingsScreenScreenshotTest" -Proborazzi.test.record=true
       - name: Run BugReportConsentDialog screenshot tests
-        run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.BugReportConsentDialogScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :app:testDebugUnitTest --tests "app.stopdash.ui.BugReportConsentDialogScreenshotTest" -Proborazzi.test.record=true
       - name: Run RouteDetailScreen screenshot tests
-        run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.RouteDetailScreenScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :app:testDebugUnitTest --tests "app.stopdash.ui.RouteDetailScreenScreenshotTest" -Proborazzi.test.record=true
       - name: Run StationSearch screenshot tests
-        run: ./gradlew :app:testDebugUnitTest --tests "app.stopcast.ui.StationSearchScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :app:testDebugUnitTest --tests "app.stopdash.ui.StationSearchScreenshotTest" -Proborazzi.test.record=true
       # The watch's captures land in app/src/test/snapshots too (wear_*.png), so this one
       # pipeline records, diffs and commits them.
       - name: Run WatchHome screenshot tests
-        run: ./gradlew :wear:testDebugUnitTest --tests "app.stopcast.wear.WatchHomeScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :wear:testDebugUnitTest --tests "app.stopdash.wear.WatchHomeScreenshotTest" -Proborazzi.test.record=true
       - name: Run ComplicationPicker screenshot tests
-        run: ./gradlew :wear:testDebugUnitTest --tests "app.stopcast.wear.ComplicationPickerScreenshotTest" -Proborazzi.test.record=true
+        run: ./gradlew :wear:testDebugUnitTest --tests "app.stopdash.wear.ComplicationPickerScreenshotTest" -Proborazzi.test.record=true
       - name: Print failing test details
         if: failure()
         run: |
@@ -1279,7 +1279,7 @@ jobs:
         uses: r0adkll/upload-google-play@a80b0bcdcfdfcc2d026f2bc73f726760b2cbc967  # post-v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: app.stopcast
+          packageName: app.stopdash
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
           tracks: internal
           status: completed

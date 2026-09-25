@@ -127,7 +127,7 @@ as a confirmed TfL hex. SPEC has the full scheme and rationale.
 
 ## Testing expectations
 
-- Product logic belongs in the pure `:domain` module (`app.stopcast.domain`), JVM-testable
+- Product logic belongs in the pure `:domain` module (`app.stopdash.domain`), JVM-testable
   without Android; test it against **recorded TfL fixtures**, never the live API and never a
   real coordinate.
 - Compose screens and Glance widget layouts get Robolectric + Roborazzi screenshot tests

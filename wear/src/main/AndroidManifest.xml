@@ -58,7 +58,7 @@
                 android:value="0" />
             <meta-data
                 android:name="android.support.wearable.complications.PROVIDER_CONFIG_ACTION"
-                android:value="app.stopcast.wear.CONFIGURE_COMPLICATION" />
+                android:value="app.stopdash.wear.CONFIGURE_COMPLICATION" />
         </service>
 
         <!-- The complication's row picker, opened from the watch face's editor. -->
@@ -67,7 +67,7 @@
             android:exported="true"
             android:taskAffinity="">
             <intent-filter>
-                <action android:name="app.stopcast.wear.CONFIGURE_COMPLICATION" />
+                <action android:name="app.stopdash.wear.CONFIGURE_COMPLICATION" />
                 <category android:name="android.support.wearable.complications.category.PROVIDER_CONFIG" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
