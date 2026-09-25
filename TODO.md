@@ -1929,6 +1929,22 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   Overground's named lines are already route-sized). *Alternative:* branches for the tube too, or
   whole route names as keys. Watch the noise at busy south London junctions, where the five-button
   cap does the work. **Reversible:** `FartherStations.reasonsOf`.
+- **Farther stations as collapsed cards (maintainer, 2026-09-25; details autopilot).** The
+  maintainer chose the card: name and distance as a place header, one row of line chips, "Tap to
+  see" in place of times, below the loaded places, opening in place. Taken: the cards replace the
+  From… buttons one for one (same picks, caps and 3 mi reach); "More" stays where it adds a line
+  and sits above the cards; an opened card's groups stay below the loaded places rather than moving
+  up by distance; opened stations are kept across a relocation while still offered, re-measured
+  from the new fix. Buses as cards, the loaded-places order, and the pick rule (the nearest station
+  of each line in each direction, maintainer 2026-09-25) are next. *Alternative:* open a From…
+  page on tap, as the buttons did. **Reversible:** `FartherCardView` and `FartherCardsViewModel`.
+- **Opened farther cards: saved, and on the widget (maintainer, 2026-09-25; to do).** An opened
+  card has its own departures model for now, held for the session only: a restart closes it and the
+  widget never shows it. The maintainer's follow-up is to treat an opened card as a nearby stop
+  everywhere until the rider moves away: in the list's fetched set, on the widget, restored after a
+  restart (saving which cards are open), with the list's drop path closing it (its failure flags
+  and the widget copy go with it). A collapse control is undecided: it adds a tap target to the
+  card.
 - **From… stands at the middle of the station's stops (autopilot, 2026-09-24).** The maintainer
   asked for From… to be "like setting your location to there"; the point used is the mean of the
   station's placed stops, and the near-me list's picking (nearest of each mode within a mile, the

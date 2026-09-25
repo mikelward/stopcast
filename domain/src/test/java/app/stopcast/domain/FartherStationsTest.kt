@@ -70,6 +70,19 @@ class FartherStationsTest {
     }
 
     @Test
+    fun `a farther place carries every unreached line it stands for`() {
+        val both = station("940GBOTH", "Both", 1_500.0, tube("piccadilly", "victoria"))
+        val picked = FartherStations.pick(listOf(near, both, lineD), here, reached("tube" to "northern"))
+        assertEquals(
+            listOf(
+                listOf(FartherStations.Line("tube", "piccadilly"), FartherStations.Line("tube", "victoria")),
+                listOf(FartherStations.Line("tube", "central")),
+            ),
+            picked.map { farther -> farther.lines.sortedBy { it.id } },
+        )
+    }
+
+    @Test
     fun `an interchange's stations are one button, opening the interchange`() {
         val tubeStation = station("940GZZLUEXA", "Example", 2_000.0, tube("central")).copy(hubId = "HUBEXA")
         val dlr = station("940GZZDLEXA", "Example", 2_050.0, mapOf("dlr" to listOf("dlr"))).copy(hubId = "HUBEXA")

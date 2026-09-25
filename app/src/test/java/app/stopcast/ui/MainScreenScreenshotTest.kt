@@ -42,7 +42,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
-import app.stopcast.domain.StationMatch
+import app.stopcast.domain.CollapsedPlaces
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
@@ -1246,10 +1246,11 @@ class MainScreenScreenshotTest {
     }
 
     @Test
-    fun `the near-me list names farther stations of the lines and modes it doesn't reach`() {
-        // Past "More", a "From ‹station›…" button each for the nearest station of a tube line or rail
-        // mode nothing nearby reaches (SPEC *Finding stops → Farther stations*). Public station names
-        // as stand-ins, not anyone's surroundings.
+    fun `the near-me list shows farther stations as collapsed cards`() {
+        // Below the loaded places, a collapsed card each for the nearest station of a line nothing
+        // nearby reaches: its name and distance, the lines it adds, and a cue (SPEC *Finding stops →
+        // Farther stations*). One is loading and one failed, to show those cues. Public station
+        // names as stand-ins, not anyone's surroundings.
         capture("main-farther-stations.png") {
             MainScreen(
                 DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
@@ -1258,19 +1259,27 @@ class MainScreenScreenshotTest {
                 stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
                 revealableModes = setOf("bus"),
                 farther = listOf(
-                    StationMatch("910GSTFD", "Stratford", listOf("overground")),
-                    StationMatch("910GCLPHMJC", "Clapham Junction", listOf("national-rail")),
+                    FartherCard(fartherPlace(
+                        "940GZZLUWHM", "West Ham", 1_600.0,
+                        Triple("district", "District", "tube"),
+                        Triple("hammersmith-city", "Hammersmith & City", "tube"),
+                        Triple("c2c", "c2c", "national-rail"),
+                    )),
+                    FartherCard(fartherPlace("910GMRYLAND", "Maryland", 2_100.0, Triple("elizabeth", "Elizabeth line", "elizabeth-line")), FartherLoad.Loading),
+                    FartherCard(fartherPlace("910GCLPHMJC", "Clapham Junction", 4_200.0, Triple("southern", "Southern", "national-rail")), FartherLoad.Failed),
                 ),
             )
         }
-        composeRule.onNodeWithText("From Stratford…").assertExists()
-        composeRule.onNodeWithText("From Clapham Junction…").assertExists()
+        composeRule.onNodeWithText("West Ham").assertExists()
+        composeRule.onNodeWithText("Tap to see").assertExists()
+        composeRule.onNodeWithText("Loading…").assertExists()
+        composeRule.onNodeWithText("Tap to retry").assertExists()
     }
 
     @Test
-    fun `tapping a farther station opens it`() {
-        var opened: StationMatch? = null
-        val station = StationMatch("910GSTFD", "Stratford", listOf("overground"))
+    fun `tapping a farther station's card opens it`() {
+        var opened: CollapsedPlaces.Place? = null
+        val place = fartherPlace("940GZZLUWHM", "West Ham", 1_600.0, Triple("district", "District", "tube"))
         composeRule.setContent {
             StopCastTheme(dynamicColor = false) {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -1279,16 +1288,50 @@ class MainScreenScreenshotTest {
                         now,
                         {},
                         stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
-                        farther = listOf(station),
+                        farther = listOf(FartherCard(place)),
                         onOpenFarther = { opened = it },
                     )
                 }
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("From Stratford…").performClick()
-        composeRule.runOnIdle { assertEquals(station, opened) }
+        composeRule.onNodeWithText("Tap to see").performClick()
+        composeRule.runOnIdle { assertEquals(place, opened) }
     }
+
+    @Test
+    fun `an opened farther card with nothing running says so on an empty list`() {
+        // Nothing nearby has departures, and the opened station's fetch came back empty: the card on
+        // the empty surface shows a line row's dash (read as "No departures"), not "Loading…" forever.
+        val place = fartherPlace("940GZZLUWHM", "West Ham", 1_600.0, Triple("district", "District", "tube"))
+        val opened = StopArrivals("940GZZLUWHM", "West Ham", emptyList(), fetchedAt = now.minusSeconds(60))
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(opened), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUWHM" to 1_600.0),
+                        farther = listOf(
+                            FartherCard(place, FartherLoad.Open(emptyList(), mapOf("940GZZLUWHM" to 1_600.0))),
+                        ),
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithContentDescription("No departures").assertExists()
+        composeRule.onNodeWithText("Loading…").assertDoesNotExist()
+    }
+
+    private fun fartherPlace(id: String, name: String, meters: Double, vararg lines: Triple<String, String, String>) =
+        CollapsedPlaces.Place(
+            key = "station:$id",
+            stationId = id,
+            name = name,
+            meters = meters,
+            lines = lines.map { (line, lineName, mode) -> LineRef(line, lineName, mode) },
+        )
 
     @Test
     fun `a starred journey shows only the trains that reach its far end, atop the near-me list`() {

@@ -115,10 +115,12 @@ def merged(first, other):
     for group in (first.get("lineModeGroups") or []) + (other.get("lineModeGroups") or []):
         mode = group.get("modeName")
         groups.setdefault(mode, set()).update(group.get("lineIdentifier") or [])
+    lines = {line.get("id"): line for line in (first.get("lines") or []) + (other.get("lines") or []) if line.get("id")}
     return {
         **first,
         "modes": sorted(set(first.get("modes") or []) | set(other.get("modes") or [])),
         "lineModeGroups": [{"modeName": m, "lineIdentifier": sorted(ids)} for m, ids in sorted(groups.items())],
+        "lines": [lines[k] for k in sorted(lines)],
     }
 
 
@@ -137,6 +139,9 @@ def build_index(stops, hubs):
     """The index document from TfL's station list and its hubs' own records (pure, for tests)."""
     stations = {}
     hub_modes = {}
+    # Each indexed line's name as TfL spells it ("Hammersmith & City", "Elizabeth line"), for the
+    # app to label a line it knows only by id.
+    line_names = {}
     for stop in stops:
         sid = stop_id(stop)
         name = (stop.get("commonName") or "").strip()
@@ -154,13 +159,22 @@ def build_index(stops, hubs):
         }
         if hub:
             hub_modes.setdefault(hub, set()).update(modes)
+        indexed = {line for ids in lines.values() for line in ids}
+        for line in stop.get("lines") or []:
+            name = (line.get("name") or "").strip()
+            if line.get("id") in indexed and name:
+                line_names[line["id"]] = name
     for hub in hubs:
         hid = stop_id(hub)
         name = (hub.get("commonName") or "").strip()
         if hid in hub_modes and name:
             stations[hid] = {"id": hid, "name": name, "modes": sorted(hub_modes[hid])}
     # Sorted by id so a refresh's diff shows only what TfL changed.
-    return {"version": FORMAT_VERSION, "stations": [stations[k] for k in sorted(stations)]}
+    return {
+        "version": FORMAT_VERSION,
+        "stations": [stations[k] for k in sorted(stations)],
+        "lineNames": {k: line_names[k] for k in sorted(line_names)},
+    }
 
 
 def lines_by_mode(stop):

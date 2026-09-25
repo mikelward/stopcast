@@ -24,8 +24,12 @@ object FartherStations {
     /** The rail modes whose lines earn a button (buses and boats never do). */
     val MODES: Set<String> = setOf("tube", "overground", "elizabeth-line", "national-rail", "dlr", "tram")
 
-    /** A button: the station to open, and how far it is from the rider. */
-    data class Farther(val station: StationMatch, val meters: Double)
+    /**
+     * A farther place: the station to open, how far it is from the rider, and the lines (tube lines,
+     * National Rail services, …) it adds that the list doesn't reach, nearest-first by the station
+     * that stands for each.
+     */
+    data class Farther(val station: StationMatch, val meters: Double, val lines: List<Line> = emptyList())
 
     /** A line of a mode (TfL line ids are unique across modes, but a mode is kept to cap the tube). */
     data class Line(val mode: String, val id: String)
@@ -125,6 +129,13 @@ object FartherStations {
             }
             picked[place.id] = Farther(StationMatch(place.id, place.name, place.modes), meters)
         }
-        return picked.values.toList()
+        // Each place's lines: every unreached line whose nearest station stands for it, whether or not
+        // that line was the one that earned the place (an interchange adds several).
+        val linesByPlace = LinkedHashMap<String, LinkedHashSet<Line>>()
+        for ((reason, nearest) in nearestByReason.entries.sortedBy { it.value.second }) {
+            val placeId = placeOf(nearest.first).id
+            if (placeId in picked) linesByPlace.getOrPut(placeId) { LinkedHashSet() } += reason.line
+        }
+        return picked.values.map { it.copy(lines = linesByPlace[it.station.id].orEmpty().toList()) }
     }
 }

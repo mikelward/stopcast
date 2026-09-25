@@ -74,6 +74,7 @@ object StationIndexStore {
                         routeEnds = it.routeEnds,
                     )
                 },
+            lineNames = file.lineNames,
         )
     }
 
@@ -81,6 +82,8 @@ object StationIndexStore {
     private data class StationIndexFile(
         val version: Int = 0,
         val stations: List<StationDto> = emptyList(),
+        // Line id → name as TfL spells it; absent from an older index.
+        val lineNames: Map<String, String> = emptyMap(),
     )
 
     @Serializable

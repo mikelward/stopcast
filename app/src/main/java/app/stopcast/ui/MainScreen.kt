@@ -11,6 +11,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import app.stopcast.domain.AlertLinks
+import app.stopcast.domain.CollapsedPlaces
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.util.Log
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -136,7 +138,6 @@ import app.stopcast.domain.ModeGroups
 import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.NoTimes
 import app.stopcast.domain.RelativeTime
-import app.stopcast.domain.StationMatch
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.JourneyCall
@@ -294,10 +295,10 @@ fun MainScreen(
     moreTier: NearbySelection.MoreTier? = null,
     onReveal: (String) -> Unit = {},
     // The nearest station of each tube line or rail mode the list doesn't reach (SPEC *Finding stops
-    // → Farther stations*): a "From ‹station›…" button each at the foot of the near-me list, opening
-    // it as a From… page ([onOpenFarther]). Empty by default, as on a station's page.
-    farther: List<StationMatch> = emptyList(),
-    onOpenFarther: (StationMatch) -> Unit = {},
+    // → Farther stations*): a collapsed card each below the loaded places, which a tap loads and
+    // opens in place ([onOpenFarther]). Empty by default, as on a station's page.
+    farther: List<FartherCard> = emptyList(),
+    onOpenFarther: (CollapsedPlaces.Place) -> Unit = {},
     // Start the consent-gated bug report (from the overflow). Default no-op so an unwired
     // build/test renders the menu without one.
     onSendBugReport: () -> Unit = {},
@@ -1353,8 +1354,8 @@ private fun LoadedContent(
     starringAvailable: Boolean = true,
     revealableModes: Set<String> = emptySet(),
     onReveal: (String) -> Unit = {},
-    farther: List<StationMatch> = emptyList(),
-    onOpenFarther: (StationMatch) -> Unit = {},
+    farther: List<FartherCard> = emptyList(),
+    onOpenFarther: (CollapsedPlaces.Place) -> Unit = {},
     // Open the full-screen route detail for a tapped card; the caller holds the open-route state.
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit = { _, _ -> },
     // Opens Settings from a National Rail line's "No key".
@@ -1473,7 +1474,13 @@ private fun LoadedContent(
                     // Keep "More" reachable even when the nearest clusters returned nothing — that's
                     // exactly when the farther ones are most useful (SPEC principle 2).
                     MoreControls(revealableModes, onReveal, Modifier.padding(top = 16.dp))
-                    FartherControls(farther, onOpenFarther, Modifier.padding(top = 8.dp))
+                    FartherCards(
+                        farther,
+                        state.stops.mapTo(HashSet()) { it.stopId },
+                        state.unavailableStopIds,
+                        onOpenFarther,
+                        Modifier.padding(top = 16.dp),
+                    )
                 }
             } else {
                 DepartureList(
@@ -1481,6 +1488,8 @@ private fun LoadedContent(
                     revealableModes, onReveal,
                     farther = farther,
                     onOpenFarther = onOpenFarther,
+                    fetchedStopIds = state.stops.mapTo(HashSet()) { it.stopId },
+                    unavailableStopIds = state.unavailableStopIds,
                     listState = listState,
                     onOpenSettings = onOpenSettings,
                     onHideMode = onHideMode,
@@ -1608,8 +1617,13 @@ private fun DepartureList(
     onReveal: (String) -> Unit,
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
     listState: LazyListState,
-    farther: List<StationMatch> = emptyList(),
-    onOpenFarther: (StationMatch) -> Unit = {},
+    farther: List<FartherCard> = emptyList(),
+    onOpenFarther: (CollapsedPlaces.Place) -> Unit = {},
+    // The stops whose departures have been fetched, so an opened card with none shown can tell
+    // "still loading" from "nothing running".
+    fetchedStopIds: Set<String> = emptySet(),
+    // The stops whose fetch failed, so an opened card whose stops all failed can offer a retry.
+    unavailableStopIds: Set<String> = emptySet(),
     onDismissAlert: (DepartureRow) -> Unit = {},
     // Opens Settings from a National Rail line's "No key" (SPEC *National Rail*).
     onOpenSettings: () -> Unit = {},
@@ -1825,7 +1839,7 @@ private fun DepartureList(
         // 1 (120 m)"), and every route of the group's stop(s) sits as an interior row of the one card
         // below. The place name repeats on each platform header of a station (as does the distance) —
         // the near-me rider judges each platform on its own line.
-        groups.forEachIndexed { index, group ->
+        fun groupItems(index: Int, group: StopGroup) {
             // The near-me list carries a per-stop distance; the watched list doesn't, so the label is
             // present only when this place's stops are in the map (D1). A place groups several stops (a
             // junction's poles, a station's platforms), so it shows the distance to the *closest* of
@@ -1871,6 +1885,34 @@ private fun DepartureList(
                 )
             }
         }
+        // An opened farther station's groups stay with its card below the loaded places, rather than
+        // moving up among them, so a tap never makes the list jump.
+        val fartherStopIds = farther.associate { card ->
+            card.place.key to (card.load as? FartherLoad.Open)?.distanceMeters?.keys.orEmpty()
+        }
+        val fartherGroups = groups.groupBy { group ->
+            fartherStopIds.entries.firstOrNull { (_, ids) -> ids.isNotEmpty() && group.rows.all { it.stopId in ids } }?.key
+        }
+        fartherGroups[null].orEmpty().forEachIndexed { index, group -> groupItems(index, group) }
+        if (revealableModes.isNotEmpty()) {
+            // A per-mode "More" footer pages the farther clusters on demand (SPEC principle 2).
+            // The extra top padding, past the list's 8dp item gap, sets the footer apart from the
+            // last group — asymmetric on purpose: it's a trailing section, not another row.
+            item(key = "more-controls") {
+                MoreControls(revealableModes, onReveal, Modifier.padding(top = 8.dp))
+            }
+        }
+        // Below the loaded places: the farther stations, each collapsed until tapped, nearest first.
+        for (card in farther) {
+            val opened = fartherGroups[card.place.key]
+            if (opened != null) {
+                opened.forEach { group -> groupItems(1, group) }
+            } else {
+                item(key = "farther|${card.place.key}") {
+                    FartherCardView(card, fartherCue(card, fetchedStopIds, unavailableStopIds), onOpen = onOpenFarther)
+                }
+            }
+        }
         // The faraway journeys (SPEC *Journeys*), at the foot like the "More" stops: a button, then,
         // once tapped, their cards under a "Faraway favorites" label (revealing is what fetches them).
         if (farJourneyCards.isNotEmpty()) {
@@ -1890,36 +1932,103 @@ private fun DepartureList(
                 }
             }
         }
-        if (revealableModes.isNotEmpty()) {
-            // A per-mode "More" footer pages the farther clusters on demand (SPEC principle 2).
-            // The extra top padding, past the list's 8dp item gap, sets the footer apart from the
-            // last group — asymmetric on purpose: it's a trailing section, not another row.
-            item(key = "more-controls") {
-                MoreControls(revealableModes, onReveal, Modifier.padding(top = 8.dp))
-            }
-        }
-        // Past "More": the stations of the lines and modes nothing nearby reaches, one tap each.
-        if (farther.isNotEmpty()) {
-            item(key = "farther-controls") {
-                FartherControls(farther, onOpenFarther, Modifier.padding(top = 8.dp))
-            }
-        }
     }
 }
 
+/** A farther station's collapsed card and where it stands ([FartherLoad]; null until tapped). */
+data class FartherCard(val place: CollapsedPlaces.Place, val load: FartherLoad? = null)
+
 /**
- * The "From ‹station›…" buttons at the foot of the near-me list (SPEC *Finding stops → Farther
- * stations*): the nearest station of each tube line or rail mode the list doesn't reach, nearest
- * first, each opening that station as a From… page. Styled as the "More" controls above it, a
- * `TextButton`'s ≥48dp target each. Rendered nowhere when [farther] is empty.
+ * The farther stations' collapsed cards in a plain column, for the empty near-me list, where the
+ * lazy list isn't shown (SPEC principle 2: they stay one tap away).
  */
 @Composable
-private fun FartherControls(farther: List<StationMatch>, onOpen: (StationMatch) -> Unit, modifier: Modifier = Modifier) {
+private fun FartherCards(
+    farther: List<FartherCard>,
+    fetchedStopIds: Set<String>,
+    unavailableStopIds: Set<String>,
+    onOpen: (CollapsedPlaces.Place) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     if (farther.isEmpty()) return
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (station in farther) {
-            TextButton(onClick = { onOpen(station) }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.from_station, station.name))
+        for (card in farther) FartherCardView(card, fartherCue(card, fetchedStopIds, unavailableStopIds), onOpen = onOpen)
+    }
+}
+
+/** What a collapsed card says where the times would be, and whether a tap acts on it. */
+internal enum class FartherCue(val tappable: Boolean) { TAP_TO_SEE(true), LOADING(false), RETRY(true), NO_DEPARTURES(false) }
+
+/**
+ * A collapsed card's cue, from its [FartherCard.load] and the fetch so far: [fetchedStopIds] came
+ * back, [unavailableStopIds] failed. An opened card whose stops all failed offers a retry rather
+ * than "Loading…" forever; one with a stop back but no departures to show says so.
+ */
+internal fun fartherCue(card: FartherCard, fetchedStopIds: Set<String>, unavailableStopIds: Set<String>): FartherCue =
+    when (val load = card.load) {
+        null -> FartherCue.TAP_TO_SEE
+        FartherLoad.Loading -> FartherCue.LOADING
+        FartherLoad.Failed -> FartherCue.RETRY
+        is FartherLoad.Open -> {
+            val ids = load.distanceMeters.keys
+            when {
+                ids.any { it in fetchedStopIds } -> FartherCue.NO_DEPARTURES
+                ids.isNotEmpty() && ids.all { it in unavailableStopIds } -> FartherCue.RETRY
+                else -> FartherCue.LOADING
+            }
+        }
+    }
+
+/**
+ * A farther station's collapsed card (SPEC *Finding stops → Farther stations*): headed like a loaded
+ * place, its name and distance, over one row of the lines it adds and a [cue] where the times would
+ * be. A tap loads it and opens it in place ([onOpen]); while it loads, or if it failed, the cue says
+ * so, and a failed one taps to retry.
+ */
+@Composable
+private fun FartherCardView(card: FartherCard, cue: FartherCue, onOpen: (CollapsedPlaces.Place) -> Unit) {
+    val place = card.place
+    val cueText = stringResource(
+        when (cue) {
+            FartherCue.TAP_TO_SEE -> R.string.farther_tap_to_see
+            FartherCue.LOADING -> R.string.farther_loading
+            FartherCue.RETRY -> R.string.farther_retry
+            // A dash where the times go, as a line row with nothing running shows.
+            FartherCue.NO_DEPARTURES -> R.string.status_no_departures
+        },
+    )
+    val cueSpoken = if (cue == FartherCue.NO_DEPARTURES) stringResource(R.string.status_no_departures_description) else cueText
+    val tappable = cue.tappable
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        StopGroupHeader(
+            place.name,
+            qualifier = null,
+            distanceLabel = StopDistance.label(place.meters),
+            firstOnScreen = false,
+        )
+        OutlinedCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (tappable) Modifier.clickable { onOpen(place) } else Modifier),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    for (line in place.lines) LinePill(line.name, line.id, line.mode)
+                }
+                Text(
+                    text = cueText,
+                    modifier = Modifier.semantics { contentDescription = cueSpoken },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (tappable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

@@ -276,22 +276,30 @@ The app finds stops two ways:
   its origin stops like the list does. The destination's name and id go only to TfL, as the
   station search's already do (*Privacy*).
 - **Farther stations** (maintainer, 2026-09-25) — where the near-me list reaches only one tube
-  station, the rest of the network can be two miles off. At the foot of the list, under the *More*
-  controls, a **"From ‹station›…"** button names the nearest station of each **rail line** the
-  nearby stops don't serve — a tube line, a National Rail service (Thameslink, Great Northern…), an
+  station, the rest of the network can be two miles off. Below the loaded places and the *More*
+  controls, a **collapsed card** stands for the nearest station of each **rail line** the nearby
+  stops don't serve — a tube line, a National Rail service (Thameslink, Great Northern…), an
   Overground line, the Elizabeth line, the DLR, a tram — nearest first, within 3 mi, **at most five**
-  buttons and at most two of them for tube lines. **Buses never** earn one: every stop has them.
-  A station standing for several lines is one button, and an interchange's stations are one button
-  opening the interchange; a hidden mode's lines get none. A **National Rail** service counts by
-  the **ends of its routes** from each station (maintainer, 2026-09-25): Thameslink runs to Bedford
-  from one station and to Cambridge from another, so a station reaching an end nothing nearby
-  reaches earns a button even on a service already reached. The other modes count by line: a
+  cards and at most two of them for tube lines. **Buses never** earn one: every stop has them.
+  A station standing for several lines is one card, and an interchange's stations are one card
+  standing for the interchange; a hidden mode's lines get none. A **National Rail** service counts
+  by the **ends of its routes** from each station (maintainer, 2026-09-25): Thameslink runs to
+  Bedford from one station and to Cambridge from another, so a station reaching an end nothing
+  nearby reaches earns a card even on a service already reached. The other modes count by line: a
   second tube station on another branch of a line already reached isn't offered (a branch rule
-  would be finer but noisier). A tap opens it as a
-  *From…* page, whose back and crosshairs return to the list. Nothing is fetched to offer them:
-  the positions, lines and route ends come from the bundled station list, worked out on the device, so they
-  cost no request and send nothing (*Privacy*); what a tap then shows costs what any *From…* page
-  does.
+  would be finer but noisier). A card is headed like a loaded place, its name and distance, over
+  **one row of the lines it adds** and **"Tap to see"** where the times would be (maintainer,
+  2026-09-25). A tap looks up the station's stops and loads their departures, and the card **opens
+  in place**, below the loaded places, so the list doesn't jump; the cue reads "Loading…" meanwhile,
+  "Tap to retry" if it failed (a tap retries), and a line row's dash if nothing is running. An
+  opened station shows only what the list doesn't already show from a nearer stop, like any
+  near-me place, and refreshes with the list. It is **held for the session, not saved**
+  (maintainer, 2026-09-25): it stays open while the list still offers it, closes when a move stops
+  offering it or the app's process ends, is never on the widget, and has no collapse control (it
+  would be a new tap target on the card). Nothing is fetched to offer the cards:
+  the positions, lines and route ends come from the bundled station list, worked out on the
+  device, so they cost no request and send nothing (*Privacy*); a tap costs one stop lookup plus
+  each stop's departures, as a *More* reveal does.
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run); arrives with watched stops.
 - **Hiding a mode** (maintainer, 2026-09-24) — a busy place can fill the near-me list with a mode

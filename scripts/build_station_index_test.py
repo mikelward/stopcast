@@ -50,13 +50,29 @@ class BuildIndexTest(unittest.TestCase):
         self.assertEqual({"national-rail": ["thameslink"]}, by_id["910GEXAMPLE"]["modeLines"])
         self.assertNotIn("modeLines", by_id["910GBARE"])
 
+    def test_the_index_names_its_lines_as_tfl_spells_them(self):
+        tube = stop("940GZZLUEXA", "Example", ["tube", "bus"])
+        tube["lineModeGroups"] = [
+            {"modeName": "tube", "lineIdentifier": ["hammersmith-city"]},
+            {"modeName": "bus", "lineIdentifier": ["25"]},
+        ]
+        tube["lines"] = [
+            {"id": "hammersmith-city", "name": "Hammersmith & City"},
+            {"id": "25", "name": "25"},
+        ]
+        index = build_index([tube], [])
+        self.assertEqual({"hammersmith-city": "Hammersmith & City"}, index["lineNames"], "buses left out")
+
     def test_a_station_listed_under_several_modes_keeps_every_listing_s_lines(self):
         from_dlr = stop("940GZZLUEXA", "Example", ["dlr"])
         from_dlr["lineModeGroups"] = [{"modeName": "dlr", "lineIdentifier": ["dlr"]}]
         from_tube = stop("940GZZLUEXA", "Example", ["tube"])
         from_tube["lineModeGroups"] = [{"modeName": "tube", "lineIdentifier": ["jubilee"]}]
+        from_dlr["lines"] = [{"id": "dlr", "name": "DLR"}]
+        from_tube["lines"] = [{"id": "jubilee", "name": "Jubilee"}]
         found = station_points([from_dlr, from_tube])
         self.assertEqual(1, len(found))
+        self.assertEqual({"dlr": "DLR", "jubilee": "Jubilee"}, build_index(found, [])["lineNames"])
         entry = build_index(found, [])["stations"][0]
         self.assertEqual(["dlr", "tube"], entry["modes"])
         self.assertEqual({"dlr": ["dlr"], "tube": ["jubilee"]}, entry["modeLines"])

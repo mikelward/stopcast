@@ -44,6 +44,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -116,6 +117,12 @@ import app.stopcast.ui.NearbyStopsViewModel
 import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.SnapshotStore
 import app.stopcast.domain.FartherStations
+import app.stopcast.ui.FartherLoad
+import app.stopcast.ui.DeparturesUiState
+import app.stopcast.ui.FartherCard
+import app.stopcast.ui.FartherCardsViewModel
+import app.stopcast.ui.withOpenedFarther
+import app.stopcast.domain.CollapsedPlaces
 import app.stopcast.domain.FixedLocation
 import app.stopcast.ui.hereTripTiers
 import app.stopcast.ui.HereTripTiers
@@ -608,12 +615,8 @@ class MainActivity : ComponentActivity() {
                                     onForegroundReturnConsumed = { returnLatch.pending = false },
                                     listState = departuresListState,
                                     farReveal = farReveal,
-                                    // A farther station opens as a From… page straight from the list:
-                                    // no search behind it, so back (and the crosshairs) return here.
-                                    onOpenFarther = { station ->
-                                        openStationId = station.id
-                                        openStationName = station.name
-                                    },
+                                    // The near-me list offers the farther stations as collapsed cards.
+                                    offerFarther = true,
                                 )
                             }
                             else -> {
@@ -866,9 +869,9 @@ class MainActivity : ComponentActivity() {
         // The departures list's scroll position, hoisted by the caller so it survives the overlays.
         listState: LazyListState = rememberLazyListState(),
         farReveal: FarRevealState? = null,
-        // Opens a farther station (SPEC *Finding stops → Farther stations*) as a From… page. Null
-        // (a From… station's own page) offers no "From ‹station›…" buttons.
-        onOpenFarther: ((StationMatch) -> Unit)? = null,
+        // Whether the list offers the farther stations (SPEC *Finding stops → Farther stations*) as
+        // collapsed cards. A From… station's own page doesn't.
+        offerFarther: Boolean = false,
         // The crosshairs, where it doesn't re-locate here: a From… station page's return to near me.
         onLocate: (() -> Unit)? = null,
         // A searched station's page (From…) is this same list around the station: its own retained
@@ -967,8 +970,11 @@ class MainActivity : ComponentActivity() {
             val hiddenModes by HiddenModesSetting.changes.collectAsStateWithLifecycle()
             // The nearest station of each rail line nothing nearby reaches, from the
             // bundled index (read off the main thread, once per process): no request.
-            val farther by produceState(emptyList<StationMatch>(), ready, hiddenModes, onOpenFarther != null) {
-                if (onOpenFarther == null) {
+            // Null until the picks are worked out (the bundled list loads off the main thread), so a
+            // recreated screen (a rotation, a return from Settings) doesn't read "nothing offered" and
+            // close the cards the retained list has open.
+            val farther by produceState<List<CollapsedPlaces.Place>?>(null, ready, hiddenModes, offerFarther) {
+                if (!offerFarther) {
                     value = emptyList()
                     return@produceState
                 }
@@ -981,8 +987,9 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 value = withContext(Dispatchers.IO) {
-                    FartherStations.pick(StationIndexStore.load(appContext).stations, ready.location, reached, hiddenModes)
-                        .map { it.station }
+                    val index = StationIndexStore.load(appContext)
+                    FartherStations.pick(index.stations, ready.location, reached, hiddenModes)
+                        .map { CollapsedPlaces.of(it, index.lineNames) }
                 }
             }
             val hiddenModesWriteFailed by HiddenModesSetting.writeFailed.collectAsStateWithLifecycle()
@@ -1033,6 +1040,42 @@ class MainActivity : ComponentActivity() {
             val dismissWriteFailed by viewModel.dismissWriteFailed.collectAsStateWithLifecycle()
             // The "More" buttons to offer — modes with a farther cluster still to page in.
             val revealableModes by viewModel.moreState.collectAsStateWithLifecycle()
+            // Each farther station's collapsed card and where it stands; a relocation keeps the ones
+            // still offered open, measured from the new fix.
+            // An opened card has its own departures model, as a From… page's station does, kept in
+            // this nearby set's store: it never joins the list's fetched set or the widget, and
+            // nothing about it is saved (SPEC *Finding stops → Farther stations*).
+            val fartherModels: FartherCardsViewModel = viewModel(
+                key = "farther",
+                factory = viewModelFactory {
+                    initializer {
+                        FartherCardsViewModel(
+                            stationStops = stationFinder::stationStops,
+                            newModel = { stops, distances ->
+                                fartherCardModel(departuresClient(appContext), appContext, stops, distances, writeFailures)
+                            },
+                            warn = ::logDepartureWarning,
+                        )
+                    }
+                },
+            )
+            val fartherLoads by fartherModels.cards.collectAsStateWithLifecycle()
+            LaunchedEffect(farther, ready.location) { farther?.let { fartherModels.retain(it, ready.location) } }
+            val fartherCards = remember(farther, fartherLoads) { farther.orEmpty().map { FartherCard(it, fartherLoads[it.key]) } }
+            val fartherDistanceMeters = remember(fartherLoads) {
+                fartherLoads.values.filterIsInstance<FartherLoad.Open>().fold(emptyMap<String, Double>()) { acc, open -> acc + open.distanceMeters }
+            }
+            // Each open card's departures, kept live while shown as the list's are, then shown
+            // through the list's own rows beside its card.
+            val openedStates = fartherLoads.entries.mapNotNull { (cardKey, load) ->
+                val open = load as? FartherLoad.Open ?: return@mapNotNull null
+                val model = fartherModels.model(cardKey) ?: return@mapNotNull null
+                key(cardKey) {
+                    AutoRefresh(model, relocating)
+                    open.distanceMeters.keys to model.state.collectAsStateWithLifecycle().value
+                }
+            }
+            val shownState = (state as? DeparturesUiState.Loaded)?.let { withOpenedFarther(it, openedStates) } ?: state
             val moreTier by viewModel.moreTier.collectAsStateWithLifecycle()
             // These background refreshes are composed only while the departures view is shown:
             // the licenses screen is hosted above this subtree (see onCreate), so opening it
@@ -1083,6 +1126,9 @@ class MainActivity : ComponentActivity() {
                         dropJourneyStopIds = drop,
                         awaitJourneyStops = await,
                     )
+                    // The opened farther cards refresh with the list; a relocation that stops
+                    // offering one closes it once the picks are redone ([FartherCardsViewModel.retain]).
+                    fartherModels.refresh()
                 }
             val onRelocate: () -> Unit = relocateAction(
                 cancelFetch = viewModel::cancelFetch,
@@ -1135,7 +1181,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 MainScreen(
                     listState = listState,
-                    state = state,
+                    state = shownState,
                     now = tickingNow(),
                     // Re-locates then re-fetches (see onRelocate above) — the same action a return
                     // to the foreground runs, so the refresh control and reopening the app both move
@@ -1147,7 +1193,8 @@ class MainActivity : ComponentActivity() {
                     // to its nearest stop (SPEC *Finding stops → Near me now*). Spans both tiers, so
                     // a revealed stop collapses like an eager one. Empty for a location-free list
                     // (a watched-stops view), which is shown as-is.
-                    stopDistanceMeters = ready.distanceMeters,
+                    // Plus an opened farther station's stops, so its departures show beside its card.
+                    stopDistanceMeters = ready.distanceMeters + fartherDistanceMeters,
                     journeys = shownJourneys,
                     farJourneyMeters = farJourneyMeters,
                     nearbyKey = stopsKey,
@@ -1210,6 +1257,9 @@ class MainActivity : ComponentActivity() {
                     onOpenStopMap = { stopId, name ->
                         val stop = (ready.eager + ready.more)
                             .firstNotNullOfOrNull { c -> c.stops.firstOrNull { it.id == stopId } }
+                            // Or an opened farther station's stop, looked up when its card was tapped.
+                            ?: fartherLoads.values.filterIsInstance<FartherLoad.Open>()
+                                .firstNotNullOfOrNull { open -> open.stops.firstOrNull { it.id == stopId } }
                         if (stop != null) {
                             openStopMap(stop.latitude, stop.longitude, name)
                         } else {
@@ -1242,8 +1292,9 @@ class MainActivity : ComponentActivity() {
                     onOpenAppListing = onOpenAppListing,
                     revealableModes = revealableModes,
                     moreTier = moreTier,
-                    farther = farther,
-                    onOpenFarther = { station -> onOpenFarther?.invoke(station) },
+                    farther = fartherCards,
+                    // Ignored while a relocation's fresh fix is in flight, like "More".
+                    onOpenFarther = { place -> if (!relocatingNow) fartherModels.open(place, ready.location) },
                     // Ignore a "More" tap while a relocation's fresh fix is in flight, so it can't
                     // page the pre-fix set as current (matches the cancel-on-relocate discipline).
                     onReveal = { mode -> if (!relocatingNow) viewModel.reveal(mode) },
@@ -2547,3 +2598,34 @@ private fun logUpdateWarning(message: String) = StopcastDebugLog.warning("update
 
 /** One read of the saved journeys: [journeys] is null when the store couldn't be read. */
 private class JourneysRead(val journeys: List<StarredJourney>?)
+
+/**
+ * The departures model for an opened farther station's card (SPEC *Finding stops → Farther
+ * stations*), built as a From… page's station's is: only its [stops], never saved or on the widget,
+ * with stars and dismissals shared with every other list.
+ */
+private fun fartherCardModel(
+    client: TflClient,
+    appContext: Context,
+    stops: List<StopRef>,
+    distanceMeters: Map<String, Double>,
+    writeFailures: WriteFailures,
+) = MainViewModel(
+    client = client,
+    departureSourceChanges = RailApiKeySetting.changes,
+    seedStops = stops,
+    stopDistanceMeters = distanceMeters,
+    farArrivalsReuse = FAR_ARRIVALS_REUSE,
+    starredStore = DataStoreStarredRowsStore.from(appContext, warn = ::logStarWarning),
+    dismissedStore = DataStoreDismissedAlertsStore.from(appContext, warn = ::logDepartureWarning),
+    warn = ::logDepartureWarning,
+    arrivalsReuse = ARRIVALS_REUSE,
+    disruptionReuse = DISRUPTION_REUSE,
+    lineStatusReuse = LINE_STATUS_REUSE,
+    rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
+    logStats = ::logDepartureWarning,
+    // Not the widget's list: the near-me model keeps the journey pins.
+    ownsWidgetJourneys = false,
+    writeFailures = writeFailures,
+    onStarToggled = { row -> rememberStarredPlace(appContext, row) },
+)
