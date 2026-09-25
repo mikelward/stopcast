@@ -2215,11 +2215,11 @@ private fun HideModeMenu(
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.pinchFontSizeHost()) {
         FontSizeWindow {
             leading?.invoke()
-            // One item per group the modes fall in ("Hide Train" for Thameslink or the Overground);
+            // One item per group the modes fall in ("Hide all train services" for Thameslink or the Overground);
             // hiding it hides the whole group, as the overflow menu's checkbox does.
             modes.map(ModeGroups::of).distinctBy { it.key }.forEach { group ->
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.hide_mode, groupName(group))) },
+                    text = { Text(stringResource(R.string.hide_mode, groupNameInSentence(group))) },
                     onClick = {
                         onDismiss()
                         onHideMode(group.modes.first())

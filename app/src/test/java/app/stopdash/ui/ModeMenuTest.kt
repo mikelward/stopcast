@@ -55,4 +55,12 @@ class ModeMenuTest {
         assertEquals("bus" to false, toggled)
         assertEquals(6, ModeGroups.ALL.size)
     }
+
+    @Test
+    fun `the hide item names every group mid-sentence, keeping the Tube and DLR capitalized`() {
+        assertEquals(
+            listOf("Tube & DLR", "train", "bus", "tram", "boat", "coach"),
+            ModeGroups.ALL.map { groupNameInSentence(it) },
+        )
+    }
 }

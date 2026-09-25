@@ -349,8 +349,9 @@ The app finds stops two ways:
   and on the Tube map), **Train** (the Overground, the Elizabeth line and National Rail), **Bus**,
   **Tram**, **Boat** (TfL's "river bus") and **Coach**. The overflow menu lists all six, always the
   same, each with a checkbox ticked while it shows. A long press on a near-me
-  row opens a small menu, pinning or unpinning it and **"Hide ‹group›"**; a long press on a place's
-  header offers "Hide ‹group›" for each group it serves. Starring a near-me row therefore takes the
+  row opens a small menu, pinning or unpinning it and **"Hide all ‹group› services"** (a bare "Hide
+  Train" read as hiding that one train); a long press on a place's header offers it for each group
+  it serves. Starring a near-me row therefore takes the
   menu's first item. Journey cards keep a long press as a direct star, since a starred journey is
   the user's explicit choice and hiding doesn't reach it.
   A hidden mode's stops aren't picked for the near-me set, so they cost no request; a place that also

@@ -115,7 +115,7 @@ class StarLongPressTest {
         // The menu opens; nothing is pinned or hidden until an item is picked.
         assertNull(toggled)
         composeRule.onNodeWithText("Pin to top").assertExists()
-        composeRule.onNodeWithText("Hide Tube & DLR").performClick()
+        composeRule.onNodeWithText("Hide all Tube & DLR services").performClick()
         assertEquals("tube", hidden)
         assertNull(toggled)
 
@@ -143,9 +143,9 @@ class StarLongPressTest {
         }
         composeRule.onNodeWithContentDescription("King's Cross St. Pancras", substring = true)
             .performTouchInput { longClick() }
-        composeRule.onNodeWithText("Hide Tube & DLR").assertExists()
+        composeRule.onNodeWithText("Hide all Tube & DLR services").assertExists()
         // No bus is due, but the place serves one, so it can still be hidden.
-        composeRule.onNodeWithText("Hide Bus").performClick()
+        composeRule.onNodeWithText("Hide all bus services").performClick()
         assertEquals("bus", hidden)
     }
 
@@ -175,7 +175,7 @@ class StarLongPressTest {
         }
         composeRule.onNodeWithContentDescription("King's Cross St. Pancras", substring = true)
             .performTouchInput { longClick() }
-        composeRule.onNodeWithText("Hide Bus").performClick()
+        composeRule.onNodeWithText("Hide all bus services").performClick()
         assertEquals("bus", hidden)
     }
 
