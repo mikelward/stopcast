@@ -227,3 +227,9 @@ internal fun fartherReached(shown: List<StopRef>, loadedIds: Set<String>? = null
             lines = stop.lines.mapTo(HashSet()) { FartherStations.Line(it.mode.lowercase(), it.id) },
         )
     }
+
+/**
+ * The [FartherCardsViewModel] key for a list, from its stores key (null for near me): distinct per
+ * list, so a From… station page's opened cards never share state with near me's.
+ */
+internal fun fartherCardsKey(storesKey: String?): String = if (storesKey == null) "farther" else "farther|$storesKey"

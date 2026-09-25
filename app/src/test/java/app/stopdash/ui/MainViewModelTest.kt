@@ -44,6 +44,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -2495,6 +2496,13 @@ class MainViewModelTest {
         assertEquals(setOf(setOf("S", "C")), reached.map { it.ids }.toSet())
         // Modes are compared lowercase against the bundled index.
         assertEquals(setOf(FartherStations.Line("tube", "victoria")), reached.single().lines)
+    }
+
+    @Test
+    fun `a From page's farther cards are kept apart from near me's`() {
+        // Each list has its own opened-card state (Codex P1, PR #226).
+        assertNotEquals(fartherCardsKey(null), fartherCardsKey("from-list-stores"))
+        assertEquals(fartherCardsKey("from-list-stores"), fartherCardsKey("from-list-stores"))
     }
 
     @Test
