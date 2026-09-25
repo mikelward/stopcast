@@ -279,13 +279,17 @@ The app finds stops two ways:
   station, the rest of the network can be two miles off. Below the loaded places and the *More*
   controls, a **collapsed card** stands for the nearest station of each **rail line** the nearby
   stops don't serve — a tube line, a National Rail service (Thameslink, Great Northern…), an
-  Overground line, the Elizabeth line, the DLR, a tram — nearest first, within 3 mi, **at most five**
-  cards and at most two of them for tube lines. **Buses never** earn one: every stop has them.
+  Overground line, the Elizabeth line, the DLR, a tram — nearest first, within 3 mi, **at most
+  eight** cards, from at most two tube lines. A line's nearest station can lie the wrong way for
+  the rider's trip, so a line also gets its **nearest station the other way** (maintainer,
+  2026-09-25): more than a right angle round from the nearest one, seen from where the rider
+  stands. **Buses never** earn one: every stop has them.
   A station standing for several lines is one card, and an interchange's stations are one card
   standing for the interchange; a hidden mode's lines get none. A **National Rail** service counts
   by the **ends of its routes** from each station (maintainer, 2026-09-25): Thameslink runs to
   Bedford from one station and to Cambridge from another, so a station reaching an end nothing
-  nearby reaches earns a card even on a service already reached. The other modes count by line: a
+  nearby reaches earns a card even on a service already reached, and a route end, which names its
+  direction already, keeps one station. The other modes count by line: a
   second tube station on another branch of a line already reached isn't offered (a branch rule
   would be finer but noisier). A card is headed like a loaded place, its name and distance, over
   **one row of the lines it adds** and **"Tap to see"** where the times would be (maintainer,

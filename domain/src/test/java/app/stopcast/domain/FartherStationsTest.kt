@@ -38,6 +38,48 @@ class FartherStationsTest {
     }
 
     @Test
+    fun `a line gets its nearest station the other way too`() {
+        val north = station("940GNORTH", "North", 1_000.0, tube("piccadilly"))
+        val fartherNorth = station("940GNORTH2", "Farther North", 1_500.0, tube("piccadilly"))
+        val south = station("940GSOUTH", "South", -2_000.0, tube("piccadilly"))
+        val picked = FartherStations.pick(listOf(north, fartherNorth, south), here, reached = emptyList())
+        // The second station on the same side adds no direction; the one past the rider does.
+        assertEquals(listOf("940GNORTH", "940GSOUTH"), picked.map { it.station.id })
+        assertEquals(listOf(listOf(FartherStations.Line("tube", "piccadilly"))), picked.map { it.lines }.distinct())
+    }
+
+    @Test
+    fun `a station off to the side is not the other direction`() {
+        val north = station("940GNORTH", "North", 1_000.0, tube("piccadilly"))
+        // Due east: a right angle round from the nearest, not past it.
+        val east = IndexedStation("940GEAST", "East", listOf("tube"), latitude = 51.5, longitude = -0.12 + 0.02, lines = tube("piccadilly"))
+        assertEquals(listOf("940GNORTH"), FartherStations.pick(listOf(north, east), here, reached = emptyList()).map { it.station.id })
+    }
+
+    @Test
+    fun `the tube cap counts lines, each with both its directions`() {
+        val picked = FartherStations.pick(
+            listOf(
+                station("940GPN", "P North", 1_000.0, tube("piccadilly")),
+                station("940GPS", "P South", -1_100.0, tube("piccadilly")),
+                station("940GVN", "V North", 1_200.0, tube("victoria")),
+                station("940GVS", "V South", -1_300.0, tube("victoria")),
+                station("940GCN", "C North", 1_400.0, tube("central")),
+            ),
+            here,
+            reached = emptyList(),
+        )
+        assertEquals(listOf("940GPN", "940GPS", "940GVN", "940GVS"), picked.map { it.station.id })
+    }
+
+    @Test
+    fun `a National Rail route end keeps just its nearest station`() {
+        val north = rail("910GN", 1_000.0, "thameslink", "910GEND")
+        val south = rail("910GS", -1_500.0, "thameslink", "910GEND")
+        assertEquals(listOf("910GN"), FartherStations.pick(listOf(north, south), here, reached = emptyList()).map { it.station.id })
+    }
+
+    @Test
     fun `each National Rail service counts as its own line`() {
         val thameslink = station("910GTHAMES", "Thameslink Stop", 2_800.0, mapOf("national-rail" to listOf("thameslink")))
         val picked = FartherStations.pick(listOf(rail, sameService, thameslink), here, reached = emptyList())
@@ -45,8 +87,8 @@ class FartherStationsTest {
     }
 
     @Test
-    fun `at most five buttons in all`() {
-        val many = (1..8).map { station("910GR$it", "Rail $it", 1_000.0 + it * 100, mapOf("national-rail" to listOf("service-$it"))) }
+    fun `at most eight cards in all`() {
+        val many = (1..10).map { station("910GR$it", "Rail $it", 1_000.0 + it * 100, mapOf("national-rail" to listOf("service-$it"))) }
         assertEquals(FartherStations.MAX_BUTTONS, FartherStations.pick(many, here, emptyList()).size)
     }
 
@@ -63,20 +105,39 @@ class FartherStationsTest {
     }
 
     @Test
-    fun `a station serving two unreached lines is one button, counted once toward the tube cap`() {
+    fun `a station serving two unreached lines is one card`() {
         val both = station("940GBOTH", "Both", 1_500.0, tube("piccadilly", "victoria"))
-        val picked = FartherStations.pick(listOf(near, both, lineC, lineD), here, reached("tube" to "northern"))
-        assertEquals(listOf("940GBOTH", "940GLINED"), picked.map { it.station.id })
+        val picked = FartherStations.pick(listOf(near, both, lineC, ground), here, reached("tube" to "northern"))
+        assertEquals(listOf("940GBOTH", "910GGROUND"), picked.map { it.station.id })
+    }
+
+    @Test
+    fun `a place's tube lines all count toward the cap`() {
+        val both = station("940GBOTH", "Both", 1_500.0, tube("piccadilly", "victoria"))
+        val picked = FartherStations.pick(listOf(near, both, lineD), here, reached("tube" to "northern"))
+        // Both is two tube lines already, so the Central line's station isn't offered.
+        assertEquals(listOf("940GBOTH"), picked.map { it.station.id })
+        assertEquals(setOf("piccadilly", "victoria"), picked.flatMap { it.lines }.mapTo(HashSet()) { it.id })
+    }
+
+    @Test
+    fun `a capped tube line is left off a place that serves it`() {
+        val first = station("940GFIRST", "First", 1_000.0, tube("piccadilly"))
+        val second = station("940GSECOND", "Second", 1_100.0, tube("victoria"))
+        val third = station("940GTHIRD", "Third", 1_200.0, mapOf("tube" to listOf("central"), "dlr" to listOf("dlr")))
+        val picked = FartherStations.pick(listOf(first, second, third), here, emptyList())
+        assertEquals(listOf("940GFIRST", "940GSECOND", "940GTHIRD"), picked.map { it.station.id })
+        assertEquals(listOf(FartherStations.Line("dlr", "dlr")), picked.last().lines)
     }
 
     @Test
     fun `a farther place carries every unreached line it stands for`() {
         val both = station("940GBOTH", "Both", 1_500.0, tube("piccadilly", "victoria"))
-        val picked = FartherStations.pick(listOf(near, both, lineD), here, reached("tube" to "northern"))
+        val picked = FartherStations.pick(listOf(near, both, ground), here, reached("tube" to "northern"))
         assertEquals(
             listOf(
                 listOf(FartherStations.Line("tube", "piccadilly"), FartherStations.Line("tube", "victoria")),
-                listOf(FartherStations.Line("tube", "central")),
+                listOf(FartherStations.Line("overground", "suffragette")),
             ),
             picked.map { farther -> farther.lines.sortedBy { it.id } },
         )
