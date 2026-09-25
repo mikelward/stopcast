@@ -1448,7 +1448,7 @@ class MainScreenScreenshotTest {
         composeRule.onNodeWithText("King's Cross Station").assertExists()
         composeRule.onNodeWithText("73").assertExists()
         composeRule.onAllNodesWithText("Tap to see").assertCountEquals(2)
-        composeRule.onNodeWithText("Loading…").assertExists()
+        composeRule.onNodeWithText("Loading").assertExists()
         composeRule.onNodeWithText("Tap to retry").assertExists()
     }
 
@@ -1518,7 +1518,7 @@ class MainScreenScreenshotTest {
             }
         }
         composeRule.onNodeWithContentDescription("No departures").assertExists()
-        composeRule.onNodeWithText("Loading…").assertDoesNotExist()
+        composeRule.onNodeWithText("Loading").assertDoesNotExist()
     }
 
     private fun busPlace(id: String, name: String, meters: Double, vararg routes: String) =
@@ -3301,6 +3301,83 @@ class MainScreenScreenshotTest {
         val countBounds = composeRule.onNodeWithText("0 · 3 · 6 min").getUnclippedBoundsInRoot()
         val countWidth = countBounds.right - countBounds.left
         assertTrue("merged countdown should keep width, was $countWidth", countWidth >= 100.dp)
+    }
+
+    @Test
+    fun `a cold load shows the stops back so far and the rest loading in place`() {
+        // SPEC *Freshness → Cold load*: King's Cross is back; Euston Square (nearer) and Euston
+        // (farther) are still out, each a collapsed "Loading" card where it will land, with the
+        // line-status banner saying it's still checking. Public station names as stand-ins.
+        capture("main-cold-load-partial.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(
+                    listOf(oneStarrableStop()),
+                    now.minusSeconds(60),
+                    disruptionUnknown = true,
+                    statusPending = true,
+                    pendingStops = listOf(
+                        StopRef("940GZZLUESQ", "Euston Square", listOf(LineRef("circle", "Circle", "tube"), LineRef("metropolitan", "Metropolitan", "tube"))),
+                        StopRef("910GEUSTON", "London Euston", listOf(LineRef("london-overground", "Lioness", "overground"))),
+                    ),
+                ),
+                now,
+                {},
+                stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0, "940GZZLUESQ" to 80.0, "910GEUSTON" to 900.0),
+            )
+        }
+        composeRule.onNodeWithText("Euston Square").assertExists()
+        composeRule.onAllNodesWithText("Loading").assertCountEquals(2)
+        composeRule.onNodeWithText("Checking for disruptions").assertExists()
+        composeRule.onNodeWithText("No upcoming departures").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a cold load with only a failure back yet keeps the pending stamp`() {
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(
+                            stops = emptyList(),
+                            fetchedAt = now,
+                            statusPending = true,
+                            disruptionUnknown = true,
+                            pendingStops = listOf(StopRef("940GZZLUESQ", "Euston Square")),
+                            partialRefresh = true,
+                            partialStops = mapOf("940GZZLUKSX" to DeparturesUiState.FailedStop("King's Cross St. Pancras")),
+                        ),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Loading…").assertExists()
+        composeRule.onNodeWithText("Updated just now").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a cold load cut short before any stop landed keeps the pending stamp`() {
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(
+                            stops = emptyList(),
+                            fetchedAt = now,
+                            disruptionUnknown = true,
+                            partialRefresh = true,
+                            partialStops = mapOf("940GZZLUKSX" to DeparturesUiState.FailedStop("King's Cross St. Pancras")),
+                        ),
+                        now,
+                        {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Loading…").assertExists()
     }
 
     @Test

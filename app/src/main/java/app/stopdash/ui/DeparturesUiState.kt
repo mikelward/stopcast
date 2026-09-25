@@ -78,6 +78,15 @@ sealed interface DeparturesUiState {
         // earlier result to keep. Tells a stop that couldn't be fetched apart from one still loading
         // (a starred journey's origin says "Couldn't check trains", not "Checking trains…").
         val unavailableStopIds: Set<String> = emptySet(),
+        // A cold load still out: the stops not back yet, each shown as a collapsed "Loading" card
+        // where it will land, while [stops] holds the ones that are. Never persisted (SPEC D4).
+        val pendingStops: List<StopRef> = emptyList(),
+        // A cold load shown before its one line-status check has run (every stop may be in): the
+        // banner says it's still checking rather than that it couldn't.
+        val statusPending: Boolean = false,
+        // The stops of an opened farther card whose own cold load is still out, landed or not: its
+        // card keeps saying "Loading" until they all settle, rather than a dash for one back empty.
+        val openedLoadingStopIds: Set<String> = emptySet(),
     ) : DeparturesUiState {
         /**
          * The one reason the banner gives: the one every named stop failed with, else null — a stop

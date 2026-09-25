@@ -78,6 +78,8 @@
     <!-- Shown when arrivals loaded but the disruption lookup failed, so these times'
          disruption status was never checked (SPEC Disruptions: not verified-clean). -->
     <string name="disruptions_unknown">Couldn\'t check for disruptions</string>
+    <!-- While a cold load is still bringing stops in: line status is checked once they're all back. -->
+    <string name="disruptions_checking">Checking for disruptions</string>
     <!-- Click labels for the stop-closure card, which collapses a long TfL notice to one
          line and expands to the full text on tap. Announced by a screen reader as the action
          ("double tap to Show full alert"); the notice text itself is read from the card. -->
@@ -294,7 +296,7 @@
     <!-- A farther station's collapsed card on the near-me list: the cue where its times would be,
          and while it loads or if it failed. Open with nothing running, it shows a line row's dash. -->
     <string name="farther_tap_to_see">Tap to see</string>
-    <string name="farther_loading">Loading…</string>
+    <string name="farther_loading">Loading</string>
     <string name="farther_retry">Tap to retry</string>
 
     <!-- Bug report (SPEC Privacy). Overflow item, then the consent screen that spells out what
