@@ -20,8 +20,11 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.ServerResponseException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.pluginOrNull
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
@@ -89,7 +92,16 @@ class KtorTflClient(
                 // stops come back line-less in production (the fixture has them), so a suspended
                 // no-prediction line couldn't surface as a status row without a second lookup.
                 parameter("returnLines", true)
+                // Only the Direction properties (CompassPoint, Towards) are read; the rest is station
+                // facilities, about two thirds of a dense area's response (2 MB → 0.7 MB for a
+                // 1-mile search in the City).
+                parameter("categories", "Direction")
                 applyAppKey(key)
+                // A dense area's search can take TfL over OkHttp's 10 s default to start answering
+                // when it isn't cached, which failed the whole nearby list; give it longer.
+                if (httpClient.pluginOrNull(HttpTimeout) != null) {
+                    timeout { socketTimeoutMillis = NEARBY_SOCKET_TIMEOUT_MILLIS }
+                }
             }.body<TflStopPointsResponseDto>().stopPoints.mapNotNull { it.toStopLocationOrNull() }
         }
 
@@ -260,6 +272,12 @@ class KtorTflClient(
     companion object {
         const val DEFAULT_BASE_URL: String = "https://api.tfl.gov.uk"
 
+        /**
+         * How long a nearby-stops search may go without data. An uncached 1-mile search in central
+         * London measured 7–11 s before TfL's first byte, past OkHttp's 10 s default.
+         */
+        const val NEARBY_SOCKET_TIMEOUT_MILLIS: Long = 30_000
+
         /** How many name-search matches to ask for — a screenful; a longer query narrows it. */
         const val SEARCH_MAX_RESULTS: Int = 20
 
@@ -279,6 +297,9 @@ class KtorTflClient(
                     }
                 }
                 expectSuccess = true
+                // No client-wide values, so every request keeps OkHttp's defaults; installed so a
+                // slow endpoint can ask for longer per request (nearbyStops).
+                install(HttpTimeout)
                 install(ContentNegotiation) {
                     json(Json { ignoreUnknownKeys = true })
                 }
