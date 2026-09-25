@@ -5,6 +5,8 @@ import app.stopdash.domain.TflRateLimiter
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutCapability
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
@@ -372,6 +374,7 @@ class KtorTflClientTest {
         appKey: String? = null,
         capture: (HttpRequestData) -> Unit = {},
         warn: (String) -> Unit = {},
+        httpTimeout: Boolean = false,
     ): KtorTflClient {
         val engine = MockEngine { request ->
             capture(request)
@@ -383,6 +386,7 @@ class KtorTflClientTest {
         }
         val http = HttpClient(engine) {
             expectSuccess = true
+            if (httpTimeout) install(HttpTimeout)
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         }
         return KtorTflClient(httpClient = http, baseUrl = "https://tfl.example", appKey = { appKey }, warn = warn)
@@ -733,7 +737,29 @@ class KtorTflClientTest {
         // Without this the search returns line-less stops, so a suspended no-prediction line
         // couldn't surface as a status row (SPEC Disruptions).
         assertEquals("true", req.url.parameters["returnLines"])
+        // Only the Direction properties are read; the facilities are most of a dense area's payload.
+        assertEquals("Direction", req.url.parameters["categories"])
         assertNull(req.url.parameters["app_key"])
+    }
+
+    @Test
+    fun `nearby search waits longer than the default for TfL to answer`() = runTest {
+        // An uncached search in a dense area can take TfL past OkHttp's 10 s default to start
+        // answering, which failed the whole nearby list with a timeout.
+        var captured: HttpRequestData? = null
+        client(nearbyJson, httpTimeout = true, capture = { captured = it })
+            .nearbyStops(latitude = 51.5, longitude = -0.12, radiusMeters = 350)
+        assertEquals(
+            KtorTflClient.NEARBY_SOCKET_TIMEOUT_MILLIS,
+            checkNotNull(captured).getCapabilityOrNull(HttpTimeoutCapability)?.socketTimeoutMillis,
+        )
+    }
+
+    @Test
+    fun `other requests keep the default timeout`() = runTest {
+        var captured: HttpRequestData? = null
+        client(arrivalsJson, httpTimeout = true, capture = { captured = it }).arrivals("940GZZLUVIC")
+        assertNull(checkNotNull(captured).getCapabilityOrNull(HttpTimeoutCapability)?.socketTimeoutMillis)
     }
 
     @Test

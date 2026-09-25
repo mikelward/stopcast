@@ -907,6 +907,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         2026-09-23). Providers were asked one at a time, so indoors fused and GPS each ran out
         their 4 s bound before the network provider was asked. They're now asked at once: an
         accurate fix wins on arrival, a network fix after a 2 s grace.
+  - [x] **A searched central station's page failed whole with a timeout** (maintainer bug report,
+        2026-09-25). An uncached 1-mile stop search in the City took TfL 7–11 s to start
+        answering, past OkHttp's 10 s read timeout. That search now waits up to 30 s, and asks
+        only for the Direction properties it reads, cutting its response by about two thirds.
   - [x] **A "More" tap fetches only the newly revealed page, not the whole set** (landed). `reveal()`
         no longer calls `refresh()`; it fetches just the stops not already shown and merges them into
         the current `Loaded` via `fetchIncremental`, persisting the widened set only when the fetch
