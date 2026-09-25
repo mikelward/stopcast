@@ -236,11 +236,20 @@ The app finds stops two ways:
   Abbreviations are **generated, never listed**: a word "Cross" also reads "X", so "KX" and
   "CX" (Charing Cross) need no alias table. Within a tier an interchange leads, then the
   shorter name. A station whose interchange also matches is folded into it, since the
-  interchange's page holds it. If TfL's search fails but the list matched, the list's matches
+  interchange's page holds it. TfL lists a place's bus stop areas one by one, so results **of
+  the same name within 250 m of a better-ranked one fold into it** (maintainer, 2026-09-25):
+  "Archway" is listed once, not once per stand, and its page (or a To… to it) takes in the stops
+  around it (the fold stays inside a To…'s 0.2 mi, so a folded stop is still a destination).
+  Same-named places farther apart ("Church Street" in two boroughs) both stay, and a
+  result TfL gives no position for is never folded. If TfL's search fails but the list matched, the list's matches
   stand, with a line saying bus stops weren't searched.
 - **From… To…** (maintainer, 2026-09-24) — **To…** keeps only the departures that **call at a
   chosen station directly**: the trains or buses whose path, on their own line's route, reaches it
-  (or any station in its interchange). It is offered in two places. On the **near-me list's
+  (or any station in its interchange, or **any stop within 0.2 mi of it** — maintainer,
+  2026-09-25: the buses stopping outside a station arrive there as surely as its trains do, so "To…
+  Archway" isn't tube-only). A **bus stop** picked as the destination takes in only its
+  same-named stands nearby (those the search lists as one), not every pole within 0.2 mi, so a
+  route calling at an unrelated stop down the road doesn't pass for one serving it. It is offered in two places. On the **near-me list's
   overflow**, it starts from **the stops the list shows by default** (the nearest of each mode within
   a mile, a tube station among them — the whole set, including a stop whose rows the list folds
   into a nearer stop's, since the trip folds them the same way) **plus any other stop within
@@ -257,7 +266,8 @@ The app finds stops two ways:
   soon". Direct only: a trip needing a change is **journey planning**, the eventual goal and a
   follow-up (`TODO.md`), and starring the trip as a journey is one too. The routes are the same
   per-line lookups a route page makes (a request or two per line a day, cached); the destination
-  is TfL's stop lookup of the picked station, once, and a trip from here fetches the arrivals of
+  is TfL's stop lookup of the picked station and one of the stops around its public position,
+  once each, and a trip from here fetches the arrivals of
   its origin stops like the list does. The destination's name and id go only to TfL, as the
   station search's already do (*Privacy*).
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at

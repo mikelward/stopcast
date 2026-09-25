@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.stopcast.domain.Coordinates
+import app.stopcast.domain.DirectTrips
 import app.stopcast.domain.FixedLocation
 import app.stopcast.domain.StationFinder
 import app.stopcast.domain.StationIndex
@@ -207,6 +208,10 @@ class StationStopsViewModel(
     private val stationId: String,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val warn: (String) -> Unit = {},
+    // A To… destination: the stops around the station's center, taken in with its own
+    // ([DirectTrips.destinationStops]) so the buses at its door count as arriving there. Null for
+    // a From… station, whose page finds its surroundings itself.
+    private val around: (suspend (Coordinates) -> List<StopLocation>)? = null,
 ) : ViewModel() {
     sealed interface State {
         data object Loading : State
@@ -231,8 +236,16 @@ class StationStopsViewModel(
         _state.value = State.Loading
         load = viewModelScope.launch {
             _state.value = try {
-                val stops = withContext(io) { finder.stationStops(stationId) }
-                if (stops.isEmpty()) State.NoStops else State.Ready(stops.map(StopLocation::toStopRef), FixedLocation.centerOf(stops))
+                val own = withContext(io) { finder.stationStops(stationId) }
+                val center = FixedLocation.centerOf(own)
+                // Looked up with the station, so a destination is never shown narrower than it is
+                // (a failure fails the whole lookup, with Retry, rather than quietly dropping buses).
+                val stops = if (around != null && center != null) {
+                    DirectTrips.destinationStops(own, withContext(io) { around.invoke(center) }, center)
+                } else {
+                    own
+                }
+                if (stops.isEmpty()) State.NoStops else State.Ready(stops.map(StopLocation::toStopRef), center)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TflException) {
