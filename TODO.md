@@ -1830,13 +1830,11 @@ and these carry the rest as their own PRs:
         docs). A new ID is a new app on devices and a new Play listing; see the Play item
         above. The repo's URLs (and its Pages privacy URL) point at `mikelward/stopdash`,
         ahead of the maintainer renaming the GitHub repo.
-    - [ ] **Station builders still say "stopcast"** (`scripts/build_crs_index.py`,
-          `scripts/build_station_index.py`: docstrings and User-Agents). Any change to them
-          triggers `station-index.yml`, which rebuilds from live data, and today's NaPTAN/TfL
-          data maps the Overground twin `910GCLPHMJ1` to `CLJ`, which the builder's
-          Overground-twin dedup should drop (`RailStationCodesStoreTest` asserts it has no code).
-          Fix the dedup for the new data first, then rename them in the same PR. The weekly
-          `station-index-refresh.yml` PR will hit the same failure until then.
+    - [x] **Station builders renamed too**, with the station index and codes rebuilt from
+          live data. TfL now gives Clapham Junction's second id (`910GCLPHMJ1`) South Western
+          Railway as well as the Overground, so it keeps its `CLJ` code like St Pancras's two
+          National Rail ids; the app shows one board between such twins. An Overground-only
+          twin is still dropped.
   - [x] Extract `app.stopdash.domain` into a pure-Kotlin `:domain` module (refactor only; the
         package already had no Android imports).
   - [x] Move `route_topology.json` and
