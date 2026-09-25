@@ -13,6 +13,8 @@
     <string name="tile_updated_ago">%d min ago</string>
     <!-- Every stop on the tile is past the staleness threshold; countdowns show "?". -->
     <string name="tile_out_of_date">Out of date</string>
+    <!-- On the tile: opens the watch app, which lists every stop's departures. -->
+    <string name="tile_all_stops">All stops</string>
     <!-- Asks the phone for fresh departures. -->
     <string name="watch_refresh">Refresh</string>
     <!-- A refresh request is waiting for the phone's answer. -->

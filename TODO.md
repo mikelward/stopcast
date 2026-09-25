@@ -1834,7 +1834,8 @@ and these carry the rest as their own PRs:
         - No stops, or no envelope yet: an explicit one-line setup state, never a blank tile
           or the previous rows. Stops with no rows show each stop's empty form. A complication
           with nothing to show returns *no data*.
-        - No **All stops** edge button until the watch app lands; that PR adds it.
+        - A fresh, complete tile's foot is **All stops** (opens the watch app); otherwise,
+          including when stops were left out for size, Refresh.
         - [ ] **Tile screenshot test still missing:** rendering the ProtoLayout with
               `tiles-renderer` under Robolectric fails (`NoClassDefFoundError:
               androidx/wear/protolayout/renderer/R$style`, as a test or debug dependency). The
@@ -1854,11 +1855,14 @@ and these carry the rest as their own PRs:
           *Privacy* / `docs/PRIVACY.md` watch paragraph and the Data Safety determination in the
           same PR.
         - A selected stop that leaves the widget's scope falls back to the default row.
-  - [ ] Small watch app: the same cards in a dense rotary-scrolling list ("towards …" on the
+  - [x] Small watch app: the same cards in a dense rotary-scrolling list ("towards …" on the
         stop-name line), plus the tile's **All stops** button.
         - A foreground ticker advances countdowns and staleness at each boundary, with no
-          polling; test it with an injected clock.
-        - Add a watch-app `*ScreenshotTest` (round screen, large font) to CI's allow-list.
+          polling; tested with an injected clock.
+        - `WatchHomeScreenshotTest` (round screen, large font) covers it, already in CI's
+          allow-list.
+        - [ ] **Device check:** rotary scrolling and the tile's All stops launch need a watch
+              or emulator.
   - [ ] Play (**maintainer only, after the rename and the launch decision**): lift the release
         gate, file the Data Safety answers decided with the publisher, then a Wear OS release
         track with screenshots and the app-quality review.

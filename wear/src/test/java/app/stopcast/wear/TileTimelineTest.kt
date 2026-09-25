@@ -295,4 +295,27 @@ class TileTimelineTest {
         assertEquals(RefreshNotice.Kind.PHONE_OUT_OF_REACH, at(timeout))
         assertNull(at(timeout.plus(RefreshPolicy.NOTICE_FOR)))
     }
+
+    @Test
+    fun `the next change is the soonest countdown minute, departure or boundary, and none once stale`() {
+        val env = envelope(stop("940GA", listOf(departure(90))))
+        // The departure's count drops from 1 to 0 just after 30 s; the age stamp turns at 60 s.
+        assertEquals(fetched.plusSeconds(30).plusMillis(1), TileTimeline.nextChange(env, fetched))
+        assertEquals(fetched.plusSeconds(60), TileTimeline.nextChange(env, fetched.plusSeconds(31)))
+        assertEquals(fetched.plusSeconds(90), TileTimeline.nextChange(env, fetched.plusSeconds(61)))
+        // After the last departure, the minutes of the age stamp, then the boundary.
+        assertEquals(fetched.plusSeconds(5 * 60), TileTimeline.nextChange(env, fetched.plusSeconds(4 * 60 + 1)))
+        assertNull(TileTimeline.nextChange(env, fetched.plusSeconds(5 * 60)))
+        assertNull(TileTimeline.nextChange(null, fetched))
+    }
+
+    @Test
+    fun `the tile offers All stops only when fresh and complete, with no refresh under way`() {
+        val fresh = TileFrame.Rows(emptyList(), ageMinutes = 0, stale = false, partial = false)
+        assertTrue(TileLayout.offersAllStops(fresh, null))
+        assertFalse("out of date", TileLayout.offersAllStops(fresh.copy(stale = true), null))
+        assertFalse("a stop failed", TileLayout.offersAllStops(fresh.copy(partial = true), null))
+        assertFalse("stops left out for size", TileLayout.offersAllStops(fresh.copy(omitted = 1), null))
+        assertFalse("refreshing", TileLayout.offersAllStops(fresh, RefreshNotice.Kind.REFRESHING))
+    }
 }

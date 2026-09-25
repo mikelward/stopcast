@@ -21,8 +21,7 @@ under the same rules: it renders from a snapshot, and never presents stale data 
    watch face. It's the widget's watch counterpart: the next few departures for the stops the
    widget shows (D1), **favorites first**, with their line pills and the data's age.
    - Tiles don't scroll, so it shows as many rows as fit (about five) and an edge button,
-     **All stops**, that opens the scrollable watch app. Until the watch app ships (a
-     tile-only first release), the fresh tile has no edge button; the app's PR adds it.
+     **All stops**, that opens the scrollable watch app.
    - When the data is out of date, the countdowns turn to `?`, the age stamp is highlighted, and
      the edge button becomes **Refresh**, which asks the phone for a refresh (below).
    - This is the first deliverable.
@@ -554,12 +553,13 @@ it before committing to the design.
      Google's servers);
    - the Data Safety determination.
 5. **Done** (not released). The tile, with the staleness timeline. Its fresh-state **All stops**
-   button waits for step 8.
+   button came with step 8.
 6. **Done** (not released). Watch-initiated refresh.
 7. **Done** (not released): the complication, and its row picker with the selection synced back
    to the phone (and the disclosure that sync needs).
-8. The small watch app, which adds the tile's **All stops** button, with its foreground ticker
-   and its own `*ScreenshotTest` in CI's allow-list.
+8. **Done** (not released). The small watch app, which adds the tile's **All stops** button,
+   with its foreground ticker and its screenshots (`WatchHomeScreenshotTest`, already in CI's
+   allow-list).
 9. Play: the Wear OS track, screenshots, app-quality review, and filing the Data Safety answers
    decided in step 4.
 
