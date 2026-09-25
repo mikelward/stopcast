@@ -120,6 +120,14 @@ The app finds stops two ways:
   - it is **by line, both directions shown** for now — paired stops across a road serve a line
     in opposite directions, so neither direction is dropped; narrowing by direction or
     destination is a later refinement tied to *favorite destinations*;
+  - a **route's two directions stay at one place** when they can (maintainer, 2026-09-25): each
+    direction goes to its nearest stop, but where that would put northbound at one stop pair and
+    southbound at another, both come from a place serving both ways if its stop for each
+    direction is **within 50 m** of that direction's nearest. Two equally near stop pairs
+    otherwise split a route across two headers on a few meters' difference. A place is a TfL
+    stop area (a road's pole pair); over 50 m, the route splits for the shorter walk. A direction
+    is never moved onto a stop with a closure or other stop notice in force (TfL can still list
+    times at a closed pole): its open nearest stop keeps it, and the notice still shows;
   - a **closer closed stop is surfaced honestly** — its status is shown rather than silently
     routing the user to a farther open stop with no explanation.
 

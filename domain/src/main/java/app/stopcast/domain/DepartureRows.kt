@@ -214,6 +214,10 @@ object DepartureRows {
     fun nearbyDeduped(
         rows: List<DepartureRow>,
         stopDistanceMeters: Map<String, Double>,
+        // The alerts the user has dismissed, which the screen hides after this fold: a dismissed line
+        // warning no longer gives its pole a header of its own, so the rule keying places by header
+        // has to see the list as it will be shown.
+        dismissed: Set<DismissedAlert> = emptySet(),
     ): List<DepartureRow> {
         fun distanceOf(stopId: String): Double = stopDistanceMeters[stopId] ?: Double.MAX_VALUE
         val (stopStatus, lineRows) = rows.partition { it.stopDisruption != null }
@@ -226,10 +230,71 @@ object DepartureRows {
                 nearestStopByKey[key] = row.stopId
             }
         }
+        keepDirectionsTogether(lineRows, nearestStopByKey, stopStatus.mapTo(HashSet()) { it.stopId }, dismissed, ::distanceOf)
         // Keep every row from the nearest stop for its key, so two platforms of one service
         // at a single stop both survive; a farther stop's same-service row is dropped.
         val kept = lineRows.filter { nearestStopByKey[dedupeKeyOf(it)] == it.stopId }
         return (foldedStopStatus(stopStatus, ::distanceOf) + kept).sortedWith(rowOrder)
+    }
+
+    /**
+     * How much farther a place's stop may be than a direction's nearest for the route's directions to
+     * stay together there (maintainer, 2026-09-25).
+     */
+    const val TOGETHER_SLACK_METERS = 50.0
+
+    /**
+     * Where a line's directions would come from two places — northbound at one stop pair, southbound
+     * at another, because each direction takes its own nearest pole — move them to one place that
+     * serves every direction, when that place's stop for each is within [TOGETHER_SLACK_METERS] of
+     * the direction's nearest (maintainer, 2026-09-25): two equally near stop pairs otherwise split a
+     * route across two headers on a few meters' difference. Of several such places, the one whose
+     * farthest stop is nearest. A place is the header the list will group the stop under
+     * ([StopGrouping.clusterKeyOf]: a road's pole pair shares one stop area, while a stop showing a
+     * line warning the user hasn't dismissed heads its own), not the interchange-wide identity [stopPlaceKey] folds notices
+     * by, and only timed rows with a line and TfL direction take part. A direction never moves onto a
+     * stop with a notice in force ([noticed]: closed, or moved) — TfL can still list times at a
+     * closed pole — so a direction's open nearest stop keeps it. Updates [nearestStopByKey].
+     */
+    private fun keepDirectionsTogether(
+        lineRows: List<DepartureRow>,
+        nearestStopByKey: HashMap<RowKey, String>,
+        noticed: Set<String>,
+        dismissed: Set<DismissedAlert>,
+        distanceOf: (String) -> Double,
+    ) {
+        val timed = lineRows.filter { it.upcoming.isNotEmpty() && it.lineId.isNotBlank() && it.direction.isNotBlank() }
+        // The header each stop will sit under, worked out by the same code the screen runs: the rows
+        // this fold keeps (warning rows aren't moved here), less the alerts the screen then hides
+        // ([withoutDismissed]), grouped by [StopGrouping]'s own rule. Only warnings decide it; the
+        // screen's later steps drop timed rows alone ([withoutShownAbove]).
+        val kept = lineRows.filter { nearestStopByKey[dedupeKeyOf(it)] == it.stopId }
+        val warned = StopGrouping.warnedStopsOf(withoutDismissed(kept, dismissed))
+        fun headerPlaceOf(row: DepartureRow) = StopGrouping.clusterKeyOf(row, warned)
+        for ((_, rows) in timed.groupBy { it.lineId }) {
+            val keys = rows.mapTo(LinkedHashSet()) { dedupeKeyOf(it) }
+            if (keys.size < 2) continue
+            // Already one place: nothing to move.
+            val places = keys.mapTo(HashSet()) { key -> headerPlaceOf(rows.first { it.stopId == nearestStopByKey[key] }) }
+            if (places.size < 2) continue
+            // Each place's nearest stop for each of the line's directions.
+            val byPlace = HashMap<String, HashMap<RowKey, String>>()
+            for (row in rows) {
+                val poles = byPlace.getOrPut(headerPlaceOf(row)) { HashMap() }
+                val key = dedupeKeyOf(row)
+                val incumbent = poles[key]
+                if (incumbent == null || isCloserStop(row.stopId, incumbent, distanceOf)) poles[key] = row.stopId
+            }
+            val choice = byPlace.values
+                .filter { poles -> poles.keys.containsAll(keys) }
+                .filter { poles -> keys.none { key -> poles.getValue(key).let { it != nearestStopByKey[key] && it in noticed } } }
+                .filter { poles ->
+                    keys.all { key -> distanceOf(poles.getValue(key)) - distanceOf(nearestStopByKey.getValue(key)) <= TOGETHER_SLACK_METERS }
+                }
+                .minByOrNull { poles -> keys.maxOf { distanceOf(poles.getValue(it)) } }
+                ?: continue
+            for (key in keys) nearestStopByKey[key] = choice.getValue(key)
+        }
     }
 
     /**

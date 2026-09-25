@@ -65,8 +65,7 @@ object StopGrouping {
         // junction's poles read as one place. Carving the warned stop out — rather than adding a
         // per-pole/direction qualifier to the warning row — takes the safe half now; the qualifier
         // is a deferred design (TODO.md). (Codex P1s, PR #83.)
-        val warnedStops = HashSet<String>()
-        for (row in listRows) if (row.upcoming.isEmpty()) warnedStops.add(row.stopId)
+        val warnedStops = warnedStopsOf(listRows)
         // Group by **(place, compass direction)**: the place is the cluster (a junction's poles, a
         // station's platforms) as before, and within it a rail platform's compass (parsed from
         // `platformName` by [PlatformDirection]) splits the cards into one header per direction —
@@ -225,6 +224,14 @@ object StopGrouping {
     }
 
     /**
+     * The stops that head their own group because they carry a row with no countdown (a line-status
+     * warning): see [groupByStop]. Shared with [DepartureRows.nearbyDeduped], which must key places
+     * exactly as the headers do.
+     */
+    internal fun warnedStopsOf(listRows: List<DepartureRow>): Set<String> =
+        listRows.filter { it.upcoming.isEmpty() }.mapTo(HashSet()) { it.stopId }
+
+    /**
      * The clustering identity: [DepartureRow.clusterId] — TfL's `stationNaptan` where it gives one
      * (a junction's poles and a station's platforms share it), else the cleaned display name
      * (resolved upstream in the nearby lookup). Keying on the cluster rather than the name alone is
@@ -236,7 +243,7 @@ object StopGrouping {
      * merged with a same-cluster clear pole — see [groupByStop]. The `\u0000` prefix keeps the
      * per-stop keys from colliding with any real clusterId.
      */
-    private fun clusterKeyOf(row: DepartureRow, warnedStops: Set<String>): String =
+    internal fun clusterKeyOf(row: DepartureRow, warnedStops: Set<String>): String =
         if (row.stopId in warnedStops) "\u0000stop:${row.stopId}"
         else row.clusterId.ifBlank { "\u0000stop:${row.stopId}" }
 
