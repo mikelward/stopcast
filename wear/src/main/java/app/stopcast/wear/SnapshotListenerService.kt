@@ -15,6 +15,11 @@ import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import java.io.IOException
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Receives each snapshot the phone publishes (dev-docs/wear-os.md *The snapshot over the wire*)
@@ -38,7 +43,7 @@ class SnapshotListenerService : WearableListenerService() {
         val ingested = events
             .filter { it.type == DataEvent.TYPE_CHANGED && it.dataItem.uri.path == WatchSyncContract.SNAPSHOT_PATH }
             .count { event -> envelopeBytesRetrying(this, event.dataItem)?.let(store::ingest) == true }
-        if (ingested > 0) StopCastTileService.requestUpdate(this)
+        if (ingested > 0) WatchSurfaces.requestUpdate(this)
     }
 
     private companion object {
@@ -105,9 +110,13 @@ internal fun ingestExisting(context: Context, store: WatchEnvelopeStore): Boolea
         try {
             // An item whose envelope couldn't be read (an asset fetch failing, logged) is a
             // failed lookup, so the caller retries; one the store refuses or skips is not.
-            items.filter { it.uri.path == WatchSyncContract.SNAPSHOT_PATH }
-                .map { item -> envelopeBytes(context, item)?.also { store.ingest(it, ifNoneSince = since) } }
+            var stored = false
+            val read = items.filter { it.uri.path == WatchSyncContract.SNAPSHOT_PATH }
+                .map { item -> envelopeBytes(context, item)?.also { if (store.ingest(it, ifNoneSince = since)) stored = true } }
                 .all { it != null }
+            // A lookup that brought a newer envelope re-renders the surfaces, whoever asked.
+            if (stored) WatchSurfaces.requestUpdate(context)
+            read
         } finally {
             items.release()
         }
@@ -123,3 +132,26 @@ internal fun ingestExisting(context: Context, store: WatchEnvelopeStore): Boolea
 }
 
 private const val TAG = "StopCast.Watch"
+
+/** The watch's glanceable surfaces, which render the stored envelope and are told when it changes. */
+internal object WatchSurfaces {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val lookedUp = AtomicBoolean(false)
+
+    /**
+     * Looks up the item the Data Layer already holds, once per process (again later if it failed),
+     * in the background: a surface added (or app data cleared) after the phone last published has
+     * none stored. A newer envelope re-renders every surface ([ingestExisting]).
+     */
+    fun lookUpOnce(context: Context, store: WatchEnvelopeStore) {
+        if (!lookedUp.compareAndSet(false, true)) return
+        val appContext = context.applicationContext
+        scope.launch { if (!ingestExisting(appContext, store)) lookedUp.set(false) }
+    }
+
+    /** Asks the tile and every StopCast complication to re-render from the stored envelope. */
+    fun requestUpdate(context: Context) {
+        StopCastTileService.requestUpdate(context)
+        StopCastComplicationService.requestUpdate(context)
+    }
+}
