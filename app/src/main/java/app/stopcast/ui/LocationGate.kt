@@ -188,5 +188,5 @@ private fun Action(text: String, onClick: () -> Unit) {
 private fun failureMessage(kind: DeparturesUiState.Error.Kind): Int = when (kind) {
     DeparturesUiState.Error.Kind.OFFLINE -> R.string.error_offline
     DeparturesUiState.Error.Kind.RATE_LIMITED -> R.string.error_rate_limited
-    DeparturesUiState.Error.Kind.UNREACHABLE -> R.string.error_unreachable
+    DeparturesUiState.Error.Kind.NETWORK, DeparturesUiState.Error.Kind.SERVER -> R.string.error_unreachable
 }

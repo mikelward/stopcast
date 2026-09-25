@@ -245,10 +245,10 @@ class KtorTflClient(
             throw TflException.Offline(e)
         } catch (e: IOException) {
             // Online but the request didn't complete — a connect/read timeout,
-            // connection refused, or a TLS failure. TfL (or the path to it) is
-            // unreachable, not the device, so this is Unreachable rather than
-            // Offline (which would wrongly tell the user they're offline).
-            throw TflException.Unreachable("transport: ${e::class.simpleName}", e)
+            // connection refused, or a TLS failure. The device has a network but the
+            // request didn't get through, so this is Network rather than Offline
+            // (which would wrongly tell the user they're offline).
+            throw TflException.Network("transport: ${e::class.simpleName}", e)
         } catch (e: TflException) {
             throw e
         } catch (e: Exception) {

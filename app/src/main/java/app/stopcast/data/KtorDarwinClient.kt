@@ -53,7 +53,7 @@ class KtorDarwinClient(
         } catch (e: UnknownHostException) {
             throw TflException.Offline(e)
         } catch (e: IOException) {
-            throw TflException.Unreachable("transport: ${e::class.simpleName}", e)
+            throw TflException.Network("transport: ${e::class.simpleName}", e)
         } catch (e: Exception) {
             throw TflException.Unreachable("unexpected: ${e::class.simpleName}", e)
         }

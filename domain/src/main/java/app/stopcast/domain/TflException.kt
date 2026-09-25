@@ -17,4 +17,11 @@ sealed class TflException(message: String, cause: Throwable?) : Exception(messag
 
     /** Reached TfL but the request still failed — a non-2xx, or a decode failure. */
     class Unreachable(reason: String, cause: Throwable?) : TflException(reason, cause)
+
+    /**
+     * Online, but the request didn't complete — a timeout, a refused or reset connection, a TLS
+     * failure. Told apart from [Unreachable] so a surface says "network error" rather than blame
+     * TfL for what may be the phone's own connection.
+     */
+    class Network(reason: String, cause: Throwable?) : TflException(reason, cause)
 }

@@ -930,6 +930,13 @@ about when data has gone stale.
   pull. A failed auto-refresh keeps the last-good departures on screen with a "couldn't
   refresh" warning rather than blanking — and once the data is truly stale (past the
   threshold) the per-row countdowns are withheld, so nothing wrong is shown as live.
+  When only some stops fail, the others refresh and the warning **names the stops that
+  didn't** (the nearest, the rest as a count) **and why** — offline, rate limited, a network
+  error (the request didn't complete), or a server error (TfL answered with one) — so an outage
+  at one station reads as that, not as the app failing somewhere unnamed. The reason shows only when every named stop failed the same way; stops that failed
+  differently are named without one, rather than given a reason untrue of some. A failure in an
+  opened farther-station card isn't named: the warning falls back to "some stops". A snapshot
+  restored from disk names the stops but not the reason, which isn't kept.
 - The **widget** refreshes opportunistically — on tap, on host update, and on a
   bounded periodic schedule while it is plausibly visible — and degrades to on-demand
   rather than polling hard in the background (**D5**). The spec's guarantee is honesty

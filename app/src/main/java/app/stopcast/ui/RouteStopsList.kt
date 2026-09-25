@@ -121,11 +121,7 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
             } catch (e: TflException) {
                 // Already logged (sanitized) by the repository; surfaced here with its reason.
                 RouteStopsUi.Failed(
-                    when (e) {
-                        is TflException.Offline -> DeparturesUiState.Error.Kind.OFFLINE
-                        is TflException.RateLimited -> DeparturesUiState.Error.Kind.RATE_LIMITED
-                        is TflException.Unreachable -> DeparturesUiState.Error.Kind.UNREACHABLE
-                    },
+                    errorKindOf(e),
                 )
             }
         }
@@ -390,7 +386,8 @@ private fun DrawScope.drawRail(color: Color) {
 private fun routeStopsFailureMessage(kind: DeparturesUiState.Error.Kind): Int = when (kind) {
     DeparturesUiState.Error.Kind.OFFLINE -> R.string.route_stops_failed_offline
     DeparturesUiState.Error.Kind.RATE_LIMITED -> R.string.route_stops_failed_rate_limited
-    DeparturesUiState.Error.Kind.UNREACHABLE -> R.string.route_stops_failed_unreachable
+    // Wording not split yet: both still read "can't reach TfL" here.
+    DeparturesUiState.Error.Kind.NETWORK, DeparturesUiState.Error.Kind.SERVER -> R.string.route_stops_failed_unreachable
 }
 
 /** The rail color for a row's line: the color its pill takes (TfL line, rail operator, Overground accent), kept visible on the surface, else a neutral tone. */

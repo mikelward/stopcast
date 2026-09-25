@@ -59,6 +59,16 @@ sealed interface DeparturesUiState {
         val stops: List<StopArrivals>,
         val fetchedAt: Instant,
         val partialRefresh: Boolean = false,
+        // With [partialRefresh]: the stops that couldn't be refreshed, by id, nearest first, each with
+        // its own reason, so the banner names them rather than "some stops". Per stop so every path
+        // that merges or trims the set (a reveal, a relocation, an opened farther card) just unions or
+        // filters by id, and the one reason the banner gives is derived in one place
+        // ([partialReason]). Empty when none can be named, and the banner falls back.
+        val partialStops: Map<String, FailedStop> = emptyMap(),
+        // With [partialRefresh]: the list is also incomplete in a way [partialStops] can't name — a
+        // stop still pending after a relocation, or one with no name — so it stays partial even
+        // once every named stop is accounted for (an opened farther card showing one fresh).
+        val partialUnnamed: Boolean = false,
         val refreshFailure: Error.Kind? = null,
         val lineStatuses: Map<String, LineStatus> = emptyMap(),
         val disruptionUnknown: Boolean = false,
@@ -68,7 +78,18 @@ sealed interface DeparturesUiState {
         // earlier result to keep. Tells a stop that couldn't be fetched apart from one still loading
         // (a starred journey's origin says "Couldn't check trains", not "Checking trains…").
         val unavailableStopIds: Set<String> = emptySet(),
-    ) : DeparturesUiState
+    ) : DeparturesUiState {
+        /**
+         * The one reason the banner gives: the one every named stop failed with, else null — a stop
+         * whose cause is unknown (a restored snapshot) or different means no single reason is true
+         * of them all, so the banner names the stops without one (SPEC principle 2).
+         */
+        val partialReason: Error.Kind?
+            get() = partialStops.values.mapTo(HashSet()) { it.reason }.singleOrNull()
+    }
+
+    /** A stop that couldn't be refreshed: its [name], and [reason] if known. */
+    data class FailedStop(val name: String, val reason: Error.Kind? = null)
 
     /**
      * The fetch failed with no snapshot to fall back on, shown honestly rather than as
@@ -76,6 +97,7 @@ sealed interface DeparturesUiState {
      * snapshot item) a failure keeps showing the aged last-good data instead.
      */
     data class Error(val kind: Kind) : DeparturesUiState {
-        enum class Kind { OFFLINE, RATE_LIMITED, UNREACHABLE }
+        // NETWORK: online but the request didn't complete; SERVER: TfL answered with an error.
+        enum class Kind { OFFLINE, RATE_LIMITED, NETWORK, SERVER }
     }
 }
