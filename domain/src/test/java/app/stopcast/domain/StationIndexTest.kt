@@ -1,6 +1,7 @@
 package app.stopcast.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Searching and ranking the bundled index, on public station names and ids. */
@@ -99,5 +100,45 @@ class StationIndexTest {
         val seen = StationMatch("490000000002B", "Kennington Park Road", listOf("bus"))
         val yours = index.withYours(YourStops(known = listOf(seen)))
         assertEquals(listOf("940GZZLUKNG", "490000000002B"), yours.search("kenn").map { it.id })
+    }
+
+    @Test
+    fun `same-named results a street apart fold into the best-ranked one`() {
+        val index = StationIndex(listOf(IndexedStation("940GZZLUEXA", "Example", listOf("tube"))))
+        val local = index.search("example")
+        // TfL lists the station again (lending it a position) and one stop area per stand around it.
+        val remote = listOf(
+            StationMatch("940GZZLUEXA", "Example", listOf("tube"), 51.5, -0.12),
+            StationMatch("490G00000001", "Example", listOf("bus"), 51.5010, -0.12),
+            StationMatch("490G00000002", "Example", listOf("bus"), 51.4990, -0.1205),
+            // A differently named stop nearby stays its own result.
+            StationMatch("490G00000003", "Example / High Road", listOf("bus"), 51.5005, -0.12),
+            // A same-named stop miles away is a different place, and stays.
+            StationMatch("490G00000004", "Example", listOf("bus"), 51.6, -0.12),
+        )
+        val ranked = index.rank("example", local, remote)
+        assertEquals(listOf("940GZZLUEXA", "490G00000004", "490G00000003"), ranked.map { it.id })
+        // The kept station takes on the folded stops' modes.
+        assertEquals(listOf("tube", "bus"), ranked.first().modes)
+    }
+
+    @Test
+    fun `a result with no position is never folded`() {
+        val ranked = listOf(
+            StationMatch("A", "Example", latitude = 51.5, longitude = -0.12),
+            StationMatch("B", "Example"),
+            StationMatch("C", "Example", latitude = 51.5, longitude = -0.12),
+        )
+        assertEquals(listOf("A", "B"), StationIndex.foldNeighbors(ranked).map { it.id })
+    }
+
+    @Test
+    fun `a folded stop is always within a To destination's reach`() {
+        // Margin for a destination measured from its stops' middle, not the search position.
+        assertTrue(StationIndex.FOLD_RADIUS_METERS + 50 <= DirectTrips.DESTINATION_RADIUS_METERS)
+        val kept = StationMatch("A", "Example", latitude = 51.5, longitude = -0.12)
+        val near = StationMatch("B", "Example", latitude = 51.5020, longitude = -0.12) // ~222 m: folds
+        val beyond = StationMatch("C", "Example", latitude = 51.5027, longitude = -0.12) // ~300 m: stays
+        assertEquals(listOf("A", "C"), StationIndex.foldNeighbors(listOf(kept, near, beyond)).map { it.id })
     }
 }

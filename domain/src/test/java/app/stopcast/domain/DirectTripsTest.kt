@@ -165,4 +165,31 @@ class DirectTripsTest {
         assertFalse(result.unresolved)
         assertEquals(listOf("rail"), DirectTrips.lineIds(listOf(top), hidden = setOf("bus")))
     }
+
+    @Test
+    fun `a destination takes in the stops within 0_2 mi of the station, nearest first`() {
+        val center = Coordinates(51.5, -0.12)
+        val platform = StopLocation("940GZZLUEXA", "Example", 51.5, -0.12)
+        val atDoor = StopLocation("490000000001A", "Example", 51.5005, -0.12) // ~56 m
+        val upRoad = StopLocation("490000000002B", "Example / High Road", 51.5025, -0.12) // ~278 m
+        val tooFar = StopLocation("490000000003C", "Elsewhere", 51.505, -0.12) // ~556 m
+        assertEquals(
+            listOf("940GZZLUEXA", "490000000001A", "490000000002B"),
+            DirectTrips.destinationStops(listOf(platform), listOf(tooFar, upRoad, platform, atDoor), center).map { it.id },
+        )
+    }
+
+    @Test
+    fun `a bus stop destination takes in only its same-named stands, not every nearby pole`() {
+        val bus = listOf(LineRef("1", "1", "bus"))
+        val center = Coordinates(51.5, -0.12)
+        val stand = StopLocation("490000000001A", "Example", 51.5, -0.12, lines = bus)
+        val otherStand = StopLocation("490000000002B", "Example", 51.5010, -0.12, lines = bus) // ~111 m
+        val unrelated = StopLocation("490000000003C", "Side Street", 51.5005, -0.12, lines = bus) // ~56 m
+        val farStand = StopLocation("490000000004D", "Example", 51.5027, -0.12, lines = bus) // ~300 m
+        assertEquals(
+            listOf("490000000001A", "490000000002B"),
+            DirectTrips.destinationStops(listOf(stand), listOf(unrelated, otherStand, farStand), center).map { it.id },
+        )
+    }
 }

@@ -1609,7 +1609,21 @@ class MainActivity : ComponentActivity() {
         val toModel: StationStopsViewModel = viewModel(
             viewModelStoreOwner = toOwner,
             factory = viewModelFactory {
-                initializer { StationStopsViewModel(stationFinder, toId, warn = ::logDepartureWarning) }
+                initializer {
+                    StationStopsViewModel(
+                        stationFinder,
+                        toId,
+                        warn = ::logDepartureWarning,
+                        // The destination's surroundings, by the station's own public position.
+                        around = { center ->
+                            stationAreaStopFinder.nearbyStops(
+                                center.latitude,
+                                center.longitude,
+                                DirectTrips.DESTINATION_RADIUS_METERS,
+                            )
+                        },
+                    )
+                }
             },
         )
         val to by toModel.state.collectAsStateWithLifecycle()

@@ -103,6 +103,38 @@ object DirectTrips {
     /** How far from the rider a stop still counts as "here" for To… from the near-me list: 0.2 mi. */
     const val ORIGIN_RADIUS_METERS = 320.0
 
+    /** How far from a destination station a stop still counts as arriving there: 0.2 mi, as for origins. */
+    const val DESTINATION_RADIUS_METERS = 320
+
+    /**
+     * The stops a To… counts as arriving at [station] (SPEC *Finding stops → From… To…*): the
+     * station's own stops, then the stops [around] it, nearest first. A station's own record holds
+     * its platforms, not the bus stops at its door — "To… Archway" found only the tube until the
+     * buses stopping outside counted too — so a station takes in every stop within
+     * [DESTINATION_RADIUS_METERS] of [center]. A bus stop picked as the destination is a single
+     * place already, so it takes in only its same-named neighbors within the search's fold
+     * ([StationIndex.FOLD_RADIUS_METERS]) — the stands the search listed as one — never an
+     * unrelated pole down the road that another route happens to call at.
+     */
+    fun destinationStops(station: List<StopLocation>, around: List<StopLocation>, center: Coordinates): List<StopLocation> {
+        val busOnly = station.isNotEmpty() && station.all { stop ->
+            stop.lines.isNotEmpty() && stop.lines.all { it.mode.equals("bus", ignoreCase = true) }
+        }
+        val names = station.mapTo(HashSet()) { StationMatcher.normalize(cleanStopName(it.name)) }
+        val near = around
+            .map { it to NearestStops.distanceMeters(center.latitude, center.longitude, it.latitude, it.longitude) }
+            .filter { (stop, meters) ->
+                if (busOnly) {
+                    meters <= StationIndex.FOLD_RADIUS_METERS && StationMatcher.normalize(cleanStopName(stop.name)) in names
+                } else {
+                    meters <= DESTINATION_RADIUS_METERS
+                }
+            }
+            .sortedBy { it.second }
+            .map { it.first }
+        return (station + near).distinctBy { it.id }
+    }
+
     /**
      * The stops a To… from the near-me list starts from (SPEC *Finding stops → From… To…*): every
      * stop the list is showing ([shown], a "More" reveal included), plus any stop the nearby lookup

@@ -1,6 +1,7 @@
 package app.stopcast.ui
 
 import androidx.lifecycle.SavedStateHandle
+import app.stopcast.domain.Coordinates
 import app.stopcast.domain.IndexedStation
 import app.stopcast.domain.LineRef
 import app.stopcast.domain.StationIndex
@@ -264,6 +265,44 @@ class StationViewModelsTest {
         val ready = vm.state.value as StationStopsViewModel.State.Ready
         assertEquals(listOf("940GZZLUOXC"), ready.stops.map { it.id })
         assertEquals(listOf("victoria"), ready.stops.single().lines.map { it.id })
+    }
+
+    @Test
+    fun `a To destination takes in the stops around the station`() = runTest {
+        val platform = StopLocation("940GZZLUEXA", "Example", 51.5, -0.12, clusterId = "940GZZLUEXA")
+        val bus = StopLocation("490000000001A", "Example", 51.5005, -0.12)
+        var askedAt: Coordinates? = null
+        val vm = StationStopsViewModel(
+            FakeFinder(stops = { listOf(platform) }),
+            "940GZZLUEXA",
+            io = dispatcher,
+            around = { center ->
+                askedAt = center
+                listOf(bus)
+            },
+        )
+        advanceUntilIdle()
+        val ready = vm.state.value as StationStopsViewModel.State.Ready
+        assertEquals(listOf("940GZZLUEXA", "490000000001A"), ready.stops.map { it.id })
+        assertEquals(Coordinates(51.5, -0.12), askedAt)
+    }
+
+    @Test
+    fun `a failed look around a To destination fails the lookup, with retry`() = runTest {
+        val platform = StopLocation("940GZZLUEXA", "Example", 51.5, -0.12)
+        var fail = true
+        val vm = StationStopsViewModel(
+            FakeFinder(stops = { listOf(platform) }),
+            "940GZZLUEXA",
+            io = dispatcher,
+            around = { if (fail) throw TflException.RateLimited(null) else emptyList() },
+        )
+        advanceUntilIdle()
+        assertEquals(StationStopsViewModel.State.Failed(DeparturesUiState.Error.Kind.RATE_LIMITED), vm.state.value)
+        fail = false
+        vm.retry()
+        advanceUntilIdle()
+        assertEquals(listOf("940GZZLUEXA"), (vm.state.value as StationStopsViewModel.State.Ready).stops.map { it.id })
     }
 
     @Test
