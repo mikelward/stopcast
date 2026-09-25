@@ -162,7 +162,10 @@ what the app saw, so the log carries **coarse state and reasons**, and nothing m
 - **location fix outcomes**: that a fix could not be obtained, whether a recent cached
   fix was used instead of a fresh one, and coarse timing; for each fix the app uses, **which
   location provider** supplied it (e.g. `network`, `gps`), the **accuracy radius** that provider
-  reported (or "unknown"), and **how old** it was — **never a coordinate**,
+  reported (or "unknown"), and **how old** it was; when a remembered precise fix is weighed
+  against a rough network one, **how far apart** the two are — **never a coordinate**,
+- for each nearby-stops lookup, **how many stops it found** (a count only: several stops'
+  distances would pin down where you were),
 - **per-refresh request counts and timing**: how many TfL requests a refresh made, of which
   kinds, how long it took, and how long it waited on the app's own rate limit — counts and
   milliseconds only, no stop or place,
@@ -213,6 +216,13 @@ report carries:
   looking at, which is where a routing bug happened; it is labeled that way in the report, since
   the departures screen can stay open while you move, so it is not necessarily where you are the
   instant you send,
+- **where the app placed you in the last 15 minutes** (at most the last 20 positions): each
+  location fix it got (including a rough one it set aside for a more precise remembered one) and
+  each nearby lookup (with the stops it found and how far each was), with
+  the time — so a fix that put you at the wrong station can be seen. These are kept **in memory only**, never in the diagnostic log or its
+  file, are deleted when they turn 15 minutes old (if the phone is asleep then, within a minute of
+it waking — the app doesn't wake the phone just to delete them), and are gone when the app's
+process ends,
 - **how far you are from each nearby stop**.
 
 It is **user-initiated and £0**: stopcast runs no service of its own for it. Tapping *Send bug
@@ -221,7 +231,8 @@ report* opens the consent screen; on *Continue* the report is **copied to your c
 **you** choose the app it goes to — an email, an issue, a chat. So the clipboard copy happens as
 soon as you tap Continue; nothing is sent to a destination *you* pick until you pick it, but the
 report has left the composing screen at that point. A **"don't ask again"** option skips the
-consent screen on later reports; it never sends anything on its own.
+consent screen on later reports; it never sends anything on its own, and it lapses whenever the
+report starts carrying more, so you see the new list before it is sent.
 
 This is an honest trade, not a location-safe one: a report useful for a *where did routing go
 wrong* bug has to say where you were, so this one says so plainly rather than stripping the

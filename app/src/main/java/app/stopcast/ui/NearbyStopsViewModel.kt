@@ -12,6 +12,7 @@ import app.stopcast.domain.NearestStops
 import app.stopcast.domain.StopFinder
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.TflException
+import kotlin.math.roundToLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +64,9 @@ class NearbyStopsViewModel(
     private val radiusMeters: Int = NearbySelection.OUTER_RADIUS_METERS,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val warn: (String) -> Unit = {},
+    // Where each lookup was made from, for the in-memory RecentPositions only — never [warn],
+    // whose lines are persisted (SPEC *Privacy*). A searched station's area leaves it unset.
+    private val position: (what: String, at: Coordinates) -> Unit = { _, _ -> },
     // The transport modes the user has hidden: a stop serving only those isn't picked, so it costs
     // no request (SPEC *Finding stops → Hiding a mode*). Read at each resolve.
     private val hiddenModes: suspend () -> Set<String> = { emptySet() },
@@ -520,7 +524,28 @@ class NearbyStopsViewModel(
             ?: NearbySelection.selectClusters(placed, fix.latitude, fix.longitude, outerRadiusMeters = radiusMeters)
         // Eager empty means no stop with a route in range (each present mode contributes its
         // nearest; a route-less stop is never eager and has nothing to show) — nothing nearby runs.
-        if (result.eager.isEmpty()) return State.Empty(location = fix)
+        if (result.eager.isEmpty()) {
+            warn("nearby: no stops in range (${found.size} found)")
+            // Route-less stops still land in `more`: which ones, and how far, is what explains an
+            // empty list, so they go with the position to RecentPositions (never the log).
+            val routeless = result.more.flatMap { it.stops }
+            position(
+                if (routeless.isEmpty()) {
+                    "nearby lookup (no stops)"
+                } else {
+                    "nearby lookup (no stops with routes): " + routeless.joinToString {
+                        val meters = if (it.id in anchorStopIds) {
+                            0.0
+                        } else {
+                            NearestStops.distanceMeters(fix.latitude, fix.longitude, it.latitude, it.longitude)
+                        }
+                        "${it.id} ${meters.roundToLong()} m"
+                    } + ","
+                },
+                fix,
+            )
+            return State.Empty(location = fix)
+        }
         // The anchors were moved only for picking: the set keeps their real positions (a stop's
         // map opens where it stands), and their distance is set to 0 below.
         val real = if (anchorStopIds.isEmpty()) emptyMap() else found.associateBy { it.id }
@@ -541,7 +566,7 @@ class NearbyStopsViewModel(
         val more = restored(result.more)
         // Distance per stop, over BOTH tiers (in memory only), so a revealed stop is collapsed and
         // ordered like an eager one — the departures list shows a line once, from its nearest stop
-        // (SPEC *Finding stops → Near me now*). Never logged or persisted (SPEC *Privacy*).
+        // (SPEC *Finding stops → Near me now*). Never persisted or logged; kept in RecentPositions (below).
         val distances = (eager + more)
             .flatMap { it.stops }
             .associate {
@@ -551,6 +576,19 @@ class NearbyStopsViewModel(
                     NearestStops.distanceMeters(fix.latitude, fix.longitude, it.latitude, it.longitude)
                 }
             }
+        // Which stops a fix produced, and how far each is, go with its position to RecentPositions
+        // only: several stop distances pin the position down (stops' positions are public), so the
+        // persisted log gets the counts alone (maintainer, 2026-09-25).
+        val eagerStops = eager.flatMap { it.stops }
+        val moreStops = more.flatMap { it.stops }
+        warn("nearby: ${eagerStops.size} stops (+${moreStops.size} more)")
+        fun listed(stops: List<StopLocation>) =
+            stops.joinToString { "${it.id} ${distances[it.id]?.roundToLong() ?: "?"} m" }
+        position(
+            "nearby lookup: " + listed(eagerStops) +
+                (if (moreStops.isEmpty()) "" else "; more: " + listed(moreStops)) + ",",
+            fix,
+        )
         return State.Ready(
             eager = eager,
             more = more,

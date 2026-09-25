@@ -23,6 +23,18 @@ class FixDiagnosticsTest {
     }
 
     @Test
+    fun `a position is logged to five places, whatever the locale`() {
+        val saved = java.util.Locale.getDefault()
+        try {
+            // A comma-decimal locale must not turn "lat,lon" ambiguous.
+            java.util.Locale.setDefault(java.util.Locale.GERMANY)
+            assertEquals("51.50000,-0.12000", FixDiagnostics.position(Coordinates(51.5, -0.12)))
+        } finally {
+            java.util.Locale.setDefault(saved)
+        }
+    }
+
+    @Test
     fun `a recent cached fix is labeled as such`() {
         assertEquals(
             "location fix: recent cached from gps, accuracy 8 m, 40 s old",

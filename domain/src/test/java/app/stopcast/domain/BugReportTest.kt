@@ -44,6 +44,9 @@ class BugReportTest {
               • Oxford Circus (940GZZLUOXC) — 120 m (118.7 m)
               • Bond Street (940GZZLUBND) — 340 m (337.2 m)
 
+            --- recent positions (last 15 min, at most 20) ---
+            (none)
+
             --- log (this run) ---
             location: fix obtained
             departures: 429 for stop 940GZZLUOXC
@@ -76,5 +79,19 @@ class BugReportTest {
         )
 
         assertTrue(report, report.contains("• Bond Street (940GZZLUBND) — distance unknown"))
+    }
+
+    @Test
+    fun `recent positions get their own section, or say none`() {
+        val none = BugReport.compose(header, location = null, stops = emptyList(), logLines = emptyList())
+        assertTrue(none, "--- recent positions (last 15 min, at most 20) ---\n(none)" in none)
+        val some = BugReport.compose(
+            header,
+            location = null,
+            stops = emptyList(),
+            logLines = emptyList(),
+            recentPositions = listOf("10:00:00 fresh network fix at 0.00000,0.00000"),
+        )
+        assertTrue(some, "10:00:00 fresh network fix at 0.00000,0.00000" in some)
     }
 }

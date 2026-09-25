@@ -24,9 +24,29 @@ object FixDiagnostics {
         REMEMBERED("remembered precise"),
     }
 
+    /**
+     * The remembered precise fix as weighed against a coarse (network) fix of [coarseAccuracyMeters]:
+     * its own provider, accuracy and age, how far it lies from the coarse fix, and whether it was
+     * used. A distance between two fixes, never either position (SPEC *Privacy*); the positions go to [RecentPositions].
+     */
+    fun describeRemembered(considered: PreciseFixMemory.Considered, coarseAccuracyMeters: Float?): String {
+        val recalled = considered.recalled
+        val accuracy = coarseAccuracyMeters?.let { "its ${it.roundToLong()} m accuracy" } ?: "its accuracy (unknown)"
+        val verdict = if (considered.used) "inside $accuracy, used" else "outside $accuracy, not used"
+        return describe(Source.REMEMBERED, recalled.provider, recalled.accuracyMeters, recalled.ageMillis) +
+            ", ${considered.apartMeters.roundToLong()} m from the network fix, $verdict"
+    }
+
     fun describe(source: Source, provider: String, accuracyMeters: Float?, ageMillis: Long): String {
         val accuracy = accuracyMeters?.let { "accuracy ${it.roundToLong()} m" } ?: "accuracy unknown"
         val age = "${(ageMillis.coerceAtLeast(0) + 500) / 1000} s old"
         return "location fix: ${source.label} from $provider, $accuracy, $age"
     }
+
+    /**
+     * A position as `lat,lon` to 5 decimal places (about a metre), locale-independent — for
+     * [RecentPositions] only, never the diagnostic log.
+     */
+    fun position(at: Coordinates): String =
+        String.format(java.util.Locale.ROOT, "%.5f,%.5f", at.latitude, at.longitude)
 }
