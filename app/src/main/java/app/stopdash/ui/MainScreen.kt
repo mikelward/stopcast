@@ -131,11 +131,11 @@ import app.stopdash.domain.Departure
 import app.stopdash.domain.DepartureLabels
 import app.stopdash.domain.DepartureRow
 import app.stopdash.domain.DepartureRows
+import app.stopdash.domain.FartherBuses
 import app.stopdash.domain.DestinationAbbreviations
 import app.stopdash.domain.DismissedAlert
 import app.stopdash.domain.HiddenModes
 import app.stopdash.domain.ModeGroups
-import app.stopdash.domain.NearbySelection
 import app.stopdash.domain.NoTimes
 import app.stopdash.domain.RelativeTime
 import app.stopdash.domain.Staleness
@@ -285,15 +285,10 @@ fun MainScreen(
     updateAvailable: Boolean = false,
     // Open the Play Store listing (from the "Update available" item). Default no-op.
     onOpenAppListing: () -> Unit = {},
-    // The modes that still have a farther "More" cluster to page in — only ever bus (SPEC *Finding
-    // stops → Near me now*). A "More bus stops" button is shown at the foot of the near-me list.
-    // Empty by default so a location-free or fully-revealed list shows none. [onReveal] is called
-    // with the tapped mode.
-    revealableModes: Set<String> = emptySet(),
-    onReveal: (String) -> Unit = {},
-    // The nearest station of each tube line or rail mode the list doesn't reach (SPEC *Finding stops
-    // → Farther stations*): a collapsed card each below the loaded places, which a tap loads and
-    // opens in place ([onOpenFarther]). Empty by default, as on a station's page.
+    // The nearest station of each tube line or rail mode the list doesn't reach, and the nearest
+    // bus places with routes it doesn't show (SPEC *Finding stops → Farther stations*): a collapsed
+    // card each below the loaded places, which a tap loads and opens in place ([onOpenFarther]).
+    // Empty by default, as on a station's page.
     farther: List<FartherCard> = emptyList(),
     onOpenFarther: (CollapsedPlaces.Place) -> Unit = {},
     // Start the consent-gated bug report (from the overflow). Default no-op so an unwired
@@ -713,6 +708,20 @@ fun MainScreen(
             starred,
             warningsLead = stopDistanceMeters.isEmpty(),
         )
+    }
+    // The farther bus cards to show, decided against the routes the screen actually shows (SPEC
+    // *Finding stops → Farther stations*): every row drawn, the list's, the journey cards' and an
+    // opened card's (an opened card itself always stays). Deciding it here, from the rows drawn,
+    // means every filter the list applies (dismissed alerts, hidden modes, the nearest-stop dedupe,
+    // a journey's origin) is honored without being copied, and a route an opened card turned out to
+    // run is never offered again by another.
+    val fartherShown = remember(farther, rows, journeyRowsShown) {
+        val opened = farther.filter { it.load != null }.mapTo(HashSet()) { it.place.key }
+        val shownBus = (rows + journeyRowsShown)
+            .filter { it.mode.equals(FartherBuses.MODE, ignoreCase = true) && it.lineId.isNotBlank() }
+            .mapTo(HashSet()) { it.lineId }
+        val kept = CollapsedPlaces.withBusesPicked(farther.map { it.place }, shownBus, opened).associateBy { it.key }
+        farther.mapNotNull { card -> kept[card.place.key]?.let { card.copy(place = it) } }
     }
 
     // The platform/pole the user drilled into by tapping its group header, or null for the full list
@@ -1164,7 +1173,7 @@ fun MainScreen(
                     state, now, onRefresh, refreshing, content, shownRows,
                     listState = if (platformRows != null) drillListState else listState,
                     // The platform view is one place: no distances (its header would only repeat the
-                    // title) and no "More" paging of farther clusters.
+                    // title).
                     stopDistanceMeters = if (platformRows != null) emptyMap() else stopDistanceMeters,
                     onOpenStopMap = onOpenStopMap,
                     // Journey cards sit atop the near-me list only, not a platform or station view.
@@ -1184,18 +1193,12 @@ fun MainScreen(
                     starred = starred,
                     onToggleStar = onToggleStar,
                     starringAvailable = starringAvailable,
-                    revealableModes = if (platformRows != null) {
-                        emptySet()
-                    } else {
-                        revealableModes.filterNotTo(LinkedHashSet()) { HiddenModes.isHidden(it, hiddenModes) }
-                    },
                     hiddenModes = hiddenModes,
                     onHideMode = onHideMode,
                     modesByPlace = placeModesShown,
                     onShowAllModes = onShowAllModes,
-                    onReveal = onReveal,
                     // Not on a platform's own view, which is one place.
-                    farther = if (platformRows != null) emptyList() else farther,
+                    farther = if (platformRows != null) emptyList() else fartherShown,
                     onOpenFarther = onOpenFarther,
                     onOpenDetail = { row, focus ->
                         detailKey = row.detailKey()
@@ -1342,8 +1345,6 @@ private fun LoadedContent(
     starred: Set<StarredRow> = emptySet(),
     onToggleStar: (DepartureRow) -> Unit = {},
     starringAvailable: Boolean = true,
-    revealableModes: Set<String> = emptySet(),
-    onReveal: (String) -> Unit = {},
     farther: List<FartherCard> = emptyList(),
     onOpenFarther: (CollapsedPlaces.Place) -> Unit = {},
     // Open the full-screen route detail for a tapped card; the caller holds the open-route state.
@@ -1462,9 +1463,8 @@ private fun LoadedContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     RefreshButton(onRefresh, Modifier.padding(top = 16.dp))
-                    // Keep "More" reachable even when the nearest clusters returned nothing — that's
-                    // exactly when the farther ones are most useful (SPEC principle 2).
-                    MoreControls(revealableModes, onReveal, Modifier.padding(top = 16.dp))
+                    // Keep the farther cards reachable even when the nearest clusters returned
+                    // nothing — that's exactly when they are most useful (SPEC principle 2).
                     FartherCards(
                         farther,
                         state.stops.mapTo(HashSet()) { it.stopId },
@@ -1476,7 +1476,6 @@ private fun LoadedContent(
             } else {
                 DepartureList(
                     rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
-                    revealableModes, onReveal,
                     farther = farther,
                     onOpenFarther = onOpenFarther,
                     fetchedStopIds = state.stops.mapTo(HashSet()) { it.stopId },
@@ -1604,8 +1603,6 @@ private fun DepartureList(
     onToggleStar: (DepartureRow) -> Unit,
     starringAvailable: Boolean,
     stopDistanceMeters: Map<String, Double>,
-    revealableModes: Set<String>,
-    onReveal: (String) -> Unit,
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
     listState: LazyListState,
     farther: List<FartherCard> = emptyList(),
@@ -1889,15 +1886,8 @@ private fun DepartureList(
             fartherStopIds.entries.firstOrNull { (_, ids) -> ids.isNotEmpty() && group.rows.all { it.stopId in ids } }?.key
         }
         fartherGroups[null].orEmpty().forEachIndexed { index, group -> groupItems(index, group) }
-        if (revealableModes.isNotEmpty()) {
-            // A per-mode "More" footer pages the farther clusters on demand (SPEC principle 2).
-            // The extra top padding, past the list's 8dp item gap, sets the footer apart from the
-            // last group — asymmetric on purpose: it's a trailing section, not another row.
-            item(key = "more-controls") {
-                MoreControls(revealableModes, onReveal, Modifier.padding(top = 8.dp))
-            }
-        }
-        // Below the loaded places: the farther stations, each collapsed until tapped, nearest first.
+        // Below the loaded places: the farther stations and bus places, each collapsed until tapped
+        // (in [CollapsedPlaces.ordered]'s order).
         for (card in farther) {
             val opened = fartherGroups[card.place.key]
             if (opened != null) {
@@ -1908,7 +1898,7 @@ private fun DepartureList(
                 }
             }
         }
-        // The faraway journeys (SPEC *Journeys*), at the foot like the "More" stops: a button, then,
+        // The faraway journeys (SPEC *Journeys*), at the foot below the farther cards: a button, then,
         // once tapped, their cards under a "Faraway favorites" label (revealing is what fetches them).
         if (farJourneyCards.isNotEmpty()) {
             item(key = "far-journeys-label") {
@@ -2028,21 +2018,6 @@ private fun FartherCardView(card: FartherCard, cue: FartherCue, onOpen: (Collaps
                 )
             }
         }
-    }
-}
-
-/**
- * The "More bus stops" control at the foot of the near-me list (SPEC *Finding stops → Near me
- * now*), shown while a farther bus cluster is left to page; a tap pages the next ones in. It is
- * the only "More": the farther-station cards stand in for every station mode. Rendered nowhere
- * when [revealableModes] lacks bus. A `TextButton` carries Material's ≥48dp interactive touch
- * target, clearing the 44dp floor.
- */
-@Composable
-private fun MoreControls(revealableModes: Set<String>, onReveal: (String) -> Unit, modifier: Modifier = Modifier) {
-    if (NearbySelection.BUS_MODE !in revealableModes) return
-    TextButton(onClick = { onReveal(NearbySelection.BUS_MODE) }, modifier = modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.more_stops_bus))
     }
 }
 

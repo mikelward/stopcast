@@ -52,8 +52,9 @@ class FartherCardsViewModel(
     private var from: Coordinates? = null
 
     /**
-     * Open [place]'s card: look up its station's stops, then give them their own departures model.
-     * A tap on a card that is open already retries its fetch; on a failed one, the lookup.
+     * Open [place]'s card: look up its station's stops (a bus place carries its own, found by the
+     * nearby lookup), then give them their own departures model. A tap on a card that is open
+     * already retries its fetch; on a failed one, the lookup.
      */
     fun open(place: CollapsedPlaces.Place, fix: Coordinates) {
         from = fix
@@ -64,7 +65,7 @@ class FartherCardsViewModel(
         if (lookups[place.key]?.isActive == true) return
         _cards.value = _cards.value + (place.key to FartherLoad.Loading)
         lookups[place.key] = viewModelScope.launch {
-            val stops = try {
+            val stops = if (place.stops.isNotEmpty()) place.stops else try {
                 withContext(io) { stationStops(place.stationId) }
             } catch (e: CancellationException) {
                 throw e
@@ -105,8 +106,19 @@ class FartherCardsViewModel(
      */
     fun retain(places: List<CollapsedPlaces.Place>, fix: Coordinates) {
         from = fix
-        val keys = places.mapTo(HashSet()) { it.key }
-        for (key in _cards.value.keys + lookups.keys) if (key !in keys) close(key)
+        val byKey = places.associateBy { it.key }
+        for (key in _cards.value.keys + lookups.keys) if (key !in byKey) close(key)
+        // An opened bus place whose poles changed (one left the nearby lookup's reach, another came
+        // into it) is rebuilt from the new ones, so a departed pole isn't shown as current and a new
+        // one isn't left out. A station's card looks its stops up by id, so it has nothing to redo.
+        for ((key, load) in _cards.value) {
+            val place = byKey[key] ?: continue
+            if (place.stops.isEmpty() || load !is FartherLoad.Open) continue
+            if (load.stops.mapTo(HashSet()) { it.id } != place.stops.mapTo(HashSet()) { it.id }) {
+                close(key)
+                open(place, fix)
+            }
+        }
         _cards.value = _cards.value.mapValues { (key, load) ->
             if (load is FartherLoad.Open) {
                 // The card's model takes the new distances too: its rows hide terminating services
@@ -213,12 +225,11 @@ internal fun withOpenedFarther(
 
 /**
  * The near-me stops the farther-station cards count as already reached: of [shown], what the list
- * loads ([MainViewModel.shownNearStops]: the eager tier plus clusters "More bus stops" paged in),
+ * loads ([MainViewModel.shownNearStops]),
  * those in [loadedIds] — the stops the loaded list actually has departures for — or all of them
- * while it is still loading (null), so cards don't flash up and vanish on the first load. An
- * unloaded station has no "More" to page it in (only buses do), so counting its lines, or those of
- * one whose fetch failed, would leave a line with no row and no card; a loaded one left out would
- * get a duplicate card.
+ * while it is still loading (null), so cards don't flash up and vanish on the first load. Counting
+ * an unloaded stop's lines, or those of one whose fetch failed, would leave a line with no row and
+ * no card; a loaded one left out would get a duplicate card.
  */
 internal fun fartherReached(shown: List<StopRef>, loadedIds: Set<String>? = null): List<FartherStations.ReachedStop> =
     shown.filter { loadedIds == null || it.id in loadedIds }.map { stop ->
