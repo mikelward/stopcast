@@ -458,7 +458,13 @@ and destination) agree on, so one service stays one row; a platform can run a li
 so the platform alone is no evidence. Failing that the grouping falls back to the platform, then
 the destination, as a best-effort discriminator (the resolved *direction key*) rather
 than merging opposite directions; a prediction with none of the three is genuinely
-indistinguishable and shares one "unknown" row. When a direction *does* branch
+indistinguishable and shares one "unknown" row. TfL names a train's platform only for about
+the next half hour, printing "Platform Unknown" after that; a service (line, direction, destination
+and via-branch) that already has three upcoming trains, all on one named platform, folds its later
+"Platform Unknown" ones into that platform's row, past the three times it shows, rather than
+repeat itself under a "Platform Unknown" header (the route detail still lists them). A sooner
+unknown train, or one of a service with fewer named trains, keeps its own group, so no catchable
+departure is hidden or put under a platform nobody named. When a direction *does* branch
 (same line, same direction, different destinations), the headline names the soonest
 departure's destination and merges only that destination's times; each **divergent
 destination keeps its own line and its own merged countdown**, so a countdown is never

@@ -53,10 +53,11 @@ object DepartureRows {
         // blank train keeps its inferred row (and a star pinned to it) after the tagged ones leave.
         // The client already infers at fetch time; this covers a snapshot saved before it did.
         val live = Countdown.upcoming(inferDirections(departures), now)
+        val folded = foldedUnknownPlatforms(live)
         return live.groupBy { RowKey(it.lineId, directionKeyOf(it)) }
             .flatMap { (key, directionGroup) ->
                 val mode = resolvedMode(directionGroup, lineModes[key.lineId])
-                byPlatform(directionGroup, splitPlatforms).map { (platform, group) -> RowGroup(key, platform, group, mode) }
+                byPlatform(directionGroup, splitPlatforms, folded).map { (platform, group) -> RowGroup(key, platform, group, mode) }
             }
             .map { (key, platform, group, mode) ->
                 val soonest = group.first()
@@ -758,11 +759,16 @@ object DepartureRows {
      * one ("Platform 1"), and a bus place splits on its pole instead ([StopGrouping]). With
      * [split] off (the widget) the group stays whole, numbered only when it has one platform.
      */
-    private fun byPlatform(group: List<Departure>, split: Boolean): List<Pair<String, List<Departure>>> {
+    private fun byPlatform(
+        group: List<Departure>,
+        split: Boolean,
+        folded: Map<Departure, String> = emptyMap(),
+    ): List<Pair<String, List<Departure>>> {
         // Any bus prediction marks the group as a bus: TfL can omit `modeName` on some predictions,
         // so the soonest one alone could let a bus split on its stop-local platforms (Codex).
         if (group.any { it.mode == "bus" }) return listOf("" to group)
-        val numberOf = group.associateWith { PlatformDirection.platformNumber(it.platform).orEmpty() }
+        // A folded "Platform Unknown" train ([foldedUnknownPlatforms]) joins its service's named platform.
+        val numberOf = group.associateWith { folded[it] ?: PlatformDirection.platformNumber(it.platform).orEmpty() }
         val numbers = numberOf.values.filter(String::isNotEmpty).distinct()
         if (numbers.size <= 1) return listOf(numbers.singleOrNull().orEmpty() to group)
         if (!split) return listOf("" to group)
@@ -844,6 +850,57 @@ object DepartureRows {
             d.copy(direction = inferred)
         }
     }
+
+    /**
+     * The "Platform Unknown" predictions in [live] to fold into their service's named-platform row,
+     * each mapped to that platform's number. TfL names the platform only for the next half hour or
+     * so (at Highbury & Islington the Mildmay line's later trains all came back "Platform Unknown",
+     * confirmed against live TfL data, 2026-09-25), so those later trains otherwise fill a "Platform
+     * Unknown" group repeating services already shown with a platform. Only a train leaving after its
+     * service's [KNOWN_PLATFORM_ENOUGH]th named one folds: the row already shows that many times, so
+     * it stays out of the list, while the row keeps it for the route detail's full list. A sooner
+     * unknown train, or one of a service with fewer named trains, keeps its own group, so no
+     * departure the rider could catch is hidden or put under a platform nobody named.
+     *
+     * The service's named trains must all use one platform: one alternating between platforms (a
+     * terminus) gives no single row to fold into, so its unknown trains keep their own group.
+     *
+     * A service is the line, direction, destination and via-branch: a branch renders as its own
+     * destination line (High Barnet via Bank vs via Charing X), and "Platform Unknown" can hide either
+     * direction, so one with a blank direction or destination never folds.
+     */
+    private fun foldedUnknownPlatforms(live: List<Departure>): Map<Departure, String> {
+        fun unknownPlatform(d: Departure) = PlatformDirection.platformNumber(d.platform).equals("Unknown", ignoreCase = true)
+        if (live.none(::unknownPlatform)) return emptyMap()
+        fun serviceOf(d: Departure) =
+            listOf(d.lineId, d.direction, d.destination, d.branch.orEmpty())
+                .takeIf { d.direction.isNotBlank() && d.destination.isNotBlank() }
+        // Each service's last shown named train: the one its row's times end on. Only a service whose
+        // named trains all use one platform qualifies — one alternating between platforms (a terminus)
+        // gives no platform to fold into, and a guess could put the train in a row's shown times.
+        val lastShown = live
+            .filter { !it.platform.isNullOrBlank() && !unknownPlatform(it) }
+            .mapNotNull { d -> serviceOf(d)?.let { it to d } }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { named -> named.mapTo(HashSet()) { PlatformDirection.platformNumber(it.platform) }.size == 1 }
+            .mapNotNull { (service, named) ->
+                named.sortedBy { it.expectedArrival }.getOrNull(KNOWN_PLATFORM_ENOUGH - 1)?.let { service to (it to named) }
+            }
+            .toMap()
+        return live.filter(::unknownPlatform).mapNotNull { d ->
+            val (last, named) = serviceOf(d)?.let { lastShown[it] } ?: return@mapNotNull null
+            // Display names aren't unique termini: where TfL's destination ids are given, they must
+            // agree, so a same-named other terminus isn't filed under this one's platform.
+            if (named.any { it.destinationId.isNotBlank() && d.destinationId.isNotBlank() && it.destinationId != d.destinationId }) {
+                return@mapNotNull null
+            }
+            val number = PlatformDirection.platformNumber(last.platform) ?: return@mapNotNull null
+            (d to number).takeIf { d.expectedArrival > last.expectedArrival }
+        }.toMap()
+    }
+
+    /** Named-platform trains a service needs before its later "Platform Unknown" ones fold in: a row's times. */
+    const val KNOWN_PLATFORM_ENOUGH = 3
 
     /** The direction key [d]'s row carries ([DepartureRow.directionKey], a [StarredRow]'s too). */
     fun directionKeyOf(d: Departure): String =

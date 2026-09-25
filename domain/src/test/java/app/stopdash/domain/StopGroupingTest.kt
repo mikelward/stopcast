@@ -68,6 +68,27 @@ class StopGroupingTest {
     )
 
     @Test
+    fun `a platform row with later Platform Unknown trains folded in keeps its platform header`() {
+        // Highbury & Islington: three named Platform 7 trains and two later "Platform Unknown" ones
+        // fold into one row, which still heads "Platform 7".
+        fun richmond(platform: String, offset: Long) =
+            Departure("mildmay", "Mildmay", "outbound", "Richmond (London)", platform, now.plusSeconds(offset), "overground")
+        val stop = StopArrivals(
+            stopId = "910GHGHI",
+            stopName = "Highbury & Islington",
+            departures = listOf(
+                richmond("Platform 7", 420), richmond("Platform 7", 1020), richmond("Platform 7", 1740),
+                richmond("Platform Unknown", 2400), richmond("Platform Unknown", 3300),
+            ),
+            fetchedAt = now,
+        )
+
+        val groups = StopGrouping.groupByStop(DepartureRows.across(listOf(stop), now))
+
+        assertEquals(listOf(StopQualifier.Platform("7", null)), groups.map { it.qualifier })
+    }
+
+    @Test
     fun `a direction served by two platforms heads each platform separately`() {
         // Camden Town: one southbound TfL direction from Platforms 2 and 4, northbound from 1 and 3.
         fun northern(direction: String, destination: String, platform: String, offset: Long) =
