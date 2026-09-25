@@ -232,6 +232,22 @@ internal fun modesLabel(modes: List<String>): String =
 /** A hiding group's display name ("tube" → "Tube & DLR"), else its mode's name. */
 internal fun groupName(group: ModeGroups.Group): String = GROUP_NAMES[group.key] ?: modeName(group.key)
 
+/**
+ * A group's name as it reads mid-sentence ("Hide all train services"): the common nouns lowercase,
+ * the Tube and the DLR, being names, as they are.
+ */
+internal fun groupNameInSentence(group: ModeGroups.Group): String =
+    GROUP_NAMES_IN_SENTENCE[group.key] ?: groupName(group)
+
+private val GROUP_NAMES_IN_SENTENCE = mapOf(
+    "tube" to "Tube & DLR",
+    "train" to "train",
+    "bus" to "bus",
+    "tram" to "tram",
+    "boat" to "boat",
+    "coach" to "coach",
+)
+
 /** The hidden groups' names, in menu order ("Train, Bus"), for the banner and empty states. */
 internal fun hiddenGroupsLabel(hidden: Set<String>): String =
     ModeGroups.hiddenGroups(hidden).joinToString(", ") { groupName(it) }
