@@ -13,6 +13,7 @@ import app.stopcast.domain.FixDiagnostics
 import app.stopcast.domain.FixSelection
 import app.stopcast.domain.LocationFix
 import app.stopcast.domain.LocationProvider
+import app.stopcast.domain.PreciseFixMemory
 import app.stopcast.domain.raceFix
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
@@ -38,7 +39,17 @@ class AndroidLocationProvider(
     private val context: Context,
     private val warn: (String) -> Unit = {},
 ) : LocationProvider {
-    override suspend fun current(forceFresh: Boolean): LocationFix? {
+    // Every location taken expires the remembered precise fix on the way out, whichever return
+    // it takes and however long the fix took (the clock moves during the request).
+    override suspend fun current(forceFresh: Boolean): LocationFix? =
+        try {
+            takeCurrent(forceFresh)
+        } finally {
+            expirePreciseMemory()
+        }
+
+    private suspend fun takeCurrent(forceFresh: Boolean): LocationFix? {
+        expirePreciseMemory()
         if (!hasLocationPermission()) {
             warn("location fix skipped: location permission not held")
             return null
@@ -93,10 +104,62 @@ class AndroidLocationProvider(
         val usedFresh = fresh
         val isCoarse = !fromFallback && usedFresh != null && hasFineLocationPermission() &&
             !isAccurateProvider(usedFresh.provider)
+        // A precise fix used here — fresh, recent-cached or fallback — is remembered as of when it
+        // was taken, so a coarse fix in the next few minutes can defer to it.
+        val used = if (!fromFallback && usedFresh != null) usedFresh else cached?.located
+        if (coordinates != null && used != null && isAccurateProvider(used.provider)) {
+            remember(used)
+            // An old fallback re-remembered at its own (expired) timestamp is dropped again.
+            expirePreciseMemory()
+        }
+        if (coordinates != null && isCoarse && usedFresh != null) {
+            // The rider hasn't left the coarse fix's circle since the last precise fix: use that.
+            val recalled = preciseMemory.instead(
+                usedFresh.coordinates,
+                usedFresh.accuracyMeters,
+                SystemClock.elapsedRealtime(),
+            )
+            if (recalled != null) {
+                // The fix actually used, as logFix describes the others: its own provider and accuracy.
+                warn(
+                    FixDiagnostics.describe(
+                        FixDiagnostics.Source.REMEMBERED,
+                        recalled.provider,
+                        recalled.accuracyMeters,
+                        recalled.ageMillis,
+                    ) + ", inside the coarse fix's accuracy",
+                )
+                // Still flagged coarse: the rider may have moved within the circle, so the list
+                // shows from the precise point but GPS is still asked to confirm it or move it
+                // (a forced refresh included), rather than the recall standing unchecked.
+                return LocationFix(recalled.coordinates, isFallback = false, isCoarse = true)
+            }
+        }
         return coordinates?.let { LocationFix(it, isFallback = fromFallback, isCoarse = isCoarse) }
     }
 
-    override suspend fun precise(): Coordinates? {
+    private fun remember(fix: Located) =
+        preciseMemory.remember(
+            fix.coordinates,
+            fix.elapsedRealtimeNanos / 1_000_000,
+            provider = fix.provider,
+            accuracyMeters = fix.accuracyMeters,
+        )
+
+    // Every location taken expires the remembered precise fix first, whatever path it takes after
+    // (a fallback, a coarse fix, no fix at all), so docs/PRIVACY.md's "deleted the next time the
+    // app takes a location" holds on every path, not only the one that can recall it.
+    private fun expirePreciseMemory() = preciseMemory.expire(SystemClock.elapsedRealtime())
+
+    override suspend fun precise(): Coordinates? =
+        try {
+            takePrecise()
+        } finally {
+            expirePreciseMemory()
+        }
+
+    private suspend fun takePrecise(): Coordinates? {
+        expirePreciseMemory()
         if (!hasFineLocationPermission()) return null
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         val providers = enabledProviders(manager).filter(::isAccurateProvider)
@@ -121,6 +184,7 @@ class AndroidLocationProvider(
         if (!hasFineLocationPermission()) return null
         val ageMillis = (SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos) / 1_000_000
         warn(FixDiagnostics.describe(FixDiagnostics.Source.PRECISE, fix.provider, fix.accuracyMeters, ageMillis))
+        remember(fix)
         return fix.coordinates
     }
 
@@ -287,6 +351,12 @@ class AndroidLocationProvider(
             .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
 
     private fun Location.toCoordinates() = Coordinates(latitude, longitude)
+
+    private companion object {
+        // Process-wide, so a recreated screen (and its new provider) still knows the last precise
+        // fix. In memory only, never persisted or logged (SPEC *Privacy*).
+        val preciseMemory = PreciseFixMemory()
+    }
 }
 
 /**

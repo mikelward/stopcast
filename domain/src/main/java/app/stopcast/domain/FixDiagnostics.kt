@@ -20,6 +20,8 @@ object FixDiagnostics {
         FALLBACK("last-known fallback"),
         /** The follow-up request to GPS/fused after a coarse fix was shown ([LocationProvider.precise]). */
         PRECISE("precise follow-up"),
+        /** A remembered precise fix used in place of a coarse one that agreed with it ([PreciseFixMemory]). */
+        REMEMBERED("remembered precise"),
     }
 
     fun describe(source: Source, provider: String, accuracyMeters: Float?, ageMillis: Long): String {

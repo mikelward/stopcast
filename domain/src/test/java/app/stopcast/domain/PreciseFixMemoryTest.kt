@@ -1,0 +1,92 @@
+package app.stopcast.domain
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class PreciseFixMemoryTest {
+    // Obviously-synthetic coordinates around the origin, never a real position (SPEC Privacy).
+    private val origin = Coordinates(0.0, 0.0)
+
+    private fun north(meters: Double) = Coordinates(meters / 111_195.0, 0.0)
+
+    private val minute = 60_000L
+
+    @Test
+    fun `nothing remembered, the coarse fix stands`() {
+        assertNull(PreciseFixMemory().instead(origin, 400f, 0))
+    }
+
+    @Test
+    fun `a recent precise fix inside the coarse circle is used instead`() {
+        val memory = PreciseFixMemory()
+        memory.remember(north(250.0), atElapsedMillis = 0)
+        val recalled = memory.instead(origin, 400f, nowElapsedMillis = 3 * minute)
+        assertEquals(north(250.0), recalled?.coordinates)
+        assertEquals(3 * minute, recalled?.ageMillis)
+    }
+
+    @Test
+    fun `a precise fix outside the coarse circle means the rider moved`() {
+        val memory = PreciseFixMemory()
+        memory.remember(north(600.0), atElapsedMillis = 0)
+        assertNull(memory.instead(origin, 400f, nowElapsedMillis = minute))
+    }
+
+    @Test
+    fun `a precise fix older than ten minutes is forgotten`() {
+        val memory = PreciseFixMemory()
+        memory.remember(north(50.0), atElapsedMillis = 0)
+        assertEquals(north(50.0), memory.instead(origin, 400f, PreciseFixMemory.TTL_MILLIS)?.coordinates)
+        assertNull(memory.instead(origin, 400f, PreciseFixMemory.TTL_MILLIS + 1))
+    }
+
+    @Test
+    fun `an expired precise fix is deleted, not just ignored`() {
+        val memory = PreciseFixMemory()
+        memory.remember(north(50.0), atElapsedMillis = 0)
+        assertNull(memory.instead(origin, 400f, PreciseFixMemory.TTL_MILLIS + 1))
+        // Asked again at a time when it would have been fresh: it's gone.
+        assertNull(memory.instead(origin, 400f, 0))
+    }
+
+    @Test
+    fun `expire deletes only a fix past the TTL`() {
+        val memory = PreciseFixMemory()
+        memory.remember(north(50.0), atElapsedMillis = 0)
+        memory.expire(PreciseFixMemory.TTL_MILLIS)
+        assertEquals(north(50.0), memory.instead(origin, 400f, 0)?.coordinates)
+        memory.expire(PreciseFixMemory.TTL_MILLIS + 1)
+        assertNull(memory.instead(origin, 400f, 0))
+    }
+
+    @Test
+    fun `a recall carries the remembered fix's provider and accuracy for the log`() {
+        val memory = PreciseFixMemory()
+        memory.remember(north(50.0), atElapsedMillis = 0, provider = "gps", accuracyMeters = 8f)
+        val recalled = memory.instead(origin, 400f, 1_000)!!
+        assertEquals("gps", recalled.provider)
+        assertEquals(8f, recalled.accuracyMeters)
+        assertEquals(
+            "location fix: remembered precise from gps, accuracy 8 m, 1 s old",
+            FixDiagnostics.describe(FixDiagnostics.Source.REMEMBERED, recalled.provider, recalled.accuracyMeters, recalled.ageMillis),
+        )
+    }
+
+    @Test
+    fun `a coarse fix with no accuracy has no circle to be inside`() {
+        val memory = PreciseFixMemory()
+        memory.remember(origin, atElapsedMillis = 0)
+        assertNull(memory.instead(origin, null, minute))
+        assertNull(memory.instead(origin, 0f, minute))
+    }
+
+    @Test
+    fun `the newest precise fix is the one remembered`() {
+        val memory = PreciseFixMemory()
+        memory.remember(north(100.0), atElapsedMillis = 2 * minute)
+        // An older one arriving late doesn't replace it.
+        memory.remember(north(300.0), atElapsedMillis = minute)
+        assertEquals(north(100.0), memory.instead(origin, 400f, 3 * minute)?.coordinates)
+    }
+}

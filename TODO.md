@@ -2113,6 +2113,16 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   from a fallback). **Still to do:** gate on **measured accuracy/age**, not just the fallback flag —
   a *fresh* Wi-Fi/cell fused fix that's confidently wrong (the station-Wi-Fi case) still isn't
   caught, since it's not a fallback; that needs the accuracy(+validity)/age plumbing above.
+  **Shipped, second increment (maintainer bug report, 2026-09-25):** a fresh **coarse** fix
+  (network/passive under a precise grant, GPS missed the grace) defers to the last precise fix
+  when that is under 10 minutes old and inside the coarse fix's accuracy circle
+  (`PreciseFixMemory`); otherwise the list shows an "Approximate location" banner and a GPS-only
+  follow-up (`LocationProvider.precise`, 8 s) confirms it (within 100 m) or moves the list.
+- [ ] **Merge the stops around a remembered precise fix and a new coarse one** (maintainer,
+      2026-09-25) — rather than picking one fix, show the union, with each distance either marked
+      approximate ("~400 m") or as a range from both fixes ("100–400 m"). Deferred: the list would
+      mix two places and every distance needs a second origin; revisit if the remember-precise
+      rule above still leaves stops missing.
 - **Same-set re-locate discards updated stop metadata (Codex P2 on #70) — RESOLVED by the
   #87 reveal redesign (2026-09-21).** The old gap: `relocate()`'s same-set path kept the old
   `MainViewModel`, whose `seedStops` were fixed at init, so a refresh returning the *same* IDs
