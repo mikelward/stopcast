@@ -184,6 +184,10 @@ internal fun withOpenedFarther(
     val disruptionUnknown = list.stopsDisruptionUnknown.toHashSet()
     val unavailable = list.unavailableStopIds.toHashSet()
     var cardPartial = false
+    // A card part-shown by its own cold load, its line status not checked yet: the list says it's
+    // still checking, as it would for its own (SPEC *Freshness → Cold load*).
+    var cardStatusPending = false
+    val openedLoading = HashSet<String>()
     // Stops of the list's that a card shows fresh, so the banner stops naming them as failed.
     val freshFromCards = HashSet<String>()
     for ((cardIds, state) in opened) {
@@ -198,6 +202,10 @@ internal fun withOpenedFarther(
                 if (state.disruptionUnknown) added.mapTo(disruptionUnknown) { it.stopId }
                 unavailable += state.unavailableStopIds
                 if (state.partialRefresh || state.refreshFailure != null) cardPartial = true
+                if (state.statusPending) {
+                    cardStatusPending = true
+                    openedLoading += cardIds
+                }
             }
             is DeparturesUiState.Error -> unavailable += cardIds - ids
             else -> Unit
@@ -220,7 +228,23 @@ internal fun withOpenedFarther(
         determinedLineIds = determined,
         stopsDisruptionUnknown = disruptionUnknown,
         unavailableStopIds = unavailable,
+        disruptionUnknown = list.disruptionUnknown || cardStatusPending,
+        statusPending = list.statusPending || cardStatusPending,
+        openedLoadingStopIds = openedLoading,
     )
+}
+
+/**
+ * The stops [state] counts as reached for [fartherReached]: those it has departures for, plus, while
+ * a cold load is part-shown, the ones still loading — they're about to land, so their lines don't
+ * flash up a farther card that then vanishes (and close one opened meanwhile). Null while nothing
+ * has loaded yet (everything shown counts).
+ */
+internal fun reachedStopIds(state: DeparturesUiState): Set<String>? {
+    val loaded = state as? DeparturesUiState.Loaded ?: return null
+    val ids = loaded.stops.mapTo(HashSet()) { it.stopId }
+    if (loaded.statusPending) loaded.pendingStops.mapTo(ids) { it.id }
+    return ids
 }
 
 /**

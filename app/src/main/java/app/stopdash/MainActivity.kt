@@ -12,6 +12,7 @@ import app.stopdash.ui.rememberTripView
 import app.stopdash.ui.hereOriginIds
 import app.stopdash.ui.fartherCardsKey
 import app.stopdash.ui.fartherReached
+import app.stopdash.ui.reachedStopIds
 import app.stopdash.domain.DirectTrips
 import app.stopdash.domain.stopPlace
 import app.stopdash.data.FileStarredPlacesStore
@@ -1022,7 +1023,7 @@ class MainActivity : ComponentActivity() {
             val shownNearStops by viewModel.shownNearStops.collectAsStateWithLifecycle()
             // The shown stops the loaded list has departures for (null while still loading): one whose
             // fetch failed isn't on the list, so its lines keep their farther cards.
-            val loadedStopIds = (state as? DeparturesUiState.Loaded)?.stops?.mapTo(HashSet()) { it.stopId }
+            val loadedStopIds = reachedStopIds(state)
             val reachedStops = remember(shownNearStops, loadedStopIds) { fartherReached(shownNearStops, loadedStopIds) }
             // Every list offers them, near me and a From… station's page alike (SPEC *Finding stops
             // → Farther stations*): the cards are how farther stations and bus stops page in.

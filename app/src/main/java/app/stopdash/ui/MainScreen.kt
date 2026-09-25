@@ -1199,6 +1199,8 @@ fun MainScreen(
                     onShowAllModes = onShowAllModes,
                     // Not on a platform's own view, which is one place.
                     farther = if (platformRows != null) emptyList() else fartherShown,
+                    // Hiding a mode applies to the loading cards too, as to the loaded rows.
+                    pending = if (platformRows != null) emptyList() else visiblePending(state.pendingStops, hiddenModes),
                     onOpenFarther = onOpenFarther,
                     onOpenDetail = { row, focus ->
                         detailKey = row.detailKey()
@@ -1371,6 +1373,9 @@ private fun LoadedContent(
     onShowAllModes: () -> Unit = {},
     // Each place's modes not yet hidden (by cluster), for a header's "Hide ‹mode›" items.
     modesByPlace: Map<String, Set<String>> = emptyMap(),
+    // A cold load's stops not back yet ([DeparturesUiState.Loaded.pendingStops]), each a "Loading"
+    // card where it will land; empty where the view is one place (a platform, a journey).
+    pending: List<StopRef> = emptyList(),
 ) {
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
@@ -1433,12 +1438,13 @@ private fun LoadedContent(
             }
             // Arrivals loaded but their disruption status couldn't be checked — say so
             // rather than let the times read as verified-clean (SPEC *Disruptions*).
+            // While a cold load is still out, not yet checked rather than couldn't.
             if (state.disruptionUnknown) {
-                Banner(stringResource(R.string.disruptions_unknown))
+                Banner(stringResource(if (state.statusPending) R.string.disruptions_checking else R.string.disruptions_unknown))
             }
             // Starred journeys still show when nothing nearby has departures: their origins can be
             // farther away, and hiding them behind "No departures" would drop live trains.
-            if (rows.isEmpty() && journeyCards.isEmpty() && farJourneyCards.isEmpty() && onRevealFar == null) {
+            if (rows.isEmpty() && journeyCards.isEmpty() && farJourneyCards.isEmpty() && onRevealFar == null && pending.isEmpty()) {
                 // Scrollable even though it doesn't overflow: PullToRefreshBox reads the
                 // pull from a scrollable child's nested-scroll events, so a plain Column
                 // here would leave pull-to-refresh dead on the empty state (only the
@@ -1467,7 +1473,7 @@ private fun LoadedContent(
                     // nothing — that's exactly when they are most useful (SPEC principle 2).
                     FartherCards(
                         farther,
-                        state.stops.mapTo(HashSet()) { it.stopId },
+                        state.stops.mapTo(HashSet()) { it.stopId } - state.openedLoadingStopIds,
                         state.unavailableStopIds,
                         onOpenFarther,
                         Modifier.padding(top = 16.dp),
@@ -1478,7 +1484,8 @@ private fun LoadedContent(
                     rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
                     farther = farther,
                     onOpenFarther = onOpenFarther,
-                    fetchedStopIds = state.stops.mapTo(HashSet()) { it.stopId },
+                    pending = pending,
+                    fetchedStopIds = state.stops.mapTo(HashSet()) { it.stopId } - state.openedLoadingStopIds,
                     unavailableStopIds = state.unavailableStopIds,
                     listState = listState,
                     onOpenSettings = onOpenSettings,
@@ -1500,7 +1507,7 @@ private fun LoadedContent(
                     onRevealFar = onRevealFar,
                     // Not in a journey's own view, nor when every nearby row is already on a journey
                     // card above.
-                    nearbyEmptyNote = if (rows.isEmpty() && !journeyView && !nearbyShownAbove) {
+                    nearbyEmptyNote = if (rows.isEmpty() && !journeyView && !nearbyShownAbove && pending.isEmpty()) {
                         // With modes hidden, say so rather than "no departures": they may be running.
                         if (hiddenModes.isNotEmpty()) {
                             stringResource(
@@ -1532,8 +1539,13 @@ private fun FreshnessStamp(state: DeparturesUiState, now: Instant, onRefresh: ()
         DeparturesUiState.Loading -> stringResource(R.string.loading_stamp)
         is DeparturesUiState.Loaded -> {
             val age = Duration.between(state.fetchedAt, now).toKotlinDuration()
-            if (Staleness.isStale(age)) stringResource(R.string.stale_stamp)
-            else stringResource(R.string.updated_stamp, RelativeTime.formatAge(age))
+            when {
+                // A cold load with nothing back yet — only failures so far, or cut short before any
+                // stop landed: no update to stamp, so still loading, not "Updated just now".
+                state.stops.isEmpty() && (state.statusPending || state.partialRefresh) -> stringResource(R.string.loading_stamp)
+                Staleness.isStale(age) -> stringResource(R.string.stale_stamp)
+                else -> stringResource(R.string.updated_stamp, RelativeTime.formatAge(age))
+            }
         }
         // An error has its own full-screen message (no snapshot, so no age to stamp).
         is DeparturesUiState.Error -> return
@@ -1607,6 +1619,8 @@ private fun DepartureList(
     listState: LazyListState,
     farther: List<FartherCard> = emptyList(),
     onOpenFarther: (CollapsedPlaces.Place) -> Unit = {},
+    // A cold load's stops not back yet, shown as "Loading" cards among the places ([pendingSlots]).
+    pending: List<StopRef> = emptyList(),
     // The stops whose departures have been fetched, so an opened card with none shown can tell
     // "still loading" from "nothing running".
     fetchedStopIds: Set<String> = emptySet(),
@@ -1676,6 +1690,11 @@ private fun DepartureList(
                     ?.let { place to it }
             }.toMap()
         }
+    }
+    // The places still loading, less any already on screen (a station with one platform back) —
+    // judged by every row, closures included, since a closure-only place has no group.
+    val pendingPlaces = remember(pending, rows, stopDistanceMeters) {
+        pendingPlaces(pending, rows.mapTo(HashSet()) { placeOf(it.clusterId, it.stopId) }, stopDistanceMeters)
     }
     // A journey's heading (or, in its own view, its actions), closure notices, and trains or note —
     // shared by the near journeys at the top and the revealed faraway ones at the bottom, whose
@@ -1885,7 +1904,28 @@ private fun DepartureList(
         val fartherGroups = groups.groupBy { group ->
             fartherStopIds.entries.firstOrNull { (_, ids) -> ids.isNotEmpty() && group.rows.all { it.stopId in ids } }?.key
         }
-        fartherGroups[null].orEmpty().forEachIndexed { index, group -> groupItems(index, group) }
+        // The loading places go where they'll land: by distance on the near-me list, below the
+        // starred band; at the foot of the watched list, whose soonest-first order isn't known yet.
+        val listed = fartherGroups[null].orEmpty()
+        // A place is in the starred band if any of its groups is, so no card splits a starred station.
+        val starredPlaces = listed.filter { group -> group.rows.any { StarredRow.of(it) in starred } }.mapTo(HashSet()) { it.placeKey }
+        val slots = pendingSlots(
+            listed.map { placeDistanceMeters[it.placeKey] },
+            listed.map { it.placeKey in starredPlaces },
+            pendingPlaces,
+        )
+        fun pendingItems(slot: Int) = pendingPlaces.forEachIndexed { k, loading ->
+            if (slots[k] == slot) {
+                item(key = "pending|${loading.place.key}") {
+                    FartherCardView(FartherCard(loading.place), FartherCue.LOADING, onOpen = {}, showDistance = loading.distanced)
+                }
+            }
+        }
+        listed.forEachIndexed { index, group ->
+            pendingItems(index)
+            groupItems(index, group)
+        }
+        pendingItems(listed.size)
         // Below the loaded places: the farther stations and bus places, each collapsed until tapped
         // (in [CollapsedPlaces.ordered]'s order).
         for (card in farther) {
@@ -1941,6 +1981,70 @@ private fun FartherCards(
     }
 }
 
+/**
+ * [pending] without a hidden mode's lines, and without a stop left serving only hidden modes
+ * (SPEC *Finding stops → Hiding a mode*) — the same rule [HiddenModes.stops] picks stops by.
+ */
+internal fun visiblePending(pending: List<StopRef>, hiddenModes: Set<String>): List<StopRef> {
+    if (hiddenModes.isEmpty()) return pending
+    return pending.mapNotNull { stop ->
+        if (stop.lines.isEmpty()) return@mapNotNull stop
+        val kept = stop.lines.filterNot { HiddenModes.isHidden(it.mode, hiddenModes) }
+        when {
+            kept.isEmpty() -> null
+            kept.size == stop.lines.size -> stop
+            else -> stop.copy(lines = kept)
+        }
+    }
+}
+
+/** A place a cold load is still waiting on, as a collapsed card; [distanced] when its distance is known. */
+internal data class PendingPlace(val place: CollapsedPlaces.Place, val distanced: Boolean)
+
+/**
+ * The places [pending] stops make, one card each, keyed as [StopGrouping] keys a place, less any in
+ * [shownPlaces] (already on screen). On the near-me list ([stopDistanceMeters] non-empty) only the
+ * nearby stops count, nearest first; the watched list keeps their order.
+ */
+internal fun pendingPlaces(
+    pending: List<StopRef>,
+    shownPlaces: Set<String>,
+    stopDistanceMeters: Map<String, Double>,
+): List<PendingPlace> {
+    val nearMe = stopDistanceMeters.isNotEmpty()
+    val places = pending
+        .filter { !nearMe || it.id in stopDistanceMeters }
+        .groupBy { placeOf(it.clusterId, it.id) }
+        .filterKeys { it !in shownPlaces }
+        .map { (key, stops) ->
+            val meters = stops.mapNotNull { stopDistanceMeters[it.id] }.minOrNull()
+            PendingPlace(
+                CollapsedPlaces.Place(
+                    key = "pending:$key",
+                    stationId = stops.first().id,
+                    name = stops.first().name,
+                    meters = meters ?: 0.0,
+                    lines = stops.flatMap { it.lines }.distinctBy { it.id },
+                ),
+                distanced = meters != null,
+            )
+        }
+    return if (nearMe) places.sortedBy { it.place.meters } else places
+}
+
+/**
+ * Where each of [pending] goes among the listed groups: the index of the group it precedes, or the
+ * group count for the foot. One with a distance follows the last group no farther away, else leads
+ * the groups past the starred band ([pinned]), as it will once loaded; one without (the watched
+ * list) goes to the foot.
+ */
+internal fun pendingSlots(groupMeters: List<Double?>, pinned: List<Boolean>, pending: List<PendingPlace>): List<Int> =
+    pending.map { p ->
+        if (!p.distanced) return@map groupMeters.size
+        val after = groupMeters.indices.lastOrNull { i -> !pinned[i] && groupMeters[i]?.let { it <= p.place.meters } == true }
+        after?.plus(1) ?: pinned.indexOfFirst { !it }.takeIf { it >= 0 } ?: groupMeters.size
+    }
+
 /** What a collapsed card says where the times would be, and whether a tap acts on it. */
 internal enum class FartherCue(val tappable: Boolean) { TAP_TO_SEE(true), LOADING(false), RETRY(true), NO_DEPARTURES(false) }
 
@@ -1971,7 +2075,13 @@ internal fun fartherCue(card: FartherCard, fetchedStopIds: Set<String>, unavaila
  * so, and a failed one taps to retry.
  */
 @Composable
-private fun FartherCardView(card: FartherCard, cue: FartherCue, onOpen: (CollapsedPlaces.Place) -> Unit) {
+private fun FartherCardView(
+    card: FartherCard,
+    cue: FartherCue,
+    onOpen: (CollapsedPlaces.Place) -> Unit,
+    // False on the watched list, which gives no distances (D1).
+    showDistance: Boolean = true,
+) {
     val place = card.place
     val cueText = stringResource(
         when (cue) {
@@ -1990,7 +2100,7 @@ private fun FartherCardView(card: FartherCard, cue: FartherCue, onOpen: (Collaps
         StopGroupHeader(
             place.name,
             qualifier = null,
-            distanceLabel = distanceSystem?.let { StopDistance.label(place.meters, it) },
+            distanceLabel = distanceSystem?.takeIf { showDistance }?.let { StopDistance.label(place.meters, it) },
             firstOnScreen = false,
         )
         OutlinedCard(

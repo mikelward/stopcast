@@ -397,6 +397,309 @@ class MainViewModelTest {
         assertEquals(DeparturesUiState.Error.Kind.SERVER, kept.partialReason)
     }
 
+    /** Answers every stop at once except [slowStop], whose arrivals wait on [gate]; line status waits on [statusGate]. */
+    private inner class GatedClient(
+        val slowStop: String,
+        val gate: CompletableDeferred<Unit>,
+        val statusGate: CompletableDeferred<Unit> = CompletableDeferred(Unit),
+    ) : TflClient {
+        override suspend fun arrivals(stopId: String): List<Departure> {
+            if (stopId == slowStop) gate.await()
+            return listOf(departure("victoria", "Victoria", 120))
+        }
+
+        override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+            statusGate.await()
+            return emptyList()
+        }
+
+        override suspend fun stopDisruptions(stopId: String): List<StopDisruption> = emptyList()
+    }
+
+    @Test
+    fun `a part-loaded disrupted interchange is titled by its hub`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        var hubCalls = 0
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                if (stopId == seeds[1].id) gate.await()
+                return listOf(departure("victoria", "Victoria", 120))
+            }
+            override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> = emptyList()
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> =
+                if (stopId == seeds[0].id) listOf(StopDisruption("Station closed until further notice")) else emptyList()
+            override suspend fun hubInfo(hubId: String): HubInfo {
+                hubCalls++
+                return HubInfo("Oxford Circus Interchange")
+            }
+        }
+        val stops = listOf(seeds[0].copy(hubId = "HUBOXC"), seeds[1])
+        val vm = MainViewModel(client, stops, clock = { now }, io = dispatcher)
+        advanceUntilIdle()
+
+        val partial = vm.state.value as DeparturesUiState.Loaded
+        assertEquals("Oxford Circus Interchange", partial.stops.single().hubName)
+        gate.complete(Unit)
+        advanceUntilIdle()
+        // The final pass reuses the lookup rather than asking again.
+        assertEquals(1, hubCalls)
+    }
+
+    @Test
+    fun `a cold load shows its last stop without waiting on the line-status check`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val statusGate = CompletableDeferred<Unit>()
+        val vm = viewModel(GatedClient(seeds[1].id, gate, statusGate))
+        advanceUntilIdle()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        val shown = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(seeds.map { it.id }.toSet(), shown.stops.mapTo(HashSet()) { it.stopId })
+        assertTrue(shown.pendingStops.isEmpty())
+        assertTrue(shown.statusPending)
+
+        statusGate.complete(Unit)
+        advanceUntilIdle()
+        assertFalse((vm.state.value as DeparturesUiState.Loaded).statusPending)
+    }
+
+    @Test
+    fun `a cold load shows each stop as it lands and saves only once all are in`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val store = FakeStore()
+        val vm = viewModel(GatedClient(seeds[1].id, gate), store)
+        advanceUntilIdle()
+
+        val partial = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(listOf(seeds[0].id), partial.stops.map { it.stopId })
+        assertEquals(listOf(seeds[1].id), partial.pendingStops.map { it.id })
+        // Line status waits for every stop, so it isn't vouched for yet.
+        assertTrue(partial.disruptionUnknown)
+        assertFalse(partial.partialRefresh)
+        assertTrue(store.saves.isEmpty())
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        val done = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(seeds.map { it.id }.toSet(), done.stops.mapTo(HashSet()) { it.stopId })
+        assertTrue(done.pendingStops.isEmpty())
+        assertEquals(1, store.saves.size)
+    }
+
+    @Test
+    fun `a refresh over a kept snapshot never part-shows`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val store = FakeStore(
+            DeparturesSnapshot(
+                seeds.map { stopArrivals(it.id, it.name, 300, now.minusSeconds(120)) },
+                now.minusSeconds(120),
+            ),
+        )
+        val vm = viewModel(GatedClient(seeds[1].id, gate), store)
+        advanceUntilIdle()
+
+        // The saved list stays up, whole, until the batch is done.
+        val shown = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(shown.pendingStops.isEmpty())
+        assertEquals(2, shown.stops.size)
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `a refresh during a part-shown cold load keeps the stops already shown`() = runTest(dispatcher) {
+        // Each stop's arrivals wait on its gate, if it has one when asked.
+        val gates = mutableMapOf(seeds[1].id to CompletableDeferred<Unit>())
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                gates[stopId]?.await()
+                return listOf(departure("victoria", "Victoria", 120))
+            }
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = viewModel(client)
+        advanceUntilIdle()
+        assertEquals(listOf(seeds[0].id), (vm.state.value as DeparturesUiState.Loaded).stops.map { it.stopId })
+
+        // A pull to refresh: this time the first stop is slow and the second answers first.
+        gates[seeds[0].id] = CompletableDeferred()
+        gates.getValue(seeds[1].id).complete(Unit)
+        vm.refresh()
+        advanceUntilIdle()
+        val shown = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(seeds.map { it.id }.toSet(), shown.stops.mapTo(HashSet()) { it.stopId })
+        assertTrue(shown.pendingStops.isEmpty())
+        assertTrue(shown.statusPending)
+        gates.getValue(seeds[0].id).complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `a refresh after a cold load is cut short still shows stops as they land`() = runTest(dispatcher) {
+        // The app's pull to refresh cancels (cancelFetch) before the next fetch starts.
+        val gates = mutableMapOf(seeds[1].id to CompletableDeferred<Unit>())
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                gates[stopId]?.await()
+                return listOf(departure("victoria", "Victoria", 120))
+            }
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = viewModel(client)
+        advanceUntilIdle()
+        vm.cancelFetch()
+
+        gates[seeds[0].id] = CompletableDeferred()
+        gates.getValue(seeds[1].id).complete(Unit)
+        vm.refresh()
+        advanceUntilIdle()
+        val shown = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(seeds.map { it.id }.toSet(), shown.stops.mapTo(HashSet()) { it.stopId })
+        assertTrue(shown.statusPending)
+        gates.getValue(seeds[0].id).complete(Unit)
+        advanceUntilIdle()
+        assertFalse((vm.state.value as DeparturesUiState.Loaded).statusPending)
+    }
+
+    @Test
+    fun `a stop that fails mid-load is named at once, not left loading`() = runTest(dispatcher) {
+        val statusGate = CompletableDeferred<Unit>()
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                if (stopId == seeds[1].id) throw TflException.Unreachable("boom", null)
+                return listOf(departure("victoria", "Victoria", 120))
+            }
+            override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+                statusGate.await()
+                return emptyList()
+            }
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = viewModel(client)
+        advanceUntilIdle()
+
+        // Line status is still out, but the failure is already known.
+        val shown = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(shown.statusPending)
+        assertTrue(shown.pendingStops.isEmpty())
+        assertTrue(shown.partialRefresh)
+        assertEquals(setOf(seeds[1].id), shown.partialStops.keys)
+        statusGate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `a stop that fails before any lands is named while the rest load`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                if (stopId == seeds[0].id) throw TflException.Unreachable("boom", null)
+                gate.await()
+                return listOf(departure("victoria", "Victoria", 120))
+            }
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = viewModel(client)
+        advanceUntilIdle()
+
+        val shown = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(shown.stops.isEmpty())
+        assertEquals(listOf(seeds[1].id), shown.pendingStops.map { it.id })
+        assertEquals(setOf(seeds[0].id), shown.partialStops.keys)
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf(seeds[1].id), (vm.state.value as DeparturesUiState.Loaded).stops.map { it.stopId })
+    }
+
+    @Test
+    fun `a cold load whose every stop fails says so before its closure checks finish`() = runTest(dispatcher) {
+        val closureGate = CompletableDeferred<Unit>()
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> = throw TflException.Offline(null)
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                closureGate.await()
+                return emptyList()
+            }
+        }
+        val vm = viewModel(client)
+        advanceUntilIdle()
+
+        assertEquals(DeparturesUiState.Error(DeparturesUiState.Error.Kind.OFFLINE), vm.state.value)
+        closureGate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(DeparturesUiState.Error(DeparturesUiState.Error.Kind.OFFLINE), vm.state.value)
+    }
+
+    @Test
+    fun `a closure shows mid-load even when its stop's arrivals failed`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                if (stopId == seeds[0].id) throw TflException.Unreachable("boom", null)
+                gate.await()
+                return listOf(departure("victoria", "Victoria", 120))
+            }
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> =
+                if (stopId == seeds[0].id) listOf(StopDisruption("Station closed until further notice")) else emptyList()
+        }
+        val vm = viewModel(client)
+        advanceUntilIdle()
+
+        val shown = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(
+            listOf("Station closed until further notice"),
+            shown.stops.single { it.stopId == seeds[0].id }.disruptions.map { it.description },
+        )
+        // Its arrivals still failed, so it's still named.
+        assertEquals(setOf(seeds[0].id), shown.partialStops.keys)
+        assertEquals(listOf(seeds[1].id), shown.pendingStops.map { it.id })
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `a retry that reuses every stop still says it is checking for disruptions`() = runTest(dispatcher) {
+        // Cut short during its line-status check, after every stop landed; the retry reuses them all.
+        val statusGate = CompletableDeferred<Unit>()
+        val vm = MainViewModel(
+            GatedClient(seeds[1].id, CompletableDeferred(Unit), statusGate),
+            seeds,
+            clock = { now },
+            io = dispatcher,
+            arrivalsReuse = java.time.Duration.ofSeconds(30),
+        )
+        advanceUntilIdle()
+        vm.cancelFetch()
+        assertFalse((vm.state.value as DeparturesUiState.Loaded).statusPending)
+
+        vm.refresh()
+        advanceUntilIdle()
+        assertTrue((vm.state.value as DeparturesUiState.Loaded).statusPending)
+        statusGate.complete(Unit)
+        advanceUntilIdle()
+        assertFalse((vm.state.value as DeparturesUiState.Loaded).statusPending)
+    }
+
+    @Test
+    fun `a cold load cut short names the stops it never got`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val vm = viewModel(GatedClient(seeds[1].id, gate))
+        advanceUntilIdle()
+
+        vm.cancelFetch()
+        val state = vm.state.value as DeparturesUiState.Loaded
+        assertTrue(state.pendingStops.isEmpty())
+        assertTrue(state.partialRefresh)
+        assertEquals(setOf(seeds[1].id), state.partialStops.keys)
+        assertEquals(listOf(seeds[0].id), state.stops.map { it.stopId })
+    }
+
     @Test
     fun `a total failure after a load keeps the aged last-good snapshot`() = runTest(dispatcher) {
         var failing = false
@@ -2396,6 +2699,38 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `an opened card part-shown by its own cold load says it is still checking`() {
+        val list = DeparturesUiState.Loaded(stops = listOf(StopArrivals("E", "E", emptyList(), now)), fetchedAt = now)
+        val loading = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("MA", "Farther", emptyList(), now)),
+            fetchedAt = now,
+            disruptionUnknown = true,
+            statusPending = true,
+        )
+        val shown = withOpenedFarther(list, listOf(setOf("MA", "MB") to loading))
+        assertTrue(shown.statusPending)
+        assertTrue(shown.disruptionUnknown)
+        // Once the card's batch is whole, the list's own state stands again.
+        val done = withOpenedFarther(list, listOf(setOf("MA", "MB") to loading.copy(disruptionUnknown = false, statusPending = false)))
+        assertFalse(done.statusPending)
+        assertFalse(done.disruptionUnknown)
+    }
+
+    @Test
+    fun `an opened card still loading keeps every one of its stops loading`() {
+        val list = DeparturesUiState.Loaded(stops = listOf(StopArrivals("E", "E", emptyList(), now)), fetchedAt = now)
+        // One of the card's stops is back with nothing running; the other is still out.
+        val loading = DeparturesUiState.Loaded(
+            stops = listOf(StopArrivals("MA", "Farther", emptyList(), now)),
+            fetchedAt = now,
+            pendingStops = listOf(StopRef("MB", "Farther")),
+            statusPending = true,
+        )
+        assertEquals(setOf("MA", "MB"), withOpenedFarther(list, listOf(setOf("MA", "MB") to loading)).openedLoadingStopIds)
+        assertTrue(withOpenedFarther(list, listOf(setOf("MA", "MB") to loading.copy(statusPending = false))).openedLoadingStopIds.isEmpty())
+    }
+
+    @Test
     fun `an opened card whose refresh failed marks the list partial`() {
         val list = DeparturesUiState.Loaded(stops = listOf(StopArrivals("E", "E", emptyList(), now)), fetchedAt = now)
         val failed = DeparturesUiState.Loaded(
@@ -2556,6 +2891,34 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `a More tap during a part-shown cold load finishes it whole`() = runTest(dispatcher) {
+        // The first eager stop is slow on the cold load only; "More" is tapped once the other is shown.
+        val slow = CompletableDeferred<Unit>()
+        var firstAsk = true
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                if (stopId == "S" && firstAsk) {
+                    firstAsk = false
+                    slow.await()
+                }
+                return listOf(departure("victoria", "Victoria", 120))
+            }
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = tierVm(client, listOf(StopRef("E", "E"), StopRef("S", "S")), listOf(clusterOf("M1", "MA" to "bus")))
+        advanceUntilIdle()
+        assertTrue((vm.state.value as DeparturesUiState.Loaded).statusPending)
+
+        vm.reveal("bus")
+        advanceUntilIdle()
+        val done = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(setOf("E", "S", "MA"), done.stops.mapTo(HashSet()) { it.stopId })
+        assertTrue(done.pendingStops.isEmpty())
+        assertFalse(done.statusPending)
+    }
+
+    @Test
     fun `revealing a stop whose notice has resolved prunes its dismissal`() = runTest(dispatcher) {
         // The reconcile hook fires on the incremental "More" path too, not only full refreshes: a
         // revealed stop whose dismissed notice has since cleared must have its stale signature pruned.
@@ -2690,6 +3053,35 @@ class MainViewModelTest {
 
         val state = vm.state.value as DeparturesUiState.Loaded
         assertEquals(setOf("490000001A", "490000001B"), state.stopsDisruptionUnknown)
+    }
+
+    @Test
+    fun `a hub looked up for a part-loaded stop is counted in the fetch log`() = runTest(dispatcher) {
+        val logged = mutableListOf<String>()
+        val gate = CompletableDeferred<Unit>()
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                if (stopId == seeds[1].id) gate.await()
+                return listOf(departure("victoria", "Victoria", 120))
+            }
+            override suspend fun lineStatuses(lineIds: Collection<String>) = emptyList<LineStatus>()
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> =
+                if (stopId == seeds[0].id) listOf(StopDisruption("Station closed until further notice")) else emptyList()
+            override suspend fun hubInfo(hubId: String) = HubInfo("Oxford Circus Interchange")
+        }
+        MainViewModel(
+            client,
+            listOf(seeds[0].copy(hubId = "HUBOXC"), seeds[1]),
+            clock = { now },
+            io = dispatcher,
+            elapsedMillis = { 0L },
+            logStats = { logged += it },
+        )
+        advanceUntilIdle()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(logged.toString(), logged.single().contains(", 1 hub)"))
     }
 
     @Test

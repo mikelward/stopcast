@@ -973,6 +973,16 @@ about when data has gone stale.
   differently are named without one, rather than given a reason untrue of some. A failure in an
   opened farther-station card isn't named: the warning falls back to "some stops". A snapshot
   restored from disk names the stops but not the reason, which isn't kept.
+- **Cold load** (nothing saved to show yet): the app shows each stop as soon as its departures
+  and closure check are back, rather than a spinner until the slowest stop answers (one slow
+  National Rail board shouldn't hold up the tube). A stop still out shows as a collapsed card —
+  its name, distance and lines, with "Loading" where the times go — in the place it will land:
+  by distance on a near-me or station list (below any starred ones), at the foot of the watched
+  list, whose soonest-first order can't be known until it's in. Line status is checked once
+  every stop is back, so until then the list says it's still checking for disruptions. A
+  part-loaded list is never saved for the widget or the next launch; only the whole batch is. A
+  load cut short (a relocation) names the stops it never got, like any other failed stop. With
+  a saved snapshot on screen, a refresh keeps it whole until the batch is done.
 - The **widget** refreshes opportunistically — on tap, on host update, and on a
   bounded periodic schedule while it is plausibly visible — and degrades to on-demand
   rather than polling hard in the background (**D5**). The spec's guarantee is honesty

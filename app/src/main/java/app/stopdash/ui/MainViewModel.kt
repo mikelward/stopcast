@@ -560,6 +560,11 @@ class MainViewModel(
     private val disruptionFailedAt = mutableMapOf<String, Instant>()
     private var lastFetchAt: Instant? = null
 
+    // A cold load has been part-shown and no whole batch has landed since. Outlives [cancelFetch]
+    // (which tells the screen the load stopped), so the refresh a relocation or pull starts next
+    // still shows each stop as it lands rather than holding the rest until the whole batch is in.
+    private var coldLoadUnfinished = false
+
     // Each line's last DETERMINED status (good or disrupted) and when it came back, reused for
     // [lineStatusReuse] so a refresh a minute after the last one needn't re-ask about the same lines.
     // A line TfL gave no status for, or a failed request, is never cached. In-memory, main thread.
@@ -672,6 +677,17 @@ class MainViewModel(
         initLoadJob?.cancel()
         fetchJob?.cancel()
         _refreshing.value = false
+        // A cold load cut short keeps the stops it showed and names the ones it never got, rather
+        // than leave them "Loading" with nothing coming (SPEC principle 2).
+        // Its line status was never checked, so that now reads "couldn't check".
+        (_state.value as? DeparturesUiState.Loaded)?.takeIf { it.statusPending }?.let { shown ->
+            _state.value = shown.copy(
+                pendingStops = emptyList(),
+                statusPending = false,
+                partialRefresh = shown.partialRefresh || shown.pendingStops.isNotEmpty(),
+                partialStops = shown.partialStops + shown.pendingStops.associate { it.id to DeparturesUiState.FailedStop(it.name) },
+            )
+        }
     }
 
     /**
@@ -721,6 +737,13 @@ class MainViewModel(
         // ago (see [recentlyFetched]). Each keeps its own fetchedAt and arrivalsFresh, so its age and
         // "No departures" claim stay honest (SPEC D4); only the line status is re-checked for it.
         reuse: Set<String> = emptySet(),
+        // Called as each stop lands while the rest are still out: the stops so far (arrivals and
+        // closure check both back, merged as below but before the line-status check) and the ids
+        // still waiting, so a cold load shows each stop as it arrives rather than holding the
+        // spinner for the slowest (SPEC *Freshness → Cold load*). Null skips it.
+        // [failed] is each stop whose arrivals have failed so far, and how, so the screen names it
+        // at once rather than leaving it "Loading".
+        onProgress: ((shown: List<StopArrivals>, waiting: Set<String>, failed: Map<String, DeparturesUiState.Error.Kind>) -> Unit)? = null,
     ): FetchBatch {
         lastFetchAt = now
         val startedAt = elapsedMillis()
@@ -760,6 +783,29 @@ class MainViewModel(
         // the per-fetch log line.
         val poleBatchIds = HashSet<String>()
         var poleBatchCount = 0
+        // The near-me places by distance, for [Terminating]: every eager and "more" stop, revealed or
+        // not, since the rider's nearest place may sit in either tier.
+        val places = nearbyPlaces()
+        // One interchange lookup per hub per batch, shared by the early per-stop reveal and the final
+        // pass, so members asking at once — or a failed lookup, which isn't cached — cost one call.
+        val hubLookups = HashMap<String, CompletableDeferred<HubInfo>>()
+        // The hub lookups that went to TfL this batch (not the cache), for the per-fetch log line —
+        // counted where they start, since the early reveal can warm the cache before the final pass.
+        var hubRequests = 0
+        suspend fun hubOf(hubId: String): HubInfo {
+            hubLookups[hubId]?.let { return it.await() }
+            val lookup = CompletableDeferred<HubInfo>()
+            hubLookups[hubId] = lookup
+            if (hubId !in hubInfoCache) hubRequests++
+            val info = try {
+                resolveHubInfo(hubId)
+            } catch (e: CancellationException) {
+                lookup.cancel()
+                throw e
+            }
+            lookup.complete(info)
+            return info
+        }
         val (arrivalResults, disruptionResults) = coroutineScope {
             val arrivals = stops.map { stop ->
                 if (reused(stop)) {
@@ -821,6 +867,61 @@ class MainViewModel(
                     }
                 }
             }
+            if (onProgress != null) {
+                // Each stop as it lands, in stop order. Runs on the caller's (main) dispatcher, so
+                // these watchers take turns on [landed], [waiting] and [failed]. A stop whose
+                // arrivals failed is named as failed at once, not left "Loading".
+                // A stop with a prior (reused, or shown by a cold load this one restarted) shows it
+                // until its answer lands, rather than going back to "Loading".
+                val landed = arrayOfNulls<StopArrivals>(stops.size)
+                val waiting = HashSet<String>()
+                val failed = LinkedHashMap<String, DeparturesUiState.Error.Kind>()
+                stops.forEachIndexed { i, stop ->
+                    landed[i] = prior[stop.id]
+                    if (landed[i] == null) waiting += stop.id
+                }
+                // What's already in hand shows at once, marked still checking — including a batch
+                // that reuses every stop and so has no answer to wait for before its line status.
+                if (landed.any { it != null }) onProgress(landed.filterNotNull(), waiting.toSet(), failed.toMap())
+                stops.forEachIndexed { i, stop ->
+                    val arrival = arrivals[i] ?: return@forEachIndexed
+                    launch {
+                        val departures = arrival.await().getOrElse { e ->
+                            waiting -= stop.id
+                            failed[stop.id] = kindOf(e)
+                            onProgress(landed.filterNotNull(), waiting.toSet(), failed.toMap())
+                            null
+                        }
+                        val stopDisruptions = disruptions[i]?.await()?.getOrNull()
+                        // A stop whose arrivals failed still shows a closure as soon as it's known,
+                        // as the final pass does (SPEC *Disruptions*); with none, it stays named failed.
+                        if (departures == null && stopDisruptions.isNullOrEmpty()) return@launch
+                        // A disrupted interchange titles its alert by the hub, as the final pass does
+                        // (one lookup per hub per batch — [hubOf] — so that pass doesn't ask again).
+                        val hub = if (stop.hubId.isNotBlank() && !stopDisruptions.isNullOrEmpty()) hubOf(stop.hubId) else HubInfo()
+                        landed[i] = Snapshot.mergeStop(
+                            stopId = stop.id,
+                            stopName = stop.name,
+                            clusterId = stop.clusterId,
+                            lines = stop.lines,
+                            freshDepartures = departures,
+                            freshDisruptions = stopDisruptions,
+                            prior = prior[stop.id],
+                            now = now,
+                            hubId = stop.hubId,
+                            hubName = hub.name,
+                            placeAliases = hub.aliases,
+                            stopLetter = stop.stopLetter,
+                            bearing = stop.bearing,
+                            towards = stop.towards,
+                            nearer = Terminating.nearer(stop.id, places),
+                            freshRailFeed = if (departures != null) client.railFeed(stop.id) else null,
+                        )
+                        waiting -= stop.id
+                        onProgress(landed.filterNotNull(), waiting.toSet(), failed.toMap())
+                    }
+                }
+            }
             arrivals.map { it?.await() } to disruptions.map { it?.await() }
         }
 
@@ -832,14 +933,9 @@ class MainViewModel(
         val hubIds = stops.indices
             .filter { i -> stops[i].hubId.isNotBlank() && !disruptionResults[i]?.getOrNull().isNullOrEmpty() }
             .mapTo(LinkedHashSet()) { i -> stops[i].hubId }
-        val hubRequests = hubIds.count { it !in hubInfoCache }
         val hubs: Map<String, HubInfo> = coroutineScope {
-            hubIds.map { hubId -> async { hubId to resolveHubInfo(hubId) } }.awaitAll().toMap()
+            hubIds.map { hubId -> async { hubId to hubOf(hubId) } }.awaitAll().toMap()
         }
-
-        // The near-me places by distance, for [Terminating]: every eager and "more" stop, revealed or
-        // not, since the rider's nearest place may sit in either tier.
-        val places = nearbyPlaces()
 
         // Merge in stop order, so the first error, the logs and the merged list read the same as a
         // one-at-a-time fetch would, whatever order the responses came back in.
@@ -1136,7 +1232,40 @@ class MainViewModel(
             val nearIds = nearStops.mapTo(HashSet()) { it.id }
             val journeyIds = journeyStops.mapTo(HashSet()) { it.id }
             val toFetch = fetchedStops
-            val batch = fetchBatch(toFetch, prior, now, reuse)
+            // Only while there's nothing else to show — a cold load with no saved snapshot, or one
+            // already part-shown this way. A kept snapshot stays on screen until the batch is done.
+            // Never saved: a part-loaded list isn't a snapshot (SPEC D4).
+            val coldAtStart = previous !is DeparturesUiState.Loaded || previous.statusPending || coldLoadUnfinished
+            val batch = fetchBatch(toFetch, prior, now, reuse, onProgress = if (!coldAtStart) null else { shown, waiting, failed ->
+                val current = _state.value
+                val coldLoad = current is DeparturesUiState.Loading ||
+                    (current is DeparturesUiState.Loaded && (current.statusPending || coldLoadUnfinished)) ||
+                    (current is DeparturesUiState.Error && coldLoadUnfinished)
+                // The last stop too, so it doesn't wait on the line-status check below. A failure is
+                // shown even before any stop lands, while others are still out; once none are (every
+                // stop failed) the batch's own verdict follows at once.
+                if (coldLoad && shown.isEmpty() && waiting.isEmpty() && failed.isNotEmpty()) {
+                    // Every stop's arrivals failed: say so now rather than wait on closure checks
+                    // still out. The batch below has the last word (a closure alone still shows).
+                    _state.value = DeparturesUiState.Error(toFetch.firstNotNullOf { failed[it.id] })
+                    coldLoadUnfinished = true
+                } else if (coldLoad && (shown.isNotEmpty() || (failed.isNotEmpty() && waiting.isNotEmpty()))) {
+                    _state.value = DeparturesUiState.Loaded(
+                        stops = shown,
+                        fetchedAt = shown.maxOfOrNull { it.fetchedAt } ?: now,
+                        // Line status is checked once every stop is in; until then it's unchecked.
+                        disruptionUnknown = true,
+                        pendingStops = toFetch.filter { it.id in waiting },
+                        statusPending = true,
+                        // A stop that already failed is named now, with its reason (SPEC principle 2).
+                        partialRefresh = failed.isNotEmpty(),
+                        partialStops = toFetch.filter { it.id in failed }
+                            .associate { it.id to DeparturesUiState.FailedStop(it.name, failed.getValue(it.id)) },
+                        unavailableStopIds = failed.keys - shown.mapTo(HashSet()) { it.stopId },
+                    )
+                    coldLoadUnfinished = true
+                }
+            })
             val merged = batch.merged
             val firstError = batch.firstError
             val anyArrivalsFailed = batch.anyArrivalsFailed
@@ -1197,6 +1326,7 @@ class MainViewModel(
                 else -> DeparturesUiState.Error(kindOf(firstError))
             }
             _state.value = newState
+            coldLoadUnfinished = false
 
             // Persist the new last-good so a later launch — and the widget — render it before
             // any fetch, but only when this cycle was authoritative: it returned fresh
@@ -1294,9 +1424,10 @@ class MainViewModel(
         // Computed as fetchedStops minus what's on screen — so it also picks up any earlier revealed
         // stop a superseded tap didn't finish fetching, keeping this self-correcting on quick taps.
         val current = _state.value as? DeparturesUiState.Loaded
-        if (current == null) {
-            // No snapshot to merge into yet (still Loading, or an Error) — fall back to a full fetch,
-            // which builds the first Loaded from the whole set.
+        if (current == null || current.statusPending || coldLoadUnfinished) {
+            // No whole snapshot to merge into yet (still Loading, an Error, or a cold load part-shown)
+            // — fall back to a full fetch, which builds the first whole Loaded from the widened set
+            // and, mid cold load, keeps showing each stop as it lands.
             refresh()
             return
         }

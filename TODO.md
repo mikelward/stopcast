@@ -914,6 +914,17 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [x] **A National Rail route page said "can't reach TfL"** (maintainer bug report,
         2026-09-25). A National Rail line's route sequence (~600 KB) took TfL 4–15 s to start
         answering when uncached, past the same 10 s timeout. It now waits up to 30 s too.
+  - [x] **A cold load waited for its slowest stop** (maintainer, 2026-09-25). Each stop now shows
+        as it lands; one still out is a collapsed "Loading" card where it will go. Only the whole
+        batch is saved.
+  - [ ] **Don't make a cold load's list jump** (maintainer, 2026-09-25). A "Loading" card that
+        is on screen when its stop lands should stay a card and turn to "Tap to see", opening in
+        place on a tap (a dash if nothing's running); one off screen when it lands expands as now.
+        On the watched list the card keeps its foot position until tapped. Rows landing above the
+        screen never push the scroll: the list anchors on the top item's key, which a card turning
+        into rows loses, so that swap has to keep the key or restore the offset.
+  - [ ] **Say what a loading card waits on** ("National Rail" vs TfL) if the plain "Loading"
+        proves unclear; the client would need to expose which stops take a Darwin board.
   - [ ] **A line TfL doesn't know still reads "can't reach TfL"** on its route page, with a
         Retry that can never work: a 404 for the line id (a National Rail operator TfL has no
         line for, e.g. `lnr-wmr`) maps to Unreachable. It should say the stops aren't available
