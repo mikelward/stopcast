@@ -270,6 +270,16 @@ The app finds stops two ways:
   once each, and a trip from here fetches the arrivals of
   its origin stops like the list does. The destination's name and id go only to TfL, as the
   station search's already do (*Privacy*).
+- **Farther stations** (maintainer, 2026-09-25) — where the near-me list reaches only one tube
+  station, the rest of the network can be two miles off. At the foot of the list, under the *More*
+  controls, a **"From ‹station›…"** button names the nearest station of each **tube line** the
+  nearby stops don't serve (at most two, nearest first) and of each other rail **mode** they don't
+  (Overground, Elizabeth line, National Rail, DLR, tram — one each), within 3 mi; a station standing
+  for several gets one button (an interchange's stations are one button, opening the interchange),
+  and a hidden mode gets none. A tap opens it as a *From…* page, whose
+  back and crosshairs return to the list. Nothing is fetched to offer them: the positions and tube
+  lines come from the bundled station list, worked out on the device, so they cost no request and
+  send nothing (*Privacy*); what a tap then shows costs what any *From…* page does.
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run); arrives with watched stops.
 - **Hiding a mode** (maintainer, 2026-09-24) — a busy place can fill the near-me list with a mode

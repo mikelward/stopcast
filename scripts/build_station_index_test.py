@@ -30,6 +30,19 @@ class BuildIndexTest(unittest.TestCase):
         self.assertEqual(["national-rail", "tube"], by_id["HUBEXA"]["modes"])
         self.assertNotIn("hub", by_id["HUBEXA"])
 
+    def test_stations_carry_their_position_and_tube_lines(self):
+        tube = stop("940GZZLUEXA", "Example Underground Station", ["tube"], lat=51.5123456, lon=-0.1234567)
+        tube["lineModeGroups"] = [
+            {"modeName": "tube", "lineIdentifier": ["victoria", "northern"]},
+            {"modeName": "bus", "lineIdentifier": ["1"]},
+        ]
+        rail = stop("910GEXAMPLE", "Example Rail Station", ["national-rail"], "NaptanRailStation")
+        by_id = {s["id"]: s for s in build_index([tube, rail], [])["stations"]}
+        self.assertEqual(51.51235, by_id["940GZZLUEXA"]["lat"])
+        self.assertEqual(-0.12346, by_id["940GZZLUEXA"]["lon"])
+        self.assertEqual(["northern", "victoria"], by_id["940GZZLUEXA"]["lines"], "tube lines only, sorted")
+        self.assertNotIn("lines", by_id["910GEXAMPLE"])
+
     def test_far_away_platform_and_modeless_stops_are_left_out(self):
         index = build_index(
             [

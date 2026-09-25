@@ -135,6 +135,7 @@ import app.stopcast.domain.HiddenModes
 import app.stopcast.domain.ModeGroups
 import app.stopcast.domain.NoTimes
 import app.stopcast.domain.RelativeTime
+import app.stopcast.domain.StationMatch
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.JourneyCall
@@ -288,6 +289,11 @@ fun MainScreen(
     // none. [onReveal] is called with the tapped mode.
     revealableModes: Set<String> = emptySet(),
     onReveal: (String) -> Unit = {},
+    // The nearest station of each tube line or rail mode the list doesn't reach (SPEC *Finding stops
+    // → Farther stations*): a "From ‹station›…" button each at the foot of the near-me list, opening
+    // it as a From… page ([onOpenFarther]). Empty by default, as on a station's page.
+    farther: List<StationMatch> = emptyList(),
+    onOpenFarther: (StationMatch) -> Unit = {},
     // Start the consent-gated bug report (from the overflow). Default no-op so an unwired
     // build/test renders the menu without one.
     onSendBugReport: () -> Unit = {},
@@ -1186,6 +1192,9 @@ fun MainScreen(
                     modesByPlace = placeModesShown,
                     onShowAllModes = onShowAllModes,
                     onReveal = onReveal,
+                    // Not on a platform's own view, which is one place.
+                    farther = if (platformRows != null) emptyList() else farther,
+                    onOpenFarther = onOpenFarther,
                     onOpenDetail = { row, focus ->
                         detailKey = row.detailKey()
                         detailDestination = focus?.destination
@@ -1333,6 +1342,8 @@ private fun LoadedContent(
     starringAvailable: Boolean = true,
     revealableModes: Set<String> = emptySet(),
     onReveal: (String) -> Unit = {},
+    farther: List<StationMatch> = emptyList(),
+    onOpenFarther: (StationMatch) -> Unit = {},
     // Open the full-screen route detail for a tapped card; the caller holds the open-route state.
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit = { _, _ -> },
     // Opens Settings from a National Rail line's "No key".
@@ -1451,11 +1462,14 @@ private fun LoadedContent(
                     // Keep "More" reachable even when the nearest clusters returned nothing — that's
                     // exactly when the farther ones are most useful (SPEC principle 2).
                     MoreControls(revealableModes, onReveal, Modifier.padding(top = 16.dp))
+                    FartherControls(farther, onOpenFarther, Modifier.padding(top = 8.dp))
                 }
             } else {
                 DepartureList(
                     rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
                     revealableModes, onReveal,
+                    farther = farther,
+                    onOpenFarther = onOpenFarther,
                     listState = listState,
                     onOpenSettings = onOpenSettings,
                     onHideMode = onHideMode,
@@ -1583,6 +1597,8 @@ private fun DepartureList(
     onReveal: (String) -> Unit,
     onOpenDetail: (DepartureRow, RouteFocus?) -> Unit,
     listState: LazyListState,
+    farther: List<StationMatch> = emptyList(),
+    onOpenFarther: (StationMatch) -> Unit = {},
     onDismissAlert: (DepartureRow) -> Unit = {},
     // Opens Settings from a National Rail line's "No key" (SPEC *National Rail*).
     onOpenSettings: () -> Unit = {},
@@ -1869,6 +1885,30 @@ private fun DepartureList(
             // last group — asymmetric on purpose: it's a trailing section, not another row.
             item(key = "more-controls") {
                 MoreControls(revealableModes, onReveal, Modifier.padding(top = 8.dp))
+            }
+        }
+        // Past "More": the stations of the lines and modes nothing nearby reaches, one tap each.
+        if (farther.isNotEmpty()) {
+            item(key = "farther-controls") {
+                FartherControls(farther, onOpenFarther, Modifier.padding(top = 8.dp))
+            }
+        }
+    }
+}
+
+/**
+ * The "From ‹station›…" buttons at the foot of the near-me list (SPEC *Finding stops → Farther
+ * stations*): the nearest station of each tube line or rail mode the list doesn't reach, nearest
+ * first, each opening that station as a From… page. Styled as the "More" controls above it, a
+ * `TextButton`'s ≥48dp target each. Rendered nowhere when [farther] is empty.
+ */
+@Composable
+private fun FartherControls(farther: List<StationMatch>, onOpen: (StationMatch) -> Unit, modifier: Modifier = Modifier) {
+    if (farther.isEmpty()) return
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (station in farther) {
+            TextButton(onClick = { onOpen(station) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.from_station, station.name))
             }
         }
     }

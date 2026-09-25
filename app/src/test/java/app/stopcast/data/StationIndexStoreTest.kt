@@ -22,6 +22,24 @@ class StationIndexStoreTest {
     }
 
     @Test
+    fun `a station's position and tube lines are read when present, and absent on an older index`() {
+        val index = StationIndexStore.parse(
+            """
+            {"version":1,"stations":[
+              {"id":"940GZZLUEXA","name":"Example","modes":["tube"],"lat":51.5,"lon":-0.12,"lines":["northern"]},
+              {"id":"910GEXAMPLE","name":"Example Rail","modes":["national-rail"]}
+            ]}
+            """.trimIndent(),
+        )
+        val (tube, rail) = index.stations
+        assertEquals(51.5, tube.latitude!!, 0.0)
+        assertEquals(-0.12, tube.longitude!!, 0.0)
+        assertEquals(listOf("northern"), tube.tubeLines)
+        assertEquals(null, rail.latitude)
+        assertTrue(rail.tubeLines.isEmpty())
+    }
+
+    @Test
     fun `a newer format is ignored whole`() {
         var warned = ""
         val index = StationIndexStore.parse("""{"version":2,"stations":[{"id":"X","name":"Y"}]}""") { warned = it }

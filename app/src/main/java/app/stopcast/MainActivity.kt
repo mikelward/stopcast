@@ -41,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -114,6 +115,7 @@ import app.stopcast.ui.MainViewModel
 import app.stopcast.ui.NearbyStopsViewModel
 import app.stopcast.domain.NearbySelection
 import app.stopcast.domain.SnapshotStore
+import app.stopcast.domain.FartherStations
 import app.stopcast.domain.FixedLocation
 import app.stopcast.ui.hereTripTiers
 import app.stopcast.ui.HereTripTiers
@@ -606,6 +608,12 @@ class MainActivity : ComponentActivity() {
                                     onForegroundReturnConsumed = { returnLatch.pending = false },
                                     listState = departuresListState,
                                     farReveal = farReveal,
+                                    // A farther station opens as a From… page straight from the list:
+                                    // no search behind it, so back (and the crosshairs) return here.
+                                    onOpenFarther = { station ->
+                                        openStationId = station.id
+                                        openStationName = station.name
+                                    },
                                 )
                             }
                             else -> {
@@ -858,6 +866,9 @@ class MainActivity : ComponentActivity() {
         // The departures list's scroll position, hoisted by the caller so it survives the overlays.
         listState: LazyListState = rememberLazyListState(),
         farReveal: FarRevealState? = null,
+        // Opens a farther station (SPEC *Finding stops → Farther stations*) as a From… page. Null
+        // (a From… station's own page) offers no "From ‹station›…" buttons.
+        onOpenFarther: ((StationMatch) -> Unit)? = null,
         // The crosshairs, where it doesn't re-locate here: a From… station page's return to near me.
         onLocate: (() -> Unit)? = null,
         // A searched station's page (From…) is this same list around the station: its own retained
@@ -954,6 +965,24 @@ class MainActivity : ComponentActivity() {
             val refreshing = departuresRefreshing || relocatingNow
             val locationBannerNow by locationBanner.collectAsStateWithLifecycle()
             val hiddenModes by HiddenModesSetting.changes.collectAsStateWithLifecycle()
+            // The nearest station of each tube line and rail mode nothing nearby reaches, from the
+            // bundled index (read off the main thread, once per process): no request.
+            val farther by produceState(emptyList<StationMatch>(), ready, hiddenModes, onOpenFarther != null) {
+                if (onOpenFarther == null) {
+                    value = emptyList()
+                    return@produceState
+                }
+                val reached = ready.nearbyStops.flatMap { it.lines }
+                value = withContext(Dispatchers.IO) {
+                    FartherStations.pick(
+                        StationIndexStore.load(appContext).stations,
+                        ready.location,
+                        reachedLines = reached.filter { it.mode.equals("tube", ignoreCase = true) }.mapTo(HashSet()) { it.id },
+                        reachedModes = reached.mapTo(HashSet()) { it.mode.lowercase() },
+                        hidden = hiddenModes,
+                    ).map { it.station }
+                }
+            }
             val hiddenModesWriteFailed by HiddenModesSetting.writeFailed.collectAsStateWithLifecycle()
             val starred by viewModel.starred.collectAsStateWithLifecycle()
             // Starred journeys (SPEC *Journeys*): read from the device, each turned so its origin is
@@ -1209,6 +1238,8 @@ class MainActivity : ComponentActivity() {
                     updateAvailable = updateAvailable,
                     onOpenAppListing = onOpenAppListing,
                     revealableModes = revealableModes,
+                    farther = farther,
+                    onOpenFarther = { station -> onOpenFarther?.invoke(station) },
                     // Ignore a "More" tap while a relocation's fresh fix is in flight, so it can't
                     // page the pre-fix set as current (matches the cancel-on-relocate discipline).
                     onReveal = { mode -> if (!relocatingNow) viewModel.reveal(mode) },

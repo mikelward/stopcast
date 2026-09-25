@@ -42,6 +42,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import app.stopcast.domain.StationMatch
 import app.stopcast.domain.Departure
 import app.stopcast.domain.DepartureRow
 import app.stopcast.domain.DepartureRows
@@ -1242,6 +1243,51 @@ class MainScreenScreenshotTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("More bus stops").performClick()
         composeRule.runOnIdle { assertEquals("bus", revealed) }
+    }
+
+    @Test
+    fun `the near-me list names farther stations of the lines and modes it doesn't reach`() {
+        // Past "More", a "From ‹station›…" button each for the nearest station of a tube line or rail
+        // mode nothing nearby reaches (SPEC *Finding stops → Farther stations*). Public station names
+        // as stand-ins, not anyone's surroundings.
+        capture("main-farther-stations.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
+                now,
+                {},
+                stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
+                revealableModes = setOf("bus"),
+                farther = listOf(
+                    StationMatch("910GSTFD", "Stratford", listOf("overground")),
+                    StationMatch("910GCLPHMJC", "Clapham Junction", listOf("national-rail")),
+                ),
+            )
+        }
+        composeRule.onNodeWithText("From Stratford…").assertExists()
+        composeRule.onNodeWithText("From Clapham Junction…").assertExists()
+    }
+
+    @Test
+    fun `tapping a farther station opens it`() {
+        var opened: StationMatch? = null
+        val station = StationMatch("910GSTFD", "Stratford", listOf("overground"))
+        composeRule.setContent {
+            StopCastTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0),
+                        farther = listOf(station),
+                        onOpenFarther = { opened = it },
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("From Stratford…").performClick()
+        composeRule.runOnIdle { assertEquals(station, opened) }
     }
 
     @Test
