@@ -10,6 +10,7 @@ import app.stopdash.domain.JourneyEnd
 import androidx.compose.ui.res.stringResource
 import app.stopdash.ui.rememberTripView
 import app.stopdash.ui.hereOriginIds
+import app.stopdash.ui.fartherCardsKey
 import app.stopdash.ui.fartherReached
 import app.stopdash.domain.DirectTrips
 import app.stopdash.domain.stopPlace
@@ -650,8 +651,6 @@ class MainActivity : ComponentActivity() {
                                     onForegroundReturnConsumed = { returnLatch.pending = false },
                                     listState = departuresListState,
                                     farReveal = farReveal,
-                                    // The near-me list offers the farther stations as collapsed cards.
-                                    offerFarther = true,
                                 )
                             }
                             else -> {
@@ -913,9 +912,6 @@ class MainActivity : ComponentActivity() {
         // The departures list's scroll position, hoisted by the caller so it survives the overlays.
         listState: LazyListState = rememberLazyListState(),
         farReveal: FarRevealState? = null,
-        // Whether the list offers the farther stations (SPEC *Finding stops → Farther stations*) as
-        // collapsed cards. A From… station's own page doesn't.
-        offerFarther: Boolean = false,
         // The crosshairs, where it doesn't re-locate here: a From… station page's return to near me.
         onLocate: (() -> Unit)? = null,
         // A searched station's page (From…) is this same list around the station: its own retained
@@ -1027,11 +1023,9 @@ class MainActivity : ComponentActivity() {
             // fetch failed isn't on the list, so its lines keep their farther cards.
             val loadedStopIds = (state as? DeparturesUiState.Loaded)?.stops?.mapTo(HashSet()) { it.stopId }
             val reachedStops = remember(shownNearStops, loadedStopIds) { fartherReached(shownNearStops, loadedStopIds) }
-            val farther by produceState<List<CollapsedPlaces.Place>?>(null, ready, hiddenModes, offerFarther, reachedStops) {
-                if (!offerFarther) {
-                    value = emptyList()
-                    return@produceState
-                }
+            // Every list offers them, near me and a From… station's page alike (SPEC *Finding stops
+            // → Farther stations*): only buses keep a "More", so the cards are how stations page in.
+            val farther by produceState<List<CollapsedPlaces.Place>?>(null, ready, hiddenModes, reachedStops) {
                 // Each shown nearby stop's lines, and its ids: its index record says which route
                 // ends its services reach.
                 val reached = reachedStops
@@ -1095,7 +1089,7 @@ class MainActivity : ComponentActivity() {
             // this nearby set's store: it never joins the list's fetched set or the widget, and
             // nothing about it is saved (SPEC *Finding stops → Farther stations*).
             val fartherModels: FartherCardsViewModel = viewModel(
-                key = "farther",
+                key = fartherCardsKey(storesKey),
                 factory = viewModelFactory {
                     initializer {
                         FartherCardsViewModel(

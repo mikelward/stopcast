@@ -245,7 +245,8 @@ The app finds stops two ways:
   its name and modes; picking one opens **the near-me list as if you stood at that station**
   (maintainer, 2026-09-24): the station's own stops (distance 0) and the other stops around it,
   chosen, ordered and folded exactly as near me is, with distances from the station, and the same
-  *More* and hidden-mode behavior. The station's position (the middle of its stops) stands in for
+  *More*, *farther-station* and hidden-mode behavior (maintainer, 2026-09-25: the cards replace the
+  station *More* buttons there too). The station's position (the middle of its stops) stands in for
   the device's, so the page shares the near-me list's code rather than keeping a second copy of it;
   a station TfL places nowhere falls back to its own stops alone. The page is titled by the
   station, back returns to the search with its matches kept, and it refreshes while shown (a
