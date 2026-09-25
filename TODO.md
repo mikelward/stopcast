@@ -238,6 +238,11 @@ exercises the whole spine the widget later renders from.
 - [ ] Unit tests for the domain; Robolectric + Roborazzi screenshot tests for the
       screen and its empty/offline/disrupted states, wired into the CI allow-list.
 
+- [ ] An opened farther-station card that failed marks the list partial even when every one of
+      its stops is already shown fresh by the list (the merge keeps the list's copy), so "Some
+      stops couldn't be refreshed" can show with every row fresh. Predates the named banner
+      (Codex P2, PR #217); gate the card's partial flag on a failed row that survives the merge.
+
 ### Phase 1 — corrections to shipped departure-label rendering (follow-up)
 
 Corrections to the departure label the card already ships (the via-branch and the
