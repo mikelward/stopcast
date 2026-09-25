@@ -3,6 +3,7 @@ package app.stopcast.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.stopcast.domain.Coordinates
+import app.stopcast.domain.FixRefinement
 import app.stopcast.domain.HiddenModes
 import app.stopcast.domain.LocationFix
 import app.stopcast.domain.LocationProvider
@@ -26,9 +27,12 @@ import kotlinx.coroutines.withContext
  * (SPEC *Finding stops*, principle 2). [APPROXIMATE]: the set was resolved from a last-known
  * fallback fix (a fresh fix failed), so it may be a previous position. [UPDATE_FAILED]: a
  * re-locate couldn't get a fresh fix, so the set already shown was kept rather than jumping to a
- * stale one. Both offer a "try again" (a re-locate); both clear once a fresh fix resolves.
+ * stale one. [COARSE]: the set was resolved from a fresh but coarse (network) fix because GPS
+ * didn't answer in time; a precise fix is being asked for, and the banner clears when it confirms
+ * the set or the set moves to it. All offer a "try again" (a re-locate); all clear once a fresh
+ * precise fix resolves.
  */
-enum class LocationBanner { APPROXIMATE, UPDATE_FAILED }
+enum class LocationBanner { APPROXIMATE, UPDATE_FAILED, COARSE }
 
 /**
  * The location gate in front of the departures view (SPEC *Finding stops*, D1): it turns
@@ -177,6 +181,31 @@ class NearbyStopsViewModel(
         }
     }
 
+    /**
+     * A precise fix that arrived after the shown set was resolved from a coarse one, and is far
+     * enough from it to move the set ([FixRefinement]). The departures view applies it through
+     * [applyRefinement], the same cancel-then-re-pick path a refresh takes, so a stale fetch can't
+     * re-stamp the old set. [from] is the coarse fix it replaces; [id] is unique per refinement.
+     */
+    data class Refinement(val id: Long, val from: Coordinates, val precise: Coordinates)
+
+    private val _refinement = MutableStateFlow<Refinement?>(null)
+    val refinement: StateFlow<Refinement?> = _refinement.asStateFlow()
+
+    // The follow-up request for a precise fix after a coarse one, canceled by any new locate or
+    // relocate (whose own fix supersedes it). A refilter keeps the same fix, so it leaves it running.
+    private var refineJob: Job? = null
+
+    // The coarse fix the shown outcome (a list or "no stops nearby") was resolved from, while it
+    // still awaits a precise fix: the one record of "owed a follow-up", independent of the banner
+    // (an empty outcome has none) and of whether a request is running (it may be paused).
+    private var refineFrom: Coordinates? = null
+
+    // Whether the nearby surface is on screen and started. The follow-up asks for a GPS fix only
+    // while it is (foreground-only location); one owed while it isn't waits for [resumeRefining].
+    // Inactive until the surface first composes: a locate can run with an overlay restored on top.
+    private var surfaceActive = false
+
     // The in-flight resolve, canceled before a new one starts so a superseded lookup can't
     // finish last and overwrite the newer result (e.g. a quick double-tap on Try again).
     private var locateJob: Job? = null
@@ -188,6 +217,7 @@ class NearbyStopsViewModel(
      */
     fun locate() {
         locateJob?.cancel()
+        stopRefining()
         // The Locating gate is shown instead of an in-place refresh, so clear the re-locate
         // indicator (a relocate this supersedes must not leave it stuck on).
         _relocating.value = false
@@ -201,10 +231,11 @@ class NearbyStopsViewModel(
             }
             val next = resolveFrom(fix.coordinates)
             _state.value = next
-            // Label a set shown from a low-confidence (last-known fallback) fix as approximate;
-            // clear otherwise (a fresh fix, or a gate/error state that speaks for itself).
-            _locationBanner.value =
-                if (next is State.Ready && fix.isFallback) LocationBanner.APPROXIMATE else null
+            // Label a set shown from a low-confidence (last-known fallback) fix as approximate, and
+            // one from a coarse fix as coarse while a precise one is asked for; clear otherwise (a
+            // fresh fix, or a gate/error state that speaks for itself).
+            _locationBanner.value = bannerFor(next, fix)
+            if (fix.isCoarse && !fix.isFallback) shownLocation(next)?.let(::refine)
         }
     }
 
@@ -233,13 +264,37 @@ class NearbyStopsViewModel(
      *   principles 1–2) — the gate replaces the list rather than leaving a stale set on screen
      *   (cards omit the stop name, so a stale set is indistinguishable from the real one).
      */
-    fun relocate(onSameSet: (State.Ready) -> Unit = {}) {
+    fun relocate(onSameSet: (State.Ready) -> Unit = {}) =
+        // Force a fresh fix: the user may have walked since the last one, and a cached fix
+        // would re-resolve for the previous position (see LocationProvider.current).
+        relocateWith(onSameSet) { currentFix(forceFresh = true) }
+
+    /**
+     * Moves the shown set to [refinement]'s precise fix, as a [relocate] with that fix in hand, so
+     * the caller's cancel-then-reconcile discipline is the same. Does nothing when the set shown
+     * is no longer the one [refinement] was worked out for (a relocate or locate got there first).
+     */
+    fun applyRefinement(refinement: Refinement, onSameSet: (State.Ready) -> Unit = {}) {
+        // Only the refinement still on offer: one a locate, relocate or pause has since withdrawn is
+        // superseded, even while the old set is still shown (a relocation in flight hasn't replaced
+        // it yet), and applying it would cancel the newer relocation.
+        val current = _refinement.value?.id == refinement.id
+        if (current) _refinement.value = null
+        val shown = _state.value
+        if (!current || shownLocation(shown) != refinement.from) {
+            // Nothing to move, but the caller canceled the shown set's fetch first: restart it.
+            if (shown is State.Ready) onSameSet(shown)
+            return
+        }
+        relocateWith(onSameSet) { LocationFix(refinement.precise, isFallback = false) }
+    }
+
+    private fun relocateWith(onSameSet: (State.Ready) -> Unit, fixFor: suspend () -> LocationFix?) {
         locateJob?.cancel()
+        stopRefining()
         val current = _state.value
         val job = viewModelScope.launch {
-            // Force a fresh fix: the user may have walked since the last one, and a cached fix
-            // would re-resolve for the previous position (see LocationProvider.current).
-            val fix = currentFix(forceFresh = true)
+            val fix = fixFor()
             when {
                 fix == null -> {
                     _state.value = State.NoLocation
@@ -270,9 +325,9 @@ class NearbyStopsViewModel(
                     // recreate the departures ViewModel (its store is keyed on the whole cluster
                     // set), so this is a plain recompose plus an in-place reconcile, not a rebuild.
                     _state.value = next
-                    _locationBanner.value =
-                        if (next is State.Ready && fix.isFallback) LocationBanner.APPROXIMATE else null
+                    _locationBanner.value = bannerFor(next, fix)
                     repicked(current, next)
+                    if (fix.isCoarse && !fix.isFallback) shownLocation(next)?.let(::refine)
                     if (
                         next is State.Ready && current is State.Ready &&
                         next.clusterSetKey == current.clusterSetKey
@@ -317,6 +372,101 @@ class NearbyStopsViewModel(
             _state.value = next
             repicked(shown, next)
             if (next is State.Ready && shown is State.Ready && next.clusterSetKey == shown.clusterSetKey) onSameSet(next)
+        }
+    }
+
+    private fun bannerFor(next: State, fix: LocationFix): LocationBanner? = when {
+        // "No stops nearby" from a coarse fix is flagged too: the fix may be what missed them.
+        next is State.Empty && fix.isCoarse && !fix.isFallback -> LocationBanner.COARSE
+        next !is State.Ready -> null
+        fix.isFallback -> LocationBanner.APPROXIMATE
+        fix.isCoarse -> LocationBanner.COARSE
+        else -> null
+    }
+
+    /**
+     * The fix a located outcome was resolved from: a list ([State.Ready]) or "no stops nearby"
+     * ([State.Empty]), either of which a coarse fix can get wrong and a precise one can correct.
+     */
+    private fun shownLocation(state: State): Coordinates? = when (state) {
+        is State.Ready -> state.location
+        is State.Empty -> state.location
+        else -> null
+    }
+
+    /**
+     * The nearby surface left the screen (an overlay replaced it, or the app went to the
+     * background): stop asking for a precise fix, and don't start one until [resumeRefining], so
+     * the GPS request never outlives the surface (SPEC *Finding stops*, foreground-only location).
+     * That includes a locate still in flight, whose coarse outcome then only records the debt. A
+     * refinement already offered but not yet applied is dropped back to a debt too: the rider may
+     * travel while away, so a precise fix from before is not one to move to on return (a return
+     * from the background re-locates anyway; any other return asks GPS afresh).
+     */
+    fun pauseRefining() {
+        surfaceActive = false
+        refineJob?.cancel()
+        refineJob = null
+        _refinement.value?.let { offered ->
+            _refinement.value = null
+            refineFrom = offered.from
+        }
+    }
+
+    /**
+     * The nearby surface is back on screen: ask for the precise fix the shown outcome is still owed,
+     * if any, unless one is already being asked for or has been offered.
+     */
+    fun resumeRefining() {
+        surfaceActive = true
+        if (refineJob?.isActive == true || _refinement.value != null) return
+        val from = refineFrom ?: return
+        if (shownLocation(_state.value) == from) refine(from)
+    }
+
+    private fun stopRefining() {
+        refineJob?.cancel()
+        refineJob = null
+        refineFrom = null
+        _refinement.value = null
+    }
+
+    /**
+     * Asks for a precise fix after the set (or "no stops nearby") was shown from the coarse fix
+     * [shownFrom] (SPEC *Finding stops*). If one arrives while that outcome is still shown: close enough ([FixRefinement]) and it
+     * confirms the set, so the banner clears; farther and it's offered as a [Refinement] for the
+     * departures view to move the set to. None in time and the banner stays, with its Try again.
+     */
+    private fun refine(shownFrom: Coordinates) {
+        refineFrom = shownFrom
+        refineJob?.cancel()
+        refineJob = null
+        if (!surfaceActive) return
+        refineJob = viewModelScope.launch {
+            val precise = try {
+                withContext(io) { location.precise() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // No coordinate in the log (SPEC Privacy); the coarse set and its banner stay.
+                warn("precise fix failed: ${e::class.simpleName}")
+                null
+            } ?: return@launch
+            if (shownLocation(_state.value) != shownFrom) return@launch
+            // Answered either way: confirmed, or offered as a move (which relocates).
+            refineFrom = null
+            // An empty outcome has no list to confirm: any better fix is worth a new lookup, since
+            // near the edge of the radius even a short move can bring a stop into range.
+            val emptyShown = _state.value is State.Empty
+            if (FixRefinement.shouldMove(shownFrom, precise) || (emptyShown && precise != shownFrom)) {
+                _refinement.value = Refinement(
+                    maxOf(System.nanoTime(), (_refinement.value?.id ?: 0) + 1),
+                    from = shownFrom,
+                    precise = precise,
+                )
+            } else if (_locationBanner.value == LocationBanner.COARSE) {
+                _locationBanner.value = null
+            }
         }
     }
 

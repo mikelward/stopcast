@@ -60,6 +60,15 @@ object FixSelection {
     const val COARSE_GRACE_MILLIS = 2_000L
 
     /**
+     * How long the follow-up request to GPS/fused waits after the list was shown from a coarse fix
+     * ([LocationProvider.precise]). Longer than [FRESH_FIX_PER_PROVIDER_TIMEOUT_MILLIS]: the list is
+     * already up, so this wait blocks nothing, and a GPS that missed the grace often lands a few
+     * seconds later. It stays short so a GPS that can't see the sky (underground) gives up soon.
+     * Reversible — one constant.
+     */
+    const val PRECISE_FIX_TIMEOUT_MILLIS = 8_000L
+
+    /**
      * The oldest a cached fix may be to serve as a *fallback* when no fresh fix is
      * available. Larger than [FRESH_ENOUGH_MILLIS] (which gates the instant fast path) —
      * a somewhat-old fix beats failing outright — but bounded, because the user may have

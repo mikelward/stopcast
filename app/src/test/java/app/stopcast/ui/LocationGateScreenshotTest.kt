@@ -144,6 +144,20 @@ class LocationGateScreenshotTest {
     }
 
     @Test
+    fun `no stops nearby from a coarse fix`() {
+        capture("location-empty-approximate.png") {
+            LocationGate(
+                NearbyStopsViewModel.State.Empty(FIX),
+                onAllow = {},
+                onRetry = {},
+                onOpenSettings = {},
+                approximate = true,
+            )
+        }
+        composeRule.onNodeWithText("Approximate location").assertExists()
+    }
+
+    @Test
     fun `lookup failed`() {
         capture("location-error.png") {
             LocationGate(

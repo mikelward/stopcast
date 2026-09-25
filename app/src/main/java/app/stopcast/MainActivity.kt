@@ -60,6 +60,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.HasDefaultViewModelProviderFactory
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -557,12 +558,25 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     body = {
+                        // The precise-fix follow-up is foreground-only: it stops when the nearby
+                        // surface leaves (an overlay replaces it) or the app goes to the background,
+                        // and asks again on return if the outcome is still flagged coarse.
+                        LifecycleStartEffect(Unit) {
+                            nearbyViewModel.resumeRefining()
+                            onStopOrDispose { nearbyViewModel.pauseRefining() }
+                        }
                         when (val state = nearby) {
                             // "To…" from the near-me list takes the list's place while it's open,
                             // inside the nearby lifecycle: the location gate, its errors and a
                             // re-locate on return apply to it as they do to the list.
                             is NearbyStopsViewModel.State.Ready -> if (hereTripOpen) {
                                 val hidden by HiddenModesSetting.changes.collectAsStateWithLifecycle()
+                                // A precise fix that moves the set moves the trip too, as its own
+                                // re-locate does: the origins are worked out from the set shown.
+                                val refinementNow by nearbyViewModel.refinement.collectAsStateWithLifecycle()
+                                LaunchedEffect(refinementNow?.id) {
+                                    refinementNow?.let { nearbyViewModel.applyRefinement(it) }
+                                }
                                 HereTripArea(
                                     // Worked out from the current set, so a re-locate moves the
                                     // trip with the rider; none left (all hidden) ends it (below).
@@ -609,6 +623,8 @@ class MainActivity : ComponentActivity() {
                                     relocate = { onSameSet -> nearbyViewModel.relocate(onSameSet) },
                                     relocating = nearbyViewModel.relocating,
                                     locationBanner = nearbyViewModel.locationBanner,
+                                    refinement = nearbyViewModel.refinement,
+                                    applyRefinement = nearbyViewModel::applyRefinement,
                                     onOpenLicenses = openLicenses,
                                     onOpenSettings = { settingsOpen = true },
                                     onFindStation = { stationSearchOpen = true },
@@ -645,8 +661,16 @@ class MainActivity : ComponentActivity() {
                                     hereTripStores.clearAll()
                                     onDispose {}
                                 }
+                                // "No stops nearby" from a coarse fix: a precise fix that lands
+                                // elsewhere looks again from there (nothing is fetched to cancel).
+                                val gateRefinement by nearbyViewModel.refinement.collectAsStateWithLifecycle()
+                                LaunchedEffect(gateRefinement?.id) {
+                                    gateRefinement?.let { nearbyViewModel.applyRefinement(it) }
+                                }
+                                val gateBanner by nearbyViewModel.locationBanner.collectAsStateWithLifecycle()
                                 LocationGate(
                                     state = state,
+                                    approximate = gateBanner == LocationBanner.COARSE,
                                     permanentlyDenied = permissionPermanentlyDenied,
                                     onAllow = { permissionLauncher.launch(locationPermissions) },
                                     onRetry = {
@@ -897,6 +921,11 @@ class MainActivity : ComponentActivity() {
         forWidget: Boolean = true,
         stationTitle: String? = null,
         onCloseStation: () -> Unit = {},
+        // A precise fix that arrived after the set was shown from a coarse one and would move it
+        // (SPEC *Finding stops*), and how to apply it: the same cancel-then-re-pick a refresh runs.
+        refinement: StateFlow<NearbyStopsViewModel.Refinement?> = MutableStateFlow(null),
+        applyRefinement: (NearbyStopsViewModel.Refinement, (NearbyStopsViewModel.State.Ready) -> Unit) -> Unit =
+            { _, _ -> },
     ) {
         // Each nearby set gets its own MainViewModel, and the previous one is CLEARED when
         // the set changes (the user moved and re-located) rather than left keyed in the
@@ -1182,6 +1211,17 @@ class MainActivity : ComponentActivity() {
                 onConsumed = onForegroundReturnConsumed,
                 onRelocate = onRelocate,
             )
+            // A precise fix that moves the set: re-picked like a refresh, so the shown set's fetch is
+            // canceled first and a same-place re-pick reconciles in place.
+            val refinementNow by refinement.collectAsStateWithLifecycle()
+            LaunchedEffect(refinementNow?.id) {
+                val pending = refinementNow ?: return@LaunchedEffect
+                relocateAction(
+                    cancelFetch = viewModel::cancelFetch,
+                    relocate = { onSameSet -> applyRefinement(pending, onSameSet) },
+                    reconcile = reconcileSameSet,
+                )()
+            }
             AutoRefresh(viewModel, relocating)
             // Provide the branch topology so the card groups a branching row the way the widget
             // does — equivalent trunks merged, the label kept only where the trunk is a choice

@@ -1411,6 +1411,7 @@ private fun LoadedContent(
                         when (it) {
                             LocationBanner.APPROXIMATE -> R.string.location_approximate
                             LocationBanner.UPDATE_FAILED -> R.string.location_update_failed
+                            LocationBanner.COARSE -> R.string.location_coarse
                         },
                     ),
                     onTryAgain = onRefresh,
