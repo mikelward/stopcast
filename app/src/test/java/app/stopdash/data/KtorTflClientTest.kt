@@ -770,7 +770,7 @@ class KtorTflClientTest {
         client(nearbyJson, httpTimeout = true, capture = { captured = it })
             .nearbyStops(latitude = 51.5, longitude = -0.12, radiusMeters = 350)
         assertEquals(
-            KtorTflClient.NEARBY_SOCKET_TIMEOUT_MILLIS,
+            KtorTflClient.SLOW_SOCKET_TIMEOUT_MILLIS,
             checkNotNull(captured).getCapabilityOrNull(HttpTimeoutCapability)?.socketTimeoutMillis,
         )
     }

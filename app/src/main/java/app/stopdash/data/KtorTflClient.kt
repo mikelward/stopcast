@@ -100,9 +100,7 @@ class KtorTflClient(
                 applyAppKey(key)
                 // A dense area's search can take TfL over OkHttp's 10 s default to start answering
                 // when it isn't cached, which failed the whole nearby list; give it longer.
-                if (httpClient.pluginOrNull(HttpTimeout) != null) {
-                    timeout { socketTimeoutMillis = NEARBY_SOCKET_TIMEOUT_MILLIS }
-                }
+                allowSlowAnswer()
             }.body<TflStopPointsResponseDto>().stopPoints.mapNotNull { it.toStopLocationOrNull() }
         }
 
@@ -144,6 +142,9 @@ class KtorTflClient(
         tflRequest { key ->
             httpClient.get("$baseUrl/Line/$lineId/Route/Sequence/$direction") {
                 applyAppKey(key)
+                // A National Rail line's sequence (~600 KB, every station and pattern it runs) can take
+                // TfL 4–15 s to start answering when it isn't cached, which failed the route page.
+                allowSlowAnswer()
             }.body<TflRouteSequenceDto>().toLineSequence()
         }
 
@@ -212,6 +213,17 @@ class KtorTflClient(
      * (keyless). [key] is the single per-request snapshot [tflRequest] took, the same value the
      * limiter's budget was selected from — so the two never disagree.
      */
+    /**
+     * Lets a request TfL can be slow to start answering wait [SLOW_SOCKET_TIMEOUT_MILLIS] without
+     * data instead of OkHttp's 10 s. Needs the [HttpTimeout] plugin, which the production client
+     * installs; a client without it keeps its engine's timeouts.
+     */
+    private fun HttpRequestBuilder.allowSlowAnswer() {
+        if (httpClient.pluginOrNull(HttpTimeout) != null) {
+            timeout { socketTimeoutMillis = SLOW_SOCKET_TIMEOUT_MILLIS }
+        }
+    }
+
     private fun HttpRequestBuilder.applyAppKey(key: String?) {
         if (!key.isNullOrBlank()) parameter("app_key", key)
     }
@@ -274,10 +286,12 @@ class KtorTflClient(
         const val DEFAULT_BASE_URL: String = "https://api.tfl.gov.uk"
 
         /**
-         * How long a nearby-stops search may go without data. An uncached 1-mile search in central
-         * London measured 7–11 s before TfL's first byte, past OkHttp's 10 s default.
+         * How long a request TfL is slow to start answering may go without data: the nearby-stops
+         * search (an uncached 1-mile search in central London measured 7–11 s before TfL's first
+         * byte) and a line's route sequence (an uncached National Rail line measured 4–15 s), both
+         * past OkHttp's 10 s default.
          */
-        const val NEARBY_SOCKET_TIMEOUT_MILLIS: Long = 30_000
+        const val SLOW_SOCKET_TIMEOUT_MILLIS: Long = 30_000
 
         /** How many name-search matches to ask for — a screenful; a longer query narrows it. */
         const val SEARCH_MAX_RESULTS: Int = 20

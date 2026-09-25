@@ -5,6 +5,8 @@ import app.stopdash.domain.RouteStops
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutCapability
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -123,6 +125,34 @@ class RouteSequenceTest {
         assertEquals("/Line/northern/Route/Sequence/outbound", path)
         assertEquals(8, sequence.routes.size)
         assertEquals("Waterloo", sequence.stopNames["940GZZLUWLO"])
+    }
+
+    @Test
+    fun `a route sequence waits longer than the default for TfL to answer`() = runTest {
+        // An uncached National Rail line's sequence can take TfL 4–15 s to start answering, past
+        // OkHttp's 10 s default, which failed the route page with "can't reach TfL".
+        var timeout: Long? = null
+        var requestTimeout: Long? = -1
+        val engine = MockEngine { request ->
+            val capability = request.getCapabilityOrNull(HttpTimeoutCapability)
+            timeout = capability?.socketTimeoutMillis
+            requestTimeout = capability?.requestTimeoutMillis
+            respond(
+                content = ByteReadChannel(fixture),
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val http = HttpClient(engine) {
+            expectSuccess = true
+            install(HttpTimeout)
+            install(ContentNegotiation) { json(json) }
+        }
+        KtorTflClient(http, baseUrl = "https://tfl.example").routeSequence("northern", "outbound")
+        assertEquals(KtorTflClient.SLOW_SOCKET_TIMEOUT_MILLIS, timeout)
+        // No overall cap: a bare install(HttpTimeout) has no default request timeout, so a slow start
+        // followed by a slow 600 KB transfer runs until 30 s pass without data, not to a total limit.
+        assertNull(requestTimeout)
     }
 
     private companion object {
