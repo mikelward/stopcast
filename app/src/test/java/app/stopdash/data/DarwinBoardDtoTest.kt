@@ -37,6 +37,21 @@ class DarwinBoardDtoTest {
     }
 
     @Test
+    fun `a London Underground train on a shared platform is left to TfL's feed`() {
+        // Where tube trains share National Rail platforms (the District at Richmond), a board lists
+        // them as "London Underground" under its operator code LT (London Transport). TfL's own feed
+        // carries them as the real line, so the board's copy is left out rather than shown as a
+        // "London Underground" line TfL has no status or route for.
+        val tube = board().trainServices!!.first().copy(
+            operator = "London Underground",
+            operatorCode = "LT",
+            destination = listOf(DarwinLocationDto(locationName = "Upminster Underground")),
+        )
+        val destinations = board().copy(trainServices = board().trainServices!! + tube).toDepartures().map { it.destination }
+        assertTrue(destinations.none { it.startsWith("Upminster") })
+    }
+
+    @Test
     fun `a train with an unreadable time is left out and reported, and all unreadable is a failure`() {
         val odd = board().trainServices!!.first().copy(etd = "soon-ish")
         val warnings = mutableListOf<String>()
