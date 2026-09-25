@@ -272,14 +272,18 @@ The app finds stops two ways:
   station search's already do (*Privacy*).
 - **Farther stations** (maintainer, 2026-09-25) — where the near-me list reaches only one tube
   station, the rest of the network can be two miles off. At the foot of the list, under the *More*
-  controls, a **"From ‹station›…"** button names the nearest station of each **tube line** the
-  nearby stops don't serve (at most two, nearest first) and of each other rail **mode** they don't
-  (Overground, Elizabeth line, National Rail, DLR, tram — one each), within 3 mi; a station standing
-  for several gets one button (an interchange's stations are one button, opening the interchange),
-  and a hidden mode gets none. A tap opens it as a *From…* page, whose
-  back and crosshairs return to the list. Nothing is fetched to offer them: the positions and tube
-  lines come from the bundled station list, worked out on the device, so they cost no request and
-  send nothing (*Privacy*); what a tap then shows costs what any *From…* page does.
+  controls, a **"From ‹station›…"** button names the nearest station of each **rail line** the
+  nearby stops don't serve — a tube line, a National Rail service (Thameslink, Great Northern…), an
+  Overground line, the Elizabeth line, the DLR, a tram — nearest first, within 3 mi, **at most five**
+  buttons and at most two of them for tube lines. **Buses never** earn one: every stop has them.
+  A station standing for several lines is one button, and an interchange's stations are one button
+  opening the interchange; a hidden mode's lines get none. It is **by line, not branch**: TfL names
+  Thameslink or the Northern line as one line, so a second station on another branch of a line
+  already reached isn't offered (a branch rule would be finer but noisier). A tap opens it as a
+  *From…* page, whose back and crosshairs return to the list. Nothing is fetched to offer them:
+  the positions and lines come from the bundled station list, worked out on the device, so they
+  cost no request and send nothing (*Privacy*); what a tap then shows costs what any *From…* page
+  does.
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run); arrives with watched stops.
 - **Hiding a mode** (maintainer, 2026-09-24) — a busy place can fill the near-me list with a mode

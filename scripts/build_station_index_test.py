@@ -5,7 +5,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from build_station_index import build_index, checked_hub_batch, required_points, station_points  # noqa: E402
+from build_station_index import build_index, checked_hub_batch, modes_without_lines, required_points, station_points  # noqa: E402
 
 
 def stop(sid, name, modes, stop_type="NaptanMetroStation", hub="", lat=51.5, lon=-0.12):
@@ -30,18 +30,56 @@ class BuildIndexTest(unittest.TestCase):
         self.assertEqual(["national-rail", "tube"], by_id["HUBEXA"]["modes"])
         self.assertNotIn("hub", by_id["HUBEXA"])
 
-    def test_stations_carry_their_position_and_tube_lines(self):
+    def test_stations_carry_their_position_and_lines_by_mode(self):
         tube = stop("940GZZLUEXA", "Example Underground Station", ["tube"], lat=51.5123456, lon=-0.1234567)
         tube["lineModeGroups"] = [
             {"modeName": "tube", "lineIdentifier": ["victoria", "northern"]},
             {"modeName": "bus", "lineIdentifier": ["1"]},
         ]
         rail = stop("910GEXAMPLE", "Example Rail Station", ["national-rail"], "NaptanRailStation")
-        by_id = {s["id"]: s for s in build_index([tube, rail], [])["stations"]}
+        rail["lineModeGroups"] = [{"modeName": "national-rail", "lineIdentifier": ["thameslink"]}]
+        bare = stop("910GBARE", "Bare Rail Station", ["national-rail"], "NaptanRailStation")
+        by_id = {s["id"]: s for s in build_index([tube, rail, bare], [])["stations"]}
         self.assertEqual(51.51235, by_id["940GZZLUEXA"]["lat"])
         self.assertEqual(-0.12346, by_id["940GZZLUEXA"]["lon"])
-        self.assertEqual(["northern", "victoria"], by_id["940GZZLUEXA"]["lines"], "tube lines only, sorted")
-        self.assertNotIn("lines", by_id["910GEXAMPLE"])
+        self.assertEqual({"tube": ["northern", "victoria"]}, by_id["940GZZLUEXA"]["modeLines"], "buses left out, sorted")
+        self.assertEqual({"national-rail": ["thameslink"]}, by_id["910GEXAMPLE"]["modeLines"])
+        self.assertNotIn("modeLines", by_id["910GBARE"])
+
+    def test_a_station_listed_under_several_modes_keeps_every_listing_s_lines(self):
+        from_dlr = stop("940GZZLUEXA", "Example", ["dlr"])
+        from_dlr["lineModeGroups"] = [{"modeName": "dlr", "lineIdentifier": ["dlr"]}]
+        from_tube = stop("940GZZLUEXA", "Example", ["tube"])
+        from_tube["lineModeGroups"] = [{"modeName": "tube", "lineIdentifier": ["jubilee"]}]
+        found = station_points([from_dlr, from_tube])
+        self.assertEqual(1, len(found))
+        entry = build_index(found, [])["stations"][0]
+        self.assertEqual(["dlr", "tube"], entry["modes"])
+        self.assertEqual({"dlr": ["dlr"], "tube": ["jubilee"]}, entry["modeLines"])
+
+    def test_a_mode_listing_is_checked_for_its_lines_on_its_own(self):
+        def dlr_station(sid, lined):
+            point = stop(sid, sid, ["dlr"])
+            if lined:
+                point["lineModeGroups"] = [{"modeName": "dlr", "lineIdentifier": ["dlr"]}]
+            return point
+        good = [dlr_station(f"940GZZDL{i}", True) for i in range(10)]
+        self.assertEqual(good, required_points("dlr", good, line_mode="dlr"))
+        # Stripped of its line groups but for one cross-listed interchange: refused.
+        stripped = [dlr_station("940GZZDL0", True)] + [dlr_station(f"940GZZDL{i}", False) for i in range(1, 10)]
+        with self.assertRaises(SystemExit):
+            required_points("dlr", stripped, line_mode="dlr")
+        # A mode without lines to check (river bus) only needs stations.
+        self.assertEqual(stripped, required_points("river-bus", stripped, line_mode="river-bus"))
+
+    def test_a_mode_listed_without_its_lines_is_caught(self):
+        tube = stop("940GZZLUEXA", "Example", ["tube"])
+        tube["lineModeGroups"] = [{"modeName": "tube", "lineIdentifier": ["northern"]}]
+        dlr = stop("940GZZDLEXA", "Example DLR", ["dlr"])
+        index = build_index([tube, dlr], [])
+        self.assertEqual(["dlr"], modes_without_lines(index))
+        dlr["lineModeGroups"] = [{"modeName": "dlr", "lineIdentifier": ["dlr"]}]
+        self.assertEqual([], modes_without_lines(build_index([tube, dlr], [])))
 
     def test_far_away_platform_and_modeless_stops_are_left_out(self):
         index = build_index(

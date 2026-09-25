@@ -26,17 +26,17 @@ class StationIndexStoreTest {
         val index = StationIndexStore.parse(
             """
             {"version":1,"stations":[
-              {"id":"940GZZLUEXA","name":"Example","modes":["tube"],"lat":51.5,"lon":-0.12,"lines":["northern"]},
-              {"id":"910GEXAMPLE","name":"Example Rail","modes":["national-rail"]}
+              {"id":"940GZZLUEXA","name":"Example","modes":["tube"],"lat":51.5,"lon":-0.12,"modeLines":{"tube":["northern"]}},
+              {"id":"910GEXAMPLE","name":"Example Rail","modes":["national-rail"],"lines":["northern"]}
             ]}
             """.trimIndent(),
         )
         val (tube, rail) = index.stations
         assertEquals(51.5, tube.latitude!!, 0.0)
         assertEquals(-0.12, tube.longitude!!, 0.0)
-        assertEquals(listOf("northern"), tube.tubeLines)
+        assertEquals(mapOf("tube" to listOf("northern")), tube.lines)
         assertEquals(null, rail.latitude)
-        assertTrue(rail.tubeLines.isEmpty())
+        assertTrue(rail.lines.isEmpty())
     }
 
     @Test

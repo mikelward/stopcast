@@ -965,7 +965,7 @@ class MainActivity : ComponentActivity() {
             val refreshing = departuresRefreshing || relocatingNow
             val locationBannerNow by locationBanner.collectAsStateWithLifecycle()
             val hiddenModes by HiddenModesSetting.changes.collectAsStateWithLifecycle()
-            // The nearest station of each tube line and rail mode nothing nearby reaches, from the
+            // The nearest station of each rail line nothing nearby reaches, from the
             // bundled index (read off the main thread, once per process): no request.
             val farther by produceState(emptyList<StationMatch>(), ready, hiddenModes, onOpenFarther != null) {
                 if (onOpenFarther == null) {
@@ -973,14 +973,10 @@ class MainActivity : ComponentActivity() {
                     return@produceState
                 }
                 val reached = ready.nearbyStops.flatMap { it.lines }
+                    .mapTo(HashSet()) { FartherStations.Line(it.mode.lowercase(), it.id) }
                 value = withContext(Dispatchers.IO) {
-                    FartherStations.pick(
-                        StationIndexStore.load(appContext).stations,
-                        ready.location,
-                        reachedLines = reached.filter { it.mode.equals("tube", ignoreCase = true) }.mapTo(HashSet()) { it.id },
-                        reachedModes = reached.mapTo(HashSet()) { it.mode.lowercase() },
-                        hidden = hiddenModes,
-                    ).map { it.station }
+                    FartherStations.pick(StationIndexStore.load(appContext).stations, ready.location, reached, hiddenModes)
+                        .map { it.station }
                 }
             }
             val hiddenModesWriteFailed by HiddenModesSetting.writeFailed.collectAsStateWithLifecycle()
