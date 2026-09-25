@@ -1015,6 +1015,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         bounded to `NearbySelection.MAX_REVEAL_PER_TAP` clusters so a long redundant run can't fan
         out an unbounded arrivals+disruption burst past TfL's keyless budget (Codex P1, PR #98).
         Within the ~1 mile reach only — reaching *beyond* the reach is the radius-expand rider below.
+  - [x] **Only buses keep a "More" button** (maintainer, 2026-09-25). The farther-station cards
+        offer the next station of each line the list doesn't serve, both ways and out to 3 mi, so
+        the Tube, DLR, Overground, Elizabeth line, tram and rail "More" buttons only duplicated
+        them. Coach, river-bus and the generic "More stops" (a modeless, mostly route-less stop)
+        went with them; "More bus stops" stays, since buses get no farther card.
   - [ ] **Decide "More" progression from fetched/rendered rows, not declared metadata** (Codex P2,
         PR #98). `nextReveal` decides how far to page from cluster *declared* lines, before fetching —
         so a nearer cluster that declares a not-shown route but returns no live departure is counted
@@ -2001,13 +2006,9 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   snapshot save (persist only the eager stops), no data-model change. Confirm the widget-load cost
   is acceptable, or flip to B.
 - **"More" button copy is provisional, pending sign-off before translation (autopilot,
-  2026-09-21).** A dedicated label per mode the nearby search can return — `more_stops_bus` /
-  `_tube` / `_dlr` / `_overground` / `_elizabeth` / `_tram` / `_rail` / `_coach` / `_river`
-  ("More bus stops", "More Tube stations", "More rail stations", "More river bus piers", …), with
-  the generic `more_stops` ("More stops") left only for a modeless cluster. Every fetched mode has
-  its own label so two "More" buttons never collide as indistinguishable (Codex P2 on #87). Wording
-  and per-mode noun (stops vs stations vs piers) are the maintainer's call; no other locale exists
-  yet, so nothing is translated — settle the English first. Reversible (string values only).
+  2026-09-21).** Only "More bus stops" (`more_stops_bus`) remains since the non-bus buttons went
+  (maintainer, 2026-09-25). Wording is the maintainer's call; no other locale exists yet, so
+  nothing is translated — settle the English first. Reversible (a string value).
 - **"More" pages `CLUSTERS_PER_MODE` (2) clusters per tap (autopilot, 2026-09-21).** Symmetric
   with the eager cap, and keeps each tap's fetch burst bounded; "reveal all of the mode at once"
   is the alternative. Reversible — the `pageSize` argument to `NearbySelection.nextReveal`.

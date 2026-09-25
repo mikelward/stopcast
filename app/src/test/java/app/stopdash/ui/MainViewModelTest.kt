@@ -11,6 +11,7 @@ import app.stopdash.domain.HubInfo
 import app.stopdash.domain.JourneyCall
 import app.stopdash.domain.CollapsedPlaces
 import app.stopdash.domain.Coordinates
+import app.stopdash.domain.FartherStations
 import app.stopdash.domain.LineRef
 import app.stopdash.domain.LineStatus
 import app.stopdash.domain.NearbySelection
@@ -2469,14 +2470,40 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `the more tier tracks what a reveal has paged in`() = runTest(dispatcher) {
-        val more = listOf(clusterOf("M1", "MA" to "bus"))
-        val vm = tierVm(twoStopClient(), listOf(StopRef("E", "E")), more)
+    fun `the shown near stops follow reveals and same-set reconciles`() = runTest(dispatcher) {
+        // The farther-station cards count these as reached, so they must track what is loaded,
+        // including a reconcile that swaps clusters across the eager/more boundary (Codex P2, PR #226).
+        val vm = tierVm(twoStopClient(), listOf(StopRef("E", "E")), listOf(clusterOf("M1", "MA" to "bus")))
         advanceUntilIdle()
-        assertEquals(NearbySelection.MoreTier(more, emptySet()), vm.moreTier.value)
+        assertEquals(listOf("E"), vm.shownNearStops.value.map { it.id })
+
         vm.reveal("bus")
         advanceUntilIdle()
-        assertEquals(NearbySelection.MoreTier(more, setOf("M1")), vm.moreTier.value)
+        assertEquals(setOf("E", "MA"), vm.shownNearStops.value.map { it.id }.toSet())
+
+        // M1 promoted to eager, E demoted to an unrevealed `more` cluster: E is no longer loaded.
+        vm.reconcile(newEager = listOf(clusterOf("M1", "MA" to "bus")), newMore = listOf(clusterOf("EC", "E" to "tube")))
+        advanceUntilIdle()
+        assertEquals(listOf("MA"), vm.shownNearStops.value.map { it.id })
+    }
+
+    @Test
+    fun `farther cards count a shown stop's lines and ids as reached`() {
+        val reached = fartherReached(
+            listOf(StopRef("S", "S", listOf(LineRef("victoria", "Victoria", "Tube")), clusterId = "C", hubId = "")),
+        )
+        assertEquals(setOf(setOf("S", "C")), reached.map { it.ids }.toSet())
+        // Modes are compared lowercase against the bundled index.
+        assertEquals(setOf(FartherStations.Line("tube", "victoria")), reached.single().lines)
+    }
+
+    @Test
+    fun `a shown stop whose fetch failed doesn't count as reached`() {
+        // Its departures never reached the list, so its line keeps its farther card (Codex P2, PR #226).
+        val shown = listOf(StopRef("A", "A"), StopRef("B", "B"))
+        assertEquals(listOf(setOf("A")), fartherReached(shown, loadedIds = setOf("A")).map { it.ids })
+        // Still loading (no list yet): everything shown counts, so cards don't flash up and vanish.
+        assertEquals(2, fartherReached(shown, loadedIds = null).size)
     }
 
     @Test

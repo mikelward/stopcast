@@ -10,6 +10,7 @@ import app.stopdash.domain.JourneyEnd
 import androidx.compose.ui.res.stringResource
 import app.stopdash.ui.rememberTripView
 import app.stopdash.ui.hereOriginIds
+import app.stopdash.ui.fartherReached
 import app.stopdash.domain.DirectTrips
 import app.stopdash.domain.stopPlace
 import app.stopdash.data.FileStarredPlacesStore
@@ -1021,19 +1022,19 @@ class MainActivity : ComponentActivity() {
             // Null until the picks are worked out (the bundled list loads off the main thread), so a
             // recreated screen (a rotation, a return from Settings) doesn't read "nothing offered" and
             // close the cards the retained list has open.
-            val farther by produceState<List<CollapsedPlaces.Place>?>(null, ready, hiddenModes, offerFarther) {
+            val shownNearStops by viewModel.shownNearStops.collectAsStateWithLifecycle()
+            // The shown stops the loaded list has departures for (null while still loading): one whose
+            // fetch failed isn't on the list, so its lines keep their farther cards.
+            val loadedStopIds = (state as? DeparturesUiState.Loaded)?.stops?.mapTo(HashSet()) { it.stopId }
+            val reachedStops = remember(shownNearStops, loadedStopIds) { fartherReached(shownNearStops, loadedStopIds) }
+            val farther by produceState<List<CollapsedPlaces.Place>?>(null, ready, hiddenModes, offerFarther, reachedStops) {
                 if (!offerFarther) {
                     value = emptyList()
                     return@produceState
                 }
-                // Each nearby stop's lines, and its ids: its index record says which route ends its
-                // services reach.
-                val reached = ready.nearbyStops.map { stop ->
-                    FartherStations.ReachedStop(
-                        ids = setOf(stop.id, stop.clusterId, stop.hubId).filterTo(HashSet()) { it.isNotBlank() },
-                        lines = stop.lines.mapTo(HashSet()) { FartherStations.Line(it.mode.lowercase(), it.id) },
-                    )
-                }
+                // Each shown nearby stop's lines, and its ids: its index record says which route
+                // ends its services reach.
+                val reached = reachedStops
                 value = withContext(Dispatchers.IO) {
                     val index = StationIndexStore.load(appContext)
                     FartherStations.pick(index.stations, ready.location, reached, hiddenModes)
@@ -1124,7 +1125,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val shownState = (state as? DeparturesUiState.Loaded)?.let { withOpenedFarther(it, openedStates) } ?: state
-            val moreTier by viewModel.moreTier.collectAsStateWithLifecycle()
             // These background refreshes are composed only while the departures view is shown:
             // the licenses screen is hosted above this subtree (see onCreate), so opening it
             // removes DeparturesForStops from composition and stops the polling (Codex).
@@ -1350,7 +1350,6 @@ class MainActivity : ComponentActivity() {
                     updateAvailable = updateAvailable,
                     onOpenAppListing = onOpenAppListing,
                     revealableModes = revealableModes,
-                    moreTier = moreTier,
                     farther = fartherCards,
                     // Ignored while a relocation's fresh fix is in flight, like "More".
                     onOpenFarther = { place -> if (!relocatingNow) fartherModels.open(place, ready.location) },

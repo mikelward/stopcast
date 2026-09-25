@@ -1257,9 +1257,9 @@ class MainScreenScreenshotTest {
 
     @Test
     fun `the near-me list shows per-mode More controls`() {
-        // At a dense corner the farther clusters wait behind a per-mode "More" control at the foot
-        // of the list (SPEC *Finding stops → Near me now*) — one per mode still holding an
-        // unrevealed cluster. Captured as a baseline so the footer layout is covered visually; a
+        // At a dense corner the farther bus clusters wait behind a "More bus stops" control at the
+        // foot of the list (SPEC *Finding stops → Near me now*); stations have the farther-station
+        // cards instead, so a station mode's pending cluster adds no button. Captured as a baseline so the footer layout is covered visually; a
         // short (one-stop) list keeps the footer on screen. Public names, synthetic distance.
         capture("main-more-controls.png") {
             MainScreen(
@@ -1271,7 +1271,7 @@ class MainScreenScreenshotTest {
             )
         }
         composeRule.onNodeWithText("More bus stops").assertExists()
-        composeRule.onNodeWithText("More Tube stations").assertExists()
+        composeRule.onNodeWithText("More Tube stations").assertDoesNotExist()
     }
 
     @Test

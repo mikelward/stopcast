@@ -289,24 +289,15 @@
     <!-- Toast when a device has no browser to open a license's full text online. -->
     <string name="licenses_link_failed">No app to open the license page</string>
 
-    <!-- "More" controls at the foot of the near-me list: reveal the farther clusters of a mode
-         (SPEC *Finding stops → Near me now*). One per mode still holding an unrevealed cluster.
+    <!-- The "More" control at the foot of the near-me list: reveal the farther bus clusters
+         (SPEC *Finding stops → Near me now*). Stations have the farther-station cards instead.
          PROVISIONAL WORDING — pending the maintainer's sign-off before translation. -->
-    <string name="more_stops">More stops</string>
+    <string name="more_stops_bus">More bus stops</string>
     <!-- A farther station's collapsed card on the near-me list: the cue where its times would be,
          and while it loads or if it failed. Open with nothing running, it shows a line row's dash. -->
     <string name="farther_tap_to_see">Tap to see</string>
     <string name="farther_loading">Loading…</string>
     <string name="farther_retry">Tap to retry</string>
-    <string name="more_stops_bus">More bus stops</string>
-    <string name="more_stops_tube">More Tube stations</string>
-    <string name="more_stops_dlr">More DLR stations</string>
-    <string name="more_stops_overground">More Overground stations</string>
-    <string name="more_stops_elizabeth">More Elizabeth line stations</string>
-    <string name="more_stops_tram">More tram stops</string>
-    <string name="more_stops_rail">More rail stations</string>
-    <string name="more_stops_coach">More coach stops</string>
-    <string name="more_stops_river">More river bus piers</string>
 
     <!-- Bug report (SPEC Privacy). Overflow item, then the consent screen that spells out what
          leaves the device before anything is shared. The copy is deliberately plain that it

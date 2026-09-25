@@ -285,14 +285,11 @@ fun MainScreen(
     updateAvailable: Boolean = false,
     // Open the Play Store listing (from the "Update available" item). Default no-op.
     onOpenAppListing: () -> Unit = {},
-    // The modes (or the generic bucket, an empty string) that still have a farther "More" cluster
-    // to page in (SPEC *Finding stops → Near me now*). A "More …" button per mode is shown at the
-    // foot of the near-me list. Empty by default so a location-free or fully-revealed list shows
-    // none. [onReveal] is called with the tapped mode.
+    // The modes that still have a farther "More" cluster to page in — only ever bus (SPEC *Finding
+    // stops → Near me now*). A "More bus stops" button is shown at the foot of the near-me list.
+    // Empty by default so a location-free or fully-revealed list shows none. [onReveal] is called
+    // with the tapped mode.
     revealableModes: Set<String> = emptySet(),
-    // The `more` tier behind [revealableModes]: given, a station mode's "More" is offered only when a
-    // farther station adds a line the near-me rows shown don't cover both ways (SPEC *Near me now*).
-    moreTier: NearbySelection.MoreTier? = null,
     onReveal: (String) -> Unit = {},
     // The nearest station of each tube line or rail mode the list doesn't reach (SPEC *Finding stops
     // → Farther stations*): a collapsed card each below the loaded places, which a tap loads and
@@ -705,13 +702,6 @@ fun MainScreen(
             }
         // Hide the service alerts the user has dismissed (until their content changes).
         DepartureRows.withoutDismissed(ordered, dismissed)
-    }
-    // The "More" buttons that would add something: against the near-me rows shown now (so not a
-    // journey's own stop, and not a departure that has since left), a station mode's farther
-    // stations must carry a line those rows don't cover both ways.
-    val moreModes = remember(revealableModes, moreTier, nearbyRows) {
-        moreTier?.let { NearbySelection.revealableBuckets(it.more, it.revealed, NearbySelection.coveredLineIds(nearbyRows)) }
-            ?: revealableModes
     }
     // Without the rows a journey card above already shows in full, then with the user's starred
     // services lifted to the top (SPEC D8). Warnings still lead on the location-free watched list; on
@@ -1197,7 +1187,7 @@ fun MainScreen(
                     revealableModes = if (platformRows != null) {
                         emptySet()
                     } else {
-                        moreModes.filterNotTo(LinkedHashSet()) { HiddenModes.isHidden(it, hiddenModes) }
+                        revealableModes.filterNotTo(LinkedHashSet()) { HiddenModes.isHidden(it, hiddenModes) }
                     },
                     hiddenModes = hiddenModes,
                     onHideMode = onHideMode,
@@ -2042,39 +2032,18 @@ private fun FartherCardView(card: FartherCard, cue: FartherCue, onOpen: (Collaps
 }
 
 /**
- * The per-mode "More" controls at the foot of the near-me list (SPEC *Finding stops → Near me
- * now*): one full-width button per mode still holding an unrevealed farther cluster, tapping which
- * pages that mode's next clusters in. Rendered nowhere when [revealableModes] is empty. Named modes
- * come first (alphabetical), the generic bucket (a modeless cluster) last, for a stable order.
- * A `TextButton` carries Material's ≥48dp interactive touch target, clearing the 44dp floor.
+ * The "More bus stops" control at the foot of the near-me list (SPEC *Finding stops → Near me
+ * now*), shown while a farther bus cluster is left to page; a tap pages the next ones in. It is
+ * the only "More": the farther-station cards stand in for every station mode. Rendered nowhere
+ * when [revealableModes] lacks bus. A `TextButton` carries Material's ≥48dp interactive touch
+ * target, clearing the 44dp floor.
  */
 @Composable
 private fun MoreControls(revealableModes: Set<String>, onReveal: (String) -> Unit, modifier: Modifier = Modifier) {
-    if (revealableModes.isEmpty()) return
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (mode in revealableModes.sortedWith(compareBy({ it.isEmpty() }, { it }))) {
-            TextButton(onClick = { onReveal(mode) }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(moreLabelRes(mode)))
-            }
-        }
+    if (NearbySelection.BUS_MODE !in revealableModes) return
+    TextButton(onClick = { onReveal(NearbySelection.BUS_MODE) }, modifier = modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.more_stops_bus))
     }
-}
-
-/** The "More …" label for a reveal bucket — a dedicated string per mode the nearby search can
- *  return (its `StopFinder.DEFAULT_NEARBY_STOP_TYPES`), so two revealable buckets never share the
- *  generic "More stops" and become indistinguishable (Codex, PR #87). The generic label is left for
- *  the modeless bucket ([NearbySelection.GENERIC_MORE]) and any mode outside that fetched set. */
-internal fun moreLabelRes(mode: String): Int = when (mode) {
-    "bus" -> R.string.more_stops_bus
-    "tube" -> R.string.more_stops_tube
-    "dlr" -> R.string.more_stops_dlr
-    "overground" -> R.string.more_stops_overground
-    "elizabeth-line" -> R.string.more_stops_elizabeth
-    "tram" -> R.string.more_stops_tram
-    "national-rail" -> R.string.more_stops_rail
-    "coach" -> R.string.more_stops_coach
-    "river-bus" -> R.string.more_stops_river
-    else -> R.string.more_stops
 }
 
 /**
