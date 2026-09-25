@@ -38,6 +38,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 class AndroidLocationProvider(
     private val context: Context,
     private val warn: (String) -> Unit = {},
+    // Where each fix placed the rider, for the in-memory RecentPositions only — never [warn],
+    // whose lines are persisted (SPEC *Privacy*).
+    private val position: (what: String, at: Coordinates) -> Unit = { _, _ -> },
 ) : LocationProvider {
     // Every location taken expires the remembered precise fix on the way out, whichever return
     // it takes and however long the fix took (the clock moves during the request).
@@ -114,21 +117,23 @@ class AndroidLocationProvider(
         }
         if (coordinates != null && isCoarse && usedFresh != null) {
             // The rider hasn't left the coarse fix's circle since the last precise fix: use that.
-            val recalled = preciseMemory.instead(
+            val considered = preciseMemory.consider(
                 usedFresh.coordinates,
                 usedFresh.accuracyMeters,
                 SystemClock.elapsedRealtime(),
             )
+            // Logged used or not, with how far apart the two fixes are: far outside the circle is
+            // what a network fix placing the rider at the wrong station looks like.
+            if (considered != null) {
+                warn(FixDiagnostics.describeRemembered(considered, usedFresh.accuracyMeters))
+                // Only when used: a rejected one isn't where the app placed the rider, and it was
+                // recorded when it was taken, so re-recording it would only restart its 15 minutes.
+                if (considered.used) {
+                    position("remembered precise ${considered.recalled.provider} fix", considered.recalled.coordinates)
+                }
+            }
+            val recalled = considered?.takeIf { it.used }?.recalled
             if (recalled != null) {
-                // The fix actually used, as logFix describes the others: its own provider and accuracy.
-                warn(
-                    FixDiagnostics.describe(
-                        FixDiagnostics.Source.REMEMBERED,
-                        recalled.provider,
-                        recalled.accuracyMeters,
-                        recalled.ageMillis,
-                    ) + ", inside the coarse fix's accuracy",
-                )
                 // Still flagged coarse: the rider may have moved within the circle, so the list
                 // shows from the precise point but GPS is still asked to confirm it or move it
                 // (a forced refresh included), rather than the recall standing unchecked.
@@ -184,6 +189,7 @@ class AndroidLocationProvider(
         if (!hasFineLocationPermission()) return null
         val ageMillis = (SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos) / 1_000_000
         warn(FixDiagnostics.describe(FixDiagnostics.Source.PRECISE, fix.provider, fix.accuracyMeters, ageMillis))
+        position("${FixDiagnostics.Source.PRECISE.label} ${fix.provider} fix", fix.coordinates)
         remember(fix)
         return fix.coordinates
     }
@@ -290,6 +296,7 @@ class AndroidLocationProvider(
         }
         val ageMillis = (SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos) / 1_000_000
         warn(FixDiagnostics.describe(source, fix.provider, fix.accuracyMeters, ageMillis))
+        position("${source.label} ${fix.provider} fix", fix.coordinates)
     }
 
     /**

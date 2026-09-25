@@ -64,11 +64,21 @@ class DataStoreAppSettings internal constructor(
         dataStore.updateData { (it ?: PersistedSettings()).copy(pinchEnabled = enabled) }
     }
 
+    // An opt-out counts only for the disclosure it was given against: one saved before the report
+    // grew (an older version, or none) reads as "ask again", so the user sees what it now carries.
     override fun skipBugReportConsent(): Flow<Boolean> =
-        persisted().map { it?.skipBugReportConsent ?: DEFAULT_SKIP_BUG_REPORT_CONSENT }
+        persisted().map {
+            it != null && it.skipBugReportConsent &&
+                it.skipBugReportConsentVersion >= BUG_REPORT_CONSENT_VERSION
+        }
 
     override suspend fun setSkipBugReportConsent(enabled: Boolean) {
-        dataStore.updateData { (it ?: PersistedSettings()).copy(skipBugReportConsent = enabled) }
+        dataStore.updateData {
+            (it ?: PersistedSettings()).copy(
+                skipBugReportConsent = enabled,
+                skipBugReportConsentVersion = BUG_REPORT_CONSENT_VERSION,
+            )
+        }
     }
 
     override fun journeyTipDismissed(): Flow<Boolean> =
@@ -135,6 +145,13 @@ class DataStoreAppSettings internal constructor(
         /** Consent is asked every time until the user opts out — the report carries the location. */
         const val DEFAULT_SKIP_BUG_REPORT_CONSENT = false
 
+        /**
+         * The version of what the bug report discloses. Bump it whenever the report carries more,
+         * so a saved "don't ask again" is set aside and the consent screen shows the new payload.
+         * 2: recent positions (the last 15 minutes) were added (2026-09-25).
+         */
+        const val BUG_REPORT_CONSENT_VERSION = 2
+
         /** Backoff between retries of a transient settings read, so [liveWidgetRefresh]'s
          *  retryWhen doesn't hot-loop while storage is briefly unavailable. */
         private const val SETTINGS_READ_RETRY_MILLIS = 1_000L
@@ -190,6 +207,8 @@ data class PersistedSettings(
     val fontScale: Float = DEFAULT_FONT_SCALE,
     val pinchEnabled: Boolean = DataStoreAppSettings.DEFAULT_PINCH_ENABLED,
     val skipBugReportConsent: Boolean = DataStoreAppSettings.DEFAULT_SKIP_BUG_REPORT_CONSENT,
+    // The consent version that opt-out was given against; absent (0) in a file from before versions.
+    val skipBugReportConsentVersion: Int = 0,
     // Whether the route page's journey tip was dismissed. Defaulted, so an older file reads it unseen.
     val journeyTipDismissed: Boolean = false,
     // The user's own TfL app_key (SPEC D7), or null when keyless. The one persisted setting that is

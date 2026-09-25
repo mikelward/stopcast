@@ -111,7 +111,8 @@ as a confirmed TfL hex. SPEC has the full scheme and rationale.
   decline, rather than pretending a stripped report is location-safe (knowing the nearest
   stops already reveals about the same). Nothing leaves without that consent; `SPEC.md` and
   `docs/PRIVACY.md` describe the channel, and the location-redacted export stays a separate
-  tool.
+  tool. Its recent positions come from a bounded in-memory window (`RecentPositions`: 15 min,
+  20 entries), never the persisted log — the aim is diagnosis, not a movement history.
 
 ## Error handling
 

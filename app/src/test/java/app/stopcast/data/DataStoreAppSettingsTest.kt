@@ -89,6 +89,15 @@ class DataStoreAppSettingsTest {
     }
 
     @Test
+    fun `an opt-out saved before the report grew asks for consent again`() = runTest {
+        // A file from before consent versions: opted out, no version.
+        val store = DataStoreAppSettings(FakeDataStore(PersistedSettings(skipBugReportConsent = true)))
+        assertFalse(store.skipBugReportConsent().first())
+        store.setSkipBugReportConsent(true)
+        assertTrue(store.skipBugReportConsent().first())
+    }
+
+    @Test
     fun `the journey tip shows until dismissed, and stays dismissed`() = runTest {
         val store = DataStoreAppSettings(FakeDataStore(null))
         assertFalse(store.journeyTipDismissed().first())

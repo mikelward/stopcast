@@ -42,6 +42,9 @@ object BugReport {
         location: Coordinates?,
         stops: List<StopLine>,
         logLines: List<String>,
+        // The last few positions the app worked from (RecentPositions): in memory only, and this
+        // report is the one place they leave the device (consent-gated, SPEC *Privacy*).
+        recentPositions: List<String> = emptyList(),
     ): String = buildString {
         appendLine("StopDash bug report")
         appendLine("version: ${header.versionName} (${header.versionCode})")
@@ -70,6 +73,13 @@ object BugReport {
                 appendLine("  • ${stop.name} (${stop.id}) — ${distance(stop.meters)}")
             }
         }
+        appendLine()
+
+        appendLine(
+            "--- recent positions (last ${RecentPositions.TTL_MILLIS / 60_000} min, " +
+                "at most ${RecentPositions.CAPACITY}) ---",
+        )
+        appendLine(if (recentPositions.isEmpty()) "(none)" else recentPositions.joinToString("\n"))
         appendLine()
 
         appendLine("--- log (this run) ---")

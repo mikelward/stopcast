@@ -26,6 +26,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -77,6 +78,7 @@ import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.KtorTflClient
 import app.stopcast.data.RouteTopologyStore
 import app.stopcast.data.StationIndexStore
+import app.stopcast.domain.RecentPositions
 import app.stopcast.domain.RouteStopsRepository
 import app.stopcast.data.SharedTflRateLimiter
 import app.stopcast.data.SharedTflRequestPool
@@ -252,11 +254,16 @@ class MainActivity : ComponentActivity() {
         viewModelFactory {
             initializer {
                 NearbyStopsViewModel(
-                    location = AndroidLocationProvider(applicationContext, warn = ::logLocationWarning),
+                    location = AndroidLocationProvider(
+                        applicationContext,
+                        warn = ::logLocationWarning,
+                        position = ::recordPosition,
+                    ),
                     // Reuses a recent lookup made close by (in memory, process-wide), so reopening
                     // the app near where it was last used skips a request and a round trip.
                     finder = nearbyStopFinder,
                     warn = ::logLocationWarning,
+                    position = ::recordPosition,
                     // Waits for the stored set on a cold start, so the first pick already leaves out
                     // what the user hid rather than fetching it until the next re-locate.
                     hiddenModes = { HiddenModesSetting.loaded() },
@@ -826,6 +833,7 @@ class MainActivity : ComponentActivity() {
                         // This run's buffer, rendered in full (DEVICE fidelity) — the report is
                         // consent-gated, so it is not the redacted, location-safe export.
                         logLines = StopcastDebugLog.snapshot(),
+                        recentPositions = recentPositions.recent(SystemClock.elapsedRealtime()),
                     )
                 }
             }
@@ -2496,6 +2504,40 @@ private fun tickingNow(): Instant {
  * ViewModel store (Codex). A top-level function captures nothing.
  */
 private fun logLocationWarning(message: String) = StopcastDebugLog.warning("location: %s", message)
+
+/**
+ * The last few positions the rider's fixes and lookups placed them at (SPEC *Privacy*): in memory
+ * only, a short window for the consent-gated bug report, never the diagnostic log or its file.
+ */
+private val recentPositions = RecentPositions()
+
+private val positionStamp = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss", java.util.Locale.ROOT)
+
+private val positionExpiry by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+
+// Sweeps for expired positions at the oldest one's 15-minute deadline (capped at a minute, since a
+// delayed message doesn't count deep sleep), measuring age by elapsed realtime — so a position goes
+// at its deadline while the phone is awake, and within a minute of it waking otherwise, even if
+// nothing reads the window again. Stops itself when the window is empty.
+private val positionSweep: Runnable = object : Runnable {
+    override fun run() {
+        val now = SystemClock.elapsedRealtime()
+        recentPositions.expire(now)
+        scheduleSweep(now)
+    }
+}
+
+private fun scheduleSweep(nowElapsedMillis: Long) {
+    positionExpiry.removeCallbacks(positionSweep)
+    val until = recentPositions.untilNextExpiry(nowElapsedMillis) ?: return
+    positionExpiry.postDelayed(positionSweep, minOf(until, RecentPositions.SWEEP_MILLIS))
+}
+
+private fun recordPosition(what: String, at: Coordinates) {
+    val now = SystemClock.elapsedRealtime()
+    recentPositions.record(what, at, now, java.time.LocalTime.now().format(positionStamp))
+    scheduleSweep(now)
+}
 
 private fun logRouteStopsWarning(message: String) = StopcastDebugLog.warning("route stops: %s", message)
 

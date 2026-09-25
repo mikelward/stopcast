@@ -74,6 +74,27 @@ class PreciseFixMemoryTest {
     }
 
     @Test
+    fun `the log line says how far apart the fixes are, used or not`() {
+        val memory = PreciseFixMemory()
+        memory.remember(north(250.0), atElapsedMillis = 0, provider = "gps", accuracyMeters = 8f)
+        val inside = memory.consider(origin, 400f, 60_000)!!
+        assertEquals(true, inside.used)
+        assertEquals(
+            "location fix: remembered precise from gps, accuracy 8 m, 60 s old, " +
+                "250 m from the network fix, inside its 400 m accuracy, used",
+            FixDiagnostics.describeRemembered(inside, 400f),
+        )
+        val outside = memory.consider(origin, 100f, 60_000)!!
+        assertEquals(false, outside.used)
+        assertNull(memory.instead(origin, 100f, 60_000))
+        assertEquals(
+            "location fix: remembered precise from gps, accuracy 8 m, 60 s old, " +
+                "250 m from the network fix, outside its 100 m accuracy, not used",
+            FixDiagnostics.describeRemembered(outside, 100f),
+        )
+    }
+
+    @Test
     fun `a coarse fix with no accuracy has no circle to be inside`() {
         val memory = PreciseFixMemory()
         memory.remember(origin, atElapsedMillis = 0)

@@ -199,7 +199,13 @@ The app finds stops two ways:
   your location" rather than showing a previous location's stops as current (a user who has
   traveled would be misled). A failure to get a fix is always logged, and so is each fix the
   app uses — which provider supplied it, the accuracy radius it reported, and its age, never the
-  coordinate — so a misfire, like station Wi-Fi placing the user at the wrong station, is
+  coordinate — and each lookup's stop count. The positions themselves, and each lookup's stops
+  with their distances (which would pin the position down), go only to a short in-memory window —
+  each fix the app got (a rough one set aside for a remembered precise one included — it is where
+  the network placed the user, the underground diagnosis) and each lookup, the last 15 minutes and
+  at most 20 entries, never the log or its file — which the consent-gated bug report includes
+  (maintainer, 2026-09-25: a window around a problem, not a record of where someone has been).
+  Together they make a misfire, like station Wi-Fi placing the user at the wrong station,
   diagnosable from a bug report.
 
   Both tiers draw from one TfL `/StopPoint` lookup within the **~1 mile reach** (the lookup's

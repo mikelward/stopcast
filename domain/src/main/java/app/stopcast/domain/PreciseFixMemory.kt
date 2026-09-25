@@ -47,25 +47,34 @@ class PreciseFixMemory {
      * coarse fix reports no accuracy (so there is no circle to be inside), or when it lies outside
      * the coarse fix's [coarseAccuracyMeters] circle.
      */
-    fun instead(coarse: Coordinates, coarseAccuracyMeters: Float?, nowElapsedMillis: Long): Recalled? {
+    fun instead(coarse: Coordinates, coarseAccuracyMeters: Float?, nowElapsedMillis: Long): Recalled? =
+        consider(coarse, coarseAccuracyMeters, nowElapsedMillis)?.takeIf { it.used }?.recalled
+
+    /**
+     * How the remembered precise fix compares with [coarse], whether or not it is used: `null` only
+     * when nothing (unexpired) is remembered. [Considered.used] is the [instead] decision; the
+     * distance is kept either way, since a remembered fix far outside the coarse circle is itself
+     * the diagnostic (underground, a station's Wi-Fi can place the rider at another station).
+     */
+    fun consider(coarse: Coordinates, coarseAccuracyMeters: Float?, nowElapsedMillis: Long): Considered? {
         val remembered = synchronized(this) {
             expire(nowElapsedMillis)
             last
         } ?: return null
         val age = nowElapsedMillis - remembered.atElapsedMillis
         if (age < 0) return null
-        val radius = coarseAccuracyMeters?.takeIf { it > 0f } ?: return null
         val apart = NearestStops.distanceMeters(
             coarse.latitude,
             coarse.longitude,
             remembered.coordinates.latitude,
             remembered.coordinates.longitude,
         )
-        return if (apart <= radius) {
-            Recalled(remembered.coordinates, age, remembered.provider, remembered.accuracyMeters)
-        } else {
-            null
-        }
+        val radius = coarseAccuracyMeters?.takeIf { it > 0f }
+        return Considered(
+            Recalled(remembered.coordinates, age, remembered.provider, remembered.accuracyMeters),
+            apartMeters = apart,
+            used = radius != null && apart <= radius,
+        )
     }
 
     /**
@@ -86,6 +95,12 @@ class PreciseFixMemory {
         val provider: String,
         val accuracyMeters: Float?,
     )
+
+    /**
+     * The remembered fix set against a coarse one: [apartMeters] from it, and whether it is [used]
+     * in its place (inside the coarse fix's accuracy circle).
+     */
+    data class Considered(val recalled: Recalled, val apartMeters: Double, val used: Boolean)
 
     companion object {
         /** How long a precise fix is remembered. Reversible — one constant. */

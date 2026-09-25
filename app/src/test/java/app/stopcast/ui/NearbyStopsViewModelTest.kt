@@ -685,6 +685,67 @@ class NearbyStopsViewModelTest {
     }
 
     @Test
+    fun `each lookup logs counts only, and its stops, distances and position go to recent positions`() = runTest {
+        val logged = mutableListOf<String>()
+        val positions = mutableListOf<Pair<String, Coordinates>>()
+        val model = NearbyStopsViewModel(
+            location = FakeLocation(origin),
+            finder = FakeFinder { listOf(stop("b1", 80.0, "bus")) },
+            io = dispatcher,
+            warn = { logged += it },
+            position = { what, at -> positions += what to at },
+        )
+        model.locate()
+        advanceUntilIdle()
+        assertTrue(logged.toString(), "nearby: 1 stops (+0 more)" in logged)
+        assertEquals(listOf("nearby lookup: b1 80 m," to origin), positions)
+        // Neither a position nor a stop distance in the persisted log.
+        assertTrue(logged.toString(), logged.none { "0.00000" in it || "80 m" in it })
+
+        val empty = NearbyStopsViewModel(
+            location = FakeLocation(origin),
+            finder = FakeFinder { emptyList() },
+            io = dispatcher,
+            warn = { logged += it },
+        )
+        empty.locate()
+        advanceUntilIdle()
+        assertTrue(logged.toString(), logged.any { it == "nearby: no stops in range (0 found)" })
+    }
+
+    @Test
+    fun `a lookup's recorded stops include the farther tier`() = runTest {
+        val positions = mutableListOf<String>()
+        val model = NearbyStopsViewModel(
+            location = FakeLocation(origin),
+            finder = FakeFinder { (1..12).map { stop("b$it", 60.0 * it, "bus") } },
+            io = dispatcher,
+            position = { what, _ -> positions += what },
+        )
+        model.locate()
+        advanceUntilIdle()
+        val ready = model.state.value as NearbyStopsViewModel.State.Ready
+        assertTrue("fixture should produce a farther tier", ready.more.isNotEmpty())
+        val farther = ready.more.first().stops.first().id
+        assertTrue(positions.toString(), positions.single().contains("; more: ") && farther in positions.single())
+    }
+
+    @Test
+    fun `a lookup that found only route-less stops records them, not no stops`() = runTest {
+        val positions = mutableListOf<String>()
+        val model = NearbyStopsViewModel(
+            location = FakeLocation(origin),
+            finder = FakeFinder { listOf(stop("r1", 80.0, "bus").copy(lines = emptyList())) },
+            io = dispatcher,
+            position = { what, _ -> positions += what },
+        )
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(NearbyStopsViewModel.State.Empty(origin), model.state.value)
+        assertEquals(listOf("nearby lookup (no stops with routes): r1 80 m,"), positions)
+    }
+
+    @Test
     fun `a fallback fix is not refined, since it is the last-known one`() = runTest {
         val location = object : LocationProvider {
             var asked = 0
