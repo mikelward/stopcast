@@ -14,6 +14,7 @@ import app.stopcast.domain.lineCode
 import app.stopcast.ui.BudgetedRows
 import java.time.Duration
 import java.time.Instant
+import java.util.SortedSet
 import kotlin.time.toJavaDuration
 import kotlin.time.toKotlinDuration
 
@@ -120,6 +121,9 @@ object TileTimeline {
     /** Countdowns per row, as on the widget. */
     private const val MAX_TIMES = 3
 
+    /** A [frame] budget with room for every row: the watch app's scrolling list. */
+    const val UNBOUNDED = Int.MAX_VALUE
+
     /** The most entries a Tiles timeline takes. */
     const val MAX_ENTRIES = 100
 
@@ -129,7 +133,8 @@ object TileTimeline {
     /**
      * The frame at [now]. [withhold] withholds every countdown, for the tail of a timeline the
      * entry cap cut short, so a frame held past its time never shows a departed service or a
-     * frozen countdown as live.
+     * frozen countdown as live. [budget] overrides the lines that fit [screen]: the watch app,
+     * which scrolls, passes [UNBOUNDED] to list every row.
      */
     fun frame(
         envelope: WatchEnvelope?,
@@ -137,6 +142,7 @@ object TileTimeline {
         topology: RouteTopology = RouteTopology.EMPTY,
         withhold: Boolean = false,
         screen: TileScreen? = null,
+        budget: Int? = null,
     ): TileFrame {
         envelope ?: return TileFrame.NeverSynced
         if (envelope.stops.isEmpty()) {
@@ -153,7 +159,7 @@ object TileTimeline {
         // The status lines drawn above the list take room from it, as the widget's note does, and
         // so does the Refresh chip at the foot.
         val notes = (if (allStale || partial) 1 else 0) + (if (envelope.omittedStops > 0) 1 else 0)
-        val budget = lineBudget(screen, notes, refreshLine = true)
+        val budget = budget ?: lineBudget(screen, notes, refreshLine = true)
         // Fresh rows ahead of stale ones (as the widget orders its cap), then favorites first.
         val ordered = DepartureRows.across(stops, now, splitPlatforms = false)
             .sortedBy { if (staleStop[it.stopId] == true) 1 else 0 }
@@ -218,6 +224,45 @@ object TileTimeline {
         if (envelope == null || envelope.stops.isEmpty()) {
             return TileSchedule(listOf(TileEntry(now, null, frame(envelope, now, topology, screen = screen))), refreshAt = null)
         }
+        val (breaks, horizon) = breaks(envelope, now)
+        // A break opens an entry only where the frame actually changes: a departure's tick that
+        // moves no shown countdown, or a row that can't make the five lines, spends nothing.
+        val closed = mutableListOf<TileEntry>()
+        var start = now
+        var current = frame(envelope, now, topology, screen = screen)
+        for ((evaluated, at) in breaks.withIndex()) {
+            val next = if (evaluated < MAX_CANDIDATES) frame(envelope, at, topology, screen = screen) else null
+            if (next == current) continue
+            // Room is kept for the horizon's two entries; when a change doesn't fit (or the scan's
+            // bound is reached), the timeline stops here with every countdown withheld.
+            if (next == null || closed.size + 1 > MAX_SCHEDULED - 2) {
+                closed += TileEntry(start, at, current)
+                val tail = TileEntry(at, null, frame(envelope, at, topology, withhold = true, screen = screen))
+                return TileSchedule(closed + tail, refreshAt = at)
+            }
+            closed += TileEntry(start, at, current)
+            start = at
+            current = next
+        }
+        if (horizon <= now) return TileSchedule(listOf(TileEntry(now, null, current)), refreshAt = null)
+        closed += TileEntry(start, horizon, current)
+        return TileSchedule(closed + TileEntry(horizon, null, frame(envelope, horizon, topology, screen = screen)), refreshAt = null)
+    }
+
+    /**
+     * The instant after [now] at which the frame can next change (a countdown minute, a departure,
+     * a stop's boundary, a minute of the age stamp), or null once every stop is stale: what the
+     * watch app's foreground ticker waits for. Rows past the list's reach may add instants that
+     * change nothing; a re-render there is cheap and never wrong.
+     */
+    fun nextChange(envelope: WatchEnvelope?, now: Instant): Instant? {
+        if (envelope == null || envelope.stops.isEmpty()) return null
+        val (breaks, horizon) = breaks(envelope, now)
+        return breaks.firstOrNull() ?: horizon.takeIf { it > now }
+    }
+
+    /** Every instant between [now] and the all-stale horizon at which a frame can change, and that horizon. */
+    private fun breaks(envelope: WatchEnvelope, now: Instant): Pair<SortedSet<Instant>, Instant> {
         val stops = envelope.stops.map { it.toDomain() }
         val threshold = Staleness.THRESHOLD.toJavaDuration()
         val horizon = stops.maxOf { it.fetchedAt.plus(threshold) }
@@ -255,28 +300,7 @@ object TileTimeline {
                 }
             }
         }
-        // A break opens an entry only where the frame actually changes: a departure's tick that
-        // moves no shown countdown, or a row that can't make the five lines, spends nothing.
-        val closed = mutableListOf<TileEntry>()
-        var start = now
-        var current = frame(envelope, now, topology, screen = screen)
-        for ((evaluated, at) in breaks.withIndex()) {
-            val next = if (evaluated < MAX_CANDIDATES) frame(envelope, at, topology, screen = screen) else null
-            if (next == current) continue
-            // Room is kept for the horizon's two entries; when a change doesn't fit (or the scan's
-            // bound is reached), the timeline stops here with every countdown withheld.
-            if (next == null || closed.size + 1 > MAX_SCHEDULED - 2) {
-                closed += TileEntry(start, at, current)
-                val tail = TileEntry(at, null, frame(envelope, at, topology, withhold = true, screen = screen))
-                return TileSchedule(closed + tail, refreshAt = at)
-            }
-            closed += TileEntry(start, at, current)
-            start = at
-            current = next
-        }
-        if (horizon <= now) return TileSchedule(listOf(TileEntry(now, null, current)), refreshAt = null)
-        closed += TileEntry(start, horizon, current)
-        return TileSchedule(closed + TileEntry(horizon, null, frame(envelope, horizon, topology, screen = screen)), refreshAt = null)
+        return breaks to horizon
     }
 
     /**

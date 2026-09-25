@@ -151,6 +151,9 @@ internal object TileLayout {
     /** The clickable id of the Refresh line. */
     const val REFRESH_ID = "refresh"
 
+    /** The clickable id of the All stops line. */
+    const val ALL_STOPS_ID = "all_stops"
+
     fun root(context: Context, frame: TileFrame, notice: RefreshNotice.Kind? = null): LayoutElement {
         val column = Column.Builder().setWidth(expand())
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
@@ -202,7 +205,7 @@ internal object TileLayout {
                     )
                 }
                 column.addContent(Spacer.Builder().setHeight(dp(4f)).build())
-                column.addContent(refresh(context, notice))
+                column.addContent(if (offersAllStops(frame, notice)) allStops(context) else refresh(context, notice))
             }
         }
         return Box.Builder()
@@ -225,23 +228,40 @@ internal object TileLayout {
             RefreshNotice.Kind.REFRESHING -> gray
             else -> warning
         }
-        return Box.Builder()
+        return chip(context.getString(label), color, REFRESH_ID, ActionBuilders.LoadAction.Builder().build())
+    }
+
+    /** A tappable line at the foot of the tile, in the tile's neutral chip. */
+    private fun chip(label: String, color: Int, id: String, action: ActionBuilders.Action): LayoutElement =
+        Box.Builder()
             .setModifiers(
                 Modifiers.Builder()
-                    .setClickable(
-                        Clickable.Builder()
-                            .setId(REFRESH_ID)
-                            .setOnClick(ActionBuilders.LoadAction.Builder().build())
-                            .build(),
-                    )
+                    .setClickable(Clickable.Builder().setId(id).setOnClick(action).build())
                     .setBackground(
                         Background.Builder().setColor(argb(neutralFill)).setCorner(Corner.Builder().setRadius(dp(12f)).build()).build(),
                     )
                     .setPadding(Padding.Builder().setTop(dp(4f)).setBottom(dp(4f)).setStart(dp(12f)).setEnd(dp(12f)).build())
                     .build(),
             )
-            .addContent(text(context.getString(label), 12f, color))
+            .addContent(text(label, 12f, color))
             .build()
+
+    /**
+     * Whether the tile's foot is **All stops** rather than Refresh: fresh and complete (no stop
+     * failed, none left out for size), with no refresh under way. Otherwise Refresh, which is what
+     * an out-of-date tile needs (and says why it's pending or failed); the app couldn't show stops
+     * left out of the envelope anyway.
+     */
+    fun offersAllStops(frame: TileFrame.Rows, notice: RefreshNotice.Kind?): Boolean =
+        !frame.stale && !frame.partial && frame.omitted == 0 && notice == null
+
+    /** The **All stops** line: opens the watch app, which lists every row and scrolls. */
+    private fun allStops(context: Context): LayoutElement {
+        val app = ActionBuilders.AndroidActivity.Builder()
+            .setPackageName(context.packageName)
+            .setClassName(WatchHomeActivity::class.java.name)
+            .build()
+        return chip(context.getString(R.string.tile_all_stops), white, ALL_STOPS_ID, ActionBuilders.LaunchAction.Builder().setAndroidActivity(app).build())
     }
 
     private fun row(row: TileRow): LayoutElement =

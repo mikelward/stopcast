@@ -11,37 +11,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The watch home's states and the envelope store: synthetic stops only, no user data. */
+/** The watch's envelope store: synthetic stops only, no user data. */
 class WatchHomeTest {
     private val at = Instant.parse("2026-09-24T08:00:00Z")
-
-    private fun received(envelope: WatchEnvelope) = WatchReceived.Received(envelope, at)
-
-    @Test
-    fun `nothing received says to open the phone app, and no stops says to add some`() {
-        assertEquals(WatchHome.NeverSynced, watchHome(WatchReceived.NeverSynced))
-        assertEquals(WatchHome.NoStops, watchHome(received(WatchEnvelope())))
-        assertEquals(WatchHome.Loading, watchHome(WatchReceived.Loading))
-    }
-
-    @Test
-    fun `stops that all failed to load read as out of date, not as no stops`() {
-        val home = watchHome(received(WatchEnvelope(missingStopIds = listOf("940GEXAMPLE1"))))
-        assertEquals(WatchHome.Stops(names = emptyList(), omitted = 0, partial = true), home)
-    }
-
-    @Test
-    fun `stops are listed, with any left out and any that failed`() {
-        val envelope = WatchEnvelope(
-            stops = listOf(PersistedStop("940GEXAMPLE1", "Example"), PersistedStop("940GEXAMPLE2", "Other", arrivalsFresh = false)),
-            omittedStops = 2,
-        )
-        assertEquals(WatchHome.Stops(listOf("Example", "Other"), omitted = 2, partial = true), watchHome(received(envelope)))
-        val complete = watchHome(received(WatchEnvelope(stops = listOf(PersistedStop("940GEXAMPLE1", "Example")))))
-        assertFalse((complete as WatchHome.Stops).partial)
-        val missing = watchHome(received(WatchEnvelope(stops = listOf(PersistedStop("940GEXAMPLE1", "Example")), missingStopIds = listOf("940GX"))))
-        assertTrue((missing as WatchHome.Stops).partial)
-    }
 
     @Test
     fun `the store keeps the last good envelope and refuses one it can't read`() {

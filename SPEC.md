@@ -1171,6 +1171,16 @@ when the snapshot arrives, so it needs no polling. It never outlives its data:
 - a stop past the staleness threshold shows "?", never an old countdown;
 - with no stops at all it shows the watch face's no-data dash.
 
+**The tile** shows the first rows that fit, favorites first. While they're fresh and complete its
+foot reads **All stops**, which opens the watch app; once they're out of date, partly out of date
+or missing stops left out for size, or a refresh is under way or failed, it reads **Refresh** instead (with what happened), since that's
+what an out-of-date tile needs.
+
+**The watch app** lists every row the tile would, favorites first under the widget's stop
+headers, in a dense list the crown scrolls, with Refresh at the end. While it's open it
+re-renders at each countdown minute, departure and stop's staleness boundary, from the stored
+snapshot alone: no polling and no network, and nothing runs once it leaves the screen.
+
 **Refresh from the watch**: tapping the tile's Refresh line, or opening
 the watch app, asks the phone for one refresh of the widget's stops. The phone does the same
 location-free fetch as a widget refresh and sends the result the usual way. Why and how:
