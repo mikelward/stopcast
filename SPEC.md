@@ -1139,8 +1139,19 @@ the widget when the app isn't driving it is deferred (D5).
 ### On the watch
 
 The Wear OS companion (`dev-docs/wear-os.md`) shows the widget's snapshot as the phone last sent
-it, on a tile and in a small app. It never calls TfL itself, and like the widget it renders only
-what is stored, stamped with its age and marked stale rather than passed off as live (D4).
+it, on a tile, a watch-face complication and a small app. It never calls TfL itself, and like the
+widget it renders only what is stored, stamped with its age and marked stale rather than passed
+off as live (D4).
+
+**The complication** puts one row's next departure on the watch face: the line and its countdown,
+with the destination when there's room. It shows the widget's top row, starred ones first (D8).
+The watch face counts it down and moves on to the next departure by itself, from a timeline built
+when the snapshot arrives, so it needs no polling. It never outlives its data:
+- a stop carried forward after a failed refresh marks the time itself (`~3m`), since there's no
+  room for the widget's note;
+- a row with nothing left says so ("None"), or "?" when the last refresh failed;
+- a stop past the staleness threshold shows "?", never an old countdown;
+- with no stops at all it shows the watch face's no-data dash.
 
 **Refresh from the watch**: tapping the tile's Refresh line, or opening
 the watch app, asks the phone for one refresh of the widget's stops. The phone does the same

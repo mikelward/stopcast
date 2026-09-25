@@ -31,6 +31,24 @@
     <string name="tile_only_hidden">Nothing else to show with modes hidden</string>
     <!-- When no stop has a row: a stop's name, then its empty form ("No departures"). -->
     <string name="tile_stop_empty">%1$s · %2$s</string>
+    <!-- The complication's name in the watch face's picker. -->
+    <string name="complication_label">Next departure</string>
+    <!-- Short complication: the row has no departures left. -->
+    <string name="complication_none">None</string>
+    <!-- Short complication: the row's stop is out of date, or may be. -->
+    <string name="complication_unknown">\?</string>
+    <!-- Short complication, a carried-forward stop: "~" marks the countdown (^1) uncertain. -->
+    <string name="complication_uncertain_time">~^1</string>
+    <!-- Long complication: line, destination, then the countdown (^1). -->
+    <string name="complication_long_departure">%1$s to %2$s ^1</string>
+    <!-- Long complication, a carried-forward stop: the countdown (^1) marked uncertain. -->
+    <string name="complication_long_departure_uncertain">%1$s to %2$s ~^1</string>
+    <!-- Long complication: the row has no departures left. -->
+    <string name="complication_long_none">%1$s: no departures</string>
+    <!-- Long complication: no departures left, but the last refresh failed. -->
+    <string name="complication_long_unsure">%1$s: may be out of date</string>
+    <!-- Long complication: the row's stop is past the staleness threshold. -->
+    <string name="complication_long_stale">%1$s: out of date</string>
     <!-- Stops left out because the snapshot was too big to send. -->
     <plurals name="watch_more_stops_on_phone">
         <item quantity="one">%d more stop on phone</item>

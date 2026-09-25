@@ -103,6 +103,7 @@ dependencies {
     implementation(libs.androidx.wear.compose.foundation)
     implementation(libs.androidx.wear.tiles)
     implementation(libs.androidx.wear.protolayout)
+    implementation(libs.androidx.wear.complications.data.source)
     implementation(libs.androidx.concurrent.futures)
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
