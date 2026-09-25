@@ -12,7 +12,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import java.time.Duration
 import java.time.Instant
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -31,12 +30,7 @@ class WatchHomeActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 // Opening the app asks the phone for fresh departures (debounced).
                 WatchRefresh.request(this@WatchHomeActivity)
-                var looked = ingestExisting(this@WatchHomeActivity, store)
-                for (wait in LOOKUP_RETRIES) {
-                    if (looked) break
-                    delay(wait)
-                    looked = ingestExisting(this@WatchHomeActivity, store)
-                }
+                WatchSurfaces.lookUpRetrying(this@WatchHomeActivity, store)
             }
         }
         setContent {
@@ -54,10 +48,5 @@ class WatchHomeActivity : ComponentActivity() {
             }
             WatchHomeScreen(home, notice?.kind) { WatchRefresh.request(this@WatchHomeActivity) }
         }
-    }
-
-    private companion object {
-        /** The waits before each retry; after the last, the next start (or a publish) tries again. */
-        val LOOKUP_RETRIES = listOf(5.seconds, 15.seconds, 45.seconds)
     }
 }

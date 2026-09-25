@@ -1159,7 +1159,10 @@ widget it renders only what is stored, stamped with its age and marked stale rat
 off as live (D4).
 
 **The complication** puts one row's next departure on the watch face: the line and its countdown,
-with the destination when there's room. It shows the widget's top row, starred ones first (D8).
+with the destination when there's room. It shows the row the user picks for it in the watch
+face's editor, or by default the widget's top row, starred ones first (D8). The watch tells the
+phone which rows its complications show, so every snapshot keeps them even as departures
+reorder; a picked stop that leaves the widget's scope drops its pick and falls back to the top row.
 The watch face counts it down and moves on to the next departure by itself, from a timeline built
 when the snapshot arrives, so it needs no polling. It never outlives its data:
 - a stop carried forward after a failed refresh marks the time itself (`~3m`), since there's no
@@ -1200,7 +1203,8 @@ every fix sent is precise.
 
 All of stopcast's persisted config — watched stops, per-stop filters, row stars, starred
 journeys, any saved favorite destinations, the user's `app_key` — and the last-good snapshot (all but
-the crash-report opt-in, which is per install) travel through
+the crash-report opt-in, which is per install, and the rows paired watches' complications show,
+relearned from the watches still paired) travel through
 **Android's own backup and device-to-device transfer** — stopcast allows
 both, deliberately, so a phone swap keeps the user's setup rather than losing it
 (maintainer, 2026-09-18; the fleet's "never lose the user's work" over a literal

@@ -10,6 +10,7 @@ import app.stopcast.domain.RouteTopology
 import app.stopcast.domain.Staleness
 import app.stopcast.domain.StarredRow
 import app.stopcast.domain.StopArrivals
+import app.stopcast.domain.Terminating
 import java.time.Instant
 import kotlin.time.toJavaDuration
 import org.junit.Assert.assertEquals
@@ -170,5 +171,63 @@ class ComplicationTimelineTest {
         val star = StarredRow("940GA", "victoria", "inbound")
         val entries = ComplicationTimeline.entries(envelope(stop("940GA", emptyList()), starred = setOf(star)), fetched)
         assertEquals(ComplicationContent.Empty("VIC", "Victoria", uncertain = false), entries.at(fetched))
+    }
+
+    @Test
+    fun `a pick whose mode is hidden gives way to the default row`() {
+        val bus = departure(60, line = "73", destination = "Oxford Circus", mode = "bus")
+        val tube = departure(120)
+        val stop = StopArrivals(
+            stopId = "940GA",
+            stopName = "Stop 940GA",
+            departures = listOf(bus, tube),
+            fetchedAt = fetched,
+            lines = listOf(LineRef("73", "73", "bus"), LineRef("victoria", "Victoria", "tube")),
+        )
+        val env = envelope(stop, hidden = listOf("bus"))
+        val pick = StarredRow("940GA", "73", "inbound")
+        assertEquals(ComplicationTimeline.entries(env, fetched), ComplicationTimeline.entries(env, fetched, pick))
+        assertEquals("Victoria", (ComplicationTimeline.entries(env, fetched, pick).first().content as ComplicationContent.Departure).lineName)
+        // Shown again once the mode is.
+        val shown = ComplicationTimeline.entries(env.copy(hiddenModes = emptyList()), fetched, pick).first().content
+        assertEquals("Oxford Circus", (shown as ComplicationContent.Departure).destination)
+    }
+
+    @Test
+    fun `a pick the widget's terminating filter removes gives way to the default row`() {
+        // Every 73 here terminates at a stop no farther from the rider: the widget drops them.
+        val ending = departure(60, line = "73", destination = "Stop 940GNEAR", mode = "bus").copy(destinationId = "940GNEAR")
+        val stop = StopArrivals(
+            stopId = "940GA",
+            stopName = "Stop 940GA",
+            departures = listOf(ending, departure(120)),
+            fetchedAt = fetched,
+            lines = listOf(LineRef("73", "73", "bus"), LineRef("victoria", "Victoria", "tube")),
+            nearer = Terminating.Nearer(ids = setOf("940GNEAR")),
+        )
+        val env = envelope(stop)
+        val pick = StarredRow("940GA", "73", "inbound")
+        assertEquals(ComplicationTimeline.entries(env, fetched), ComplicationTimeline.entries(env, fetched, pick))
+    }
+
+    @Test
+    fun `a pick is judged by its own direction's services, not the other direction's`() {
+        // Outbound 73s all terminate nearer the rider; inbound ones don't. An outbound pick goes.
+        val outbound = departure(60, line = "73", destination = "Stop 940GNEAR", mode = "bus")
+            .copy(direction = "outbound", destinationId = "940GNEAR")
+        val inbound = departure(90, line = "73", destination = "Oxford Circus", mode = "bus")
+        val stop = StopArrivals(
+            stopId = "940GA",
+            stopName = "Stop 940GA",
+            departures = listOf(outbound, inbound, departure(120)),
+            fetchedAt = fetched,
+            lines = listOf(LineRef("73", "73", "bus"), LineRef("victoria", "Victoria", "tube")),
+            nearer = Terminating.Nearer(ids = setOf("940GNEAR")),
+        )
+        val env = envelope(stop)
+        assertEquals(false, ComplicationTimeline.shows(env, StarredRow("940GA", "73", "outbound"), fetched))
+        assertEquals(true, ComplicationTimeline.shows(env, StarredRow("940GA", "73", "inbound"), fetched))
+        // Still filtered once its only (terminating) service has left, not resurrected as empty.
+        assertEquals(false, ComplicationTimeline.shows(env, StarredRow("940GA", "73", "outbound"), fetched.plusSeconds(200)))
     }
 }

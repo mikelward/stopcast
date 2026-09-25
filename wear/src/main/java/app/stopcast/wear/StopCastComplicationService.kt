@@ -28,31 +28,45 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * The complication (dev-docs/wear-os.md): the next departure of the widget's top row on the watch
- * face, as a [ComplicationTimeline] the system counts down and advances by itself. It renders only
- * the stored envelope, never the network, and is pushed a fresh timeline when a new one arrives
+ * The complication (dev-docs/wear-os.md): the next departure of its row on the watch face, the row
+ * the user picked ([ComplicationConfigActivity]) or else the widget's top row, as a
+ * [ComplicationTimeline] the system counts down and advances by itself. It renders only the stored
+ * envelope, never the network, and is pushed a fresh timeline when a new one arrives
  * ([requestUpdate]); there's no update period.
  */
 class StopCastComplicationService : SuspendingTimelineComplicationDataSourceService() {
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationDataTimeline? {
-        val (envelope, topology) = try {
+        val id = request.complicationInstanceId
+        val (envelope, topology, row) = try {
             withContext(Dispatchers.IO) {
-                val store = WatchEnvelopeStore.from(this@StopCastComplicationService)
+                val context = this@StopCastComplicationService
+                val store = WatchEnvelopeStore.from(context)
                 store.load()
                 // A complication added before any other surface ran looks up what the phone already
                 // sent, off this render; a newer envelope then re-renders it.
-                WatchSurfaces.lookUpOnce(this@StopCastComplicationService, store)
-                (store.state.value as? WatchReceived.Received)?.envelope to RouteTopologyStore.load(this@StopCastComplicationService)
+                WatchSurfaces.lookUpOnce(context, store)
+                val envelope = (store.state.value as? WatchReceived.Received)?.envelope
+                // A picked stop that left the widget's scope: drop the pick (and tell the phone), so
+                // the complication shows the default row rather than hold the old one.
+                ComplicationSelections.clearIfGone(context, id, envelope)
+                // Cheap when unchanged, and heals a sync that failed.
+                ComplicationSelections.sync(context)
+                Triple(envelope, RouteTopologyStore.load(context), ComplicationSelections.get(context, id))
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // Unreadable storage: the no-data dash, never an old row passed off as current.
             Log.w(TAG, "complication envelope unreadable: ${e::class.simpleName}")
-            null to RouteTopology.EMPTY
+            Triple(null, RouteTopology.EMPTY, null)
         }
-        val entries = ComplicationTimeline.entries(envelope, Instant.now(), topology = topology)
+        val entries = ComplicationTimeline.entries(envelope, Instant.now(), row = row, topology = topology)
         return ComplicationRender.timeline(this, request.complicationType, entries)
+    }
+
+    /** A complication removed from the watch face: its pick goes, and the phone stops keeping it. */
+    override fun onComplicationDeactivated(complicationInstanceId: Int) {
+        ComplicationSelections.set(this, complicationInstanceId, null)
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {

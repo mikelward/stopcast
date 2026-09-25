@@ -556,8 +556,8 @@ it before committing to the design.
 5. **Done** (not released). The tile, with the staleness timeline. Its fresh-state **All stops**
    button waits for step 8.
 6. **Done** (not released). Watch-initiated refresh.
-7. **Done** (not released): the complication, on the default row. Next: its row picker, with the
-   selection synced back to the phone (and the disclosure that sync needs).
+7. **Done** (not released): the complication, and its row picker with the selection synced back
+   to the phone (and the disclosure that sync needs).
 8. The small watch app, which adds the tile's **All stops** button, with its foreground ticker
    and its own `*ScreenshotTest` in CI's allow-list.
 9. Play: the Wear OS track, screenshots, app-quality review, and filing the Data Safety answers

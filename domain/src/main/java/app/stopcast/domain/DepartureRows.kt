@@ -43,15 +43,19 @@ object DepartureRows {
         // in-app list does, so each platform gets its own header; the widget, which has no
         // per-platform headers, keeps one merged row per direction.
         splitPlatforms: Boolean = true,
+        // Each line's mode as the stop advertises it: a row whose predictions all leave the mode
+        // blank (TfL can omit `modeName`) takes it from here, so hidden modes and line colors hold.
+        lineModes: Map<String, String> = emptyMap(),
     ): List<DepartureRow> {
         // upcoming() has already dropped departed services and sorted soonest-first;
         // groupBy preserves that encounter order within each group.
         val live = Countdown.upcoming(departures, now)
         return live.groupBy { RowKey(it.lineId, directionKeyOf(it)) }
             .flatMap { (key, directionGroup) ->
-                byPlatform(directionGroup, splitPlatforms).map { (platform, group) -> Triple(key, platform, group) }
+                val mode = resolvedMode(directionGroup, lineModes[key.lineId])
+                byPlatform(directionGroup, splitPlatforms).map { (platform, group) -> RowGroup(key, platform, group, mode) }
             }
-            .map { (key, platform, group) ->
+            .map { (key, platform, group, mode) ->
                 val soonest = group.first()
                 DepartureRow(
                     stopId = stopId,
@@ -66,7 +70,7 @@ object DepartureRows {
                     directionKey = key.directionKey,
                     platform = platform,
                     destination = soonest.destination,
-                    mode = soonest.mode,
+                    mode = mode,
                     upcoming = group,
                     fetchedAt = fetchedAt,
                     // Marks the row only when the line is actually disrupted — a
@@ -102,6 +106,7 @@ object DepartureRows {
                 forStop(
                     stop.stopId, stop.stopName, shown, now, lineStatuses, stop.fetchedAt,
                     stop.clusterId, stop.stopLetter, stop.bearing, stop.towards, splitPlatforms,
+                    lineModes = stop.lines.associate { it.id to it.mode },
                 )
             // A line whose every live prediction was hidden has departures, just none that help: it
             // mustn't surface as a "No departures" status row. Counted over live predictions only,
@@ -694,10 +699,45 @@ object DepartureRows {
         return group.groupBy { numberOf.getValue(it) }.toList()
     }
 
-    private fun directionKeyOf(d: Departure): String =
+    /**
+     * Whether the widget would show [row] at [stop] at [now]: the stop serves its line (in its
+     * departures or its lines), the line's mode isn't in [hiddenModes], and the terminating filter
+     * hasn't removed the row's own services (its line and direction; [Terminating]). A line with no
+     * predictions right now still counts: the row shows its empty form. Judged on the services
+     * still to come, or once they've all gone on the ones the stop had, so a row whose services
+     * were all filtered stays filtered after they leave. A star or a complication's pick never
+     * adds a service the widget leaves out.
+     */
+    fun shows(stop: StopArrivals, row: StarredRow, hiddenModes: Set<String>, now: Instant): Boolean {
+        if (stop.stopId != row.stopId) return false
+        val line = stop.lines.firstOrNull { it.id == row.lineId }
+        val lineServices = stop.departures.filter { it.lineId == row.lineId }
+        if (line == null && lineServices.isEmpty()) return false
+        val services = lineServices.filter { directionKeyOf(it) == row.directionKey }
+        val judged = services.filter { it.expectedArrival > now }.ifEmpty { services }
+        val kept = Terminating.drop(judged, stop.nearer)
+        if (judged.isNotEmpty() && kept.isEmpty()) return false
+        // The mode the widget's row carries, by the same rule ([resolvedMode]): never another
+        // direction's, so the two can't disagree about a row whose predictions all omit it.
+        val mode = resolvedMode(kept.sortedBy { it.expectedArrival }, line?.mode)
+        return !HiddenModes.isHidden(mode, hiddenModes)
+    }
+
+    /** The direction key [d]'s row carries ([DepartureRow.directionKey], a [StarredRow]'s too). */
+    fun directionKeyOf(d: Departure): String =
         d.direction.ifBlank { d.platform?.takeIf(String::isNotBlank) ?: d.destination }
 
+    /**
+     * A row's mode: the first its services (soonest first) name, else the stop's advertised
+     * [lineMode], else blank. TfL can omit a prediction's `modeName`, so the soonest one alone
+     * could let a hidden mode's row through.
+     */
+    private fun resolvedMode(services: List<Departure>, lineMode: String?): String =
+        services.firstOrNull { it.mode.isNotBlank() }?.mode ?: lineMode.orEmpty()
+
     private data class RowKey(val lineId: String, val directionKey: String)
+
+    private data class RowGroup(val key: RowKey, val platform: String, val group: List<Departure>, val mode: String)
 }
 
 /**

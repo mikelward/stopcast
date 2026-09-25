@@ -70,6 +70,7 @@ class WatchPublisher(
         snapshot: DeparturesSnapshot?,
         starred: Set<StarredRow>,
         hiddenModes: Set<String> = emptySet(),
+        selected: Set<StarredRow> = emptySet(),
         force: Boolean = false,
         emptyIfNone: Boolean = false,
     ): Outcome {
@@ -77,7 +78,7 @@ class WatchPublisher(
         return try {
             // Asked first, so a phone with no watch app never builds or hashes an envelope.
             if (!channel.watchInstalled()) return Outcome.NoWatch
-            val payload = WatchEnvelopes.build(snapshot, starred, hiddenModes = hiddenModes, now = now())
+            val payload = WatchEnvelopes.build(snapshot, starred, selected = selected, hiddenModes = hiddenModes, now = now())
             val hash = sha256(payload.bytes)
             if (!force && hash == marker.get()) return Outcome.Unchanged
             channel.put(payload)

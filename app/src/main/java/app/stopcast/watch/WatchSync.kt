@@ -1,9 +1,11 @@
 package app.stopcast.watch
 
 import android.content.Context
+import androidx.core.content.edit
 import android.content.SharedPreferences
 import app.stopcast.StopcastDebugLog
 import app.stopcast.data.DataStoreSnapshotStore
+import app.stopcast.data.WatchComplicationRows
 import app.stopcast.data.DataStoreStarredRowsStore
 import app.stopcast.data.HiddenModesSetting
 import app.stopcast.data.WatchPayload
@@ -16,6 +18,8 @@ import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.wearable.Asset
 import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.DataItem
+import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.CancellationException
@@ -92,6 +96,95 @@ class PrefsPublishMarker(private val prefs: SharedPreferences) : PublishMarker {
 }
 
 /**
+ * The rows each paired watch's complications are set to, as it last synced them
+ * ([WatchSyncContract.COMPLICATION_ROWS_PATH]), kept per watch (its Data Layer node) so one watch's
+ * sync never drops another's picks: row identities only. Every envelope holds the union, even when
+ * departures reorder. A watch's set is replaced whole by its sync, and dropped when it deletes it.
+ */
+object ComplicationRowsStore {
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences("watch_complication_rows", Context.MODE_PRIVATE)
+
+    /** Every watch's rows together; a set that can't be read counts as none. */
+    fun load(context: Context): Set<StarredRow> =
+        prefs(context).all.values.flatMapTo(LinkedHashSet()) { stored ->
+            (stored as? String)?.let { WatchComplicationRows.decode(it.encodeToByteArray()) }
+                ?: emptySet<StarredRow>().also { StopcastDebugLog.warning("watch: complication rows unreadable") }
+        }
+
+    /**
+     * Takes a watch's rows item ([deleted]: it removed it), keeping its rows by the node that wrote
+     * it. An unreadable item keeps what's stored rather than drop the watch's rows. True when they
+     * changed; an item on another path is ignored.
+     */
+    fun ingest(context: Context, item: DataItem, deleted: Boolean): Boolean = ingest(context, item, deleted, since = null)
+
+    /** [ingest], but skipped for a node whose rows were saved since the [since] generations. */
+    private fun ingest(context: Context, item: DataItem, deleted: Boolean, since: Map<String, Long>?): Boolean {
+        if (item.uri.path != WatchSyncContract.COMPLICATION_ROWS_PATH) return false
+        val node = item.uri.host ?: return false
+        val rows = if (deleted) {
+            emptySet()
+        } else {
+            DataMapItem.fromDataItem(item).dataMap.getByteArray(WatchSyncContract.COMPLICATION_ROWS_KEY)
+                ?.let(WatchComplicationRows::decode)
+        }
+        if (rows == null) {
+            StopcastDebugLog.warning("watch: complication rows unreadable")
+            return false
+        }
+        return if (since == null) save(context, node, rows) else saveIfUnchanged(context, node, rows, since)
+    }
+
+    /**
+     * Relearns every watch's rows from the items the Data Layer already holds: a phone whose data
+     * was cleared, or that gained this after the watch wrote them, gets no change event for an
+     * unchanged item. Once per process start, in the background; true when any changed. A watch
+     * whose change event was saved while the lookup ran keeps that newer set, never the item the
+     * lookup read before it.
+     */
+    suspend fun recover(context: Context): Boolean {
+        val since = generations()
+        val items = Wearable.getDataClient(context.applicationContext).dataItems.await()
+        return try {
+            items.map { ingest(context, it, deleted = false, since = since) }.any { it }
+        } finally {
+            items.release()
+        }
+    }
+
+    /** Each node's count of saves in this process: what [saveIfUnchanged] compares against. */
+    private val generation = HashMap<String, Long>()
+
+    /** A copy of every node's save count now, to pass to [saveIfUnchanged] later. */
+    fun generations(): Map<String, Long> = synchronized(generation) { generation.toMap() }
+
+    /** Replaces [node]'s rows (none drops them); true when they changed. */
+    fun save(context: Context, node: String, rows: Set<StarredRow>): Boolean = synchronized(generation) {
+        generation[node] = (generation[node] ?: 0) + 1
+        write(context, node, rows)
+    }
+
+    /**
+     * [save], unless [node]'s rows were saved since [since] was taken ([generations]): a lookup's
+     * older item never overwrites a newer change event. True when they changed.
+     */
+    fun saveIfUnchanged(context: Context, node: String, rows: Set<StarredRow>, since: Map<String, Long>): Boolean =
+        synchronized(generation) {
+            if (generation[node] != since[node]) return@synchronized false
+            write(context, node, rows)
+        }
+
+    private fun write(context: Context, node: String, rows: Set<StarredRow>): Boolean {
+        val prefs = prefs(context)
+        val encoded = WatchComplicationRows.encode(rows).decodeToString().takeIf { rows.isNotEmpty() }
+        if (prefs.getString(node, null) == encoded) return false
+        prefs.edit { if (encoded == null) remove(node) else putString(node, encoded) }
+        return true
+    }
+}
+
+/**
  * Wires the phone's watch sync (dev-docs/wear-os.md *Sync*): every stored snapshot and every star
  * change is published once it settles, a failure is retried by [WatchPublishWorker], and a watch
  * that reconnects gets the current snapshot again ([PhoneWearListenerService]).
@@ -133,8 +226,16 @@ object WatchSync {
                 StopcastDebugLog.warning("watch: stored state unreadable: %s", e::class.simpleName)
                 return@withLock WatchPublisher.Outcome.Failed
             }
-            // The same in-process setting the widget reads, so the watch leaves out what it does.
-            publisher(appContext).publish(snapshot, stars, HiddenModesSetting.loaded(), force = force, emptyIfNone = emptyIfNone)
+            // The same in-process setting the widget reads, so the watch leaves out what it does;
+            // and the rows the watch's complications are set to, kept in the envelope after stars.
+            publisher(appContext).publish(
+                snapshot,
+                stars,
+                HiddenModesSetting.loaded(),
+                selected = ComplicationRowsStore.load(appContext),
+                force = force,
+                emptyIfNone = emptyIfNone,
+            )
         }
     }
 
@@ -150,6 +251,14 @@ object WatchSync {
     /** Starts publishing for the life of the process. */
     fun start(context: Context, scope: CoroutineScope) {
         val appContext = context.applicationContext
+        scope.launch(Dispatchers.IO) {
+            // A failed lookup is retried with backoff: an unchanged item never raises a change event,
+            // so nothing else would bring the rows back. Past the last wait, the stored rows stand
+            // until the next start or the watch's next change.
+            WatchPublisher.keepCollecting(log = { StopcastDebugLog.warning("watch: complication rows lookup: %s", it) }) {
+                if (ComplicationRowsStore.recover(appContext)) WatchPublishWorker.enqueue(appContext, force = false)
+            }
+        }
         scope.launch(Dispatchers.IO) {
             // A store that can't be read stops the collection, never the app; it's restarted a few
             // times with backoff, then left to the next start (or a watch reconnecting). The watch

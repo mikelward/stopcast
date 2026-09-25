@@ -1849,7 +1849,7 @@ and these carry the rest as their own PRs:
         the system and replaced by the next when it leaves, then a stale entry at the threshold.
         - A carried-forward stop's entries carry the uncertainty marker.
         - It shows the default row: the top starred row, else the widget's first row.
-  - [ ] Complication row picker: the user picks which row feeds each complication.
+  - [x] Complication row picker: the user picks which row feeds each complication.
         - The selection syncs back to the phone. This watch-to-phone sync is added to the SPEC
           *Privacy* / `docs/PRIVACY.md` watch paragraph and the Data Safety determination in the
           same PR.

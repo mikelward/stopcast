@@ -50,7 +50,7 @@ details, app interactions, device details and identifiers, and the approximate r
 derives from your IP address, but never your location, stops or journeys. The second is **your
 own Android backup and device-to-device transfer**, if you have it enabled: like any app's data, your saved stopcast
 data (your settings and its last-good departures snapshot) rides it, so a phone swap keeps your
-setup — all but the crash-report opt-in, which stays with the install. That is Android's channel, tied to your Google account — not something stopcast sends.
+setup — all but the crash-report opt-in, which stays with the install, and the rows your watch's complications show, which the phone relearns from the watch. That is Android's channel, tied to your Google account — not something stopcast sends.
 The third is a **bug report you choose to send** (see *Sending a bug report* below): it hands
 the app you pick a diagnostic report that, unlike everything else here, **includes your exact
 location and a screenshot of the screen you sent it from** — but only after a consent screen
@@ -69,7 +69,7 @@ can show it too: the widget's stops (their names and IDs, and the nearby stops e
 against, which are worked out from your phone's last location), their departures, which rows
 you've starred, and which kinds of transport you've hidden. It never sends your coordinates or your API keys, and the watch never contacts TfL,
 National Rail or anything else itself. In the other direction, the watch sends the phone its
-requests to refresh, which carry only a random request number, and will send the row each StopCast complication shows. This goes through **Google Play
+requests to refresh, which carry only a random request number, and the row each StopCast complication shows (its stop ID, line and direction), so the phone keeps those rows in what it sends. This goes through **Google Play
 services' Wearable Data Layer**: over Bluetooth when the watch is near, but when it isn't (a watch
 on Wi-Fi or mobile data) it may pass **through Google's servers**. Nothing is sent when no paired
 watch has the app. The watch keeps only the latest copy, never backs it up, and doesn't log it.
