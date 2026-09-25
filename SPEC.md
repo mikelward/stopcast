@@ -103,7 +103,23 @@ The app finds stops two ways:
   location couldn't update, with a **Try again**. A set that could only be resolved *from* such a
   fix (a cold start with no fresh fix) shows the same banner worded "your last-known area." The
   banner clears the moment a fresh fix resolves. Gating on the fix's *measured accuracy/age*
-  (a fused fix can itself be Wi-Fi-derived) is a later refinement (`TODO.md`). The list is a
+  (a fused fix can itself be Wi-Fi-derived) is a later refinement (`TODO.md`).
+
+  A **coarse fresh fix** — a network one, used because GPS didn't answer within the short grace —
+  can be hundreds of meters out, so the stops nearest the rider can be missing (maintainer bug
+  report, 2026-09-25). Two things keep that from standing (maintainer, 2026-09-25):
+  - **The last precise fix is remembered for 10 minutes**, in memory only. A coarse fix whose own
+    accuracy circle still contains it — the rider may well not have moved — defers to it, and the
+    list is built from the precise fix. It is still only a guess (the rider may have moved within
+    the circle), so it is treated as the coarse case below: banner, and a GPS check that confirms
+    or moves it.
+  - Otherwise the list is shown from the coarse fix at once, under an **"Approximate location"**
+    banner, and GPS is **asked again** for a few more seconds. A precise fix within 100 m confirms
+    the list and clears the banner; a farther one **moves the list** to it, re-picked as a refresh
+    does. None in time, and the banner stays, with its Try again. "No stops found nearby" from a
+    coarse fix says "Approximate location" too, and looks again from any different precise fix. The ask is foreground-only: it
+    stops when the list is left or the app backgrounded, and is made again on return while the
+    banner still shows. The list is a
   **useful, scannable spread, not a raw nearest-N**:
   - a **line appears once**, not once per stop it passes — a raw nearest-N repeats the same
     bus route several times, one per adjacent stop, which reads as noise;

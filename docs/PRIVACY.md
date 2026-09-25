@@ -95,6 +95,13 @@ logged or sent anywhere. For the widget, the departures at a journey's nearer st
 them reach the other end, are saved with the widget's other departures on the device. Showing a journey's trains fetches the departures at its nearer stop
 from TfL, like any other stop.
 
+**Held in memory only:** the last precise (GPS) position, for up to 10 minutes, so a rough
+network position that comes in while you haven't moved doesn't replace it. It is never written to
+storage or logged, is sent only as the position of a nearby-stop lookup (and, when a lookup used
+it, in a bug report you choose to send, as described below). Past 10 minutes it is no longer used,
+and it is deleted the next time the app takes a location or when the app's process ends, whichever
+comes first.
+
 **Kept on the device, never backed up:** to skip a repeat stop lookup when you reopen the app
 near where you last used it, stopcast keeps the **positions of its last few nearby-stop lookups**
 (up to four places) and the stops found around each, for up to a day, in the app's cache
