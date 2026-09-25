@@ -208,8 +208,14 @@ class RailAwareTflClient(
 /** TfL's mode id for National Rail lines, which a Darwin departure carries too. */
 const val NATIONAL_RAIL_MODE = "national-rail"
 
-/** The operators whose trains TfL's own feed carries, left out of a National Rail board. */
-val TFL_RUN_OPERATORS = setOf("LO", "XR")
+/**
+ * The operators whose trains TfL's own feed carries, left out of a National Rail board: London
+ * Overground (LO), the Elizabeth line (XR), and London Underground (LT, its London Transport code),
+ * which a board lists where tube trains share National Rail platforms (the District at Richmond,
+ * the Bakerloo north of Queen's Park). TfL's rows for them carry the real line, its status and its
+ * route; a board's copy would add a "London Underground" line (pill "LU") with neither.
+ */
+val TFL_RUN_OPERATORS = setOf("LO", "XR", "LT")
 
 /**
  * A National Rail operator's TfL-style line id ("Great Northern" → `great-northern`), so its

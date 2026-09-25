@@ -1141,8 +1141,8 @@ surface.)
   Where TfL lists one station under two National Rail ids, its board is fetched once and shown
   under one of them, the first whose own TfL fetch works, which keeps it while it keeps asking.
   Only times National Rail gives are shown: a cancelled train, or one "Delayed" with no estimate,
-  is left out, and the TfL-run services it also lists (Overground, Elizabeth line) come from TfL
-  alone. The optional dependency fails on its own: a failed board (down, rate-limited, a bad key,
+  is left out, and the TfL-run services it also lists (Overground, Elizabeth line, and tube trains
+  on shared platforms, such as the District at Richmond) come from TfL alone. The optional dependency fails on its own: a failed board (down, rate-limited, a bad key,
   a garbled answer) leaves the station's TfL departures in place, its National Rail lines' status rows saying
   "No data", and is logged; it never fails the stop or blanks the list. **Cost:
   £0**, one request per rail station per refresh against the user's own key's limit.
