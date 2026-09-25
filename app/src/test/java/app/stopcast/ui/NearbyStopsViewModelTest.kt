@@ -7,6 +7,8 @@ import app.stopcast.domain.LocationProvider
 import app.stopcast.domain.StopFinder
 import app.stopcast.domain.StopLocation
 import app.stopcast.domain.TflException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -73,8 +75,10 @@ class NearbyStopsViewModelTest {
         }
     }
 
+    // With the nearby surface on screen, as it is when the list is shown.
     private fun vm(location: LocationProvider, finder: StopFinder) =
         NearbyStopsViewModel(location = location, finder = finder, io = dispatcher)
+            .also { it.resumeRefining() }
 
     // A stop [meters] due north of the origin (lon 0), so distance is controllable in meters.
     private fun stop(id: String, meters: Double, mode: String) = StopLocation(
@@ -431,6 +435,267 @@ class NearbyStopsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(NearbyStopsViewModel.State.Empty(origin), model.state.value)
+    }
+
+    /** A provider whose fresh fix is a coarse network one; [precise] is what GPS then says (or null). */
+    private class CoarseThenPrecise(
+        var coarse: Coordinates,
+        var precise: Coordinates?,
+    ) : LocationProvider {
+        var preciseAsked = 0
+        override suspend fun current(forceFresh: Boolean): LocationFix =
+            LocationFix(coarse, isFallback = false, isCoarse = true)
+
+        override suspend fun precise(): Coordinates? {
+            preciseAsked++
+            return precise
+        }
+    }
+
+    // [meters] due north of the origin.
+    private fun north(meters: Double) = Coordinates(meters / 111_195.0, 0.0)
+
+    @Test
+    fun `a set shown from a coarse fix is flagged approximate and a precise fix is asked for`() = runTest {
+        val location = CoarseThenPrecise(coarse = origin, precise = null)
+        val model = vm(location, FakeFinder { listOf(stop("b1", 80.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        assertTrue(model.state.value is NearbyStopsViewModel.State.Ready)
+        assertEquals(1, location.preciseAsked)
+        // GPS never answered: the set stays, flagged, with nothing to move to.
+        assertEquals(LocationBanner.COARSE, model.locationBanner.value)
+        assertEquals(null, model.refinement.value)
+    }
+
+    @Test
+    fun `a precise fix that agrees with the coarse one just clears the flag`() = runTest {
+        val model = vm(CoarseThenPrecise(coarse = origin, precise = north(40.0)), FakeFinder { listOf(stop("b1", 80.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(null, model.locationBanner.value)
+        assertEquals(null, model.refinement.value)
+        assertEquals(origin, (model.state.value as NearbyStopsViewModel.State.Ready).location)
+    }
+
+    @Test
+    fun `a precise fix far from the coarse one moves the set there`() = runTest {
+        val precise = north(400.0)
+        val finder = FakeFinder { listOf(stop("b1", 80.0, "bus")) }
+        val model = vm(CoarseThenPrecise(coarse = origin, precise = precise), finder)
+        model.locate()
+        advanceUntilIdle()
+        val refinement = model.refinement.value!!
+        assertEquals(origin, refinement.from)
+        assertEquals(precise, refinement.precise)
+
+        model.applyRefinement(refinement)
+        advanceUntilIdle()
+        val ready = model.state.value as NearbyStopsViewModel.State.Ready
+        assertEquals(precise, ready.location)
+        assertEquals(precise.latitude, finder.lastLatitude!!, 1e-9)
+        // The set now stands on a precise fix, so nothing is flagged or pending.
+        assertEquals(null, model.locationBanner.value)
+        assertEquals(null, model.refinement.value)
+    }
+
+    @Test
+    fun `a refinement for a set no longer shown moves nothing but restarts its fetch`() = runTest {
+        val location = CoarseThenPrecise(coarse = origin, precise = north(400.0))
+        val model = vm(location, FakeFinder { listOf(stop("b1", 80.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        val stale = model.refinement.value!!
+        // A refresh re-located somewhere else first (and its own precise fix is still out).
+        location.coarse = north(1_000.0)
+        location.precise = null
+        model.relocate()
+        advanceUntilIdle()
+        var restarted: NearbyStopsViewModel.State.Ready? = null
+        model.applyRefinement(stale) { restarted = it }
+        advanceUntilIdle()
+        assertEquals(north(1_000.0), (model.state.value as NearbyStopsViewModel.State.Ready).location)
+        assertEquals(north(1_000.0), restarted?.location)
+    }
+
+    @Test
+    fun `no stops found from a coarse fix looks again from the precise one`() = runTest {
+        val precise = north(400.0)
+        // Nothing within reach of the coarse fix; a stop by the precise one.
+        val finder = object : StopFinder {
+            override suspend fun nearbyStops(
+                latitude: Double,
+                longitude: Double,
+                radiusMeters: Int,
+                stopTypes: List<String>,
+            ) = if (latitude > 0.0) listOf(stop("b1", 480.0, "bus")) else emptyList()
+        }
+        val model = vm(CoarseThenPrecise(coarse = origin, precise = precise), finder)
+        model.locate()
+        advanceUntilIdle()
+        assertTrue(model.state.value is NearbyStopsViewModel.State.Empty)
+        val refinement = model.refinement.value!!
+        model.applyRefinement(refinement)
+        advanceUntilIdle()
+        assertEquals(precise, (model.state.value as NearbyStopsViewModel.State.Ready).location)
+    }
+
+    @Test
+    fun `leaving the nearby surface stops the precise follow-up, and returning asks again`() = runTest {
+        val gate = CompletableDeferred<Coordinates?>()
+        val location = object : LocationProvider {
+            var asked = 0
+            var canceled = 0
+            override suspend fun current(forceFresh: Boolean) =
+                LocationFix(origin, isFallback = false, isCoarse = true)
+            override suspend fun precise(): Coordinates? {
+                asked++
+                return try {
+                    gate.await()
+                } catch (e: CancellationException) {
+                    canceled++
+                    throw e
+                }
+            }
+        }
+        val model = vm(location, FakeFinder { listOf(stop("b1", 80.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(1, location.asked)
+        model.pauseRefining()
+        advanceUntilIdle()
+        assertEquals(1, location.canceled)
+        assertEquals(LocationBanner.COARSE, model.locationBanner.value)
+        model.resumeRefining()
+        advanceUntilIdle()
+        assertEquals(2, location.asked)
+        // Already asking: a second resume doesn't start another request.
+        model.resumeRefining()
+        advanceUntilIdle()
+        assertEquals(2, location.asked)
+    }
+
+    @Test
+    fun `an empty coarse outcome is still refined after the surface comes back`() = runTest {
+        val location = CoarseThenPrecise(coarse = origin, precise = null)
+        val model = vm(location, FakeFinder { emptyList() })
+        model.locate()
+        advanceUntilIdle()
+        assertTrue(model.state.value is NearbyStopsViewModel.State.Empty)
+        // No precise fix came: "no stops nearby" stays flagged as from a coarse fix.
+        assertEquals(LocationBanner.COARSE, model.locationBanner.value)
+        assertEquals(1, location.preciseAsked)
+        model.pauseRefining()
+        model.resumeRefining()
+        advanceUntilIdle()
+        assertEquals(2, location.preciseAsked)
+    }
+
+    @Test
+    fun `a locate that lands while the surface is away asks for a precise fix only on return`() = runTest {
+        val location = CoarseThenPrecise(coarse = origin, precise = null)
+        val model = vm(location, FakeFinder { listOf(stop("b1", 80.0, "bus")) })
+        model.locate()
+        model.pauseRefining()
+        advanceUntilIdle()
+        assertTrue(model.state.value is NearbyStopsViewModel.State.Ready)
+        assertEquals(LocationBanner.COARSE, model.locationBanner.value)
+        assertEquals(0, location.preciseAsked)
+        model.resumeRefining()
+        advanceUntilIdle()
+        assertEquals(1, location.preciseAsked)
+    }
+
+    @Test
+    fun `no precise fix is asked for before the nearby surface first shows`() = runTest {
+        val location = CoarseThenPrecise(coarse = origin, precise = null)
+        // An overlay restored on top: the surface hasn't composed, so it never resumed.
+        val model = NearbyStopsViewModel(
+            location = location,
+            finder = FakeFinder { listOf(stop("b1", 80.0, "bus")) },
+            io = dispatcher,
+        )
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(0, location.preciseAsked)
+        model.resumeRefining()
+        advanceUntilIdle()
+        assertEquals(1, location.preciseAsked)
+    }
+
+    @Test
+    fun `leaving drops an unapplied refinement and returning asks for a fresh precise fix`() = runTest {
+        val location = CoarseThenPrecise(coarse = origin, precise = north(1_000.0))
+        val model = vm(location, FakeFinder { listOf(stop("b1", 80.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        assertTrue(model.refinement.value != null)
+        model.pauseRefining()
+        assertEquals(null, model.refinement.value)
+        model.resumeRefining()
+        advanceUntilIdle()
+        assertEquals(2, location.preciseAsked)
+        assertTrue(model.refinement.value != null)
+    }
+
+    @Test
+    fun `returning to a confirmed set doesn't ask for a precise fix again`() = runTest {
+        val location = CoarseThenPrecise(coarse = origin, precise = origin)
+        val model = vm(location, FakeFinder { listOf(stop("b1", 80.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(null, model.locationBanner.value)
+        model.pauseRefining()
+        model.resumeRefining()
+        advanceUntilIdle()
+        assertEquals(1, location.preciseAsked)
+    }
+
+    @Test
+    fun `an empty coarse outcome looks again even from a precise fix under 100 m away`() = runTest {
+        val precise = north(50.0)
+        val finder = object : StopFinder {
+            override suspend fun nearbyStops(
+                latitude: Double,
+                longitude: Double,
+                radiusMeters: Int,
+                stopTypes: List<String>,
+            ) = if (latitude > 0.0) listOf(stop("b1", 80.0, "bus")) else emptyList()
+        }
+        val model = vm(CoarseThenPrecise(coarse = origin, precise = precise), finder)
+        model.locate()
+        advanceUntilIdle()
+        assertTrue(model.state.value is NearbyStopsViewModel.State.Empty)
+        model.applyRefinement(model.refinement.value!!)
+        advanceUntilIdle()
+        assertEquals(precise, (model.state.value as NearbyStopsViewModel.State.Ready).location)
+    }
+
+    @Test
+    fun `a refinement withdrawn by a relocation in flight doesn't cancel it`() = runTest {
+        val model = vm(CoarseThenPrecise(coarse = origin, precise = north(1_000.0)), FakeFinder { listOf(stop("b1", 80.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        val captured = model.refinement.value!!
+        // A refresh starts before the UI applies what it captured; the old set is still shown.
+        model.relocate()
+        model.applyRefinement(captured)
+        advanceUntilIdle()
+        assertEquals(origin, (model.state.value as NearbyStopsViewModel.State.Ready).location)
+    }
+
+    @Test
+    fun `a fallback fix is not refined, since it is the last-known one`() = runTest {
+        val location = object : LocationProvider {
+            var asked = 0
+            override suspend fun current(forceFresh: Boolean) = LocationFix(origin, isFallback = true, isCoarse = true)
+            override suspend fun precise(): Coordinates? = null.also { asked++ }
+        }
+        val model = vm(location, FakeFinder { listOf(stop("b1", 80.0, "bus")) })
+        model.locate()
+        advanceUntilIdle()
+        assertEquals(LocationBanner.APPROXIMATE, model.locationBanner.value)
+        assertEquals(0, location.asked)
     }
 
     @Test

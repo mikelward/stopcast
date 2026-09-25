@@ -144,8 +144,11 @@
          `location_approximate`: the set was resolved from a last-known fallback fix (a fresh fix
          failed — e.g. no GPS on the Underground), so it may be a previous position.
          `location_update_failed`: a refresh couldn't get a fresh fix, so the current set was kept
-         rather than jumping to a stale one. Both clear once a fresh fix resolves. -->
+         rather than jumping to a stale one. Both clear once a fresh fix resolves.
+         `location_coarse`: the stops were found from a rough network fix because GPS didn't answer
+         in time; it clears when GPS confirms them, or the list moves to where GPS puts you. -->
     <string name="location_approximate">Showing your last-known area</string>
+    <string name="location_coarse">Approximate location</string>
     <string name="location_update_failed">Couldn\'t update your location</string>
 
     <!-- Shown in the widget picker. -->

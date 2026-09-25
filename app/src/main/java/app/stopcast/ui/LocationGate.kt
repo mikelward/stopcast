@@ -66,6 +66,9 @@ fun LocationGate(
     // Open "Find a station" (SPEC *Finding stops*), which needs no location — so a user who denied
     // it, or whose fix or lookup failed, can still look a station up. Null hides the button.
     onFindStation: (() -> Unit)? = null,
+    // "No stops found nearby" was worked out from a coarse (network) fix, which can be hundreds of
+    // meters out, so it says so until a precise fix confirms or replaces it (SPEC *Finding stops*).
+    approximate: Boolean = false,
 ) {
     // Saved so an open About dialog survives rotation on the gate.
     var showAbout by rememberSaveable { mutableStateOf(false) }
@@ -110,6 +113,7 @@ fun LocationGate(
 
             is NearbyStopsViewModel.State.Empty -> {
                 Body(stringResource(R.string.location_no_stops))
+                if (approximate) Body(stringResource(R.string.location_coarse))
                 Action(stringResource(R.string.try_again), onRetry)
             }
 

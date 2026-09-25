@@ -18,6 +18,8 @@ object FixDiagnostics {
         FRESH("fresh"),
         RECENT_CACHED("recent cached"),
         FALLBACK("last-known fallback"),
+        /** The follow-up request to GPS/fused after a coarse fix was shown ([LocationProvider.precise]). */
+        PRECISE("precise follow-up"),
     }
 
     fun describe(source: Source, provider: String, accuracyMeters: Float?, ageMillis: Long): String {

@@ -86,7 +86,42 @@ class AndroidLocationProvider(
             freshFix = { requestFreshFix(manager, providers)?.also { fresh = it }?.coordinates },
         )
         if (coordinates != null) logFix(fresh, cached, fromFallback)
-        return coordinates?.let { LocationFix(it, isFallback = fromFallback) }
+        // Coarse: the fix used is a fresh one from network/passive while precise location is
+        // granted, i.e. GPS/fused missed the grace. The caller shows it as approximate and asks
+        // [precise] for a better one (SPEC *Finding stops*). Under a coarse-only grant a network
+        // fix is as good as it gets, so it is not flagged.
+        val usedFresh = fresh
+        val isCoarse = !fromFallback && usedFresh != null && hasFineLocationPermission() &&
+            !isAccurateProvider(usedFresh.provider)
+        return coordinates?.let { LocationFix(it, isFallback = fromFallback, isCoarse = isCoarse) }
+    }
+
+    override suspend fun precise(): Coordinates? {
+        if (!hasFineLocationPermission()) return null
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+        val providers = enabledProviders(manager).filter(::isAccurateProvider)
+        if (providers.isEmpty()) {
+            warn("precise fix skipped: no GPS or fused provider enabled")
+            return null
+        }
+        val fix = raceFix(
+            providers,
+            FixSelection.PRECISE_FIX_TIMEOUT_MILLIS,
+            coarseGraceMillis = 0,
+            isAccurate = { true },
+            onTimeout = { provider -> warn("precise fix: $provider provider timed out") },
+        ) { provider ->
+            requestFreshFixFrom(manager, provider)
+        }
+        if (fix == null) {
+            warn("precise fix: none arrived")
+            return null
+        }
+        // Checked again: permission can be revoked while GPS was being waited on.
+        if (!hasFineLocationPermission()) return null
+        val ageMillis = (SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos) / 1_000_000
+        warn(FixDiagnostics.describe(FixDiagnostics.Source.PRECISE, fix.provider, fix.accuracyMeters, ageMillis))
+        return fix.coordinates
     }
 
     /**

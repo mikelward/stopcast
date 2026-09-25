@@ -16,8 +16,13 @@ data class Coordinates(val latitude: Double, val longitude: Double)
  * cached one the fast path returns — has [isFallback] false. The caller decides what a fallback
  * means (SPEC *Finding stops*): don't jump the set to it on a re-locate, and label a set shown
  * from one as "your last-known area."
+ *
+ * [isCoarse] is true when a fresh fix came only from a coarse source (the network or passive
+ * provider) under a precise grant, because GPS/fused didn't answer within the short grace: fast
+ * enough to show something at once (underground), but it can be hundreds of meters out. The caller
+ * labels a set shown from one as approximate and asks [LocationProvider.precise] for a better fix.
  */
-data class LocationFix(val coordinates: Coordinates, val isFallback: Boolean)
+data class LocationFix(val coordinates: Coordinates, val isFallback: Boolean, val isCoarse: Boolean = false)
 
 /**
  * Supplies the device's current position for the nearby-stops search. A domain seam so
@@ -44,4 +49,12 @@ interface LocationProvider {
      * within a bounded age if the fresh request fails (that fallback is flagged [LocationFix.isFallback]).
      */
     suspend fun current(forceFresh: Boolean = false): LocationFix?
+
+    /**
+     * A fresh fix from the **accurate** sources only (fused/GPS), given longer than [current]'s
+     * short grace, or `null` when none arrives in time (or precise location isn't granted). Asked
+     * after [current] returned an [LocationFix.isCoarse] fix, so a list shown from a network fix
+     * can move to where the rider really is once GPS answers (SPEC *Finding stops*).
+     */
+    suspend fun precise(): Coordinates? = null
 }
