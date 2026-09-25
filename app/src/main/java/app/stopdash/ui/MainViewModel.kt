@@ -472,19 +472,21 @@ class MainViewModel(
     private val _state = MutableStateFlow<DeparturesUiState>(DeparturesUiState.Loading)
     val state: StateFlow<DeparturesUiState> = _state.asStateFlow()
 
-    // The "More" buttons to offer: the modes (or the generic bucket) that still have an unrevealed
-    // `more` cluster (SPEC *Finding stops → Near me now*). Empty when nothing is left to page.
+    // The "More" buttons to offer: bus while a farther bus cluster is left to page (SPEC *Finding
+    // stops → Near me now*). Empty when nothing is left to page.
     private val _moreState = MutableStateFlow(NearbySelection.revealableBuckets(initialMore, emptySet()))
     val moreState: StateFlow<Set<String>> = _moreState.asStateFlow()
 
-    // The `more` tier and the revealed cluster keys, from which the screen works out which station
-    // modes' "More" would add a line it doesn't already show, against the rows it renders.
-    private val _moreTier = MutableStateFlow(NearbySelection.MoreTier(initialMore, emptySet()))
-    val moreTier: StateFlow<NearbySelection.MoreTier> = _moreTier.asStateFlow()
+    // The near-me stops this model loads ([nearStops]), for the farther-station cards to count as
+    // reached. Published from here, the one owner of the tiers, so a reveal or a same-set reconcile
+    // that moves a cluster across the eager/more boundary reaches the cards too; the screen's own
+    // copy of the tiers goes stale on those.
+    private val _shownNearStops = MutableStateFlow(nearStops)
+    val shownNearStops: StateFlow<List<StopRef>> = _shownNearStops.asStateFlow()
 
     private fun publishMore() {
         _moreState.value = NearbySelection.revealableBuckets(more, revealedKeys)
-        _moreTier.value = NearbySelection.MoreTier(more, revealedKeys)
+        _shownNearStops.value = nearStops
     }
 
     // Drives the pull-to-refresh indicator (SPEC D6); true only while a fetch is in flight.

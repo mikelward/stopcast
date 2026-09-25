@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.stopdash.domain.CollapsedPlaces
 import app.stopdash.domain.Coordinates
+import app.stopdash.domain.FartherStations
 import app.stopdash.domain.NearestStops
 import app.stopdash.domain.StopLocation
 import kotlinx.coroutines.CancellationException
@@ -210,3 +211,19 @@ internal fun withOpenedFarther(
     )
 }
 
+/**
+ * The near-me stops the farther-station cards count as already reached: of [shown], what the list
+ * loads ([MainViewModel.shownNearStops]: the eager tier plus clusters "More bus stops" paged in),
+ * those in [loadedIds] — the stops the loaded list actually has departures for — or all of them
+ * while it is still loading (null), so cards don't flash up and vanish on the first load. An
+ * unloaded station has no "More" to page it in (only buses do), so counting its lines, or those of
+ * one whose fetch failed, would leave a line with no row and no card; a loaded one left out would
+ * get a duplicate card.
+ */
+internal fun fartherReached(shown: List<StopRef>, loadedIds: Set<String>? = null): List<FartherStations.ReachedStop> =
+    shown.filter { loadedIds == null || it.id in loadedIds }.map { stop ->
+        FartherStations.ReachedStop(
+            ids = setOf(stop.id, stop.clusterId, stop.hubId).filterTo(HashSet()) { it.isNotBlank() },
+            lines = stop.lines.mapTo(HashSet()) { FartherStations.Line(it.mode.lowercase(), it.id) },
+        )
+    }

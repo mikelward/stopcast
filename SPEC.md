@@ -131,8 +131,9 @@ The app finds stops two ways:
     London locate effectively always has a stop within a mile — if somehow none does, an honest
     "couldn't find stops" beats reaching arbitrarily far. The list shows the **nearest two
     clusters of each mode**, which keeps a dense interchange scannable and caps how many
-    clusters are fetched; the clusters beyond that cap are reached through a per-mode **"More"**
-    control at the foot of the list, each tap paging that mode's next clusters in (see below);
+    clusters are fetched; farther bus stops are reached through a **"More bus stops"** control
+    at the foot of the list, each tap paging the next ones in, and farther stations through the
+    *farther-station* cards (see below);
   - it is **by line, both directions shown** for now — paired stops across a road serve a line
     in opposite directions, so neither direction is dropped; narrowing by direction or
     destination is a later refinement tied to *favorite destinations*;
@@ -158,24 +159,24 @@ The app finds stops two ways:
   departures — so the fallback and "More" have the whole reach to draw on. A stop TfL lists **no routes** for (a disused or
   unserved stop) is **never eager**: it has no departures to show, and auto-fetching it spent two
   requests a pole of the rate budget the running stops need (a big interchange pulled in route-less
-  stops a kilometer off); it waits behind the generic "More stops" instead. The cap is two rather than more because
+  stops a kilometer off), and it isn't offered at all, since it has nothing to show. The cap is two rather than more because
   expanding is not free: TfL doesn't aggregate a bus junction, so each lettered pole is its own
   arrivals request, and a low eager cap keeps the list short and caps how many clusters are
   fetched — sharply fewer than "everything in reach" at a dense corner. It bounds the cluster
   *count*, not the request count: one large junction cluster is still an arrivals request per
   pole, so a hard per-cluster fetch budget is a `TODO.md` follow-up. The clusters beyond the cap
-  are the *more* tier, reached through a per-mode **"More"** control at the foot of the list: a
-  tap pages that mode's next clusters in and merges them beside the eager ones; a cluster serving
-  two modes appears under each mode's "More". Because a route shows once from its nearest stop
+  are the *more* tier. **Only buses page it, through a "More bus stops" control** at the foot of
+  the list (maintainer, 2026-09-25): a tap pages the next bus clusters in and merges them beside the
+  eager ones. Every other mode had its own "More" until the *farther-station* cards arrived; those
+  offer the next station of each line the list doesn't serve, both ways along it and out to 3 mi,
+  so a station "More" only duplicated them. Coach and river-bus "More" went too, and
+  so did the generic "More stops" for a stop TfL gives no mode. Buses get no farther card (every
+  stop has them), and a farther pole of a shown route can be its other direction, so their button
+  stays whenever anything is left to page. Because a route shows once from its nearest stop
   (above), **a tap reaches through to the first farther cluster that adds a route not already on
   the list** — a run of nearer stops that only repeat routes already shown would otherwise make a
-  tap appear to do nothing — so tapping "More" always surfaces something new when the reach holds
-  one, rather than a dead tap followed by a working one. A station mode's "More" (Tube, DLR,
-  Overground, Elizabeth line, tram, rail) is **offered only when a tap would add something**: when
-  every farther station only repeats lines the list already shows departures for in both
-  directions, there is no button. A line shown one way only (a terminus nearby) or without a
-  direction (National Rail, whose rows stay per station) doesn't count as shown. A bus, coach or pier "More" stays whenever anything is
-  left to page, since a farther pole of a shown route can be its other direction. Each tap stays **bounded** — it reaches
+  tap appear to do nothing — so tapping it always surfaces something new when the reach holds
+  one, rather than a dead tap followed by a working one. Each tap stays **bounded** — it reaches
   through only so many clusters before the next tap continues — so a dense redundant corridor never
   fans out one oversized fetch that could hit TfL's rate limit. A **revealed expansion survives a relocation** — the near-me set re-resolves on a user
   refresh or a return to the foreground, and the retained view is keyed on the *whole* nearby cluster set (both
@@ -210,7 +211,7 @@ The app finds stops two ways:
 
   Both tiers draw from one TfL `/StopPoint` lookup within the **~1 mile reach** (the lookup's
   own radius); the eager clusters' stops are fetched for arrivals at once, and a *more* cluster's
-  stops are fetched when its "More" is tapped (above). **The reach and the two-per-mode cap are
+  stops are fetched when "More bus stops" pages it in (above). **The reach and the two-per-mode cap are
   not yet validated on a device** — whether either wants tuning at a real interchange lives in
   `TODO.md`; what is durable is the two-tier shape and the constraints above. **The near-me list is ordered
   closest stop first**, with soonest-first breaking a same-stop tie (a stop's several services
@@ -311,8 +312,9 @@ The app finds stops two ways:
   station search's already do (*Privacy*).
 - **Farther stations** (maintainer, 2026-09-25) — where the near-me list reaches only one tube
   station, the rest of the network can be two miles off. Below the loaded places and the *More*
-  controls, a **collapsed card** stands for the nearest station of each **rail line** the nearby
-  stops don't serve — a tube line, a National Rail service (Thameslink, Great Northern…), an
+  controls, a **collapsed card** stands for the nearest station of each **rail line** the loaded
+  nearby stops don't serve (a station left unfetched in the *more* tier doesn't count, since nothing
+  else would page it in) — a tube line, a National Rail service (Thameslink, Great Northern…), an
   Overground line, the Elizabeth line, the DLR, a tram — nearest first, within 3 mi, **at most
   eight** cards, from at most two tube lines. A line's nearest station can lie the wrong way for
   the rider's trip, so a line also gets its **nearest station the other way** (maintainer,
@@ -738,7 +740,7 @@ snapshot as the list; unstarring closes it.
 
 A journey more than **a mile from both ends** of the rider's fix is **held back** (maintainer,
 2026-09-24): the foot of the list has a **Faraway favorites** button, styled like and just above the
-"More stops" ones (those stay last, as the stop list's own controls), and until it's tapped those
+"More bus stops" one (that stays last, as the stop list's own control), and until it's tapped those
 journeys aren't fetched — sparing the request budget and battery for trains the rider can't be
 catching. A tap shows them in full at the foot of the list, each heading carrying its distance,
 until the rider moves to a new set of nearby stops. The widget never pins a far journey, tapped or

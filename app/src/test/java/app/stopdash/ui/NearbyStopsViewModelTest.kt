@@ -888,5 +888,4 @@ class NearbyStopsViewModelTest {
         assertTrue("same set → departures refreshed in place", refreshed)
         assertEquals(before, model.state.value)
     }
-
 }
