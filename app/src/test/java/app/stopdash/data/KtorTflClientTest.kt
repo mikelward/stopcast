@@ -429,6 +429,26 @@ class KtorTflClientTest {
     }
 
     @Test
+    fun `fills a blank direction from its platform's tagged trains as it fetches`() = runTest {
+        // Kentish Town West's shape from the live feed: one Platform 1 service tagged `outbound`,
+        // another prediction for it with no direction. The fetched snapshot carries the inferred
+        // direction, so every surface reading it (widget, watch) groups the two as one row.
+        val body =
+            """
+            [
+              {"lineId": "mildmay", "lineName": "Mildmay", "platformName": "Platform 1", "direction": "outbound",
+               "destinationName": "Clapham Junction Rail Station", "expectedArrival": "2026-09-18T08:06:00Z", "modeName": "overground"},
+              {"lineId": "mildmay", "lineName": "Mildmay", "platformName": "Platform 1",
+               "destinationName": "Clapham Junction Rail Station", "expectedArrival": "2026-09-18T08:30:00Z", "modeName": "overground"}
+            ]
+            """.trimIndent()
+
+        val departures = client(body).arrivals("910GKNTSHTW")
+
+        assertEquals(listOf("outbound", "outbound"), departures.map { it.direction })
+    }
+
+    @Test
     fun `requests the Arrivals endpoint and adds app_key only when set`() = runTest {
         var captured: HttpRequestData? = null
         client(arrivalsJson, capture = { captured = it }).arrivals("940GZZLUVIC")

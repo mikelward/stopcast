@@ -49,7 +49,10 @@ object DepartureRows {
     ): List<DepartureRow> {
         // upcoming() has already dropped departed services and sorted soonest-first;
         // groupBy preserves that encounter order within each group.
-        val live = Countdown.upcoming(departures, now)
+        // Directions are inferred over the whole snapshot, before departed services drop, so a
+        // blank train keeps its inferred row (and a star pinned to it) after the tagged ones leave.
+        // The client already infers at fetch time; this covers a snapshot saved before it did.
+        val live = Countdown.upcoming(inferDirections(departures), now)
         return live.groupBy { RowKey(it.lineId, directionKeyOf(it)) }
             .flatMap { (key, directionGroup) ->
                 val mode = resolvedMode(directionGroup, lineModes[key.lineId])
@@ -101,7 +104,9 @@ object DepartureRows {
             // ([Terminating]). Hidden here, as the rows are built, rather than dropped from the
             // stop's data, so a new location (a new [StopArrivals.nearer]) applies at once and the
             // widget, which renders through here too, hides the same ones.
-            val shown = Terminating.drop(stop.departures, stop.nearer)
+            // Directions are inferred first, over the whole stop, so a hidden terminating train
+            // still lends its direction to a kept one on its platform, as in [shows].
+            val shown = Terminating.drop(inferDirections(stop.departures), stop.nearer)
             val timed =
                 forStop(
                     stop.stopId, stop.stopName, shown, now, lineStatuses, stop.fetchedAt,
@@ -776,7 +781,9 @@ object DepartureRows {
     fun shows(stop: StopArrivals, row: StarredRow, hiddenModes: Set<String>, now: Instant): Boolean {
         if (stop.stopId != row.stopId) return false
         val line = stop.lines.firstOrNull { it.id == row.lineId }
-        val lineServices = stop.departures.filter { it.lineId == row.lineId }
+        // The same inference [forStop] groups by, so a star or a pick selects the row's services
+        // exactly as the widget's row holds them.
+        val lineServices = inferDirections(stop.departures.filter { it.lineId == row.lineId })
         if (line == null && lineServices.isEmpty()) return false
         val services = lineServices.filter { directionKeyOf(it) == row.directionKey }
         val judged = services.filter { it.expectedArrival > now }.ifEmpty { services }
@@ -786,6 +793,56 @@ object DepartureRows {
         // direction's, so the two can't disagree about a row whose predictions all omit it.
         val mode = resolvedMode(kept.sortedBy { it.expectedArrival }, line?.mode)
         return !HiddenModes.isHidden(mode, hiddenModes)
+    }
+
+    /**
+     * [departures] with a blank `direction` filled in from the same service's other predictions — the
+     * same line, platform, destination and via-branch — when those agree on exactly one direction.
+     * Matching the destination, not just the platform, is what makes them the same service: a
+     * platform can serve a line both ways (a single-platform through station), so a lone tagged train
+     * there says nothing about a blank one heading the other way. TfL leaves `direction` blank on some
+     * predictions and not others for one service — at Kentish Town West the Mildmay line's Platform
+     * 1 trains to Clapham Junction came back both `outbound` and blank (confirmed against live TfL
+     * data, 2026-09-25) — and a blank one would otherwise key on its platform ([directionKeyOf]) and
+     * split one service into two rows with the same destination. A blank platform, or TfL's
+     * "Platform Unknown" — a placeholder for trains in either direction, not one physical platform,
+     * so even a single tagged train there says nothing about the others — gives no evidence, and a
+     * platform whose tagged trains disagree is left alone too.
+     *
+     * The TfL client applies this to each stop's arrivals as they're fetched, so the saved snapshot
+     * — and every surface reading it, the watch included — carries the inferred directions even
+     * after the tagged trains have gone.
+     */
+    fun inferDirections(departures: List<Departure>): List<Departure> {
+        // The physical platform: its number when TfL names one, so "Westbound - Platform 1" and a bare
+        // "Platform 1" are the same platform; else the raw value (a bus pole's letter). Null — no
+        // evidence — for a blank platform or "Platform Unknown".
+        fun platformOf(d: Departure): String? {
+            val raw = d.platform?.takeIf(String::isNotBlank) ?: return null
+            val number = PlatformDirection.platformNumber(raw) ?: return raw
+            return number.takeUnless { it.equals("Unknown", ignoreCase = true) }
+        }
+        // A blank destination (TfL can omit it) can't tell a shared platform's two directions apart,
+        // so it gives no evidence either.
+        fun serviceOf(d: Departure) = d.destination.takeIf(String::isNotBlank)?.let { destination ->
+            platformOf(d)?.let { listOf(d.lineId, it, destination, d.branch.orEmpty()) }
+        }
+        if (departures.none { it.direction.isBlank() && serviceOf(it) != null }) return departures
+        val taggedBy = departures
+            .filter { it.direction.isNotBlank() }
+            .mapNotNull { d -> serviceOf(d)?.let { it to d } }
+            .groupBy({ it.first }, { it.second })
+        return departures.map { d ->
+            if (d.direction.isNotBlank()) return@map d
+            val service = serviceOf(d) ?: return@map d
+            // Display names aren't unique termini: where both carry TfL's destination id, it must
+            // agree too. A missing id (TfL omits it on some predictions) doesn't rule a match out.
+            val inferred = taggedBy[service].orEmpty()
+                .filter { it.destinationId.isBlank() || d.destinationId.isBlank() || it.destinationId == d.destinationId }
+                .mapTo(HashSet()) { it.direction }
+                .singleOrNull() ?: return@map d
+            d.copy(direction = inferred)
+        }
     }
 
     /** The direction key [d]'s row carries ([DepartureRow.directionKey], a [StarredRow]'s too). */

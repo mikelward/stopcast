@@ -46,6 +46,19 @@ class DepartureRowsShowsTest {
     }
 
     @Test
+    fun `a row joined by inferred direction is judged on all its services`() {
+        // The tagged prediction omits its mode; the blank-direction one on the same platform names
+        // it. The widget's row holds both (inferred direction) and hides for the mode, so a star or a
+        // complication pick on that row must be hidden too, not judged on the tagged one alone.
+        val tagged = departure(60, "mildmay", "outbound", mode = "").copy(platform = "Platform 1")
+        val blank = departure(600, "mildmay", "", mode = "overground").copy(platform = "Platform 1")
+        val stop = stop(listOf(tagged, blank))
+
+        assertFalse(DepartureRows.shows(stop, StarredRow("940GA", "mildmay", "outbound"), setOf("overground"), now))
+        assertTrue(DepartureRows.shows(stop, StarredRow("940GA", "mildmay", "outbound"), emptySet(), now))
+    }
+
+    @Test
     fun `a blank prediction mode doesn't let a hidden mode's row through`() {
         // The line's first prediction (the other direction) has no mode; the row's own service does.
         val row = StarredRow("940GA", "73", "inbound")

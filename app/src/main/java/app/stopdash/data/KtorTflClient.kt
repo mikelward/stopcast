@@ -1,6 +1,7 @@
 package app.stopdash.data
 
 import app.stopdash.domain.Departure
+import app.stopdash.domain.DepartureRows
 import app.stopdash.domain.HubInfo
 import app.stopdash.domain.LineSequence
 import app.stopdash.domain.LineStatus
@@ -73,7 +74,7 @@ class KtorTflClient(
         tflRequest { key ->
             httpClient.get("$baseUrl/StopPoint/$stopId/Arrivals") {
                 applyAppKey(key)
-            }.body<List<TflArrivalDto>>().map { it.toDeparture() }
+            }.body<List<TflArrivalDto>>().map { it.toDeparture() }.let(DepartureRows::inferDirections)
         }
 
     override suspend fun nearbyStops(

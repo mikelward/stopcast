@@ -451,7 +451,10 @@ one-way-street stop, a single branch) is one. Nothing is hidden behind a gesture
 is what a glance surface needs (**D8**). TfL's `direction` is the primary key and the
 domain retains it — it can't be *reconstructed* from destination or platform in general
 (a branch shares a direction; a terminus doesn't imply one). TfL omits `direction` on
-some services, though, so when it is absent the grouping falls back to the platform, then
+some services, though — sometimes only some of one service's trains — so a direction-less
+prediction first takes the direction the **same service's** other trains (same line, platform
+and destination) agree on, so one service stays one row; a platform can run a line both ways,
+so the platform alone is no evidence. Failing that the grouping falls back to the platform, then
 the destination, as a best-effort discriminator (the resolved *direction key*) rather
 than merging opposite directions; a prediction with none of the three is genuinely
 indistinguishable and shares one "unknown" row. When a direction *does* branch
