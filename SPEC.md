@@ -146,7 +146,12 @@ The app finds stops two ways:
   (above), **a tap reaches through to the first farther cluster that adds a route not already on
   the list** — a run of nearer stops that only repeat routes already shown would otherwise make a
   tap appear to do nothing — so tapping "More" always surfaces something new when the reach holds
-  one, rather than a dead tap followed by a working one. Each tap stays **bounded** — it reaches
+  one, rather than a dead tap followed by a working one. A station mode's "More" (Tube, DLR,
+  Overground, Elizabeth line, tram, rail) is **offered only when a tap would add something**: when
+  every farther station only repeats lines the list already shows departures for in both
+  directions, there is no button. A line shown one way only (a terminus nearby) or without a
+  direction (National Rail, whose rows stay per station) doesn't count as shown. A bus, coach or pier "More" stays whenever anything is
+  left to page, since a farther pole of a shown route can be its other direction. Each tap stays **bounded** — it reaches
   through only so many clusters before the next tap continues — so a dense redundant corridor never
   fans out one oversized fetch that could hit TfL's rate limit. A **revealed expansion survives a relocation** — the near-me set re-resolves on a user
   refresh or a return to the foreground, and the retained view is keyed on the *whole* nearby cluster set (both

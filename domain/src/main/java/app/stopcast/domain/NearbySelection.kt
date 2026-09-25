@@ -180,15 +180,54 @@ object NearbySelection {
     /** The "More" buckets a cluster is reachable under: its modes, or [GENERIC_MORE] when it has none. */
     fun revealBuckets(cluster: NearbyCluster): Set<String> = cluster.modes.ifEmpty { setOf(GENERIC_MORE) }
 
+    /** The `more` tier and the keys of its clusters already revealed: what the "More" buttons page. */
+    data class MoreTier(val more: List<NearbyCluster>, val revealed: Set<String>)
+
+    /**
+     * The modes whose clusters are stations serving both directions of a line at one stop (a Tube
+     * station's platforms sit behind one stop id). A farther station on a line the list already shows
+     * adds no row, since the list shows a (line, direction) once, from its nearest stop. Bus, coach
+     * and pier stops are per-direction poles, so a farther one on a shown route can still add the
+     * other direction; those keep their button whenever anything is left to page.
+     */
+    val STATION_MODES: Set<String> = setOf("tube", "dlr", "overground", "elizabeth-line", "tram", "national-rail")
+
+    /**
+     * The lines a farther station can add no row to: those [rows] already show departures for in
+     * both directions. The near-me list merges a (line, direction) across stops only when TfL gives
+     * the direction ([DepartureRows.nearbyDeduped]), so a line shown with a blank direction (every
+     * National Rail departure) stays stop-specific, and a line shown one way only (a terminus nearby)
+     * can still gain its other direction from a farther station. Status rows and blank line ids
+     * count for nothing.
+     */
+    fun coveredLineIds(rows: List<DepartureRow>): Set<String> =
+        rows.asSequence()
+            .filter { it.upcoming.isNotEmpty() && it.lineId.isNotBlank() && it.direction.isNotBlank() }
+            .groupBy({ it.lineId }, { it.direction })
+            .filterValues { it.toSet().size >= 2 }
+            .keys
+
     /**
      * The buckets that still have an unrevealed *more* cluster — the "More" controls to show. A mode
      * whose farther clusters are all revealed (or has none) drops out, so its button disappears.
-     * [revealed] is the set of already-revealed cluster keys.
+     * [revealed] is the set of already-revealed cluster keys. A [STATION_MODES] button also needs a
+     * farther cluster carrying one of its lines not in [coveredLineIds] (see [coveredLineIds]):
+     * without one a tap would add nothing, so the button isn't offered.
      */
-    fun revealableBuckets(more: List<NearbyCluster>, revealed: Set<String>): Set<String> =
-        more.asSequence()
-            .filterNot { it.key in revealed }
-            .flatMapTo(sortedSetOf()) { revealBuckets(it) }
+    fun revealableBuckets(
+        more: List<NearbyCluster>,
+        revealed: Set<String>,
+        coveredLineIds: Set<String> = emptySet(),
+    ): Set<String> {
+        val buckets = sortedSetOf<String>()
+        for (cluster in more) {
+            if (cluster.key in revealed) continue
+            for (bucket in revealBuckets(cluster)) {
+                if (bucket !in STATION_MODES || addsNewLine(cluster, bucket, coveredLineIds)) buckets += bucket
+            }
+        }
+        return buckets
+    }
 
     /**
      * The next *more* cluster keys to reveal when the user taps "More" for [bucket], in the global

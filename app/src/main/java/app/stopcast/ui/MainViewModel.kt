@@ -466,13 +466,23 @@ class MainViewModel(
         }
     }
 
+    private val _state = MutableStateFlow<DeparturesUiState>(DeparturesUiState.Loading)
+    val state: StateFlow<DeparturesUiState> = _state.asStateFlow()
+
     // The "More" buttons to offer: the modes (or the generic bucket) that still have an unrevealed
     // `more` cluster (SPEC *Finding stops → Near me now*). Empty when nothing is left to page.
     private val _moreState = MutableStateFlow(NearbySelection.revealableBuckets(initialMore, emptySet()))
     val moreState: StateFlow<Set<String>> = _moreState.asStateFlow()
 
-    private val _state = MutableStateFlow<DeparturesUiState>(DeparturesUiState.Loading)
-    val state: StateFlow<DeparturesUiState> = _state.asStateFlow()
+    // The `more` tier and the revealed cluster keys, from which the screen works out which station
+    // modes' "More" would add a line it doesn't already show, against the rows it renders.
+    private val _moreTier = MutableStateFlow(NearbySelection.MoreTier(initialMore, emptySet()))
+    val moreTier: StateFlow<NearbySelection.MoreTier> = _moreTier.asStateFlow()
+
+    private fun publishMore() {
+        _moreState.value = NearbySelection.revealableBuckets(more, revealedKeys)
+        _moreTier.value = NearbySelection.MoreTier(more, revealedKeys)
+    }
 
     // Drives the pull-to-refresh indicator (SPEC D6); true only while a fetch is in flight.
     private val _refreshing = MutableStateFlow(false)
@@ -1262,7 +1272,7 @@ class MainViewModel(
         val next = NearbySelection.nextReveal(more, bucket, revealedKeys, shownLineIds())
         if (next.isEmpty()) return
         revealedKeys = revealedKeys + next
-        _moreState.value = NearbySelection.revealableBuckets(more, revealedKeys)
+        publishMore()
         // Fetch only the stops that aren't already shown, merging into the current snapshot, so the
         // Nth "More" tap costs one page of requests, not the whole shown set (TfL request budget).
         // Computed as fetchedStops minus what's on screen — so it also picks up any earlier revealed
@@ -1448,7 +1458,7 @@ class MainViewModel(
         // isn't in `more`, so `revealableBuckets`/`nextReveal` never see it).
         val presentKeys = (newEager + newMore).mapTo(mutableSetOf()) { it.key }
         revealedKeys = revealedKeys intersect presentKeys
-        _moreState.value = NearbySelection.revealableBuckets(more, revealedKeys)
+        publishMore()
         // The shown stops take their new nearer places now, before any refetch returns, so the rows
         // hide by where the rider is rather than where they were ([Terminating]); and the widget's
         // stored copy too, whether or not that refetch succeeds.

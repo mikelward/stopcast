@@ -351,4 +351,60 @@ class NearbyClustersTest {
         assertEquals(setOf("tube"), NearbySelection.revealableBuckets(more, setOf("C3")))
         assertEquals(emptySet<String>(), NearbySelection.revealableBuckets(more, setOf("C3", "U3")))
     }
+
+    // A single-stop cluster [meters] out serving [lineIds] of [mode].
+    private fun lineCluster(key: String, meters: Double, mode: String, vararg lineIds: String) =
+        NearbySelection.NearbyCluster(
+            key = key,
+            stops = listOf(
+                StopLocation(
+                    id = key, name = key, latitude = meters / 111_320.0, longitude = 0.0,
+                    lines = lineIds.map { LineRef(it, it, mode) },
+                ),
+            ),
+            distanceMeters = meters,
+        )
+
+    @Test
+    fun `a station mode's button needs a farther station with a line not already shown`() {
+        val more = listOf(
+            lineCluster("T1", 900.0, "tube", "victoria"),
+            lineCluster("T2", 1200.0, "tube", "victoria"),
+        )
+        // Every farther station only repeats a line already on the list: a tap would add nothing.
+        assertEquals(emptySet<String>(), NearbySelection.revealableBuckets(more, emptySet(), setOf("victoria")))
+        // One adds a line the list doesn't show: the button is offered.
+        val withNew = more + lineCluster("T3", 1400.0, "tube", "victoria", "jubilee")
+        assertEquals(setOf("tube"), NearbySelection.revealableBuckets(withNew, emptySet(), setOf("victoria")))
+        // Nothing known to be shown yet (rows still loading): offered as before.
+        assertEquals(setOf("tube"), NearbySelection.revealableBuckets(more, emptySet()))
+    }
+
+    @Test
+    fun `a line is covered only when shown both ways with a known direction`() {
+        fun row(line: String, direction: String, timed: Boolean = true) = DepartureRow(
+            stopId = "S", stopName = "S", lineId = line, lineName = line, direction = direction,
+            directionKey = direction, destination = "D", mode = "tube",
+            upcoming = if (timed) {
+                listOf(Departure(line, line, direction, "D", null, java.time.Instant.EPOCH, "tube"))
+            } else {
+                emptyList()
+            },
+            fetchedAt = java.time.Instant.EPOCH,
+        )
+        val rows = listOf(
+            row("victoria", "inbound"), row("victoria", "outbound"), // both ways: covered
+            row("northern", "inbound"), // one way (a terminus nearby): not covered
+            row("thameslink", ""), row("thameslink", ""), // no direction (National Rail): not covered
+            row("jubilee", "inbound"), row("jubilee", "outbound", timed = false), // a status row counts for nothing
+        )
+        assertEquals(setOf("victoria"), NearbySelection.coveredLineIds(rows))
+    }
+
+    @Test
+    fun `a bus button stays even when its farther stops repeat shown routes`() {
+        // A farther pole of a shown route may be its other direction, which the list doesn't show.
+        val more = listOf(lineCluster("B1", 300.0, "bus", "12"))
+        assertEquals(setOf("bus"), NearbySelection.revealableBuckets(more, emptySet(), setOf("12")))
+    }
 }

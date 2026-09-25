@@ -1033,6 +1033,7 @@ class MainActivity : ComponentActivity() {
             val dismissWriteFailed by viewModel.dismissWriteFailed.collectAsStateWithLifecycle()
             // The "More" buttons to offer — modes with a farther cluster still to page in.
             val revealableModes by viewModel.moreState.collectAsStateWithLifecycle()
+            val moreTier by viewModel.moreTier.collectAsStateWithLifecycle()
             // These background refreshes are composed only while the departures view is shown:
             // the licenses screen is hosted above this subtree (see onCreate), so opening it
             // removes DeparturesForStops from composition and stops the polling (Codex).
@@ -1240,6 +1241,7 @@ class MainActivity : ComponentActivity() {
                     updateAvailable = updateAvailable,
                     onOpenAppListing = onOpenAppListing,
                     revealableModes = revealableModes,
+                    moreTier = moreTier,
                     farther = farther,
                     onOpenFarther = { station -> onOpenFarther?.invoke(station) },
                     // Ignore a "More" tap while a relocation's fresh fix is in flight, so it can't
