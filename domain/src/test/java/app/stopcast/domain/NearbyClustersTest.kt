@@ -346,9 +346,19 @@ class NearbyClustersTest {
 
     @Test
     fun `revealableBuckets lists only buckets with an unrevealed cluster`() {
-        val more = listOf(cluster("C3", 300.0, "bus"), cluster("U3", 600.0, "tube"))
-        assertEquals(setOf("bus", "tube"), NearbySelection.revealableBuckets(more, emptySet()))
-        assertEquals(setOf("tube"), NearbySelection.revealableBuckets(more, setOf("C3")))
-        assertEquals(emptySet<String>(), NearbySelection.revealableBuckets(more, setOf("C3", "U3")))
+        val more = listOf(cluster("C3", 300.0, "bus"), cluster("P3", 600.0, "river-bus"))
+        assertEquals(setOf("bus", "river-bus"), NearbySelection.revealableBuckets(more, emptySet()))
+        assertEquals(setOf("river-bus"), NearbySelection.revealableBuckets(more, setOf("C3")))
+        assertEquals(emptySet<String>(), NearbySelection.revealableBuckets(more, setOf("C3", "P3")))
+    }
+
+    @Test
+    fun `rail modes get no More button, their stations come as From buttons`() {
+        val more = listOf(
+            cluster("U3", 600.0, "tube"),
+            cluster("R3", 700.0, "national-rail"),
+            cluster("X3", 800.0, "dlr", "bus"),
+        )
+        assertEquals(setOf("bus"), NearbySelection.revealableBuckets(more, emptySet()))
     }
 }

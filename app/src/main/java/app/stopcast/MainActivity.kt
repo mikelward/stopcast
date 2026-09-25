@@ -965,8 +965,10 @@ class MainActivity : ComponentActivity() {
             val refreshing = departuresRefreshing || relocatingNow
             val locationBannerNow by locationBanner.collectAsStateWithLifecycle()
             val hiddenModes by HiddenModesSetting.changes.collectAsStateWithLifecycle()
-            // The nearest station of each rail line nothing nearby reaches, from the
-            // bundled index (read off the main thread, once per process): no request.
+            // The nearest station of each rail line the list doesn't show, from the bundled index
+            // (read off the main thread, once per process): no request. Only the shown (eager) stops
+            // count as reached: a nearer station past the per-mode cap has no "More" to page it in,
+            // so it's offered here by name instead.
             val farther by produceState(emptyList<StationMatch>(), ready, hiddenModes, onOpenFarther != null) {
                 if (onOpenFarther == null) {
                     value = emptyList()
@@ -974,7 +976,7 @@ class MainActivity : ComponentActivity() {
                 }
                 // Each nearby stop's lines, and its ids: its index record says which route ends its
                 // services reach.
-                val reached = ready.nearbyStops.map { stop ->
+                val reached = ready.eagerStops.map { stop ->
                     FartherStations.ReachedStop(
                         ids = setOf(stop.id, stop.clusterId, stop.hubId).filterTo(HashSet()) { it.isNotBlank() },
                         lines = stop.lines.mapTo(HashSet()) { FartherStations.Line(it.mode.lowercase(), it.id) },

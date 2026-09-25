@@ -183,12 +183,15 @@ object NearbySelection {
     /**
      * The buckets that still have an unrevealed *more* cluster — the "More" controls to show. A mode
      * whose farther clusters are all revealed (or has none) drops out, so its button disappears.
-     * [revealed] is the set of already-revealed cluster keys.
+     * [revealed] is the set of already-revealed cluster keys. The rail modes of [FartherStations.MODES]
+     * never get one: a station the list doesn't show is offered by name instead, as a "From …" button
+     * for a line it adds (SPEC *Finding stops → Farther stations*).
      */
     fun revealableBuckets(more: List<NearbyCluster>, revealed: Set<String>): Set<String> =
         more.asSequence()
             .filterNot { it.key in revealed }
-            .flatMapTo(sortedSetOf()) { revealBuckets(it) }
+            .flatMap { revealBuckets(it) }
+            .filterTo(sortedSetOf()) { it !in FartherStations.MODES }
 
     /**
      * The next *more* cluster keys to reveal when the user taps "More" for [bucket], in the global

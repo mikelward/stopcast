@@ -1929,6 +1929,14 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
   Overground's named lines are already route-sized). *Alternative:* branches for the tube too, or
   whole route names as keys. Watch the noise at busy south London junctions, where the five-button
   cap does the work. **Reversible:** `FartherStations.reasonsOf`.
+  **From… replaces "More" for rail modes (maintainer, 2026-09-25; details autopilot):** the
+  maintainer asked to drop the "More" buttons in favor of From… buttons, stations first. Taken: the
+  rail modes of `FartherStations.MODES` lose "More", and only the list's shown (eager) stops count as
+  reached, so a nearer station past the two-per-mode cap is offered by name when it adds a line. Piers
+  (river bus) keep "More" for now, like buses, coaches and route-less stops; buses move to From… next,
+  then line chips and a distance on each button. *Alternative:* keep "More" beside the buttons.
+  **Reversible:** `NearbySelection.revealableBuckets`, and `eagerStops` for `nearbyStops` in
+  `MainActivity`.
 - **From… stands at the middle of the station's stops (autopilot, 2026-09-24).** The maintainer
   asked for From… to be "like setting your location to there"; the point used is the mean of the
   station's placed stops, and the near-me list's picking (nearest of each mode within a mile, the

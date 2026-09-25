@@ -116,7 +116,8 @@ The app finds stops two ways:
     "couldn't find stops" beats reaching arbitrarily far. The list shows the **nearest two
     clusters of each mode**, which keeps a dense interchange scannable and caps how many
     clusters are fetched; the clusters beyond that cap are reached through a per-mode **"More"**
-    control at the foot of the list, each tap paging that mode's next clusters in (see below);
+    control at the foot of the list, each tap paging that mode's next clusters in (see below) —
+    or, for a rail mode, a **"From ‹station›…"** button (*Farther stations*);
   - it is **by line, both directions shown** for now — paired stops across a road serve a line
     in opposite directions, so neither direction is dropped; narrowing by direction or
     destination is a later refinement tied to *favorite destinations*;
@@ -273,7 +274,7 @@ The app finds stops two ways:
 - **Farther stations** (maintainer, 2026-09-25) — where the near-me list reaches only one tube
   station, the rest of the network can be two miles off. At the foot of the list, under the *More*
   controls, a **"From ‹station›…"** button names the nearest station of each **rail line** the
-  nearby stops don't serve — a tube line, a National Rail service (Thameslink, Great Northern…), an
+  stops the list shows don't serve — a tube line, a National Rail service (Thameslink, Great Northern…), an
   Overground line, the Elizabeth line, the DLR, a tram — nearest first, within 3 mi, **at most five**
   buttons and at most two of them for tube lines. **Buses never** earn one: every stop has them.
   A station standing for several lines is one button, and an interchange's stations are one button
@@ -286,7 +287,9 @@ The app finds stops two ways:
   *From…* page, whose back and crosshairs return to the list. Nothing is fetched to offer them:
   the positions, lines and route ends come from the bundled station list, worked out on the device, so they
   cost no request and send nothing (*Privacy*); what a tap then shows costs what any *From…* page
-  does.
+  does. These buttons **replace "More" for the rail modes** (maintainer, 2026-09-25): a station past
+  the per-mode cap is reached by name, only when it adds a line, rather than paged into the list,
+  which often added nothing. Buses, coaches, piers and route-less stops keep their "More".
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at
   (home, work, the school run); arrives with watched stops.
 - **Hiding a mode** (maintainer, 2026-09-24) — a busy place can fill the near-me list with a mode
