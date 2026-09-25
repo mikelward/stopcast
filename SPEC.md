@@ -277,11 +277,14 @@ The app finds stops two ways:
   Overground line, the Elizabeth line, the DLR, a tram — nearest first, within 3 mi, **at most five**
   buttons and at most two of them for tube lines. **Buses never** earn one: every stop has them.
   A station standing for several lines is one button, and an interchange's stations are one button
-  opening the interchange; a hidden mode's lines get none. It is **by line, not branch**: TfL names
-  Thameslink or the Northern line as one line, so a second station on another branch of a line
-  already reached isn't offered (a branch rule would be finer but noisier). A tap opens it as a
+  opening the interchange; a hidden mode's lines get none. A **National Rail** service counts by
+  the **ends of its routes** from each station (maintainer, 2026-09-25): Thameslink runs to Bedford
+  from one station and to Cambridge from another, so a station reaching an end nothing nearby
+  reaches earns a button even on a service already reached. The other modes count by line: a
+  second tube station on another branch of a line already reached isn't offered (a branch rule
+  would be finer but noisier). A tap opens it as a
   *From…* page, whose back and crosshairs return to the list. Nothing is fetched to offer them:
-  the positions and lines come from the bundled station list, worked out on the device, so they
+  the positions, lines and route ends come from the bundled station list, worked out on the device, so they
   cost no request and send nothing (*Privacy*); what a tap then shows costs what any *From…* page
   does.
 - **Search to pin** — by stop name or by line, for pinning a stop the user isn't standing at

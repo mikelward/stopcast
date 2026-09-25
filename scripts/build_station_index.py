@@ -6,7 +6,9 @@ Overground, Elizabeth line, tram, National Rail and pier station in and around L
 the interchanges ("hubs") that group them, each with its TfL id, name as TfL spells it (the
 app cleans it), modes, and hub; a station also carries its position and its lines by mode (tube
 lines, National Rail services, Overground lines, …), so the near-me list can name the nearest
-station of a line it doesn't reach ("From …"). Bus stops are left to TfL's live search: there are ~20,000.
+station of a line it doesn't reach ("From …"). A National Rail station also carries, per service,
+the ends of the routes it's on ("routeEnds"), since one service runs to different places from
+different stations — Thameslink to Bedford from one, to Cambridge from another. Bus stops are left to TfL's live search: there are ~20,000.
 
 Built from TfL's per-mode stop lists (`/StopPoint/Mode/{mode}`), one mode at a time, and its
 rail-station listing for National Rail. Every listing is required: a failed or empty one stops
@@ -33,30 +35,51 @@ MODES = {"tube", "dlr", "overground", "elizabeth-line", "national-rail", "tram",
 LAT_RANGE = (51.25, 51.75)
 LON_RANGE = (-0.65, 0.40)
 HUB_BATCH = 10
+# Spacing between route requests when keyless: TfL allows ~50 a minute without a key.
+ROUTE_REQUEST_GAP = 1.5
 FORMAT_VERSION = 1
 
 
 RETRY_DELAYS = (5, 15, 45)
+# Keyless TfL counts requests per minute, so a 429 waits out at least the rest of the minute.
+RATE_LIMIT_WAIT = 60
 
 
-def fetch(path, params=None, retry_delays=RETRY_DELAYS):
-    """GET a TfL path as JSON, retrying a timeout or a 5xx (TfL's larger lists sometimes 504)."""
+def retry_wait(error, delay):
+    """How long to wait before retrying after [error]: a 429 waits for TfL's Retry-After (or a
+    minute), anything else the scheduled [delay]."""
+    if error is None or error.code != 429:
+        return delay
+    try:
+        after = int(error.headers.get("Retry-After", ""))
+    except (TypeError, ValueError, AttributeError):
+        after = 0
+    return max(delay, after, RATE_LIMIT_WAIT)
+
+
+def fetch(path, params=None, retry_delays=RETRY_DELAYS, sleep=time.sleep):
+    """GET a TfL path as JSON, retrying a timeout, a 5xx (TfL's larger lists sometimes 504) or a
+    429 (the keyless per-minute limit, hit when several builds run close together)."""
     query = dict(params or {})
     key = os.environ.get("TFL_APP_KEY")
     if key:
         query["app_key"] = key
     url = BASE + path + ("?" + urllib.parse.urlencode(query) if query else "")
     request = urllib.request.Request(url, headers={"User-Agent": "stopcast-station-index"})
+    last_error = None
     for attempt, delay in enumerate((0,) + tuple(retry_delays)):
-        if delay:
-            print(f"retrying {path} in {delay}s", file=sys.stderr)
-            time.sleep(delay)
+        wait = retry_wait(last_error, delay) if attempt else 0
+        if wait:
+            print(f"retrying {path} in {wait}s", file=sys.stderr)
+            sleep(wait)
+        last_error = None
         try:
             with urllib.request.urlopen(request, timeout=180) as response:
                 return json.load(response)
         except urllib.error.HTTPError as e:
-            if e.code < 500 or attempt == len(retry_delays):
+            if (e.code < 500 and e.code != 429) or attempt == len(retry_delays):
                 raise
+            last_error = e
         except (urllib.error.URLError, TimeoutError):
             if attempt == len(retry_delays):
                 raise
@@ -163,6 +186,56 @@ def modes_without_lines(index):
     return sorted((with_stations & LINE_MODES) - with_lines)
 
 
+def route_ends(sequences):
+    """Station id -> the ends of the routes it lies on, from one line's route sequences (TfL
+    `/Line/{id}/Route/Sequence/{direction}`): each ordered route's first and last stop are its
+    ends, and every stop on it reaches both — but not itself: a terminus adds only the far end.
+    Pure, for tests."""
+    ends = {}
+    for sequence in sequences:
+        for route in (sequence or {}).get("orderedLineRoutes") or []:
+            ids = route.get("naptanIds") or []
+            if len(ids) < 2:
+                continue
+            for sid in ids:
+                ends.setdefault(sid, set()).update(end for end in (ids[0], ids[-1]) if end != sid)
+    return ends
+
+
+def add_route_ends(index, ends_by_line):
+    """[index] with each National Rail station's route ends per service it runs ("routeEnds"),
+    from [ends_by_line] (line id -> station id -> ends). A service with no route data is left
+    out, so the app counts it by line alone."""
+    for station in index["stations"]:
+        per_line = {}
+        for line in station.get("modeLines", {}).get("national-rail", []):
+            ends = ends_by_line.get(line, {}).get(station["id"])
+            if ends:
+                per_line[line] = sorted(ends)
+        if per_line:
+            station["routeEnds"] = per_line
+    return index
+
+
+def fetch_route_ends(lines):
+    """Each National Rail line's route ends by station, both directions. A line TfL has no
+    route data for (404) is skipped: its stations fall back to counting the line whole."""
+    ends_by_line = {}
+    for line in sorted(lines):
+        sequences = []
+        for direction in ("inbound", "outbound"):
+            if not os.environ.get("TFL_APP_KEY"):
+                time.sleep(ROUTE_REQUEST_GAP)
+            try:
+                sequences.append(fetch(f"/Line/{urllib.parse.quote(line)}/Route/Sequence/{direction}"))
+            except urllib.error.HTTPError as e:
+                if e.code != 404:
+                    raise
+                print(f"no {direction} route for {line}; counting it by line", file=sys.stderr)
+        ends_by_line[line] = route_ends(sequences)
+    return ends_by_line
+
+
 def fetch_hubs(hub_ids):
     hubs = []
     ids = sorted(hub_ids)
@@ -229,6 +302,11 @@ def main(argv):
         # TfL answered without a mode's line groups: the index would name no nearest station of
         # that mode's lines, silently, so keep the committed index instead.
         sys.exit(f"no {', '.join(missing)} station carries its lines; refusing to write the index")
+    rail_lines = {line for s in index["stations"] for line in s.get("modeLines", {}).get("national-rail", [])}
+    add_route_ends(index, fetch_route_ends(rail_lines))
+    if rail_lines and not any(s.get("routeEnds") for s in index["stations"]):
+        # Every route lookup came back empty: TfL answered oddly, so keep the committed index.
+        sys.exit("no National Rail station carries route ends; refusing to write the index")
     if len(index["stations"]) < 200:
         # A near-empty result means TfL answered oddly; keep the committed index rather than
         # shipping a list that can't find most stations.

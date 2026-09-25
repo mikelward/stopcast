@@ -71,6 +71,7 @@ object StationIndexStore {
                         latitude = it.lat,
                         longitude = it.lon,
                         lines = it.modeLines,
+                        routeEnds = it.routeEnds,
                     )
                 },
         )
@@ -94,5 +95,6 @@ object StationIndexStore {
         // Mode → line ids. Not "lines": an earlier build wrote that as a tube-only list, which this
         // ignores (ignoreUnknownKeys) rather than failing the whole index on.
         val modeLines: Map<String, List<String>> = emptyMap(),
+        val routeEnds: Map<String, List<String>> = emptyMap(),
     )
 }
