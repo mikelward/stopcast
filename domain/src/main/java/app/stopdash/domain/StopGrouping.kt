@@ -331,6 +331,13 @@ object StopGrouping {
         // ([platformDirectionOf]); a numbered platform with no compass at all (compasses empty) is
         // still an unambiguous platform.
         if (numberedPlatforms.size == 1 && compasses.size <= 1) return RowSplit.Platform(numberedPlatforms[0])
+        // A row [DepartureRows.forStop] resolved to one platform may also hold "Platform Unknown" trains
+        // it folded in past the times the card shows: they don't contradict the named platform, so the
+        // row keeps its header.
+        val resolved = row.platform.takeIf { p ->
+            p.isNotBlank() && numberedPlatforms.all { it == p || it.equals("Unknown", ignoreCase = true) }
+        }
+        if (resolved != null && compasses.size <= 1) return RowSplit.Platform(resolved)
         // Zero/ambiguous platform, or a conflicting direction — don't claim a platform. Fall to the
         // compass ONLY when every prediction that names a direction agrees on one: a row carrying
         // different compasses (a platform change across directions) stays [None] rather than file the

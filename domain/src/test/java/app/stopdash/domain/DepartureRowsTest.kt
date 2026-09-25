@@ -355,6 +355,110 @@ class DepartureRowsTest {
     }
 
     @Test
+    fun `a service with three named-platform trains folds in its later Platform Unknown ones`() {
+        // Highbury & Islington's shape from the live feed: the next Mildmay trains to Richmond name
+        // Platform 7, the later ones say "Platform Unknown". Three named ones already fill the row,
+        // so no "Platform Unknown" group repeats the service.
+        fun richmond(seconds: Long, platform: String) =
+            departure("mildmay", "Mildmay", "outbound", "Richmond (London)", seconds, platform = platform, mode = "overground")
+        val named = listOf(richmond(420, "Platform 7"), richmond(1020, "Platform 7"), richmond(1740, "Platform 7"))
+        val later = listOf(richmond(2400, "Platform Unknown"), richmond(3300, "Platform Unknown"))
+
+        val rows = DepartureRows.forStop("910GHGHI", "Highbury & Islington", named + later, now)
+
+        // One Platform 7 row: the later trains fold in past the three times the card shows, and stay
+        // on the row for the route detail's full list.
+        assertEquals(listOf("7"), rows.map { it.platform })
+        assertEquals(named + later, rows.single().upcoming)
+        assertEquals(3, DepartureRows.destinationLines(rows.single(), maxTimes = 3).single().times.size)
+    }
+
+    @Test
+    fun `a service alternating between platforms keeps its Platform Unknown ones`() {
+        // Named trains on Platforms 1, 2 and 1 give no one platform for a later unknown train: folding
+        // it into Platform 1 would make it that row's third shown time, under a platform nobody named.
+        fun train(seconds: Long, platform: String) =
+            departure("mildmay", "Mildmay", "outbound", "Richmond (London)", seconds, platform = platform, mode = "overground")
+        val named = listOf(train(60, "Platform 1"), train(300, "Platform 2"), train(600, "Platform 1"))
+        val later = train(2400, "Platform Unknown")
+
+        val rows = DepartureRows.forStop("910GEXAMPLE", "Example", named + later, now)
+
+        assertEquals(listOf(later), rows.single { it.platform == "Unknown" }.upcoming)
+    }
+
+    @Test
+    fun `a Platform Unknown train to a same-named other terminus doesn't fold`() {
+        fun train(seconds: Long, platform: String, id: String) =
+            departure("mildmay", "Mildmay", "outbound", "Example", seconds, platform = platform, mode = "overground")
+                .copy(destinationId = id)
+        val named = listOf(train(60, "Platform 7", "910GEXAMPLA"), train(300, "Platform 7", "910GEXAMPLA"), train(600, "Platform 7", "910GEXAMPLA"))
+        val other = train(2400, "Platform Unknown", "910GEXAMPLB")
+
+        val rows = DepartureRows.forStop("910GEXAMPLE", "Example", named + other, now)
+
+        assertEquals(listOf(other), rows.single { it.platform == "Unknown" }.upcoming)
+    }
+
+    @Test
+    fun `a Platform Unknown train sooner than the named ones keeps its own row`() {
+        // An unknown train leaving before the third named one may be the next departure: it stays
+        // visible, under its own header rather than a platform nobody named.
+        fun richmond(seconds: Long, platform: String) =
+            departure("mildmay", "Mildmay", "outbound", "Richmond (London)", seconds, platform = platform, mode = "overground")
+        val soon = richmond(60, "Platform Unknown")
+        val named = listOf(richmond(300, "Platform 7"), richmond(600, "Platform 7"), richmond(900, "Platform 7"))
+
+        val rows = DepartureRows.forStop("910GHGHI", "Highbury & Islington", listOf(soon) + named, now)
+
+        assertEquals(listOf(soon), rows.single { it.platform == "Unknown" }.upcoming)
+    }
+
+    @Test
+    fun `another branch's named trains don't hide a branch's Platform Unknown one`() {
+        // High Barnet via Bank and via Charing X are separate destination lines: three named Bank
+        // trains say nothing about the Charing X one, which may be the only countdown for its branch.
+        fun barnet(seconds: Long, platform: String, branch: String) =
+            departure("northern", "Northern", "outbound", "High Barnet", seconds, platform = platform, branch = branch)
+        val bank = listOf(barnet(60, "Northbound - Platform 5", "Bank"), barnet(300, "Northbound - Platform 5", "Bank"), barnet(600, "Northbound - Platform 5", "Bank"))
+        val charingX = barnet(2400, "Platform Unknown", "Charing X")
+
+        val rows = DepartureRows.forStop("940GZZLUEUS", "Euston", bank + charingX, now)
+
+        assertTrue(rows.any { charingX in it.upcoming })
+    }
+
+    @Test
+    fun `a Platform Unknown train in another or no direction stays`() {
+        // "Platform Unknown" can hide either direction: three named outbound trains say nothing
+        // about an inbound or direction-less one to the same place, which may be its only countdown.
+        fun loop(seconds: Long, platform: String, direction: String) =
+            departure("circle", "Circle", direction, "Edgware Road", seconds, platform = platform)
+        val named = listOf(loop(60, "Platform 1", "outbound"), loop(300, "Platform 1", "outbound"), loop(600, "Platform 1", "outbound"))
+        val inbound = loop(2400, "Platform Unknown", "inbound")
+        val blank = loop(2700, "Platform Unknown", "")
+
+        val rows = DepartureRows.forStop("940GZZLUEXA", "Example", named + inbound + blank, now)
+
+        val shown = rows.flatMap { it.upcoming }
+        assertTrue(inbound in shown)
+        assertTrue(blank in shown)
+    }
+
+    @Test
+    fun `a service with fewer named-platform trains keeps its Platform Unknown ones`() {
+        // Only two named: the unknown ones are its only later times, so they stay.
+        fun stratford(seconds: Long, platform: String) =
+            departure("mildmay", "Mildmay", "inbound", "Stratford (London)", seconds, platform = platform, mode = "overground")
+        val named = listOf(stratford(300, "Platform 8"), stratford(660, "Platform 8"))
+        val later = listOf(stratford(2520, "Platform Unknown"))
+
+        val rows = DepartureRows.forStop("910GHGHI", "Highbury & Islington", named + later, now)
+
+        assertEquals(named + later, rows.flatMap { it.upcoming })
+    }
+
+    @Test
     fun `blank direction and no platform falls back to destination`() {
         val toPimlico = departure("24", "24", "", "Pimlico", 90)
         val toHampstead = departure("24", "24", "", "Hampstead Heath", 150)
