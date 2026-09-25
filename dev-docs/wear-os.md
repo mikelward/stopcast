@@ -83,7 +83,7 @@ precludes it: the shared `:domain` module and wire model are what B would build 
 
 This ends the single-`:app`-module layout (SPEC *Architecture*):
 
-- **`:domain`**, a pure-Kotlin JVM module extracted from `app.stopcast.domain`. The package
+- **`:domain`**, a pure-Kotlin JVM module extracted from `app.stopdash.domain`. The package
   already has no Android imports, so this is a move, not a rewrite. Both apps depend on it,
   so the watch groups, labels, pins and times rows exactly as the phone does. That's the same
   "can't drift" guarantee the widget has.
@@ -96,7 +96,7 @@ This ends the single-`:app`-module layout (SPEC *Architecture*):
   - the widget passes the topology to `DepartureRows.destinationLines`, while the domain API
     alone defaults to `RouteTopology.EMPTY`. Without the same topology the watch would split or
     label branching services differently from the widget;
-  - the **line-pill styling rules**, split out of `app.stopcast.ui.LinePill`. That means the
+  - the **line-pill styling rules**, split out of `app.stopdash.ui.LinePill`. That means the
     official TfL colors by line id and mode, the APCA black-or-white label choice, and the
     hollow named-Overground form with its contrast-nudged accent (AGENTS *Line pill colors*).
     Only the pure resolver moves: a function from **a line and the surface color it's drawn
@@ -521,11 +521,11 @@ it before committing to the design.
 
 - A **Wear OS release** in the same Play listing and package, on its own form-factor track. The
   Wear AAB is built by `:wear` in the same CI, signed with the same key.
-- **Release gate (maintainer, 2026-09-24):** the watch code is built ahead of the package
-  rename, so nothing ships by accident. `:wear`'s release tasks fail unless the build passes
-  `-Pstopcast.wearRelease=approved`, and fail anyway while the application ID is still
-  `app.stopcast`. CI never passes the flag, and a CI step asserts the release build fails
-  without it. It's lifted only after the rename and the launch decision.
+- **Release gate (maintainer, 2026-09-24):** the watch code is built ahead of the launch
+  decision, so nothing ships by accident. `:wear`'s release tasks fail unless the build passes
+  `-Pstopcast.wearRelease=approved` (until the package rename it also refused the old
+  `app.stopcast` ID). CI never passes the flag, and a CI step asserts the release build fails
+  without it. It's lifted only after the launch decision.
 - It must meet Play's Wear OS app-quality requirements: watch screenshots and a tile that works
   on round screens and at large font scales. The watch honors the system font size; StopCast's
   own text-size factor stays a phone setting unless the maintainer wants it synced.
@@ -534,8 +534,7 @@ it before committing to the design.
 
 ## Suggested order
 
-1. The package rename, a prerequisite for **releasing** the watch app (the release gate in
-   *Distribution* enforces it); the code can be built before it.
+1. **Done.** The package rename to `app.stopdash`, a prerequisite for releasing the watch app.
 2. **Done.** Extract `:domain` into its own module, and move the route topology asset and
    loader into the shared Android library module (refactor only).
 

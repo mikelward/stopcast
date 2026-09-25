@@ -6,11 +6,11 @@ plugins {
 }
 
 // The Data Layer only pairs apps with the same application ID (and signing key), so the watch
-// app takes the phone's. It must not ship under the pre-rename ID; see the release gate below.
-val watchApplicationId = "app.stopcast"
+// app takes the phone's.
+val watchApplicationId = "app.stopdash"
 
 android {
-    namespace = "app.stopcast.wear"
+    namespace = "app.stopdash.wear"
     compileSdk = 37
 
     defaultConfig {
@@ -69,24 +69,19 @@ tasks.withType<Test>().configureEach {
     }
 }
 
-// Release gate (maintainer, 2026-09-24; TODO Phase 6). The watch code is built ahead of the
-// package rename, and a Play listing can't change its package, so nothing here may be released
-// by accident: every release packaging task fails unless the build is run with
-// -Pstopcast.wearRelease=approved, and fails anyway while the application ID is still the
-// pre-rename one. CI never passes the flag, and asserts that :wear:bundleRelease fails without it.
-// Lift it only in the PR that releases the watch app, after the rename and the launch decision.
+// Release gate (maintainer, 2026-09-24; TODO Phase 6). The package is renamed; the watch app still
+// waits on the launch decision, so nothing here may be released by accident: every release
+// packaging task fails unless the build is run with -Pstopcast.wearRelease=approved. CI never
+// passes the flag, and asserts that :wear:bundleRelease fails without it. Lift it only in the PR
+// that releases the watch app.
 val wearReleaseApproved = providers.gradleProperty("stopcast.wearRelease").orNull == "approved"
 val releaseGate = tasks.register("checkWearReleaseGate") {
     description = "Fails a Wear OS release build until the maintainer lifts the release gate."
     val approved = wearReleaseApproved
-    val id = watchApplicationId
     doLast {
         check(approved) {
             "The Wear OS app isn't released yet (TODO Phase 6): build it with " +
                 "-Pstopcast.wearRelease=approved only once the maintainer has decided to launch."
-        }
-        check(id != "app.stopcast") {
-            "The Wear OS app can't be released as $id: rename the package first (TODO Phase 6)."
         }
     }
 }

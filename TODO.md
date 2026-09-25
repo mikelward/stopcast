@@ -53,7 +53,7 @@ exercises the whole spine the widget later renders from.
       tests, `workflow_dispatch` deploy-force, and `dev-docs/play-store-internal-track.md`. No
       Firebase (dropped every google-services/Crashlytics step). **Human setup still owed
       before a build actually ships** (all in `dev-docs/play-store-internal-track.md`): generate
-      the upload keystore; create the `app.stopcast` app on Play Console and seed the internal
+      the upload keystore; create the `app.stopdash` app on Play Console and seed the internal
       track with one manual upload; create the Play service account; add the five secrets
       (`RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_PASSWORD`,
       `RELEASE_KEY_ALIAS`, `PLAY_SERVICE_ACCOUNT_JSON`) to a `production` environment
@@ -1785,12 +1785,16 @@ and these carry the rest as their own PRs:
       tile-only first release) can be settled as each step comes up.
       Steps, one PR each:
   - [x] **Release gate (lands with the `:wear` module):** `:wear`'s release tasks fail
-        unless the build is run with `-Pstopcast.wearRelease=approved`, and fail anyway while its
-        application ID is still `app.stopcast`. CI builds only `:app`'s release and never passes
-        the flag, so a deploy can't ship the watch app by accident, and a CI step asserts that
-        `:wear:bundleRelease` fails without it. Lift it only after the rename and the launch
-        decision, in the same PR as the Play step below.
-  - [x] Extract `app.stopcast.domain` into a pure-Kotlin `:domain` module (refactor only; the
+        unless the build is run with `-Pstopcast.wearRelease=approved` (it also refused the
+        pre-rename `app.stopcast` ID until the rename). CI builds only `:app`'s release and never
+        passes the flag, so a deploy can't ship the watch app by accident, and a CI step asserts
+        that `:wear:bundleRelease` fails without it. Lift it only after the launch decision, in
+        the same PR as the Play step below.
+  - [x] **Package rename:** the application ID and every Kotlin package are `app.stopdash`
+        (phone and watch together, as the Data Layer pairs by ID). The display name stays
+        StopCast. A new ID is a new app on devices and a new Play listing; see the Play item
+        above.
+  - [x] Extract `app.stopdash.domain` into a pure-Kotlin `:domain` module (refactor only; the
         package already had no Android imports).
   - [x] Move `route_topology.json` and
         `RouteTopologyStore` into a small shared Android library module, so the watch groups
@@ -1879,13 +1883,13 @@ they aren't re-derived; none is scheduled, and each needs the maintainer's go-ah
 - [ ] (Later, open call) **Other cities beyond London** (recorded 2026-09-19 at the
       maintainer's request). StopCast is TfL-specific today: the data layer talks only to
       the TfL Unified API, and line colors/codes are TfL's. The **domain layer**
-      (`app.stopcast.domain` — stops, departures, staleness) is *shaped* around one
+      (`app.stopdash.domain` — stops, departures, staleness) is *shaped* around one
       departures model much of a multi-city version would reuse, but it is **not already
       provider-agnostic**: it carries TfL-specific contracts a second provider would have
       to **normalize or redesign, not just adapt behind an interface** — `TflClient` /
       `TflException`, `StopFinder`'s NaPTAN stop-type defaults, `LineStatus`'s TfL
       `statusSeverity` semantics, and `Departure`'s TfL direction/mode semantics. (Pill
-      rendering is in the UI layer, `app.stopcast.ui.LinePill`, not the domain.) So the
+      rendering is in the UI layer, `app.stopdash.ui.LinePill`, not the domain.) So the
       pathway is more than an adapter behind the data layer: the TfL contracts above are
       normalized, and a real-time provider is added. **GTFS** is the common denominator,
       which in practice is three feeds, not one — the static **Schedule** (the stop/route/

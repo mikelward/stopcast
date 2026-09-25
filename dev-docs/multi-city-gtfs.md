@@ -168,7 +168,7 @@ maintainer first — everything below is downstream of it.
 
 ## Domain contracts to normalize
 
-The domain layer (`app.stopcast.domain`) is *shaped* around one departures model much of a
+The domain layer (`app.stopdash.domain`) is *shaped* around one departures model much of a
 multi-city version would reuse, but it is **not already provider-agnostic**. A second provider
 would have to normalize or redesign these TfL-specific contracts, not just adapt behind an
 interface:
@@ -178,7 +178,7 @@ interface:
 - `LineStatus`'s TfL `statusSeverity` semantics.
 - `Departure`'s TfL direction (inbound/outbound) and mode semantics.
 
-(Pill rendering is in the UI layer, `app.stopcast.ui.LinePill`, not the domain.)
+(Pill rendering is in the UI layer, `app.stopdash.ui.LinePill`, not the domain.)
 
 ## Access and registration
 

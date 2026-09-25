@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "app.stopcast.shared"
+    namespace = "app.stopdash.shared"
     compileSdk = 37
 
     defaultConfig {

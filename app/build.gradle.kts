@@ -81,11 +81,11 @@ val releaseSigningConfigured = releaseKeystorePath != null && releaseKeystorePas
     releaseKeyAlias != null && releaseKeyPassword != null
 
 android {
-    namespace = "app.stopcast"
+    namespace = "app.stopdash"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "app.stopcast"
+        applicationId = "app.stopdash"
         // minSdk 34 (Android 14) is the device floor across the sibling fleet;
         // the lock-screen placement (Android 16 QPR) is the OS deciding a
         // standard widget is eligible, not a separate code path (SPEC).

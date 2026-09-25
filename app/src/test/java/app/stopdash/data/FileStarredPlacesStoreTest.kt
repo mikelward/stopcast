@@ -1,0 +1,38 @@
+package app.stopdash.data
+
+import app.stopdash.domain.StationMatch
+import java.io.File
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+/** Example stop ids and names only. */
+class FileStarredPlacesStoreTest {
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private val area = StationMatch("490G00000001", "Example Road", listOf("bus"))
+    private val station = StationMatch("940GZZLUOXC", "Oxford Circus", listOf("tube"))
+
+    @Test
+    fun `a reconcile records the new places and keeps only the starred stops`() {
+        val file = File(tmp.root, "starred-places.json")
+        FileStarredPlacesStore(file).reconcile(setOf("490000000001A"), mapOf("490000000001A" to area))
+        FileStarredPlacesStore(file).reconcile(setOf("490000000001A", "940GZZLUOXC"), mapOf("940GZZLUOXC" to station))
+        assertEquals(mapOf("490000000001A" to area, "940GZZLUOXC" to station), FileStarredPlacesStore(file).load())
+        FileStarredPlacesStore(file).reconcile(setOf("940GZZLUOXC"))
+        assertEquals(mapOf("940GZZLUOXC" to station), FileStarredPlacesStore(file).load())
+        // A place for a stop no longer starred is not recorded.
+        FileStarredPlacesStore(file).reconcile(setOf("940GZZLUOXC"), mapOf("490000000001A" to area))
+        assertEquals(mapOf("940GZZLUOXC" to station), FileStarredPlacesStore(file).load())
+    }
+
+    @Test
+    fun `an unparseable file loads as empty and is deleted`() {
+        val file = File(tmp.root, "starred-places.json").apply { writeText("{") }
+        assertEquals(emptyMap<String, StationMatch>(), FileStarredPlacesStore(file).load())
+        assertFalse(file.exists())
+    }
+}
