@@ -566,6 +566,18 @@ internal fun widgetLineLabel(row: DepartureRow, group: DestinationGroup): String
     return "$base/${abbreviateBranch(branch)}"
 }
 
+/**
+ * What a screen reader hears for [widgetLineLabel] when its branch is shortened — the full branch,
+ * "Hainault via Newbury Park" for "Hainault/Newbury Pk" — so the full name stays the accessible
+ * label (SPEC destination-label); null when the label already shows it in full.
+ */
+internal fun widgetLineSpoken(row: DepartureRow, group: DestinationGroup): String? {
+    val branch = group.branch ?: return null
+    if (abbreviateBranch(branch) == branch) return null
+    val base = DepartureLabels.destinationLabel(group.destination, row.directionKey) ?: return null
+    return "$base via $branch"
+}
+
 @androidx.compose.runtime.Composable
 private fun WidgetRow(rowModel: WidgetRowModel, now: Instant, fontScale: Float, stacked: Boolean = false) {
     val row = rowModel.row
@@ -583,6 +595,7 @@ private fun WidgetRow(rowModel: WidgetRowModel, now: Instant, fontScale: Float, 
         rowModel.groups.forEachIndexed { index, group ->
             if (index > 0) Spacer(GlanceModifier.height(4.dp))
             val label = widgetLineLabel(row, group)
+            val spoken = widgetLineSpoken(row, group)
             val countdown = if (stale) "?" else Countdown.mergedLabel(group.times, now)
             if (stacked) {
                 // Too narrow at this font for all three on one line: pill and countdown, then the
@@ -596,7 +609,7 @@ private fun WidgetRow(rowModel: WidgetRowModel, now: Instant, fontScale: Float, 
                     WidgetCountdown(countdown, stale)
                 }
                 Spacer(GlanceModifier.height(WIDGET_STACK_GAP))
-                WidgetDestination(label, GlanceModifier.fillMaxWidth())
+                WidgetDestination(label, spoken, GlanceModifier.fillMaxWidth())
             } else {
                 Row(
                     modifier = GlanceModifier.fillMaxWidth(),
@@ -604,7 +617,7 @@ private fun WidgetRow(rowModel: WidgetRowModel, now: Instant, fontScale: Float, 
                 ) {
                     WidgetPill(row, fontScale)
                     Spacer(GlanceModifier.width(8.dp))
-                    WidgetDestination(label, GlanceModifier.defaultWeight())
+                    WidgetDestination(label, spoken, GlanceModifier.defaultWeight())
                     Spacer(GlanceModifier.width(8.dp))
                     WidgetCountdown(countdown, stale)
                 }
@@ -613,13 +626,16 @@ private fun WidgetRow(rowModel: WidgetRowModel, now: Instant, fontScale: Float, 
     }
 }
 
-/** A departure line's destination (and via-branch) label, one line. */
+/**
+ * A departure line's destination (and via-branch) label, one line; [spoken], when given, is what a
+ * screen reader hears instead.
+ */
 @androidx.compose.runtime.Composable
-private fun WidgetDestination(label: String, modifier: GlanceModifier) {
+private fun WidgetDestination(label: String, spoken: String?, modifier: GlanceModifier) {
     Text(
         text = label,
         maxLines = 1,
-        modifier = modifier,
+        modifier = spoken?.let { modifier.semantics { contentDescription = it } } ?: modifier,
         style = TextStyle(color = GlanceTheme.colors.onBackground, fontSize = 13.sp),
     )
 }

@@ -92,28 +92,16 @@ fun normalizeBranch(raw: String?): String? {
     return branch.ifBlank { null }
 }
 
-// The compass words, "Cross", and "Central" a departures board itself shortens ("Charing X",
-// "E. Ham", "Walthamstow C."). Applied per word, so a word not here is left alone; only these
-// are safe to shorten without losing which branch is meant (maintainer: Cross→X, East→E. &c.,
-// and Central→C.). This is the branch/destination *word* map, not the line-pill abbreviation:
-// the Central line's pill stays "CEN" (a separate mechanism), and this never touches it.
-private val BRANCH_ABBREVIATIONS = mapOf(
-    "Cross" to "X",
-    "North" to "N.",
-    "South" to "S.",
-    "East" to "E.",
-    "West" to "W.",
-    "Central" to "C.",
-)
-
 /**
- * A shorter form of a branch for a row too narrow to fit the full one — "Charing Cross" →
- * "Charing X", "East Ham" → "E. Ham", "Walthamstow Central" → "Walthamstow C." —
- * abbreviating only the compass words, "Cross", and "Central" a board itself shortens, so
- * which branch is meant stays clear. A branch with no such word comes back unchanged (there
- * is nothing safe to drop), and the caller then ellipsizes.
- * Kept off the value stored in [branchOf] so the full name shows wherever it fits; the UI
- * measures and falls back to this only when it must.
+ * A shorter form of a branch for a row too narrow to fit the full one: the same whole-word forms a
+ * destination takes ([DestinationAbbreviations] — "Newbury Park" → "Newbury Pk", "East Ham" →
+ * "E. Ham", "Walthamstow Central" → "Walthamstow C."), plus "Cross" → "X", which a board uses for a
+ * branch ("Charing X"). The row abbreviates both the terminus and the branch before cutting either
+ * (SPEC destination-label). A branch with no such word comes back unchanged. Kept off the value
+ * stored in [branchOf] so the full name shows wherever it fits; the UI measures and falls back to
+ * this only when it must.
  */
 fun abbreviateBranch(branch: String): String =
-    branch.split(" ").joinToString(" ") { word -> BRANCH_ABBREVIATIONS[word] ?: word }
+    DestinationAbbreviations.abbreviate(branch)
+        .split(" ")
+        .joinToString(" ") { word -> if (word == "Cross") "X" else word }

@@ -25,7 +25,6 @@ class BranchedLabelTest {
             maxWidth = 1000,
             labelWidth = 300,
             abbrevLabelWidth = 300,
-            floorLabelWidth = 180,
             fullBranchWidth = 200,
             abbrevBranchWidth = 140,
             minStubWidth = 20,
@@ -33,12 +32,13 @@ class BranchedLabelTest {
         assertEquals("Battersea Power", r.terminus)
         assertEquals("/Charing Cross", r.branch)
         assertEquals(null, r.contentDescription)
+        assertEquals(null, r.branchDescription)
     }
 
     @Test
     fun `abbreviates the terminus while the full branch still fits beside it`() {
-        // Floor + full branch fit, so the full branch is kept; the full terminus doesn't fit the
-        // leftover but its word-abbreviated form does.
+        // The terminus yields first: the full one doesn't fit beside the full branch, but its
+        // word-abbreviated form does, so the branch stays whole.
         val r = branchedLabel(
             label = "High Barnet",
             abbreviatedLabel = "H. Barnet",
@@ -48,7 +48,6 @@ class BranchedLabelTest {
             maxWidth = 200,
             labelWidth = 180,
             abbrevLabelWidth = 120,
-            floorLabelWidth = 100,
             fullBranchWidth = 60,
             abbrevBranchWidth = 60,
             minStubWidth = 20,
@@ -59,9 +58,34 @@ class BranchedLabelTest {
     }
 
     @Test
+    fun `abbreviates both sides before dropping the terminus to its floor`() {
+        // The floor would fit beside the full branch, but both sides are abbreviated before either
+        // is cut: the short branch leaves the word-abbreviated terminus room, so that shows rather
+        // than the floor.
+        val r = branchedLabel(
+            label = "South Harrow Road",
+            abbreviatedLabel = "S. Harrow Rd",
+            floorLabel = "South H. R.",
+            branch = "Newbury Park",
+            abbreviatedBranch = "Newbury Pk",
+            maxWidth = 200,
+            labelWidth = 150,
+            abbrevLabelWidth = 130,
+            fullBranchWidth = 100,
+            abbrevBranchWidth = 60,
+            minStubWidth = 20,
+        )
+        assertEquals("S. Harrow Rd", r.terminus)
+        assertEquals("/Newbury Pk", r.branch)
+        assertEquals("South Harrow Road", r.contentDescription)
+        // The shortened branch keeps its full name for a screen reader.
+        assertEquals("via Newbury Park", r.branchDescription)
+    }
+
+    @Test
     fun `drops the terminus to its floor beside the kept full branch`() {
-        // Neither the full nor the word-abbreviated terminus fits beside the (whole) full branch, but
-        // the floor does — so the floor shows and the branch is never clipped.
+        // Neither the full nor the word-abbreviated terminus fits beside the full branch, and this
+        // branch has no shorter form, so the floor shows beside it and the branch is never clipped.
         val r = branchedLabel(
             label = "Battersea Power",
             abbreviatedLabel = "Battersea Power",
@@ -71,7 +95,6 @@ class BranchedLabelTest {
             maxWidth = 400,
             labelWidth = 300,
             abbrevLabelWidth = 300,
-            floorLabelWidth = 180,
             fullBranchWidth = 150,
             abbrevBranchWidth = 150,
             minStubWidth = 30,
@@ -83,8 +106,8 @@ class BranchedLabelTest {
 
     @Test
     fun `shortens the branch to its board form to keep the full terminus`() {
-        // The full branch won't fit beside the floor terminus, but the short branch does — and beside
-        // the short branch the FULL terminus fits, so the terminus stays whole.
+        // Not even the abbreviated terminus fits beside the full branch, but beside the short branch
+        // the FULL terminus fits, so the terminus stays whole.
         val r = branchedLabel(
             label = "High Barnet",
             abbreviatedLabel = "H. Barnet",
@@ -94,7 +117,6 @@ class BranchedLabelTest {
             maxWidth = 150,
             labelWidth = 100,
             abbrevLabelWidth = 80,
-            floorLabelWidth = 70,
             fullBranchWidth = 100,
             abbrevBranchWidth = 40,
             minStubWidth = 20,
@@ -106,8 +128,8 @@ class BranchedLabelTest {
 
     @Test
     fun `drops the terminus to its floor beside the short branch under tighter pressure`() {
-        // Floor + full branch won't fit, floor + short branch does, and only the floor terminus fits
-        // the leftover beside the short branch.
+        // Neither terminus form fits beside the full branch, and only the floor fits the leftover
+        // beside the short branch.
         val r = branchedLabel(
             label = "Battersea Power",
             abbreviatedLabel = "Battersea Power",
@@ -117,7 +139,6 @@ class BranchedLabelTest {
             maxWidth = 400,
             labelWidth = 300,
             abbrevLabelWidth = 300,
-            floorLabelWidth = 180,
             fullBranchWidth = 250,
             abbrevBranchWidth = 150,
             minStubWidth = 30,
@@ -141,7 +162,6 @@ class BranchedLabelTest {
             maxWidth = 220,
             labelWidth = 300,
             abbrevLabelWidth = 200,
-            floorLabelWidth = 150,
             fullBranchWidth = 260,
             abbrevBranchWidth = 200,
             minStubWidth = 30,
@@ -150,6 +170,7 @@ class BranchedLabelTest {
         assertEquals("Charing X", r.branch)
         assertFalse("no leading slash when the branch stands alone", r.branch.startsWith("/"))
         assertEquals("High Barnet", r.contentDescription)
+        assertEquals("High Barnet via Charing Cross", r.branchDescription)
     }
 
     @Test
@@ -165,7 +186,6 @@ class BranchedLabelTest {
             maxWidth = 240,
             labelWidth = 300,
             abbrevLabelWidth = 200,
-            floorLabelWidth = 150,
             fullBranchWidth = 260,
             abbrevBranchWidth = 200,
             minStubWidth = 30,
