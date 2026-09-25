@@ -760,6 +760,114 @@ class DepartureRowsTest {
         assertEquals(setOf("outbound", "inbound"), deduped.map { it.direction }.toSet())
     }
 
+    // A stop pair (two poles in one TfL stop area) and a lone southbound pole at another place.
+    private fun pole(stopId: String, name: String, direction: String, clusterId: String = "") =
+        rowsFor(stopId, name, departure("55", "55", direction, if (direction == "inbound") "North" else "South", 120, mode = "bus"))
+            .map { it.copy(clusterId = clusterId) }
+
+    private val pairNorth = pole("PN", "Pair Road", "inbound", "490GPAIR")
+    private val pairSouth = pole("PS", "Pair Road", "outbound", "490GPAIR")
+    private val loneSouth = pole("LS", "Lone Avenue", "outbound")
+
+    @Test
+    fun `nearbyDeduped keeps a route's directions at one place within 50 m`() {
+        // The lone pole is 25 m nearer southbound; the pair serves both ways, so both come from it.
+        val deduped = DepartureRows.nearbyDeduped(
+            pairNorth + pairSouth + loneSouth,
+            mapOf("PN" to 100.0, "PS" to 128.0, "LS" to 103.0),
+        )
+        assertEquals(setOf("PN", "PS"), deduped.mapTo(HashSet()) { it.stopId })
+    }
+
+    @Test
+    fun `nearbyDeduped splits a route when the other place is over 50 m nearer`() {
+        val deduped = DepartureRows.nearbyDeduped(
+            pairNorth + pairSouth + loneSouth,
+            mapOf("PN" to 100.0, "PS" to 200.0, "LS" to 103.0),
+        )
+        assertEquals(setOf("PN", "LS"), deduped.mapTo(HashSet()) { it.stopId })
+    }
+
+    @Test
+    fun `nearbyDeduped moves a route only to a place serving every direction`() {
+        // The lone pole is nearest southbound and nearly so northbound, but serves only southbound.
+        val deduped = DepartureRows.nearbyDeduped(
+            pairNorth + pairSouth + loneSouth,
+            mapOf("PN" to 60.0, "PS" to 200.0, "LS" to 50.0),
+        )
+        assertEquals(setOf("PN", "LS"), deduped.mapTo(HashSet()) { it.stopId })
+    }
+
+    @Test
+    fun `nearbyDeduped treats two stop areas of one interchange as two places`() {
+        // Both areas belong to one interchange but head separate groups: the route is still split
+        // across headers, so it moves to the pair serving both ways.
+        val areaA = pole("AN", "Area A", "inbound", "490GAREAA").map { it.copy(hubId = "HUBX") }
+        val areaB = pole("BS", "Area B", "outbound", "490GAREAB").map { it.copy(hubId = "HUBX") }
+        val deduped = DepartureRows.nearbyDeduped(
+            areaA + areaB + pairNorth + pairSouth,
+            mapOf("AN" to 100.0, "BS" to 100.0, "PN" to 110.0, "PS" to 120.0),
+        )
+        assertEquals(setOf("PN", "PS"), deduped.mapTo(HashSet()) { it.stopId })
+    }
+
+    @Test
+    fun `nearbyDeduped keys places as the headers do when a pole shows a line warning`() {
+        // The pair's southbound pole also shows another route's suspension, so the list heads it on
+        // its own: the pair is two headers, and the route stays split rather than "together".
+        val warning = lineStatusRow("PS", "Pair Road", "99").copy(clusterId = "490GPAIR")
+        val deduped = DepartureRows.nearbyDeduped(
+            pairNorth + pairSouth + warning + loneSouth,
+            mapOf("PN" to 100.0, "PS" to 128.0, "LS" to 103.0),
+        )
+        assertEquals(setOf("PN", "LS"), deduped.filter { it.upcoming.isNotEmpty() }.mapTo(HashSet()) { it.stopId })
+    }
+
+    @Test
+    fun `nearbyDeduped keeps a pair together when its pole's warning is dismissed`() {
+        // Dismissed, the warning is hidden and the pair is one header again, so the route moves to it.
+        val warning = lineStatusRow("PS", "Pair Road", "99").copy(clusterId = "490GPAIR")
+        val deduped = DepartureRows.nearbyDeduped(
+            pairNorth + pairSouth + warning + loneSouth,
+            mapOf("PN" to 100.0, "PS" to 128.0, "LS" to 103.0),
+            dismissed = setOf(DismissedAlert.ofLineStatus(warning.status!!)),
+        )
+        assertEquals(setOf("PN", "PS"), deduped.filter { it.upcoming.isNotEmpty() }.mapTo(HashSet()) { it.stopId })
+    }
+
+    @Test
+    fun `nearbyDeduped never moves a direction onto a closed stop`() {
+        // TfL still lists times at the pair's closed southbound pole; the open lone pole keeps it.
+        val deduped = DepartureRows.nearbyDeduped(
+            pairNorth + pairSouth + stopStatusRow("PS", "Pair Road", clusterId = "490GPAIR") + loneSouth,
+            mapOf("PN" to 100.0, "PS" to 128.0, "LS" to 103.0),
+        )
+        assertEquals(setOf("PN", "LS"), deduped.filter { it.stopDisruption == null }.mapTo(HashSet()) { it.stopId })
+        // Its closure notice still shows.
+        assertEquals(listOf("PS"), deduped.filter { it.stopDisruption != null }.map { it.stopId })
+    }
+
+    @Test
+    fun `nearbyDeduped keeps the other direction when one pole of a pair has no times`() {
+        // A closed pole TfL lists no times for: the pair no longer serves southbound, so nothing moves.
+        val deduped = DepartureRows.nearbyDeduped(
+            pairNorth + stopStatusRow("PS", "Pair Road", clusterId = "490GPAIR") + loneSouth,
+            mapOf("PN" to 100.0, "PS" to 128.0, "LS" to 103.0),
+        )
+        assertEquals(setOf("PN", "LS"), deduped.filter { it.stopDisruption == null }.mapTo(HashSet()) { it.stopId })
+    }
+
+    @Test
+    fun `nearbyDeduped keeps a route together at the place whose farther stop is nearest`() {
+        val otherNorth = pole("ON", "Other Street", "inbound", "490GOTHER")
+        val otherSouth = pole("OS", "Other Street", "outbound", "490GOTHER")
+        val deduped = DepartureRows.nearbyDeduped(
+            pairNorth + pairSouth + otherNorth + otherSouth + loneSouth,
+            mapOf("PN" to 100.0, "PS" to 140.0, "ON" to 110.0, "OS" to 120.0, "LS" to 95.0),
+        )
+        assertEquals(setOf("ON", "OS"), deduped.mapTo(HashSet()) { it.stopId })
+    }
+
     @Test
     fun `nearbyDeduped keeps fully unresolved opposite directions at separate stops`() {
         // TfL gave neither direction nor destination; only the (stop-local) platform told the

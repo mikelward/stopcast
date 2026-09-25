@@ -700,7 +700,7 @@ fun MainScreen(
                 // notice TfL reports against each member of a hub is still one card per place.
                 DepartureRows.stopStatusFolded(across)
             } else {
-                val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters)
+                val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters, dismissed)
                 DepartureRows.byStopDistance(deduped, stopDistanceMeters)
             }
         // Hide the service alerts the user has dismissed (until their content changes).
