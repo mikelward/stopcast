@@ -792,6 +792,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           progress bar hinting more is coming. A line at the foot of the list while TfL's search
           runs (turning into "Bus stops not searched" on failure) would say so; weigh it against
           the extra flicker as results settle.
+    - [ ] **Consider a clear (×) button in the search field** (maintainer, 2026-09-25,
+          undecided): a trailing icon, shown only with text in the field, that empties the query
+          in one tap, in both the From… and To… searches. Needs approved copy for its content
+          description (proposed: "Clear search") before it's built.
     - [ ] **Rank by use**: TypeLauncher breaks ties by how often each item is opened. Here that
           would store which stations a user looks at (user data, on device, riding backup), so it
           waits for a decision and a *Privacy* line.
