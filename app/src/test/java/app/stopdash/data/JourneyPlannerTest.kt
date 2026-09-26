@@ -94,6 +94,14 @@ class JourneyPlannerTest {
     }
 
     @Test
+    fun `a train's heading drops the branch the Planner names after it`() = runTest {
+        val fixture = checkNotNull(javaClass.getResource("/fixtures/journey_results_kennington_to_archway.json")).readText()
+        // The Planner names it "High Barnet Station via Charing Cross"; the train's front reads "High Barnet".
+        val ride = client(fixture).journeys("940GZZLUKNG", "940GZZLUACY").first().rides.single()
+        assertEquals(listOf("High Barnet"), ride.headings)
+    }
+
+    @Test
     fun `drops a route with a leg it can't read, and says how many`() = runTest {
         val broken = fixture.replaceFirst("\"departureTime\": \"2026-09-26T07:37:00\"", "\"departureTime\": \"soon\"")
         val warnings = mutableListOf<String>()

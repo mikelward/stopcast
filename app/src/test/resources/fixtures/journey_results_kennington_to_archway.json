@@ -1,0 +1,100 @@
+{
+  "journeys": [
+    {
+      "startDateTime": "2026-09-26T20:08:00",
+      "duration": 21,
+      "arrivalDateTime": "2026-09-26T20:29:00",
+      "legs": [
+        {
+          "duration": 21,
+          "departureTime": "2026-09-26T20:08:00",
+          "arrivalTime": "2026-09-26T20:29:00",
+          "mode": {
+            "id": "tube",
+            "name": "tube"
+          },
+          "departurePoint": {
+            "commonName": "Kennington Underground Station",
+            "naptanId": "940GZZLUKNG",
+            "individualStopId": "9400ZZLUKNG1",
+            "icsCode": "1000121"
+          },
+          "arrivalPoint": {
+            "commonName": "Archway Underground Station",
+            "naptanId": "940GZZLUACY",
+            "individualStopId": "9400ZZLUACY1",
+            "icsCode": "1000008"
+          },
+          "routeOptions": [
+            {
+              "name": "Northern",
+              "directions": [
+                "High Barnet Station via Charing Cross"
+              ],
+              "lineIdentifier": {
+                "id": "northern",
+                "name": "Northern"
+              }
+            }
+          ],
+          "path": {
+            "stopPoints": [
+              {
+                "id": "940GZZLUWLO",
+                "name": "Waterloo Underground Station"
+              },
+              {
+                "id": "940GZZLUEMB",
+                "name": "Embankment Underground Station"
+              },
+              {
+                "id": "940GZZLUCHX",
+                "name": "Charing Cross Underground Station"
+              },
+              {
+                "id": "940GZZLULSQ",
+                "name": "Leicester Square Underground Station"
+              },
+              {
+                "id": "940GZZLUTCR",
+                "name": "Tottenham Court Road Underground Station"
+              },
+              {
+                "id": "940GZZLUGDG",
+                "name": "Goodge Street Underground Station"
+              },
+              {
+                "id": "940GZZLUWRR",
+                "name": "Warren Street Underground Station"
+              },
+              {
+                "id": "940GZZLUEUS",
+                "name": "Euston Underground Station"
+              },
+              {
+                "id": "940GZZLUMTC",
+                "name": "Mornington Crescent Underground Station"
+              },
+              {
+                "id": "940GZZLUCTN",
+                "name": "Camden Town Underground Station"
+              },
+              {
+                "id": "940GZZLUKSH",
+                "name": "Kentish Town Underground Station"
+              },
+              {
+                "id": "940GZZLUTFP",
+                "name": "Tufnell Park Underground Station"
+              },
+              {
+                "id": "940GZZLUACY",
+                "name": "Archway Underground Station"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
