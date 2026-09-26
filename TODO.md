@@ -926,13 +926,13 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         no routes for counted as its own mode, so its nearest two were eager — at a big interchange
         that fetched unserved stops a kilometer off. They now wait behind the generic "More stops".
   - [x] **A quick retry refetches only the missing stops; closure checks are reused 5 min**
-        (maintainer, 2026-09-23). A stop fetched <30 s ago is carried over, so a retry after a
+        (maintainer, 2026-09-23). A stop fetched <50 s ago (on any screen, since 2026-09-26) is carried over, so a retry after a
         rate-limited refresh fits the budget left; a stop's closure check is reused 5 min. In
         memory only.
   - [x] **Cache more, fetch less** (maintainer, 2026-09-23). Line status is reused 90 s (checked
         every other auto-refresh); a nearby lookup is reused for a day within 150 m (last four
         places, kept in the never-backed-up cache dir); the timer refreshes stops past 500 m every
-        other minute; the widget skips a stop the app fetched <30 s ago. Running the nearby lookup,
+        other minute; the widget skips a stop the app fetched <50 s ago. Running the nearby lookup,
         line status and departures in parallel is the next lever, not yet done.
   - [x] **Routes and stop areas are kept a day** (maintainer, 2026-09-24). Route sequences and
         stop-area poles were held for the process only; they now persist for 24 h in the

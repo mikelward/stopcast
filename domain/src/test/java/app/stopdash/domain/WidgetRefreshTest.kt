@@ -159,4 +159,55 @@ class WidgetRefreshTest {
         assertEquals(listOf("A", "B"), refreshed.stops.map { it.stopId })
         assertTrue(refreshed.stops.all { it.arrivalsFresh })
     }
+
+    @Test
+    fun `a stop another screen just fetched is taken at its own fetch time, not asked for`() = runTest {
+        val prior = snapshot(stop("A", emptyList()), stop("B", emptyList()))
+        val shared = ArrivalsCache()
+        val sharedAt = t1.minusSeconds(10)
+        shared.put("A", listOf(departure("Brixton")), sharedAt, RailFeed.NO_KEY)
+        val asked = mutableListOf<String>()
+        val refreshed = WidgetRefresh.refreshedArrivals(prior, t1, shared = shared) { id ->
+            asked += id
+            listOf(departure("Walthamstow Central"))
+        }!!
+        assertEquals(listOf("B"), asked)
+        val a = refreshed.stops.single { it.stopId == "A" }
+        assertEquals(sharedAt, a.fetchedAt)
+        assertEquals(listOf("Brixton"), a.departures.map { it.destination })
+        // With the National Rail feed that fetch found.
+        assertEquals(RailFeed.NO_KEY, a.railFeed)
+        assertEquals(t1, refreshed.stops.single { it.stopId == "B" }.fetchedAt)
+    }
+
+    @Test
+    fun `a newer fetch by another screen replaces a stop the widget fetched moments ago`() = runTest {
+        // The widget fetched A 20 s ago, within its reuse window; the app has fetched it since.
+        val prior = snapshot(stop("A", listOf(departure("Brixton")), fetchedAt = t1.minusSeconds(20)))
+        val shared = ArrivalsCache()
+        shared.put("A", listOf(departure("Walthamstow Central")), t1.minusSeconds(5))
+        val refreshed = WidgetRefresh.refreshedArrivals(prior, t1, reuse = java.time.Duration.ofSeconds(50), shared = shared) {
+            error("not asked for")
+        }!!
+        assertEquals(t1.minusSeconds(5), refreshed.stops.single().fetchedAt)
+        assertEquals(listOf("Walthamstow Central"), refreshed.stops.single().departures.map { it.destination })
+    }
+
+    @Test
+    fun `a station row from before a National Rail key was added is fetched again, however recent`() = runTest {
+        val prior = snapshot(stop("A", emptyList(), fetchedAt = t1.minusSeconds(10)).copy(railFeed = RailFeed.NO_KEY))
+        val asked = mutableListOf<String>()
+        val refreshed = WidgetRefresh.refreshedArrivals(
+            prior, t1, reuse = java.time.Duration.ofSeconds(50), source = true, railFeed = { RailFeed.LIVE },
+        ) { id ->
+            asked += id
+            listOf(departure("Brixton"))
+        }
+        assertEquals(listOf("A"), asked)
+        assertEquals(t1, refreshed!!.stops.single().fetchedAt)
+        // The row now says where its National Rail times stand after the fetch.
+        assertEquals(RailFeed.LIVE, refreshed.stops.single().railFeed)
+        // Without a change of key, the recent row is carried over as before.
+        assertNull(WidgetRefresh.refreshedArrivals(prior, t1, reuse = java.time.Duration.ofSeconds(50), source = false) { error("not asked for") })
+    }
 }

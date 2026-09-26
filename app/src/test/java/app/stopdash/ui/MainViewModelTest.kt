@@ -1,5 +1,6 @@
 package app.stopdash.ui
 
+import app.stopdash.domain.ArrivalsCache
 import app.stopdash.domain.Departure
 import app.stopdash.domain.DepartureRow
 import app.stopdash.domain.DepartureRows
@@ -2658,6 +2659,29 @@ class MainViewModelTest {
     private fun openModel(cards: FartherCardsViewModel) = cards.model(fartherPlace.key)!!
 
     @Test
+    fun `a pull fetches an opened farther card afresh too`() = runTest(dispatcher) {
+        val client = CountingClient(emptyMap())
+        val cards = FartherCardsViewModel(
+            stationStops = { listOf(fartherStop) },
+            newModel = { stops, distances ->
+                MainViewModel(client, stops, clock = { now }, io = dispatcher, stopDistanceMeters = distances, arrivalsReuse = ARRIVALS_REUSE)
+            },
+            io = dispatcher,
+        )
+        cards.open(fartherPlace, Coordinates(0.0, 0.0))
+        advanceUntilIdle()
+        assertEquals(listOf("MA"), client.arrivalsCalls)
+        // Moments later the list's refresh reuses the card's fetch; a pull doesn't.
+        cards.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf("MA"), client.arrivalsCalls)
+        cards.forceNextFetch()
+        cards.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf("MA", "MA"), client.arrivalsCalls)
+    }
+
+    @Test
     fun `opening a farther card gives its station its own departures`() = runTest(dispatcher) {
         val cards = fartherCards { id ->
             assertEquals("FS", id)
@@ -3205,6 +3229,65 @@ class MainViewModelTest {
         }
         override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> = emptyList()
         override suspend fun stopDisruptions(stopId: String): List<StopDisruption> = emptyList()
+    }
+
+    @Test
+    fun `a stop another screen just fetched shows at its own age without a request`() = runTest(dispatcher) {
+        val shared = ArrivalsCache()
+        val earlier = now.minusSeconds(20)
+        shared.put(seeds[0].id, listOf(departure("victoria", "Victoria", 300)), earlier)
+        val client = CountingClient(mapOf(seeds[1].id to listOf(departure("northern", "Northern", 200))))
+        val vm = MainViewModel(client, seeds, clock = { now }, io = dispatcher, sharedArrivals = shared)
+        advanceUntilIdle()
+        assertEquals(listOf(seeds[1].id), client.arrivalsCalls)
+        val stops = (vm.state.value as DeparturesUiState.Loaded).stops.associateBy { it.stopId }
+        // Stamped when it was fetched, never passed off as fetched now.
+        assertEquals(earlier, stops.getValue(seeds[0].id).fetchedAt)
+        assertEquals(listOf("victoria"), stops.getValue(seeds[0].id).departures.map { it.lineId })
+        assertEquals(now, stops.getValue(seeds[1].id).fetchedAt)
+    }
+
+    @Test
+    fun `a newer fetch by another screen replaces the list's own recent one`() = runTest(dispatcher) {
+        var current = now
+        val shared = ArrivalsCache()
+        val client = CountingClient(emptyMap())
+        val vm = MainViewModel(
+            client, seeds, clock = { current }, io = dispatcher, sharedArrivals = shared, arrivalsReuse = ARRIVALS_REUSE,
+        )
+        advanceUntilIdle()
+        // Another screen pulls, fetching the stop afresh 10 s on.
+        shared.put(seeds[0].id, listOf(departure("victoria", "Victoria", 300)), now.plusSeconds(10))
+        current = now.plusSeconds(20)
+        vm.refresh()
+        advanceUntilIdle()
+        val stop = (vm.state.value as DeparturesUiState.Loaded).stops.single { it.stopId == seeds[0].id }
+        assertEquals(now.plusSeconds(10), stop.fetchedAt)
+        assertEquals(listOf("victoria"), stop.departures.map { it.lineId })
+        // Neither stop was asked for again: one carried over, one from the newer shared fetch.
+        assertEquals(2, client.arrivalsCalls.size)
+    }
+
+    @Test
+    fun `a pull-to-refresh asks for every stop, however recent`() = runTest(dispatcher) {
+        val shared = ArrivalsCache()
+        shared.put(seeds[0].id, emptyList(), now.minusSeconds(20))
+        val client = CountingClient(emptyMap())
+        val vm = MainViewModel(
+            client, seeds, clock = { now }, io = dispatcher, sharedArrivals = shared, arrivalsReuse = ARRIVALS_REUSE,
+        )
+        advanceUntilIdle()
+        assertEquals(listOf(seeds[1].id), client.arrivalsCalls)
+        // A refresh within the minute (the crosshairs, a return to the app) reuses them all...
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf(seeds[1].id), client.arrivalsCalls)
+        // ...a pull asks afresh for each.
+        vm.forceNextFetch()
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(setOf(seeds[0].id, seeds[1].id), client.arrivalsCalls.drop(1).toSet())
+        assertEquals(3, client.arrivalsCalls.size)
     }
 
     @Test
@@ -3793,13 +3876,16 @@ class MainViewModelTest {
     fun `a change of departure source refetches every stop at once, none carried over`() = runTest(dispatcher) {
         val client = ReuseCountingClient()
         val key = MutableStateFlow<String?>(null)
+        val shared = ArrivalsCache()
         val vm = MainViewModel(
             client, listOf(seeds.first()), clock = { now }, io = dispatcher,
-            arrivalsReuse = ARRIVALS_REUSE, departureSourceChanges = key,
+            arrivalsReuse = ARRIVALS_REUSE, departureSourceChanges = key, sharedArrivals = shared,
         )
         advanceUntilIdle()
         val stop = seeds.first().id
         assertEquals(1, client.arrivalCalls[stop])
+        // Another screen's fetch under the old source doesn't stand in for it either.
+        shared.put(stop, emptyList(), now)
         // A refresh moments later carries the stop over.
         vm.refresh()
         advanceUntilIdle()
@@ -3809,6 +3895,7 @@ class MainViewModelTest {
         advanceUntilIdle()
         assertEquals(2, client.arrivalCalls[stop])
         assertTrue(vm.state.value is DeparturesUiState.Loaded)
+        assertNull(shared.get(stop, now))
     }
 
     private val oxcId = "940GZZLUOXC"
@@ -4155,8 +4242,8 @@ class MainViewModelTest {
         assertEquals(2, client.arrivalCalls[oxcId])
         assertEquals(1, client.arrivalCalls[ksxId])
 
-        // A user refresh (past the 30 s quick-retry window) refetches both.
-        current = now.plusSeconds(100)
+        // A user refresh past the reuse window refetches both.
+        current = now.plusSeconds(120)
         vm.refresh()
         advanceUntilIdle()
         assertEquals(3, client.arrivalCalls[oxcId])
@@ -4639,19 +4726,20 @@ class MainViewModelTest {
             )
             advanceUntilIdle()
 
-            // A refresh 40 s on gets its arrivals, then stalls on line status and is superseded.
+            // A refresh 55 s on (past the reuse window) gets its arrivals, then stalls on line status
+            // and is superseded.
             gate = CompletableDeferred()
-            current = now.plusSeconds(40)
+            current = now.plusSeconds(55)
             vm.refresh()
             advanceUntilIdle()
             gate.complete(Unit)
-            current = now.plusSeconds(45)
+            current = now.plusSeconds(60)
             vm.refresh()
             advanceUntilIdle()
 
             // The screen still showed the first fetch's stops, so the third refresh refetches them.
             assertEquals(3, counting.arrivalCalls[oxcId])
-            assertEquals(now.plusSeconds(45), (vm.state.value as DeparturesUiState.Loaded).fetchedAt)
+            assertEquals(now.plusSeconds(60), (vm.state.value as DeparturesUiState.Loaded).fetchedAt)
         }
 
     @Test
@@ -4747,10 +4835,11 @@ class MainViewModelTest {
             )
             advanceUntilIdle()
 
-            // 35 s on, a refresh finds King's Cross newly closed but its arrivals fail, then stalls
-            // on line status and is superseded — its closure is cached but never shown.
+            // 55 s on (past the reuse window), a refresh finds King's Cross newly closed but its
+            // arrivals fail, then stalls on line status and is superseded — its closure is cached but
+            // never shown.
             gate = CompletableDeferred()
-            current = now.plusSeconds(35)
+            current = now.plusSeconds(55)
             counting.failingArrivals += ksxId
             counting.closures[ksxId] = listOf(StopDisruption("Bus Stop Closed"))
             vm.refresh()

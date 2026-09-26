@@ -106,6 +106,13 @@ class RailAwareTflClient(
 
     override fun railFeed(stopId: String): RailFeed? = feeds[stopId]
 
+    // With National Rail times on, a station's board goes under whichever of its stops this client
+    // picked, so its arrivals aren't another client's to reuse; with none, it's TfL's alone.
+    override fun shareable(stopId: String): Boolean = !rail.available || codes().crsFor(stopId) == null
+
+    // With a key its stations' boards join TfL's arrivals; without one they don't ("No key").
+    override fun arrivalsSource(): Any? = rail.available
+
     override suspend fun arrivals(stopId: String): List<Departure> {
         val crs = codes().crsFor(stopId)
         if (crs == null || !rail.available) {

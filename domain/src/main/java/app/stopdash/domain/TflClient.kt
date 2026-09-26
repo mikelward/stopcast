@@ -23,6 +23,20 @@ interface TflClient {
     fun railFeed(stopId: String): RailFeed? = null
 
     /**
+     * Whether [stopId]'s [arrivals] are the same whichever client asked, so another screen may show
+     * them ([ArrivalsCache]). Not so where a client decides between stops: two stops sharing one
+     * National Rail station show its board under only the one that client picked ([RailAwareTflClient]).
+     */
+    fun shareable(stopId: String): Boolean = true
+
+    /**
+     * Where this client's [arrivals] come from right now, as far as it changes what they hold: whether
+     * National Rail times are on ([RailAwareTflClient]). An arrival kept ([ArrivalsCache]) from another
+     * source isn't this client's to reuse. Null for a client with only one source.
+     */
+    fun arrivalsSource(): Any? = null
+
+    /**
      * The current status of each line in [lineIds], from `/Line/{ids}/Status` — one
      * [LineStatus] per line TfL knows, carrying the worst of that line's statuses. An
      * empty [lineIds] makes no request and returns empty. Like [arrivals] it throws on a

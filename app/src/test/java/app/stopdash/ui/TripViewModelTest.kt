@@ -1,6 +1,7 @@
 package app.stopdash.ui
 
 import app.stopdash.R
+import app.stopdash.domain.ArrivalsCache
 import app.stopdash.domain.Departure
 import app.stopdash.domain.JourneyPlanner
 import app.stopdash.domain.LineRoute
@@ -14,9 +15,11 @@ import app.stopdash.domain.TripRoute
 import app.stopdash.domain.TripTiming
 import java.time.Duration
 import java.time.Instant
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -95,7 +98,9 @@ class TripViewModelTest {
             return arrivals[stopId].orEmpty()
         }
         var omitLines = emptySet<String>()
+        var statusChecks = 0
         override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+            statusChecks++
             if (failStatus) throw TflException.Offline(null)
             return lineIds.filterNot { it in omitLines }.map { LineStatus(it, LineStatus.GOOD_SERVICE, "Good Service") }
         }
@@ -107,7 +112,117 @@ class TripViewModelTest {
         client: TflClient,
         plans: TripPlans = TripPlans(),
         toIds: List<String> = listOf("C"),
-    ) = TripViewModel(planner, client, "A", toIds, clock = { now }, plans = plans, io = dispatcher)
+        arrivals: ArrivalsCache = ArrivalsCache(),
+    ) = TripViewModel(planner, client, "A", toIds, clock = { now }, plans = plans, io = dispatcher, arrivals = arrivals)
+
+    @Test
+    fun `a boarding stop another screen just fetched shows at once and isn't asked for again`() = runTest(dispatcher) {
+        val cache = ArrivalsCache()
+        val cached = listOf(train("red", "B", 6))
+        cache.put("A", cached, now.minusSeconds(20))
+        val client = FakeClient(mutableMapOf("A" to listOf(train("red", "B", 9)), "B" to listOf(train("blue", "C", 20))))
+        val trip = model(FakePlanner(listOf(route)), client, arrivals = cache)
+        trip.refresh()
+        advanceUntilIdle()
+        assertEquals(TripViewModel.StopLive(cached, now.minusSeconds(20)), trip.state.value.live["A"])
+        assertEquals(listOf("B"), client.asked)
+        // What the trip fetched is there for the other screens.
+        assertEquals(now, cache.get("B", now)?.fetchedAt)
+    }
+
+    @Test
+    fun `a National Rail key change drops a kept trip's times and fetches them when it's shown again`() = runTest(dispatcher) {
+        val key = MutableStateFlow<String?>(null)
+        val client = FakeClient(mutableMapOf("A" to listOf(train("red", "B", 9))))
+        val trip = TripViewModel(
+            FakePlanner(listOf(route)), client, "A", listOf("C"), clock = { now }, plans = TripPlans(), io = dispatcher,
+            departureSourceChanges = key,
+        )
+        trip.refreshFor(null)
+        advanceUntilIdle()
+        assertEquals(2, client.asked.size)
+        key.value = "EXAMPLE"
+        advanceUntilIdle()
+        // Nothing fetched under the old key stays up, and nothing is fetched while the trip is away.
+        assertTrue(trip.state.value.live.isEmpty())
+        assertEquals(2, client.asked.size)
+        // Shown again for the same re-pick, it fetches afresh.
+        trip.refreshFor(null)
+        advanceUntilIdle()
+        assertEquals(4, client.asked.size)
+    }
+
+    @Test
+    fun `a trip's fetch still out when the National Rail key changes isn't shown`() = runTest(dispatcher) {
+        val key = MutableStateFlow<String?>(null)
+        val gate = CompletableDeferred<Unit>()
+        val client = object : TflClient by FakeClient(mutableMapOf()) {
+            override suspend fun arrivals(stopId: String): List<Departure> {
+                gate.await()
+                return listOf(train("red", "B", 9))
+            }
+        }
+        val trip = TripViewModel(
+            FakePlanner(listOf(route)), client, "A", listOf("C"), clock = { now }, plans = TripPlans(), io = dispatcher,
+            departureSourceChanges = key,
+        )
+        trip.refresh()
+        runCurrent()
+        key.value = "EXAMPLE"
+        runCurrent()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(trip.state.value.live.isEmpty())
+    }
+
+    @Test
+    fun `a boarding stop fetched after the clock, set back since, is asked for again`() = runTest(dispatcher) {
+        val client = FakeClient(mutableMapOf("A" to listOf(train("red", "B", 9))))
+        val trip = model(FakePlanner(listOf(route)), client)
+        trip.refresh()
+        advanceUntilIdle()
+        assertEquals(setOf("A", "B"), client.asked.toSet())
+        now = now.minusSeconds(120)
+        trip.refresh()
+        advanceUntilIdle()
+        assertEquals(4, client.asked.size)
+        assertEquals(now, trip.state.value.live.getValue("A").fetchedAt)
+    }
+
+    @Test
+    fun `a kept trip shown again takes newer arrivals another screen fetched meanwhile`() = runTest(dispatcher) {
+        val cache = ArrivalsCache()
+        val client = FakeClient(mutableMapOf("A" to listOf(train("red", "B", 9))))
+        val trip = model(FakePlanner(listOf(route)), client, arrivals = cache)
+        trip.refreshFor(null)
+        advanceUntilIdle()
+        val newer = listOf(train("red", "B", 7))
+        cache.put("A", newer, now.plusSeconds(20))
+        now = now.plusSeconds(30)
+        trip.refreshFor(null)
+        advanceUntilIdle()
+        assertEquals(newer, trip.state.value.live.getValue("A").departures)
+        // Without asking TfL again: both stops are under a minute old.
+        assertEquals(2, client.asked.size)
+        // Shown again two minutes on, with nothing newer to take: the stops are asked for again.
+        now = now.plusSeconds(120)
+        trip.refreshFor(null)
+        advanceUntilIdle()
+        assertEquals(4, client.asked.size)
+    }
+
+    @Test
+    fun `a boarding stop fetched a minute ago or more is asked for again`() = runTest(dispatcher) {
+        val cache = ArrivalsCache()
+        cache.put("A", listOf(train("red", "B", 6)), now.minus(ArrivalsCache.TTL))
+        val fresh = listOf(train("red", "B", 9))
+        val client = FakeClient(mutableMapOf("A" to fresh))
+        val trip = model(FakePlanner(listOf(route)), client, arrivals = cache)
+        trip.refresh()
+        advanceUntilIdle()
+        assertEquals(setOf("A", "B"), client.asked.toSet())
+        assertEquals(TripViewModel.StopLive(fresh, now), trip.state.value.live["A"])
+    }
 
     // To a complex's other station, D, by another line.
     private val toD = TripRoute(listOf(leg("red", "A", "B", 5, 15), leg("green", "B", "D", 18, 25)))
@@ -264,6 +379,8 @@ class TripViewModelTest {
         advanceUntilIdle()
         assertEquals(1, planner.calls)
         assertEquals(listOf("A", "B"), client.asked.sorted())
+        // A re-pick refreshes, asking again for arrivals past their minute.
+        now = now.plus(ArrivalsCache.TTL)
         trip.refreshFor(7)
         advanceUntilIdle()
         assertEquals(listOf("A", "A", "B", "B"), client.asked.sorted())
@@ -306,8 +423,10 @@ class TripViewModelTest {
         trip.refresh()
         trip.refresh()
         advanceUntilIdle()
-        // Two boarding stops, fetched in each of the two refreshes.
-        assertEquals(4, client.asked.size)
+        // The queued refresh ran: its statuses were checked again, but the two boarding stops,
+        // fetched just now, weren't.
+        assertEquals(2, client.statusChecks)
+        assertEquals(2, client.asked.size)
     }
 
     @Test

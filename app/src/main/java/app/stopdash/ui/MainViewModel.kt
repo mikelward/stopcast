@@ -2,6 +2,9 @@ package app.stopdash.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.stopdash.domain.ArrivalsCache
+import app.stopdash.domain.RailFeed
+import app.stopdash.domain.Departure
 import app.stopdash.domain.DepartureRow
 import app.stopdash.domain.DepartureRows
 import app.stopdash.domain.DeparturesSnapshot
@@ -87,9 +90,11 @@ private const val DISMISSED_READ_RETRY_MS = 500L
 private const val DISMISSED_READ_RETRY_MAX_MS = 30_000L
 
 /** How recently a stop's arrivals must have come back for a refresh to carry it over without a
- *  request (see MainViewModel.recentlyFetched). Under the 60 s auto-refresh, so a scheduled refresh
- *  still refetches everything; it only spares a quick retry after a rate-limited refresh. */
-internal val ARRIVALS_REUSE: Duration = Duration.ofSeconds(30)
+ *  request (see MainViewModel.recentlyFetched): the shared [ArrivalsCache.TTL], so the list reuses
+ *  its own fetches as it does another screen's. Under the 60 s auto-refresh, so a scheduled refresh
+ *  still refetches everything; a re-locate or return to the app soon after reuses them, and a
+ *  pull-to-refresh never does ([MainViewModel.forceNextFetch]). */
+internal val ARRIVALS_REUSE: Duration = ArrivalsCache.TTL
 
 /** How long a stop's successful closure lookup is reused (see MainViewModel.disruptionCache). */
 internal val DISRUPTION_REUSE: Duration = Duration.ofMinutes(5)
@@ -170,6 +175,10 @@ class MainViewModel(
     // a stop between the near and far bands.
     stopDistanceMeters: Map<String, Double> = emptyMap(),
     private val farArrivalsReuse: Duration = Duration.ZERO,
+    // The stops' last arrivals, shared with the other screens (SPEC *Freshness → Shared arrivals*):
+    // a stop another screen fetched within [ArrivalsCache.TTL] is shown from it rather than asked for
+    // again. Null (tests) reads none; the app passes [ArrivalsCache.SHARED].
+    private val sharedArrivals: ArrivalsCache? = null,
     // Monotonic milliseconds for timing a fetch, and the shared rate limiter's running total of
     // time spent waiting — both only feed the per-fetch debug-log line ([LoadStats]).
     private val elapsedMillis: () -> Long = { System.nanoTime() / 1_000_000 },
@@ -597,6 +606,10 @@ class MainViewModel(
         viewModelScope.launch {
             departureSourceChanges.drop(1).collect {
                 arrivalsFetchedAt.clear()
+                // Arrivals fetched under the old source (a National Rail key added or removed) no
+                // longer stand, on this screen or any other.
+                sharedArrivals?.clear()
+                forceNextFetch()
                 refresh()
             }
         }
@@ -740,6 +753,13 @@ class MainViewModel(
      * how to turn it into a [DeparturesUiState] and whether to save — so the same fetch serves a
      * whole-set refresh and an incremental reveal.
      */
+    // A stop's National Rail feed after its arrivals: as the shared fetch found it, or this client's.
+    private fun railFeedOf(stopId: String, departures: List<Departure>?, shared: ArrivalsCache.Entry?): RailFeed? = when {
+        departures == null -> null
+        shared != null -> shared.railFeed
+        else -> client.railFeed(stopId)
+    }
+
     private suspend fun fetchBatch(
         stops: List<StopRef>,
         prior: Map<String, StopArrivals>,
@@ -755,6 +775,9 @@ class MainViewModel(
         // [failed] is each stop whose arrivals have failed so far, and how, so the screen names it
         // at once rather than leaving it "Loading".
         onProgress: ((shown: List<StopArrivals>, waiting: Set<String>, failed: Map<String, DeparturesUiState.Error.Kind>) -> Unit)? = null,
+        // Whether a stop another screen fetched within [ArrivalsCache.TTL] is taken from
+        // [sharedArrivals] rather than asked for; false on a pull-to-refresh, which asks afresh.
+        useShared: Boolean = true,
     ): FetchBatch {
         lastFetchAt = now
         val startedAt = elapsedMillis()
@@ -784,7 +807,19 @@ class MainViewModel(
         // are free to reorder them, and nothing depends on the order (maintainer, PR #121). Each
         // request catches its own failure, so one stop failing never cancels its siblings.
         // A reused stop costs no request; its results are never read (it's carried over below).
-        fun reused(stop: StopRef) = stop.id in reuse && prior[stop.id] != null
+        // Each stop's arrivals another screen fetched within the TTL, where newer than this list's
+        // own ([sharedArrivals]): taken over a carry-over, so two screens don't show different times.
+        // A stop not carried over takes one no older than its own; one carried over, only a newer one.
+        val source = client.arrivalsSource()
+        val sharedFetch = if (!useShared || sharedArrivals == null) emptyMap() else stops.mapNotNull { stop ->
+            val entry = sharedArrivals.recent(stop.id, now, source) ?: return@mapNotNull null
+            val held = prior[stop.id]
+            if (held != null && entry.fetchedAt.isBefore(held.fetchedAt)) null else stop.id to entry
+        }.toMap()
+        fun newerShared(stop: StopRef) = sharedFetch[stop.id]?.let { entry ->
+            prior[stop.id]?.let { entry.fetchedAt.isAfter(it.fetchedAt) } ?: true
+        } ?: false
+        fun reused(stop: StopRef) = stop.id in reuse && prior[stop.id] != null && !newerShared(stop)
         // Which stops' closure results came from [disruptionCache] rather than this batch's request:
         // a cached result is knowledge but not NEWS, so it mustn't count toward [anyFreshData] — a
         // cycle whose every request failed would otherwise pass for a partial refresh and hide the
@@ -817,12 +852,19 @@ class MainViewModel(
             lookup.complete(info)
             return info
         }
+        // Each stop's arrivals taken from [sharedArrivals] (another screen's fetch within the TTL):
+        // merged at their own fetch time, not this batch's, so they're never passed off as newer.
+        val shared = arrayOfNulls<ArrivalsCache.Entry>(stops.size)
         val (arrivalResults, disruptionResults) = coroutineScope {
-            val arrivals = stops.map { stop ->
-                if (reused(stop)) {
-                    null
-                } else {
-                    async { runCatchingTfl { withContext(io) { client.arrivals(stop.id) } } }
+            val arrivals = stops.mapIndexed { i, stop ->
+                val recent = if (!reused(stop)) sharedFetch[stop.id] else null
+                when {
+                    reused(stop) -> null
+                    recent != null -> {
+                        shared[i] = recent
+                        CompletableDeferred(Result.success(recent.departures))
+                    }
+                    else -> async { runCatchingTfl { withContext(io) { client.arrivals(stop.id) } } }
                 }
             }
             // Fetch each stop's disruption independently of its arrivals (a closure, a moved stop),
@@ -918,7 +960,7 @@ class MainViewModel(
                             freshDepartures = departures,
                             freshDisruptions = stopDisruptions,
                             prior = prior[stop.id],
-                            now = now,
+                            now = shared[i]?.fetchedAt ?: now,
                             hubId = stop.hubId,
                             hubName = hub.name,
                             placeAliases = hub.aliases,
@@ -926,7 +968,7 @@ class MainViewModel(
                             bearing = stop.bearing,
                             towards = stop.towards,
                             nearer = Terminating.nearer(stop.id, places),
-                            freshRailFeed = if (departures != null) client.railFeed(stop.id) else null,
+                            freshRailFeed = railFeedOf(stop.id, departures, shared[i]),
                         )
                         waiting -= stop.id
                         onProgress(landed.filterNotNull(), waiting.toSet(), failed.toMap())
@@ -981,7 +1023,7 @@ class MainViewModel(
             }
             if (departures != null) {
                 freshArrivalStopIds += stop.id
-                arrivalsFetchedAt[stop.id] = now
+                arrivalsFetchedAt[stop.id] = shared[i]?.fetchedAt ?: now
             }
             if (departures != null || (disruptions != null && !disruptionFromCache[i])) anyFreshData = true
             val hub =
@@ -998,7 +1040,7 @@ class MainViewModel(
                 freshDepartures = departures,
                 freshDisruptions = disruptions,
                 prior = prior[stop.id],
-                now = now,
+                now = shared[i]?.fetchedAt ?: now,
                 hubId = stop.hubId,
                 hubName = hub.name,
                 placeAliases = hub.aliases,
@@ -1006,7 +1048,7 @@ class MainViewModel(
                 bearing = stop.bearing,
                 towards = stop.towards,
                 nearer = nearer,
-                freshRailFeed = if (departures != null) client.railFeed(stop.id) else null,
+                freshRailFeed = railFeedOf(stop.id, departures, shared[i]),
             )?.let { merged += it }
         }
 
@@ -1181,12 +1223,27 @@ class MainViewModel(
                         .any { it.isNotBlank() && it !in determinedLineIds }
             }
 
+    // Set by [forceNextFetch]: the next [refresh] asks for every stop afresh.
+    private var forceNext = false
+
+    /**
+     * Makes the next [refresh] — this one's, or the one a relocation's [reconcile] runs — ask TfL for
+     * every stop, reusing neither this list's recent fetches nor another screen's: a pull-to-refresh
+     * (SPEC *Freshness → Shared arrivals*).
+     */
+    fun forceNextFetch() {
+        forceNext = true
+    }
+
     /**
      * Re-fetch every fetched stop and swap in a fresh snapshot; safe to call repeatedly. An
      * [automatic] refresh (the on-screen timer, not the user) also carries over a far stop fetched
      * within [farArrivalsReuse] — see [recentlyFetched].
      */
     fun refresh(automatic: Boolean = false) {
+        // A pull-to-refresh asks afresh for every stop, reusing none ([forceNextFetch]).
+        val force = forceNext
+        forceNext = false
         refreshAwaitsJourneyStops = false
         fetchJob?.cancel()
         val previous = _state.value
@@ -1245,7 +1302,7 @@ class MainViewModel(
             // except stops fetched moments ago, carried over as they are. A retry soon after a
             // rate-limited refresh then spends the budget left only on the stops still missing,
             // rather than refetching every stop and hitting the limit again.
-            val reuse = if (priorLoaded != null) recentlyFetched(priorLoaded, now, automatic) else emptySet()
+            val reuse = if (priorLoaded != null && !force) recentlyFetched(priorLoaded, now, automatic) else emptySet()
             // The nearby stops this fetch is for: the only ones the widget may be given below.
             val nearIds = nearStops.mapTo(HashSet()) { it.id }
             val journeyIds = journeyStops.mapTo(HashSet()) { it.id }
@@ -1269,7 +1326,7 @@ class MainViewModel(
                     coldLoadUnfinished = true
                 }
             }
-            val batch = fetchBatch(toFetch, prior, now, reuse, onProgress = if (!coldAtStart) null else { shown, waiting, failed ->
+            val batch = fetchBatch(toFetch, prior, now, reuse, useShared = !force, onProgress = if (!coldAtStart) null else { shown, waiting, failed ->
                 val current = _state.value
                 val coldLoad = current is DeparturesUiState.Loading ||
                     (current is DeparturesUiState.Loaded && (current.statusPending || coldLoadUnfinished)) ||

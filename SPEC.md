@@ -1177,6 +1177,17 @@ about when data has gone stale.
   part-loaded list is never saved for the widget or the next launch; only the whole batch is. A
   load cut short (a relocation) names the stops it never got, like any other failed stop. With
   a saved snapshot on screen, a refresh keeps it whole until the batch is done.
+- **Shared arrivals**: every stop's last arrivals are kept in memory for the process, with when
+  they were fetched, whichever screen (or the widget's refresh) fetched them. A screen that needs a stop fetched within the
+  last **50 s** — a trip's boarding stop the list just fetched, the list after a re-locate, a
+  return to the app, or its own minute tick — shows those at once rather than ask TfL again
+  (maintainer, 2026-09-26: about a minute, a little under so the once-a-minute auto-refresh never
+  skips a cycle). They're shown at their real age like any snapshot, and never once stale.
+  **Pull-to-refresh** is the rider asking for fresh times: it asks afresh for every stop and
+  forgets the rest; the crosshairs re-locate and reuse what's recent, and a National Rail key
+  added or removed forgets them too. A station whose National Rail board a screen places under one
+  of its twin stop ids isn't shared, since another screen may place it under the other. Nothing is
+  saved to storage.
 - The **widget** refreshes opportunistically — on tap, on host update, and on a
   bounded periodic schedule while it is plausibly visible — and degrades to on-demand
   rather than polling hard in the background (**D5**). The spec's guarantee is honesty
@@ -1391,11 +1402,12 @@ surface.)
   the rate budget above still caps requests *per minute*, so a keyless fan-out larger than
   the burst is paced rather than fired at once.
 - **A refresh spends the budget only where it's needed.** A stop whose departures came back
-  less than 30 s ago (and whose closure check didn't fail) is carried over as it is rather than
-  refetched, keeping its own age, so a retry right after a rate-limited refresh fetches only the
-  stops still missing instead of hitting the limit again. The 60 s auto-refresh is past that
-  window, so it refetches every stop within the walking reach (a far stop every other minute —
-  below). A stop's closure check (a closed or moved stop) is
+  less than 50 s ago — on this screen or another (*Freshness → Shared arrivals*), and whose
+  closure check didn't fail — is carried over as it is rather than refetched, keeping its own age,
+  so a retry right after a rate-limited refresh fetches only the stops still missing instead of
+  hitting the limit again. The 60 s auto-refresh is past that window, so it refetches every stop
+  within the walking reach (a far stop every other minute — below); a pull-to-refresh refetches
+  every stop. A stop's closure check (a closed or moved stop) is
   reused for 5 minutes — closures change over hours, and the check is half of every stop's cost —
   while line status, the fast-moving signal, is reused for 90 s — so the 60 s auto-refresh
   re-checks it every other cycle and a new suspension still shows within about two minutes. Both live in memory

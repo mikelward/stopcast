@@ -2,6 +2,7 @@ package app.stopdash.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.stopdash.domain.ArrivalsCache
 import app.stopdash.domain.Departure
 import app.stopdash.domain.HiddenModes
 import app.stopdash.domain.JourneyPlanner
@@ -18,6 +19,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,6 +53,12 @@ class TripViewModel(
     private val plans: TripPlans = TripPlans.SHARED,
     // Requests and their decoding run off the main thread, as the other screens' do.
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    // The stops' last arrivals, shared with the other screens (the app passes [ArrivalsCache.SHARED]):
+    // a boarding stop fetched within [ArrivalsCache.TTL] shows at once and isn't asked for again.
+    private val arrivals: ArrivalsCache = ArrivalsCache(),
+    // Emits when where departures come from changes (a National Rail key added or removed): the
+    // current value first, then each change, as the list's model takes it.
+    departureSourceChanges: Flow<Any?> = emptyFlow(),
 ) : ViewModel() {
     /** One boarding stop's last arrivals and when they were fetched; [failed] when the last fetch failed. */
     data class StopLive(val departures: List<Departure>, val fetchedAt: Instant, val failed: Boolean = false)
@@ -102,10 +112,40 @@ class TripViewModel(
      * retained model doesn't fetch everything again.
      */
     fun refreshFor(repickId: Long?) {
-        if (started && repickId == seenRepick) return
+        if (started && repickId == seenRepick) {
+            // Shown again (a rotation, a return): take any newer arrivals another screen fetched
+            // meanwhile, and refresh only if a boarding stop's are still over [ArrivalsCache.TTL]
+            // old, rather than fetch everything again or wait for the minute tick.
+            val routes = _state.value.routes ?: return
+            _state.update { it.copy(live = cached(routes, it.live)) }
+            val now = clock()
+            val live = _state.value.live
+            if (boardingStops(routes).any { id -> live[id]?.let { !recentEnough(it, now) } ?: true }) refresh()
+            return
+        }
         started = true
         seenRepick = repickId
         refresh()
+    }
+
+    // Bumped on each departure source change: a refresh's arrivals asked for before it are dropped.
+    private var sourceGeneration = 0
+
+    init {
+        // Arrivals fetched under the old source no longer stand: they're dropped (the trip reads
+        // "Loading" rather than show them), and the next time the screen shows this retained trip it
+        // fetches afresh rather than wait for the minute tick. Nothing is fetched here, since the
+        // trip may not be on screen.
+        viewModelScope.launch {
+            departureSourceChanges.drop(1).collect {
+                // Nor may the shared arrivals, or a fetch still out, put them back (the list clears
+                // the shared ones too; clearing twice only costs a fetch).
+                sourceGeneration++
+                arrivals.clear()
+                _state.update { it.copy(live = emptyMap()) }
+                started = false
+            }
+        }
     }
 
     /** Plans again now, after a failure. During a refresh, plans again once it ends. */
@@ -167,8 +207,9 @@ class TripViewModel(
                         // say there's no route while others are still answering.
                         if (!progressive || gathered.isEmpty()) return@launch
                         val shown = gathered.toList()
-                        // A first answer after a failed plan clears its error: the routes it brings stand.
-                        _state.update { it.copy(routes = shown, planError = null, statusUnknown = unknownLines(shown, it)) }
+                        // A first answer after a failed plan clears its error: the routes it brings stand,
+                        // timed at once from any boarding stop's arrivals another screen just fetched.
+                        _state.update { it.copy(routes = shown, planError = null, statusUnknown = unknownLines(shown, it), live = cached(shown, it.live)) }
                     }
                 }
             }
@@ -206,17 +247,23 @@ class TripViewModel(
         val routes = _state.value.routes
             ?.filterNot { route -> route.rides.any { HiddenModes.isHidden(it.mode, hiddenModes) } }
             ?.let(::bestOf) ?: return
-        val stops = routes.flatMap { route -> route.rides.map { it.fromId } }.filter { it.isNotBlank() }.distinct()
         val lines = routes.flatMap { route -> route.rides.map { it.lineId } }.distinct()
-        _state.update { it.copy(refreshing = true) }
+        // Arrivals another screen fetched since show at once; only a stop not fetched within
+        // [ArrivalsCache.TTL] is asked for again.
+        _state.update { it.copy(refreshing = true, live = cached(routes, it.live)) }
+        val now = clock()
+        // A departure source changed while this refresh's arrivals are out: they're from the old one.
+        val source = sourceGeneration
+        val stops = boardingStops(routes).filter { id -> _state.value.live[id]?.let { !recentEnough(it, now) } ?: true }
         try {
             coroutineScope {
                 val statuses = async { fetchStatuses(lines) }
                 val live = stops.map { id -> async { id to fetchStop(id) } }.awaitAll()
                 val fetched = statuses.await()
+                val current = source == sourceGeneration
                 _state.update { state ->
                     state.copy(
-                        live = state.live + live.associate { (id, stop) -> id to (stop ?: state.live[id]?.copy(failed = true) ?: StopLive(emptyList(), Instant.EPOCH, failed = true)) },
+                        live = if (!current) state.live else state.live + live.associate { (id, stop) -> id to (stop ?: state.live[id]?.copy(failed = true) ?: StopLive(emptyList(), Instant.EPOCH, failed = true)) },
                         statuses = fetched ?: state.statuses,
                         statusFailed = fetched == null,
                         statusUnknown = lines.filterTo(HashSet()) { it !in (fetched ?: state.statuses) },
@@ -228,10 +275,39 @@ class TripViewModel(
         }
     }
 
+    // [live] with each of [routes]' boarding stops whose shared arrivals are newer than those held.
+    // Fetched within [ArrivalsCache.TTL] of [now], and not failed: not asked for again. Dated after now
+    // (the clock set back) is an age that can't be told, so asked for again.
+    private fun recentEnough(held: StopLive, now: Instant): Boolean {
+        val age = Duration.between(held.fetchedAt, now)
+        return !held.failed && !age.isNegative && age < ArrivalsCache.TTL
+    }
+
+    private fun cached(routes: List<TripRoute>, live: Map<String, StopLive>): Map<String, StopLive> {
+        val now = clock()
+        val newer = boardingStops(routes).mapNotNull { id ->
+            val entry = arrivals.get(id, now, client.arrivalsSource()) ?: return@mapNotNull null
+            val held = live[id]
+            if (held != null && !entry.fetchedAt.isAfter(held.fetchedAt)) return@mapNotNull null
+            id to StopLive(entry.departures, entry.fetchedAt)
+        }
+        return if (newer.isEmpty()) live else live + newer
+    }
+
     // Null on a failure, so the last arrivals stay (aged) rather than blank the leg.
     private suspend fun fetchStop(stopId: String): StopLive? =
         try {
-            StopLive(withContext(io) { client.arrivals(stopId) }, clock())
+            // Stamped when asked, as the list stamps its fetches (SPEC D4); kept for the other screens
+            // unless another client could answer differently.
+            val at = clock()
+            val generation = arrivals.generation
+            val source = client.arrivalsSource()
+            val (departures, shared) = withContext(io) {
+                val before = client.shareable(stopId)
+                client.arrivals(stopId).let { it to (before && client.shareable(stopId) && client.arrivalsSource() == source) }
+            }
+            if (shared) arrivals.put(stopId, departures, at, client.railFeed(stopId), generation, source)
+            StopLive(departures, at)
         } catch (e: CancellationException) {
             throw e
         } catch (e: TflException) {
@@ -251,6 +327,9 @@ class TripViewModel(
         }
 
     companion object {
+        private fun boardingStops(routes: List<TripRoute>): List<String> =
+            routes.flatMap { route -> route.rides.map { it.fromId } }.filter { it.isNotBlank() }.distinct()
+
         private fun linesOf(routes: List<TripRoute>): Set<String> =
             routes.flatMapTo(HashSet()) { route -> route.rides.map { it.lineId } }
 

@@ -2,6 +2,8 @@ package app.stopdash.widget
 
 import app.stopdash.data.KtorDarwinClient
 import app.stopdash.data.RailStationCodesStore
+import app.stopdash.domain.ArrivalsCache
+import app.stopdash.domain.CachingTflClient
 import app.stopdash.domain.RailAwareTflClient
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidgetManager
@@ -339,7 +341,8 @@ internal suspend fun refreshStoredSnapshot(
         val railKey = keys.rail
         val http = KtorTflClient.defaultHttpClient()
         try {
-            val client = RailAwareTflClient(
+            // Its fetches land in the shared arrivals too, so an app screen open meanwhile shows them.
+            val client = CachingTflClient(RailAwareTflClient(
                 tfl = KtorTflClient(
                     http,
                     appKey = { userKey },
@@ -349,13 +352,17 @@ internal suspend fun refreshStoredSnapshot(
                 rail = KtorDarwinClient(http, apiKey = { railKey }, warn = ::logWidgetSnapshotWarning),
                 codes = { RailStationCodesStore.load(context) },
                 warn = ::logWidgetSnapshotWarning,
-            )
+            ))
             ran = true
             val refreshed = WidgetRefresh.refreshedArrivals(
                 prior,
                 Instant.now(),
                 // Skip a stop the app fetched moments ago: same data, same shared rate budget.
                 reuse = ARRIVALS_REUSE,
+                // Or one another screen fetched since.
+                shared = ArrivalsCache.SHARED,
+                source = client.arrivalsSource(),
+                railFeed = client::railFeed,
             ) { stopId ->
                 attempted.incrementAndGet()
                 try {
