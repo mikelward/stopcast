@@ -12,6 +12,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import app.stopdash.domain.AlertLinks
 import app.stopdash.domain.ClosedNotice
+import app.stopdash.domain.NoticePlan
+import app.stopdash.domain.isPole
+import app.stopdash.domain.planNotices
 import app.stopdash.domain.CollapsedPlaces
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -693,8 +696,8 @@ fun MainScreen(
             modes.filterNotTo(LinkedHashSet()) { HiddenModes.isHidden(it, hiddenModes) }
         }
     }
-    val nearbyRows = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, dismissed, hiddenModes) {
-        val ld = loaded ?: return@remember emptyList()
+    val nearbyComputed = remember(loaded?.stops, loaded?.lineStatuses, now, stopDistanceMeters, dismissed, hiddenModes) {
+        val ld = loaded ?: return@remember emptyList<DepartureRow>() to emptySet<Pair<String, String>>()
         // A near-me list shows its nearby stops only: a journey's farther origin, fetched for its
         // card above, isn't one of them (SPEC *Journeys*).
         val shownStops = if (stopDistanceMeters.isEmpty()) ld.stops else ld.stops.filter { it.stopId in stopDistanceMeters }
@@ -711,8 +714,28 @@ fun MainScreen(
                 val deduped = DepartureRows.nearbyDeduped(across, stopDistanceMeters, dismissed)
                 DepartureRows.byStopDistance(deduped, stopDistanceMeters)
             }
-        // Hide the service alerts the user has dismissed (until their content changes).
-        DepartureRows.withoutDismissed(ordered, dismissed)
+        // The notices TfL filed against more than one stop of a place, seen before the fold keeps one
+        // copy: such a notice is about the place, so it heads the place's own group, even when the
+        // copy kept is a lettered pole's (SPEC *Disruptions*).
+        val shared = across.filter { it.stopDisruption != null }
+            .groupBy { stopPlaceKey(it) to it.stopDisruption.orEmpty() }
+            .filterValues { rows -> rows.mapTo(HashSet()) { it.stopId }.size > 1 }
+            .keys
+        ordered to shared
+    }
+    val nearbyOrdered = nearbyComputed.first
+    val sharedNotices = nearbyComputed.second
+    // Hide the service alerts the user has dismissed (until their content changes).
+    val nearbyRows = remember(nearbyOrdered, dismissed) { DepartureRows.withoutDismissed(nearbyOrdered, dismissed) }
+    // The near-me closures the user dismissed: a closed place with nothing else to show keeps its
+    // heading and "Closed" chip in place (SPEC *Disruptions*).
+    val dismissedClosures = remember(nearbyOrdered, nearbyRows, stopDistanceMeters) {
+        if (stopDistanceMeters.isEmpty()) {
+            emptyList()
+        } else {
+            val shown = nearbyRows.toHashSet()
+            nearbyOrdered.filter { it !in shown && it.stopDisruption?.let(ClosedNotice::saysClosed) == true }
+        }
     }
     // Without the rows a journey card above already shows in full, then with the user's starred
     // services lifted to the top (SPEC D8). Warnings still lead on the location-free watched list; on
@@ -1194,6 +1217,8 @@ fun MainScreen(
                 LoadedContent(
                     state, now, onRefresh, refreshing, content, shownRows,
                     listState = if (platformRows != null) drillListState else listState,
+                    dismissedClosures = if (platformRows != null) emptyList() else dismissedClosures,
+                    sharedNotices = sharedNotices,
                     // The platform view is one place: no distances (its header would only repeat the
                     // title).
                     stopDistanceMeters = if (platformRows != null) emptyMap() else stopDistanceMeters,
@@ -1362,6 +1387,10 @@ private fun LoadedContent(
     // the same grouping/ordering (SPEC D4 / D8).
     rows: List<DepartureRow>,
     listState: LazyListState = rememberLazyListState(),
+    // The near-me closures dismissed, for a closed place's heading ([DepartureList]).
+    dismissedClosures: List<DepartureRow> = emptyList(),
+    // The notices filed against more than one stop of a place ([planNotices]).
+    sharedNotices: Set<Pair<String, String>> = emptySet(),
     stopDistanceMeters: Map<String, Double> = emptyMap(),
     onOpenStopMap: ((String, String) -> Unit)? = null,
     journeyCards: List<JourneyCard> = emptyList(),
@@ -1481,7 +1510,8 @@ private fun LoadedContent(
             }
             // Starred journeys still show when nothing nearby has departures: their origins can be
             // farther away, and hiding them behind "No departures" would drop live trains.
-            if (rows.isEmpty() && journeyCards.isEmpty() && farJourneyCards.isEmpty() && onRevealFar == null && shownPending.isEmpty()) {
+            // A dismissed closure still draws its place's heading, so it keeps the list up.
+            if (rows.isEmpty() && journeyCards.isEmpty() && farJourneyCards.isEmpty() && onRevealFar == null && shownPending.isEmpty() && dismissedClosures.isEmpty()) {
                 // Scrollable even though it doesn't overflow: PullToRefreshBox reads the
                 // pull from a scrollable child's nested-scroll events, so a plain Column
                 // here would leave pull-to-refresh dead on the empty state (only the
@@ -1539,6 +1569,17 @@ private fun LoadedContent(
                     modesByPlace = modesByPlace,
                     onOpenDetail = onOpenDetail,
                     onDismissAlert = onDismissAlert,
+                    dismissedClosures = dismissedClosures,
+                    sharedNotices = sharedNotices,
+                    stopHubIds = remember(state.stops) {
+                        state.stops.filter { it.hubId.isNotBlank() }.associate { it.stopId to it.hubId }
+                    },
+                    // Each stop's real StopArea (not the display-name fallback), so a place's notice
+                    // can stand at its nearest member even where that member has nothing listed.
+                    stopClusterIds = remember(state.stops) {
+                        state.stops.filter { it.clusterId.isNotBlank() && it.clusterId != it.stopName }
+                            .associate { it.stopId to it.clusterId }
+                    },
                     onOpenPlatform = onOpenPlatform,
                     onOpenStation = onOpenStation,
                     onOpenStopMap = onOpenStopMap,
@@ -1553,7 +1594,7 @@ private fun LoadedContent(
                     onRevealFar = onRevealFar,
                     // Not in a journey's own view, nor when every nearby row is already on a journey
                     // card above.
-                    nearbyEmptyNote = if (rows.isEmpty() && !journeyView && !nearbyShownAbove && shownPending.isEmpty()) {
+                    nearbyEmptyNote = if (rows.isEmpty() && !journeyView && !nearbyShownAbove && shownPending.isEmpty() && dismissedClosures.isEmpty()) {
                         // With modes hidden, say so rather than "no departures": they may be running.
                         if (hiddenModes.isNotEmpty()) {
                             stringResource(
@@ -1683,6 +1724,14 @@ private fun DepartureList(
     // The stops whose fetch failed, so an opened card whose stops all failed can offer a retry.
     unavailableStopIds: Set<String> = emptySet(),
     onDismissAlert: (DepartureRow) -> Unit = {},
+    // The near-me closure notices the user dismissed ([ClosedNotice] wording only): a closed place
+    // with nothing else to show keeps its heading and "Closed" chip without the notice.
+    dismissedClosures: List<DepartureRow> = emptyList(),
+    // Each stop's interchange, so an interchange's notice finds a member's sections ([planNotices]).
+    stopHubIds: Map<String, String> = emptyMap(),
+    stopClusterIds: Map<String, String> = emptyMap(),
+    // The notices filed against more than one stop of a place, as (place, text) ([planNotices]).
+    sharedNotices: Set<Pair<String, String>> = emptySet(),
     // Opens Settings from a National Rail line's "No key" (SPEC *National Rail*).
     onOpenSettings: () -> Unit = {},
     // Hides a mode from a long press on a near-me row or header; null keeps long-press as starring.
@@ -1714,13 +1763,15 @@ private fun DepartureList(
     // The units near-me distances are written in: the Settings choice, resolved against the locale;
     // null (no labels) until the stored choice has been read.
     val distanceSystem = LocalDistanceSystem.current
-    // Stop-closure alerts render as standalone cards at the top of the list — warnings lead (the
-    // caller ordered them first). Each carries its own place heading (its interchange, else its
-    // stop), so it needs no group header and no distance label above it (SPEC *Disruptions*). The
-    // remaining rows (timed and line-status) cluster into per-place groups so
-    // each gets a name header — the flat list gives a card no boarding location once >1 place is
-    // on screen (SPEC D8). Pure and cheap; the caller ordered the rows.
+    // Stop notices (SPEC *Disruptions*). On the near-me list (distances present) each rides with its
+    // place: on its own pole's card, or as the place's own group above its sections, at the place's
+    // distance ([NoticePlan]). Elsewhere (the watched list, a platform's own view) they lead as
+    // standalone cards at the top — warnings lead there — each carrying its own place heading. The
+    // remaining rows (timed and line-status) cluster into per-place groups so each gets a name header
+    // — the flat list gives a card no boarding location once >1 place is on screen (SPEC D8).
     val closureRows = remember(rows) { rows.filter { it.stopDisruption != null } }
+    val noticesInPlace = stopDistanceMeters.isNotEmpty()
+    val leadingNotices = if (noticesInPlace) emptyList() else closureRows
     // The stops whose notice says they're closed, so a card with nothing running says "Closed".
     val closedStops = remember(closureRows) { ClosedStops.of(closureRows) }
     // Pass the full row set: groupByStop groups only the non-closure rows but counts each closure
@@ -1957,7 +2008,7 @@ private fun DepartureList(
         nearbyEmptyNote?.let { note ->
             item(key = "nearby-empty") { JourneyNote(note) }
         }
-        items(closureRows, key = { "closure|${it.stopId}|${it.hubId}" }) { row ->
+        items(leadingNotices, key = { "closure|${it.stopId}|${it.hubId}" }) { row ->
             StopClosureCard(row, onDismiss = { onDismissAlert(row) })
         }
         // One combined one-line header per group, then the group's card (SPEC D8): the place name and
@@ -1965,7 +2016,15 @@ private fun DepartureList(
         // 1 (120 m)"), and every route of the group's stop(s) sits as an interior row of the one card
         // below. The place name repeats on each platform header of a station (as does the distance) —
         // the near-me rider judges each platform on its own line.
+        // Filled in below once the notices are placed ([planNotices]): a lettered pole's own notice,
+        // drawn under its heading, and which poles a notice says are closed (their "Closed" chip).
+        var poleNotices = emptyMap<String, DepartureRow>()
+        var closedPoles = emptySet<String>()
+        // Whether the next heading drawn is the first thing on screen (no top break above it).
+        var headingLeads = leadingNotices.isEmpty() && journeyCards.isEmpty()
         fun groupItems(index: Int, group: StopGroup) {
+            val first = index == 0 && headingLeads
+            if (index == 0) headingLeads = false
             // The near-me list carries a per-stop distance; the watched list doesn't, so the label is
             // present only when this place's stops are in the map (D1). A place groups several stops (a
             // junction's poles, a station's platforms), so it shows the distance to the *closest* of
@@ -1983,7 +2042,7 @@ private fun DepartureList(
                         group.stopName,
                         group.qualifier,
                         distanceLabel,
-                        firstOnScreen = index == 0 && closureRows.isEmpty() && journeyCards.isEmpty(),
+                        firstOnScreen = first,
                         onClick = onOpenPlatform?.let { open -> { open(group) } },
                         onNameClick = onOpenStation?.let { open -> { open(group) } },
                         // The distance opens the group's own nearest stop in the maps app — for a
@@ -1996,7 +2055,14 @@ private fun DepartureList(
                         },
                         hideModes = if (onHideMode != null) headerModes(group, modesByPlace) else emptyList(),
                         onHideMode = onHideMode,
+                        closed = group.key in closedPoles,
                     )
+                }
+            }
+            // A notice about this pole alone sits under its heading, above its departures.
+            poleNotices[group.key]?.let { notice ->
+                item(key = "notice|${notice.stopId}|${notice.hubId}") {
+                    StopNoticeCard(notice, closed = group.key in closedPoles, onDismiss = { onDismissAlert(notice) })
                 }
             }
             item(key = "card|${group.key}") {
@@ -2043,9 +2109,131 @@ private fun DepartureList(
             listed.map { it.placeKey in starredPlaces },
             cards.map { it.first },
         )
-        fun cardItems(slot: Int) = cards.forEachIndexed { k, (place, cue) ->
-            if (slots[k] != slot) return@forEachIndexed
-            if (place.placeKey in pendingTracker.opened && cue == FartherCue.TAP_TO_SEE) {
+        // The near-me notices, each drawn once (SPEC *Disruptions*, [planNotices]). One whose place
+        // is a held loading card or an opened farther card goes in that card's slot, so the place
+        // shows once; the rest with no section go by distance. A dismissed closure keeps only its
+        // heading and "Closed" chip, and only where its place has nothing else to show.
+        // A held place's groups stay hidden until it's tapped open.
+        val hiddenGroupKeys = heldCards
+            .filter { (place, _) -> place.placeKey !in pendingTracker.opened }
+            .flatMapTo(HashSet()) { (place, _) -> groupsByPlace[place.placeKey].orEmpty().map { it.key } }
+        val plan = if (noticesInPlace) {
+            planNotices(closureRows, groups, listed, stopHubIds, sharedNotices, hiddenGroupKeys)
+        } else {
+            NoticePlan()
+        }
+        val dismissedPlan = if (noticesInPlace) {
+            planNotices(dismissedClosures, groups, listed, stopHubIds, sharedNotices, hiddenGroupKeys)
+        } else {
+            NoticePlan()
+        }
+        poleNotices = plan.onPole
+        closedPoles = (plan.onPole + dismissedPlan.onPole)
+            .filterValues { ClosedNotice.saysClosed(it.stopDisruption.orEmpty()) }.keys
+        // A card's stops, and their interchanges: a hub notice kept on one member goes with a card
+        // that holds another member, so the interchange isn't drawn twice. The first card in list
+        // order (held cards by distance) wins where several share a stop or hub, so the notice sits at
+        // the nearest one.
+        fun List<Pair<String, String>>.firstWins() = distinctBy { it.first }.toMap()
+        val heldByStop = heldCards
+            .sortedBy { (place, _) -> place.stopIds.minOfOrNull { stopDistanceMeters[it] ?: Double.MAX_VALUE } }
+            .flatMap { (place, _) -> place.stopIds.map { it to place.placeKey } }
+            .firstWins()
+        val fartherByStop = fartherStopIds.flatMap { (key, ids) -> ids.map { it to key } }.firstWins()
+        val heldByHub = heldByStop.entries.mapNotNull { (stop, key) -> stopHubIds[stop]?.let { it to key } }.firstWins()
+        val fartherByHub = fartherByStop.entries.mapNotNull { (stop, key) -> stopHubIds[stop]?.let { it to key } }.firstWins()
+        // A notice about one pole alone, not shared across its place.
+        fun poleOnly(notice: DepartureRow) =
+            isPole(notice) && (stopPlaceKey(notice) to notice.stopDisruption.orEmpty()) !in sharedNotices
+        // Where a notice stands on the list: its own stop, or for a place-wide notice the nearest
+        // measured member of its interchange or StopArea — (that stop, its distance).
+        fun noticeNearest(notice: DepartureRow): Pair<String, Double>? {
+            val placeWide = !poleOnly(notice)
+            val hub = notice.hubId.ifBlank { null }?.takeIf { placeWide }
+            val cluster = stopClusterIds[notice.stopId]?.takeIf { placeWide }
+            return stopDistanceMeters.entries
+                .filter { (stop, _) ->
+                    stop == notice.stopId ||
+                        (hub != null && stopHubIds[stop] == hub) ||
+                        (cluster != null && stopClusterIds[stop] == cluster)
+                }
+                .minByOrNull { it.value }?.let { it.key to it.value }
+        }
+        // Active and dismissed together, nearest first, so each slot draws them in distance order.
+        val placeless = (plan.placeless.map { it to false } + dismissedPlan.placeless.map { it to true })
+            .sortedBy { (notice, _) -> noticeNearest(notice)?.second ?: Double.MAX_VALUE }
+            .groupBy { (notice, _) ->
+                // A pole's own notice matches its own stop only, never a sibling member's card.
+                val hub = notice.hubId.ifBlank { null }?.takeUnless { poleOnly(notice) }
+                (heldByStop[notice.stopId] ?: hub?.let(heldByHub::get))?.let { "held|$it" }
+                    ?: (fartherByStop[notice.stopId] ?: hub?.let(fartherByHub::get))?.let { "farther|$it" }
+            }
+        val loose = placeless[null].orEmpty()
+        val looseSlots = distanceSlots(
+            listed.map { placeDistanceMeters[it.placeKey] },
+            listed.map { it.placeKey in starredPlaces },
+            loose.map { (notice, _) -> noticeNearest(notice)?.second },
+        )
+        // A notice's own group: its place's heading (the interchange, else the stop; a pole's letter)
+        // with its distance and a "Closed" chip when it says so, then the notice unless dismissed.
+        // The distance opens [mapStopId] in the maps app, as a section heading's does: the notice's
+        // own stop, or for a place-wide notice the nearest stop of the section it heads.
+        fun noticeGroupItems(
+            notice: DepartureRow,
+            dismissed: Boolean,
+            meters: Double?,
+            mapStopId: String? = notice.stopId.takeIf { it in stopDistanceMeters },
+            // The section a place-wide notice heads: its name opens the whole station, as that
+            // section's own heading does.
+            station: StopGroup? = null,
+        ) {
+            val closed = ClosedNotice.saysClosed(notice.stopDisruption.orEmpty())
+            val name = notice.hubName.ifBlank { notice.stopName }
+            val first = headingLeads
+            headingLeads = false
+            item(key = "notice-header|${notice.stopId}|${notice.hubId}") {
+                StopGroupHeader(
+                    name,
+                    // A pole's letter only when the notice is that pole's alone, not its junction's.
+                    // A letter-less pole reads by its bearing, as its own section's heading does.
+                    when {
+                        !isPole(notice) || (stopPlaceKey(notice) to notice.stopDisruption.orEmpty()) in sharedNotices -> null
+                        notice.stopLetter.isNotBlank() -> StopQualifier.BusStop(notice.stopLetter, notice.towards.ifBlank { null })
+                        notice.bearing.isNotBlank() -> StopQualifier.BusBearing(notice.bearing)
+                        else -> null
+                    },
+                    distanceSystem?.let { system -> meters?.let { StopDistance.label(it, system) } },
+                    firstOnScreen = first,
+                    onNameClick = station?.let { group -> onOpenStation?.let { open -> { open(group) } } },
+                    onDistanceClick = mapStopId?.takeIf { meters != null }?.let { stopId ->
+                        onOpenStopMap?.let { open -> { open(stopId, name) } }
+                    },
+                    closed = closed,
+                )
+            }
+            if (!dismissed) {
+                item(key = "notice|${notice.stopId}|${notice.hubId}") {
+                    StopNoticeCard(notice, closed, onDismiss = { onDismissAlert(notice) })
+                }
+            }
+        }
+        fun cardItem(place: PendingPlace, cue: FartherCue) {
+            // A held place's notice heads its slot; with nothing running there, it stands for the place.
+            val shown = place.placeKey in pendingTracker.opened && cue == FartherCue.TAP_TO_SEE
+            // A dismissed closure keeps its heading only where the place has nothing else to show — or
+            // where it's a pole's, whose chip stays on while its buses are listed (behind the tap here).
+            val placeNotices = placeless["held|${place.placeKey}"].orEmpty()
+                .filterNot { (notice, dismissed) ->
+                    dismissed && !poleOnly(notice) && groupsByPlace[place.placeKey].orEmpty().isNotEmpty()
+                }
+            // The distance shown is the card's, so its tap opens the card's nearest stop.
+            val nearest = place.stopIds.minByOrNull { stopDistanceMeters[it] ?: Double.MAX_VALUE }
+                ?.takeIf { it in stopDistanceMeters }
+            placeNotices.forEach { (notice, dismissed) ->
+                noticeGroupItems(notice, dismissed, place.place.meters.takeIf { place.distanced }, nearest)
+            }
+            if (placeNotices.isNotEmpty() && cue != FartherCue.TAP_TO_SEE && cue != FartherCue.LOADING) return
+            if (shown) {
                 groupsByPlace[place.placeKey].orEmpty().forEach { group -> groupItems(1, group) }
             } else {
                 // One key from "Loading" to "Tap to see", so the list keeps its anchor on the card.
@@ -2055,22 +2243,78 @@ private fun DepartureList(
                         cue,
                         onOpen = { pendingTracker.opened += place.placeKey },
                         showDistance = place.distanced,
+                        // A pole's own notice heads that pole only, so the card keeps the place's
+                        // heading over its other poles' routes whenever one is among them.
+                        showHeading = placeNotices.isEmpty() || placeNotices.any { (notice, _) -> poleOnly(notice) },
                     )
                 }
             }
         }
+        // A slot's loose notices (nearest first) and its cards, merged by distance: each notice goes
+        // before the first card farther than it, so the slot still reads closest first.
+        fun slotItems(slot: Int) {
+            val notices = ArrayDeque(loose.filterIndexed { k, _ -> looseSlots[k] == slot })
+            fun noticesUpTo(meters: Double) {
+                while (notices.isNotEmpty() && (noticeNearest(notices.first().first)?.second ?: Double.MAX_VALUE) <= meters) {
+                    val (notice, dismissed) = notices.removeFirst()
+                    val nearest = noticeNearest(notice)
+                    noticeGroupItems(notice, dismissed, nearest?.second, nearest?.first)
+                }
+            }
+            cards.forEachIndexed { k, (place, cue) ->
+                if (slots[k] != slot) return@forEachIndexed
+                noticesUpTo(place.place.meters.takeIf { place.distanced } ?: Double.MAX_VALUE)
+                cardItem(place, cue)
+            }
+            noticesUpTo(Double.POSITIVE_INFINITY)
+        }
         listed.forEachIndexed { index, group ->
-            cardItems(index)
+            slotItems(index)
+            // A place-wide notice: its own group, directly above the place's first section.
+            // A dismissed pole's closure keeps its heading while its buses are listed (a place-wide
+            // one doesn't, the place having its sections to show).
+            val above = plan.aboveGroup[index].orEmpty().map { it to false } +
+                dismissedPlan.aboveGroup[index].orEmpty().filter { poleOnly(it) }.map { it to true }
+            above.forEach { (notice, dismissed) ->
+                // The place's distance is its nearest member's, so the tap opens that member —
+                // across every section of the place, not just the first one listed.
+                // An interchange's members can be separate places, so its hub counts too; and a
+                // warning can carve a member into its own group key, so match the physical place.
+                val hub = notice.hubId.ifBlank { null }
+                val place = groupPlace(group)
+                val nearest = groups
+                    .filter { g ->
+                        g.placeKey == group.placeKey || groupPlace(g) == place ||
+                            (hub != null && g.rows.any { r -> r.hubId == hub || stopHubIds[r.stopId] == hub })
+                    }
+                    .flatMap { it.rows }
+                    .mapNotNull { r -> stopDistanceMeters[r.stopId]?.let { r.stopId to it } }
+                    .minByOrNull { it.second }
+                noticeGroupItems(
+                    notice, dismissed, nearest?.second ?: placeDistanceMeters[group.placeKey], nearest?.first, station = group,
+                )
+            }
             groupItems(index, group)
         }
-        cardItems(listed.size)
+        slotItems(listed.size)
         // Below the loaded places: the farther stations and bus places, each collapsed until tapped
         // (in [CollapsedPlaces.ordered]'s order).
         for (card in farther) {
+            // An opened station's notice heads it; with nothing running there, it stands for the card.
             val opened = fartherGroups[card.place.key]
+            // A dismissed closure keeps its heading only where the place has nothing else to show —
+            // or where it's a pole's, whose chip stays on while its buses are listed.
+            val cardNotices = placeless["farther|${card.place.key}"].orEmpty()
+                .filterNot { (notice, dismissed) -> dismissed && opened != null && !poleOnly(notice) }
+            // The card's distance, so its tap opens the card's nearest stop: an opened card's measured
+            // stops, else a bus place's own (the notice's when it is one of them); a station not yet
+            // opened has none to resolve, so its distance stays plain.
+            val nearest = (card.load as? FartherLoad.Open)?.distanceMeters?.minByOrNull { it.value }?.key
+                ?: card.place.stops.map { it.id }.let { ids -> cardNotices.firstNotNullOfOrNull { (n, _) -> n.stopId.takeIf { it in ids } } ?: ids.firstOrNull() }
+            cardNotices.forEach { (notice, dismissed) -> noticeGroupItems(notice, dismissed, card.place.meters, nearest) }
             if (opened != null) {
                 opened.forEach { group -> groupItems(1, group) }
-            } else {
+            } else if (cardNotices.isEmpty()) {
                 item(key = "farther|${card.place.key}") {
                     FartherCardView(card, fartherCue(card, fetchedStopIds, unavailableStopIds, closedStops.stopIds), onOpen = onOpenFarther)
                 }
@@ -2445,9 +2689,17 @@ internal fun pendingPlaces(
  * list) goes to the foot.
  */
 internal fun pendingSlots(groupMeters: List<Double?>, pinned: List<Boolean>, pending: List<PendingPlace>): List<Int> =
-    pending.map { p ->
-        if (!p.distanced) return@map groupMeters.size
-        val after = groupMeters.indices.lastOrNull { i -> !pinned[i] && groupMeters[i]?.let { it <= p.place.meters } == true }
+    distanceSlots(groupMeters, pinned, pending.map { p -> p.place.meters.takeIf { p.distanced } })
+
+/**
+ * Where each of [meters] goes among the listed groups, as [pendingSlots] places a loading card: after
+ * the last group no farther away, else leading the groups past the starred band; with no distance,
+ * at the foot.
+ */
+internal fun distanceSlots(groupMeters: List<Double?>, pinned: List<Boolean>, meters: List<Double?>): List<Int> =
+    meters.map { m ->
+        if (m == null) return@map groupMeters.size
+        val after = groupMeters.indices.lastOrNull { i -> !pinned[i] && groupMeters[i]?.let { it <= m } == true }
         after?.plus(1) ?: pinned.indexOfFirst { !it }.takeIf { it >= 0 } ?: groupMeters.size
     }
 
@@ -2494,6 +2746,8 @@ private fun FartherCardView(
     onOpen: (CollapsedPlaces.Place) -> Unit,
     // False on the watched list, which gives no distances (D1).
     showDistance: Boolean = true,
+    // False when the place's notice group already heads it, so the place isn't named twice.
+    showHeading: Boolean = true,
 ) {
     val place = card.place
     val cueText = stringResource(
@@ -2511,12 +2765,14 @@ private fun FartherCardView(
     // In the chosen units, like every near-me header; none while the stored choice is being read.
     val distanceSystem = LocalDistanceSystem.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        StopGroupHeader(
-            place.name,
-            qualifier = null,
-            distanceLabel = distanceSystem?.takeIf { showDistance }?.let { StopDistance.label(place.meters, it) },
-            firstOnScreen = false,
-        )
+        if (showHeading) {
+            StopGroupHeader(
+                place.name,
+                qualifier = null,
+                distanceLabel = distanceSystem?.takeIf { showDistance }?.let { StopDistance.label(place.meters, it) },
+                firstOnScreen = false,
+            )
+        }
         OutlinedCard(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2587,19 +2843,24 @@ internal fun StopGroupHeader(
     // empty or a null [onHideMode] leaves the header without a long press.
     hideModes: List<String> = emptyList(),
     onHideMode: ((String) -> Unit)? = null,
+    // A notice in force says this place is closed ([ClosedNotice]): a "Closed" chip after the name,
+    // so a closure stands out where it sits in the list (SPEC *Disruptions*).
+    closed: Boolean = false,
 ) {
     val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+    val closedLabel = stringResource(R.string.farther_closed)
     val openLabel = stringResource(R.string.action_show_platform)
     val stationLabel = stringResource(R.string.action_show_station)
     val mapLabel = stringResource(R.string.action_show_on_map)
     val label = remember(qualifier) { groupHeaderLabel(qualifier) }
     // The full spoken label: the place name, the spoken qualifier (direction/towards kept), then the
     // distance — read as one, so a screen reader hears the whole header rather than three fragments.
-    val spoken = remember(name, spokenName, qualifier, distanceLabel) {
+    val spoken = remember(name, spokenName, qualifier, distanceLabel, closed, closedLabel) {
         buildString {
             append(spokenName ?: name)
             groupHeaderSpoken(qualifier)?.let { append(", ").append(it) }
             distanceLabel?.let { append(", ").append(it) }
+            if (closed) append(", ").append(closedLabel)
         }
     }
     val hideable = onHideMode != null && hideModes.isNotEmpty()
@@ -2691,6 +2952,22 @@ internal fun StopGroupHeader(
                 },
             )
         }
+        if (closed) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier.padding(start = 8.dp),
+            ) {
+                Text(
+                    text = closedLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+        }
     }
     if (hideable) {
         HideModeMenu(
@@ -2764,6 +3041,28 @@ internal fun placeModes(stops: List<StopArrivals>): Map<String, Set<String>> {
 }
 
 private fun placeOf(clusterId: String, stopId: String): String = clusterId.ifBlank { "\u0000stop:$stopId" }
+
+/**
+ * A stop notice in place (SPEC *Disruptions*): the notice alone, collapsed to its first line and
+ * expanded on tap, under the heading of the place it's about (the heading names the place, so it
+ * carries no title of its own). Error-toned when it says the stop is closed ([closed]), else the
+ * quieter tertiary tone — a lift outage shouldn't look like a shut station.
+ */
+@Composable
+private fun StopNoticeCard(row: DepartureRow, closed: Boolean, onDismiss: () -> Unit) {
+    CollapsibleStatus(
+        text = cleanDisruptionBody(
+            row.stopDisruption.orEmpty(),
+            stopName = row.stopName,
+            hubName = row.hubName,
+            aliases = row.placeAliases,
+        ),
+        title = null,
+        onDismiss = onDismiss,
+        container = if (closed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = if (closed) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onTertiaryContainer,
+    )
+}
 
 /**
  * A stop-closure alert as its own header-less card at the top of the list (SPEC *Disruptions*): the

@@ -1259,6 +1259,118 @@ class MainScreenScreenshotTest {
         captureSnapshot("main-near-me-bus-closure-expanded.png")
     }
 
+    // Stop notices in place (SPEC *Disruptions*): public station names and synthetic notice wording.
+    private fun eustonSouthbound() = StopArrivals(
+        "940GZZLUEUS",
+        "Euston",
+        listOf(dep("victoria", "Victoria", "inbound", "Brixton", 120, "Southbound - Platform 5")),
+        fetchedAt = now.minusSeconds(60),
+    )
+
+    @Test
+    fun `a closed station with nothing running is its own group at its distance`() {
+        val closed = StopArrivals(
+            "940GZZLUESQ", "Euston Square", emptyList(),
+            fetchedAt = now.minusSeconds(60),
+            lines = listOf(LineRef("circle", "Circle", "tube"), LineRef("metropolitan", "Metropolitan", "tube")),
+            disruptions = listOf(StopDisruption("Station closed due to strike action.")),
+        )
+        val warrenStreet = StopArrivals(
+            "940GZZLUWRR",
+            "Warren Street",
+            listOf(dep("northern", "Northern", "inbound", "Morden", 180, "Southbound - Platform 2", branch = "Bank")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        capture("main-notice-closed-station.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(listOf(eustonSouthbound(), closed, warrenStreet), now.minusSeconds(60)),
+                now,
+                {},
+                stopDistanceMeters = mapOf("940GZZLUEUS" to 80.0, "940GZZLUESQ" to 250.0, "940GZZLUWRR" to 400.0),
+            )
+        }
+        composeRule.onAllNodesWithText("Station closed due to strike action.", substring = true).assertCountEquals(1)
+        composeRule.onNodeWithText("Euston Square").assertExists()
+        composeRule.onNodeWithText("Closed").assertExists()
+    }
+
+    @Test
+    fun `tapping a closed station's distance shows it on a map`() {
+        val closed = StopArrivals(
+            "940GZZLUESQ", "Euston Square", emptyList(),
+            fetchedAt = now.minusSeconds(60),
+            disruptions = listOf(StopDisruption("Station closed due to strike action.")),
+        )
+        var opened: Pair<String, String>? = null
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        DeparturesUiState.Loaded(listOf(eustonSouthbound(), closed), now.minusSeconds(60)),
+                        now,
+                        {},
+                        stopDistanceMeters = mapOf("940GZZLUEUS" to 80.0, "940GZZLUESQ" to 250.0),
+                        onOpenStopMap = { stopId, name -> opened = stopId to name },
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("(250 m)", substring = true, useUnmergedTree = true).onFirst().performClick()
+        composeRule.waitForIdle()
+        assertEquals("940GZZLUESQ" to "Euston Square", opened)
+    }
+
+    @Test
+    fun `a closed bus pole's notice sits on that pole, not the whole junction`() {
+        fun pole(id: String, letter: String, towards: String, vararg deps: Departure, notice: String? = null) = StopArrivals(
+            id, "Euston Road", deps.toList(),
+            fetchedAt = now.minusSeconds(60),
+            clusterId = "490G000EXAMPLE",
+            stopLetter = letter,
+            towards = towards,
+            disruptions = listOfNotNull(notice?.let(::StopDisruption)),
+        )
+        val stopE = pole(
+            "490000001E", "E", "Marble Arch",
+            dep("18", "18", "outbound", "Sudbury", 240, "", mode = "bus"),
+            dep("30", "30", "outbound", "Marble Arch", 360, "", mode = "bus"),
+            notice = "Bus Stop Closed - please use Stop F.",
+        )
+        val stopF = pole(
+            "490000001F", "F", "Marble Arch",
+            dep("18", "18", "outbound", "Sudbury", 300, "", mode = "bus"),
+            dep("205", "205", "outbound", "Paddington", 420, "", mode = "bus"),
+        )
+        capture("main-notice-bus-pole.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(listOf(stopE, stopF, eustonSouthbound()), now.minusSeconds(60)),
+                now,
+                {},
+                stopDistanceMeters = mapOf("490000001E" to 60.0, "490000001F" to 70.0, "940GZZLUEUS" to 80.0),
+            )
+        }
+        composeRule.onAllNodesWithText("Bus Stop Closed", substring = true).assertCountEquals(1)
+        composeRule.onAllNodesWithText("Closed").assertCountEquals(1)
+    }
+
+    @Test
+    fun `a station-wide notice is its own group above the platforms`() {
+        val notice = "No step-free access between the ticket hall and the Victoria line platforms."
+        val station = kingsCrossStPancras().copy(disruptions = listOf(StopDisruption(notice)))
+        capture("main-notice-station-wide.png") {
+            MainScreen(
+                DeparturesUiState.Loaded(listOf(eustonSouthbound(), station), now.minusSeconds(60)),
+                now,
+                {},
+                stopDistanceMeters = mapOf("940GZZLUEUS" to 80.0, "940GZZLUKSX" to 650.0),
+            )
+        }
+        // Once for the station, not once per platform; not a closure, so no "Closed" chip.
+        composeRule.onAllNodesWithText(notice, substring = true).assertCountEquals(1)
+        composeRule.onNodeWithText("Closed").assertDoesNotExist()
+    }
+
     @Test
     fun `a stop-closure alert offers a dismiss control that reports the row`() {
         val stop = StopArrivals(
@@ -1341,6 +1453,11 @@ class MainScreenScreenshotTest {
         }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Bus Stop Closed", substring = true).assertDoesNotExist()
+        // A closed stop with nothing else to show keeps its heading and "Closed" chip (SPEC
+        // *Disruptions*): dismissing hides the prose, not the fact that it's shut.
+        composeRule.onNodeWithText("Example Road").assertExists()
+        composeRule.onNodeWithText("Closed").assertExists()
+        captureSnapshot("main-notice-closed-dismissed.png")
     }
 
     @Test

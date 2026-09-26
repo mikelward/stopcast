@@ -413,9 +413,10 @@ object DepartureRows {
     ): List<DepartureRow> {
         fun distanceOf(stopId: String): Double = stopDistanceMeters[stopId] ?: Double.MAX_VALUE
         return rows.sortedWith(
-            // Only a stop closure leads (0); everything else — a line-status alert included — sorts by
-            // distance (1), so an alert never hoists its stop above a closer one. A closure still leads
-            // because the screen renders closures as standalone cards ahead of the groups.
+            // Stop notices first (0), then everything else — a line-status alert included — by
+            // distance (1), so an alert never hoists its stop above a closer one. The notices' order
+            // here doesn't place them on screen: the list draws each with its own place, at the
+            // place's distance (SPEC *Disruptions*).
             compareBy<DepartureRow> { if (it.stopDisruption != null) 0 else 1 }
                 .thenBy { distanceOf(it.stopId) }
                 // Group two *distinct* stops that compute an equal distance (e.g. StopPoints
@@ -595,6 +596,11 @@ object DepartureRows {
                 hubId = stop.hubId,
                 hubName = stop.hubName,
                 placeAliases = stop.placeAliases,
+                // A bus pole's letter, bearing and heading, so a notice about one pole ("Bus Stop
+                // Closed" at Stop E) can sit with that pole rather than read as the whole junction's.
+                stopLetter = stop.stopLetter,
+                bearing = stop.bearing,
+                towards = stop.towards,
                 lineId = "",
                 lineName = "",
                 direction = "",

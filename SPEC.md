@@ -204,10 +204,9 @@ The app finds stops two ways:
   are equidistant). **A line-status alert (a suspended line's status row) rides with its
   stop and gets no special order** — it is not hoisted above a closer stop, nor lifted within its
   own stop's section; it simply trails that stop's departures, so a nearer stop is never pushed
-  below a farther one for carrying an alert. Starred rows are still pinned to the top. (Stop
-  *closures* stay standalone cards ahead of the list today, so they still lead; making a closure a
-  normal stop/cluster section with a card explaining the closure in place of departures is a
-  `TODO.md` follow-up.) Earlier the alert lifted its whole stop above closer ones, which read as
+  below a farther one for carrying an alert. Starred rows are still pinned to the top. **A stop
+  notice rides with its place too** (maintainer, 2026-09-26): drawn at the place's distance, not
+  lifted to the top (*Disruptions*). Earlier the alert lifted its whole stop above closer ones, which read as
   the app ignoring distance. Distance orders only this location-derived list — never the
   location-free watched list, which stays soonest-first (D1). Each near-me stop's header also **shows its distance** in parens after
   the name ("Oxford Circus (120 m)"), so a rider can judge which of two nearby stops to walk
@@ -652,7 +651,7 @@ closure or a no-prediction line-status row is something the user must see, and p
 starred service above it would push a warning down the list (principle 2). **On the near-me
 list an alert gets no special order** — it rides with its stop at its stop's distance (trailing
 that stop's departures) rather than being lifted, above starred or otherwise (*Finding stops*); a
-stop closure still leads there as a standalone card. Distance ranking belongs to *finding* stops
+stop notice rides with its place there too (*Disruptions*). Distance ranking belongs to *finding* stops
 (near-me discovery, *Finding stops*), not to ordering the watched list.
 
 **The per-platform card model shipped** — one card per platform/pole, a chip-tagged row per
@@ -1014,7 +1013,27 @@ live, catchable departures is itself quietly wrong (maintainer, 2026-09-23). The
 untouched either way. A notice with no date, or one that can't be parsed, counts as current — an
 unreadable window never hides a closure.
 
-A stop-closure card is **headed by the place name — the interchange, else the stop — always
+**On the near-me list a stop notice is drawn with its place** (maintainer, 2026-09-26), at the
+place's distance like any section, and **at most once per interchange** (the fold below):
+- A notice filed against **one bus pole alone** ("Bus Stop Closed" at Stop E) sits under
+  that pole's heading, above its departures: a junction-wide heading would say Stop F is shut too.
+  One TfL files against several stops of the place is about the place, so it heads the place's
+  own group instead (below).
+- A notice about **a station or interchange** is its **own group**: the place's heading (the
+  interchange, else the station) and distance, then the notice, directly above the place's first
+  platform section — one heading for every platform, never repeated on each.
+- **A closed station with nothing running** is that group alone, with no line or time rows.
+- A notice whose wording says the stop or station is closed ([ClosedNotice] — "Bus Stop Closed",
+  "Station closed…") is error-toned, with a **"Closed" chip** on its heading; any other notice (a
+  lift out of service, one entrance shut) takes a quieter tone and no chip, since it doesn't close
+  the stop.
+- A closed place still loading as a card, or opened from a farther card, shows as its notice
+  group in that card's place, so it's never drawn twice.
+
+On the **watched list** and a platform's own view, a notice keeps its standalone card ahead of the
+list (warnings lead there), headed as below.
+
+A standalone stop-closure card is **headed by the place name — the interchange, else the stop — always
 shown**, with the notice **collapsed to a single line and expanded on tap**: TfL's stop notices
 are prose (a paragraph on a lift outage), and a glance surface shouldn't be dominated by one, so
 the body is the notice's first line until tapped. The name heads the card because the body does
@@ -1042,7 +1061,10 @@ the window the card is back at once, not after the original end (maintainer, 202
 persisted (survives restart, rides Android backup like the rest of the config — SPEC *Privacy*),
 one entry per place so the set stays bounded, and **fails safe**: a stored set this build can't read
 reads back empty, so the worst case is a dismissed card returning, never a warning hidden. The
-stop's departures still show.
+stop's departures still show. A dismissed closure at a place with nothing else to show keeps its
+heading and "Closed" chip: dismissing hides the prose, not the fact that it's shut. A closed
+bus pole that still lists buses keeps its chip too, since it heads that pole's own departures,
+which may not call there; a station-wide closure's chip goes with its notice group.
 
 **Every service alert is dismissible**, line statuses included (maintainer, 2026-09-23) — acute ones
 too: the user has read "Severe Delays" and doesn't need it repeated on every glance. A line's alert
