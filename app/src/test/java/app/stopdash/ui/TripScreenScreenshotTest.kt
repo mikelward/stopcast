@@ -5,7 +5,10 @@ import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onFirst
@@ -238,6 +241,18 @@ class TripScreenScreenshotTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("6 stops to Whitechapel").assertIsDisplayed()
         composeRule.onNodeWithText("Couldn't plan the trip: You're offline").assertIsDisplayed()
+    }
+
+    @Test
+    fun a_first_leg_with_no_train_yet_shows_its_terminus() {
+        val heading = viaStratford.copy(legs = listOf(viaStratford.legs[0].copy(headings = listOf("Stratford"))) + viaStratford.legs.drop(1))
+        show(planned.copy(routes = listOf(heading, viaCanadaWater), live = emptyMap()))
+        fun shows(text: String) = hasText(text) or hasContentDescription(text)
+        // The Planner's terminus where it gave one; where it gave none, where to board.
+        composeRule.onAllNodes(shows("Stratford")).onFirst().assertExists()
+        composeRule.onAllNodes(shows("from Highbury & Islington")).onFirst().assertExists()
+        // Never the stop the leg gets off at, read as its destination.
+        composeRule.onAllNodes(shows("Canada Water")).assertCountEquals(0)
     }
 
     @Test

@@ -216,6 +216,8 @@
     <!-- In place of a route's line pills when the whole route is on foot. -->
     <string name="trip_walk_only">Walk</string>
     <!-- A walk between two stations, in the Planner's minutes. -->
+    <!-- A route's first leg with no train to show yet: where the rider boards it ("from Muswell Hill Road"). -->
+    <string name="trip_first_leg_from">from %1$s</string>
     <string name="trip_walk">%1$d min walk to %2$s</string>
     <!-- Time allowed to change between two rides, shown between their cards. -->
     <!-- A first-leg train for screen readers: its countdown ("3 min") and destination. -->
