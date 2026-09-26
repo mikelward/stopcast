@@ -173,6 +173,29 @@ class RouteStopsTest {
     }
 
     @Test
+    fun `a loop's inner and outer rail go opposite ways round`() {
+        // A square loop about the origin, both ways round from N ending at End: the outer rail runs
+        // clockwise (by E), the inner rail anticlockwise (by W).
+        val loop = LineSequence(
+            routes = listOf(
+                LineRoute("N ↔ End", listOf("N", "E", "S", "W", "END")),
+                LineRoute("N ↔ End", listOf("N", "W", "S", "E", "END")),
+            ),
+            stopNames = mapOf("N" to "N", "E" to "E", "S" to "S", "W" to "W", "END" to "End"),
+            stopPositions = mapOf(
+                "N" to (51.01 to 0.0), "E" to (51.0 to 0.01), "S" to (50.99 to 0.0), "W" to (51.0 to -0.01), "END" to (51.0 to 0.0),
+            ),
+        )
+        assertEquals(RouteStops.Resolution.Ambiguous(2), RouteStops.resolve(loop, "N", "End", null))
+        assertEquals("E", RouteStops.ahead(loop, "N", "End", null, bound = RouteStops.Bound.OUTER_RAIL)!![1].id)
+        assertEquals("W", RouteStops.ahead(loop, "N", "End", null, bound = RouteStops.Bound.INNER_RAIL)!![1].id)
+        assertEquals(RouteStops.Bound.INNER_RAIL, RouteStops.boundOf("Inner Rail - Platform 1"))
+        assertEquals(RouteStops.Bound.OUTER_RAIL, RouteStops.boundOf("Outer Rail - Platform 2"))
+        // A platform that faces neither way keeps both: never guessed down to one.
+        assertEquals(RouteStops.Resolution.Ambiguous(2), RouteStops.resolve(loop, "N", "End", null, bound = RouteStops.Bound.NORTH))
+    }
+
+    @Test
     fun `route names parse to their far end`() {
         assertEquals("Edgware", RouteStops.terminusOf("Morden  &harr;  Edgware  via Bank"))
         assertEquals("Archway", RouteStops.terminusOf("Victoria Bus Station &harr;  Archway Station"))
