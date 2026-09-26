@@ -1204,9 +1204,16 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           journey round (its origin is now the other end) the refresh starts on the old origin and
           restarts when the screen reports the new one. Hand the refresh the flipped origin up
           front, as the faraway hold-back already does for journeys crossing the mile line.
-  - [ ] **Home and work, with routing** — the eventual goal: star two places, not two stations,
-        and show how to get between them. Needs journey planning, a SPEC non-goal today and a
-        separate product + privacy decision (it would send both places to TfL's Journey Planner).
+  - [ ] **Home and Work, saved as places, planned to from the To… menu** (v1 scope ratified
+        2026-09-26, SPEC D9) — pin Home and Work at the top of the trip screen's To… menu: set →
+        plan a trip there; unset → pick the place with the existing station/place search; plus an
+        edit/clear affordance. Saved as a place/stop id + name (like a watched stop), **never a
+        coordinate**, so it sends TfL what any trip already sends (no new Data Safety type, SPEC
+        *Trips*) and stays within the door-to-door non-goal. Persists with config (rides backup).
+        Routing is no longer a non-goal — trip planning ships (*Trips*), superseding the earlier
+        "Journey API non-goal" framing that predated it. Follow-ups: a free-typed **address →
+        coordinate** entry (finer datum, its own privacy review); "show whichever you're *not* near /
+        direction by time of day" (below, Later).
 - [ ] Per-stop line/direction filters (D2).
 - [ ] **Filter or rank by a destination the user enters, and let them save favorite
       destinations** — the user names where they're going (or picks a saved favorite) and
@@ -1221,9 +1228,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       platform channel, not an app-initiated send, and already covered by SPEC *Privacy*'s
       backup note. An
       off-device "does this stop reach X" lookup (TfL Journey Planner) would transmit the
-      destination to TfL and is a **separate product + privacy decision** (SPEC declares
-      the Journey API a non-goal; it would change the Play Data Safety answers), not
-      assumed by this item.
+      destination to TfL; that channel now ships for trips and adds no new Play Data Safety type
+      (SPEC *Trips* / D9), but this item stays **on-device by design** — matching against retained
+      text, never a send — distinct from planning a trip to a saved destination (D9).
 - [ ] **Working hours / trip windows** (requested 2026-09-19, on-device). Let the user say
       when they commute (a morning window toward work, an evening one home), so stopdash can
       emphasize the relevant direction at the relevant time and scope commute announcements

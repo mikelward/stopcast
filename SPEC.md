@@ -1798,3 +1798,16 @@ Mirrors the sibling fleet:
   labeling a direction by the next branch/interchange point downstream rather than the
   terminus, feeding user-set favorite destinations. Supersedes the earlier open question;
   the flat-list-vs-swipe-card choice is the remaining open call, to settle from real use.
+- **D9 — Home and Work are saved *places*, planned to as trips.** Each is saved as a place/stop
+  id + name (like a watched stop), never a raw coordinate, so a trip to Home or Work sends TfL the
+  same stop id any trip already does (*Trips*) — staying within the **Door-to-door routing**
+  non-goal (stop to stop, no address) and under the **Location** Data Safety type already declared,
+  with no new type. They pin at the top of the trip screen's **To…** menu: set → plan a trip there;
+  unset → pick the place with the existing station/place search; with an edit/clear affordance. They
+  persist with the rest of the user's config, so they ride Android backup / device transfer (a
+  platform channel, *Privacy*), and are handled like watched-stop data — never in the debug log or
+  any pushed artifact. Ratified by the maintainer 2026-09-26, superseding an earlier `TODO.md` note
+  that treated the Journey API as a non-goal and left the home/work privacy call open — that note
+  predated trip planning. A free-typed street **address geocoded to a coordinate** is a later,
+  opt-in refinement: it stores a finer "where you live" datum and brushes the door-to-door non-goal,
+  so it needs its own review.
