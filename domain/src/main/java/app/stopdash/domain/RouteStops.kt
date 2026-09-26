@@ -5,10 +5,15 @@ import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -306,6 +311,8 @@ class RouteStopsRepository(
     // Route sequences share TfL's in-flight request pool with the live refresh, and a National Rail
     // one can take seconds: at most this many at once, so live times always find a free slot.
     private val fetchSlots = Semaphore(MAX_CONCURRENT_FETCHES)
+    // Each line+direction's fetch under way, for a second caller to join ([shared]).
+    private val inFlight = ConcurrentHashMap<String, Deferred<Result<LineSequence>>>()
     // Nothing to read from a store that keeps nothing, so no IO hop (a test's store is NONE).
     @Volatile private var storeRead = store === RouteStopsStore.NONE
 
@@ -418,30 +425,62 @@ class RouteStopsRepository(
         // Both directions at once: a National Rail line's sequence can take TfL several seconds to
         // start answering, so fetching them in turn doubled the wait.
         val parts = coroutineScope {
-            RouteStops.directionsFor(direction).map { dir ->
-                async {
-                    cache.freshValue("$lineId/$dir")?.let { return@async Result.success(it to false) }
-                    val started = clock()
-                    try {
-                        val fetched = fetchSlots.withPermit { source.routeSequence(lineId, dir) }
-                        cache["$lineId/$dir"] = RouteStopsStore.Timed(clock(), fetched)
-                        // Line, direction and time only: why a trip or card waited on its route.
-                        warn("route sequence fetched for line $lineId $dir in ${Duration.between(started, clock()).toMillis()} ms")
-                        Result.success(fetched to true)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: TflException) {
-                        warn("route sequence fetch failed for line $lineId $dir after ${Duration.between(started, clock()).toMillis()} ms: ${e::class.simpleName}")
-                        Result.failure(e)
-                    }
-                }
-            }.awaitAll()
+            RouteStops.directionsFor(direction).map { dir -> async { shared(lineId, dir) } }.awaitAll()
         }
         // A direction fetched while the other failed is still kept.
         if (parts.any { it.getOrNull()?.second == true }) save()
         parts.firstNotNullOfOrNull { it.exceptionOrNull() }?.let { throw it }
         val sequence = parts.map { it.getOrThrow().first }.reduce(LineSequence::plus)
         return sequence.withStations(stationsByHub.orEmpty())
+    }
+
+    /**
+     * [lineId]'s route one way, held or fetched, and whether this call fetched it. A fetch already
+     * under way for it (a trip's, when its page opens meanwhile) is joined rather than asked again,
+     * sparing TfL's request quota; one canceled with the caller that started it is asked again.
+     */
+    private suspend fun CoroutineScope.shared(lineId: String, dir: String): Result<Pair<LineSequence, Boolean>> {
+        val key = "$lineId/$dir"
+        while (true) {
+            cache.freshValue(key)?.let { return Result.success(it to false) }
+            val mine = async(start = CoroutineStart.LAZY) { fetch(lineId, dir) }
+            val joined = inFlight.putIfAbsent(key, mine)
+            if (joined != null) {
+                mine.cancel()
+                val result = try {
+                    joined.await()
+                } catch (e: CancellationException) {
+                    // Ours: stop. Its starter's: forget it and ask again.
+                    currentCoroutineContext().ensureActive()
+                    inFlight.remove(key, joined)
+                    continue
+                }
+                return result.map { it to false }
+            }
+            try {
+                return mine.await().map { it to true }
+            } finally {
+                inFlight.remove(key, mine)
+            }
+        }
+    }
+
+    // One fetch of a line's route one way, into the cache; a TfL failure is returned, not thrown, so
+    // a caller joining it gets the same answer without failing the fetch's own scope.
+    private suspend fun fetch(lineId: String, dir: String): Result<LineSequence> {
+        val started = clock()
+        return try {
+            val fetched = fetchSlots.withPermit { source.routeSequence(lineId, dir) }
+            cache["$lineId/$dir"] = RouteStopsStore.Timed(clock(), fetched)
+            // Line, direction and time only: why a trip or card waited on its route.
+            warn("route sequence fetched for line $lineId $dir in ${Duration.between(started, clock()).toMillis()} ms")
+            Result.success(fetched)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: TflException) {
+            warn("route sequence fetch failed for line $lineId $dir after ${Duration.between(started, clock()).toMillis()} ms: ${e::class.simpleName}")
+            Result.failure(e)
+        }
     }
 
     companion object {
