@@ -1,0 +1,418 @@
+{
+ "journeys": [
+  {
+   "startDateTime": "2026-09-26T07:37:00",
+   "duration": 32,
+   "arrivalDateTime": "2026-09-26T08:09:00",
+   "legs": [
+    {
+     "duration": 16,
+     "departureTime": "2026-09-26T07:37:00",
+     "arrivalTime": "2026-09-26T07:53:00",
+     "departurePoint": {
+      "naptanId": "910GHGHI",
+      "platformName": "",
+      "commonName": "Highbury & Islington Rail Station"
+     },
+     "arrivalPoint": {
+      "naptanId": "910GSTFD",
+      "platformName": "",
+      "commonName": "Stratford (London) Rail Station"
+     },
+     "routeOptions": [
+      {
+       "name": "Mildmay",
+       "directions": [
+        "Stratford Rail Station"
+       ],
+       "lineIdentifier": {
+        "id": "mildmay",
+        "name": "Mildmay"
+       }
+      }
+     ],
+     "mode": {
+      "id": "overground",
+      "name": "overground"
+     },
+     "path": {
+      "stopPoints": [
+       {
+        "id": "910GCNNB",
+        "name": "Canonbury Rail Station"
+       },
+       {
+        "id": "910GDALSKLD",
+        "name": "Dalston Kingsland Rail Station"
+       },
+       {
+        "id": "910GHACKNYC",
+        "name": "Hackney Central Rail Station"
+       },
+       {
+        "id": "910GHOMRTON",
+        "name": "Homerton Rail Station"
+       },
+       {
+        "id": "910GHACKNYW",
+        "name": "Hackney Wick Rail Station"
+       },
+       {
+        "id": "910GSTFD",
+        "name": "Stratford (London) Rail Station"
+       }
+      ]
+     },
+     "isDisrupted": false,
+     "interChangeDuration": "6",
+     "interChangePosition": "AFTER",
+     "instruction": {
+      "summary": "Mildmay line to Stratford Rail Station"
+     }
+    },
+    {
+     "duration": 9,
+     "departureTime": "2026-09-26T08:00:00",
+     "arrivalTime": "2026-09-26T08:09:00",
+     "departurePoint": {
+      "naptanId": "940GZZLUSTD",
+      "platformName": "",
+      "commonName": "Stratford Underground Station"
+     },
+     "arrivalPoint": {
+      "naptanId": "940GZZLUCYF",
+      "platformName": "",
+      "commonName": "Canary Wharf Underground Station"
+     },
+     "routeOptions": [
+      {
+       "name": "Jubilee",
+       "directions": [
+        "Stanmore Underground Station"
+       ],
+       "lineIdentifier": {
+        "id": "jubilee",
+        "name": "Jubilee"
+       }
+      }
+     ],
+     "mode": {
+      "id": "tube",
+      "name": "tube"
+     },
+     "path": {
+      "stopPoints": [
+       {
+        "id": "940GZZLUWHM",
+        "name": "West Ham Underground Station"
+       },
+       {
+        "id": "940GZZLUCGT",
+        "name": "Canning Town Underground Station"
+       },
+       {
+        "id": "940GZZLUNGW",
+        "name": "North Greenwich Underground Station"
+       },
+       {
+        "id": "940GZZLUCYF",
+        "name": "Canary Wharf Underground Station"
+       }
+      ]
+     },
+     "isDisrupted": true,
+     "instruction": {
+      "summary": "Jubilee line to Canary Wharf"
+     }
+    }
+   ]
+  },
+  {
+   "startDateTime": "2026-09-26T07:41:00",
+   "duration": 28,
+   "arrivalDateTime": "2026-09-26T08:09:00",
+   "legs": [
+    {
+     "duration": 21,
+     "departureTime": "2026-09-26T07:41:00",
+     "arrivalTime": "2026-09-26T08:02:00",
+     "departurePoint": {
+      "naptanId": "910GHGHI",
+      "platformName": "",
+      "commonName": "Highbury & Islington Rail Station"
+     },
+     "arrivalPoint": {
+      "naptanId": "910GCNDAW",
+      "platformName": "",
+      "commonName": "Canada Water Rail Station"
+     },
+     "routeOptions": [
+      {
+       "name": "Windrush",
+       "directions": [
+        "Crystal Palace Rail Station"
+       ],
+       "lineIdentifier": {
+        "id": "windrush",
+        "name": "Windrush"
+       }
+      }
+     ],
+     "mode": {
+      "id": "overground",
+      "name": "overground"
+     },
+     "path": {
+      "stopPoints": [
+       {
+        "id": "910GCNNB",
+        "name": "Canonbury Rail Station"
+       },
+       {
+        "id": "910GDALS",
+        "name": "Dalston Junction Rail Station"
+       },
+       {
+        "id": "910GHAGGERS",
+        "name": "Haggerston Rail Station"
+       },
+       {
+        "id": "910GHOXTON",
+        "name": "Hoxton Rail Station"
+       },
+       {
+        "id": "910GSHRDHST",
+        "name": "Shoreditch High Street Rail Station"
+       },
+       {
+        "id": "910GWCHAPEL",
+        "name": "Whitechapel Rail Station"
+       },
+       {
+        "id": "910GSHADWEL",
+        "name": "Shadwell Rail Station"
+       },
+       {
+        "id": "910GWAPPING",
+        "name": "Wapping Rail Station"
+       },
+       {
+        "id": "910GRTHERHI",
+        "name": "Rotherhithe Rail Station"
+       },
+       {
+        "id": "910GCNDAW",
+        "name": "Canada Water Rail Station"
+       }
+      ]
+     },
+     "isDisrupted": false,
+     "interChangeDuration": "3",
+     "interChangePosition": "AFTER",
+     "instruction": {
+      "summary": "Windrush line to Canada Water Rail Station"
+     }
+    },
+    {
+     "duration": 2,
+     "departureTime": "2026-09-26T08:07:00",
+     "arrivalTime": "2026-09-26T08:09:00",
+     "departurePoint": {
+      "naptanId": "940GZZLUCWR",
+      "platformName": "",
+      "commonName": "Canada Water Underground Station"
+     },
+     "arrivalPoint": {
+      "naptanId": "940GZZLUCYF",
+      "platformName": "",
+      "commonName": "Canary Wharf Underground Station"
+     },
+     "routeOptions": [
+      {
+       "name": "Jubilee",
+       "directions": [
+        "Stratford Underground Station"
+       ],
+       "lineIdentifier": {
+        "id": "jubilee",
+        "name": "Jubilee"
+       }
+      }
+     ],
+     "mode": {
+      "id": "tube",
+      "name": "tube"
+     },
+     "path": {
+      "stopPoints": [
+       {
+        "id": "940GZZLUCYF",
+        "name": "Canary Wharf Underground Station"
+       }
+      ]
+     },
+     "isDisrupted": true,
+     "instruction": {
+      "summary": "Jubilee line to Canary Wharf"
+     }
+    }
+   ]
+  },
+  {
+   "startDateTime": "2026-09-26T07:47:00",
+   "duration": 25,
+   "arrivalDateTime": "2026-09-26T08:12:00",
+   "legs": [
+    {
+     "duration": 13,
+     "departureTime": "2026-09-26T07:47:00",
+     "arrivalTime": "2026-09-26T08:00:00",
+     "departurePoint": {
+      "naptanId": "910GHGHI",
+      "platformName": "",
+      "commonName": "Highbury & Islington Rail Station"
+     },
+     "arrivalPoint": {
+      "naptanId": "910GWCHAPEL",
+      "platformName": "",
+      "commonName": "Whitechapel Rail Station"
+     },
+     "routeOptions": [
+      {
+       "name": "Windrush",
+       "directions": [
+        "West Croydon Rail Station"
+       ],
+       "lineIdentifier": {
+        "id": "windrush",
+        "name": "Windrush"
+       }
+      }
+     ],
+     "mode": {
+      "id": "overground",
+      "name": "overground"
+     },
+     "path": {
+      "stopPoints": [
+       {
+        "id": "910GCNNB",
+        "name": "Canonbury Rail Station"
+       },
+       {
+        "id": "910GDALS",
+        "name": "Dalston Junction Rail Station"
+       },
+       {
+        "id": "910GHAGGERS",
+        "name": "Haggerston Rail Station"
+       },
+       {
+        "id": "910GHOXTON",
+        "name": "Hoxton Rail Station"
+       },
+       {
+        "id": "910GSHRDHST",
+        "name": "Shoreditch High Street Rail Station"
+       },
+       {
+        "id": "910GWCHAPEL",
+        "name": "Whitechapel Rail Station"
+       }
+      ]
+     },
+     "isDisrupted": false,
+     "interChangeDuration": "2",
+     "interChangePosition": "AFTER",
+     "instruction": {
+      "summary": "Windrush line to Whitechapel Rail Station"
+     }
+    },
+    {
+     "duration": 4,
+     "departureTime": "2026-09-26T08:03:00",
+     "arrivalTime": "2026-09-26T08:07:00",
+     "departurePoint": {
+      "naptanId": "910GWCHAPXR",
+      "platformName": "",
+      "commonName": "Whitechapel"
+     },
+     "arrivalPoint": {
+      "naptanId": "910GCANWHRF",
+      "platformName": "",
+      "commonName": "Canary Wharf"
+     },
+     "routeOptions": [
+      {
+       "name": "Elizabeth line",
+       "directions": [
+        "Abbey Wood Station"
+       ],
+       "lineIdentifier": {
+        "id": "elizabeth",
+        "name": "Elizabeth line"
+       }
+      }
+     ],
+     "mode": {
+      "id": "elizabeth-line",
+      "name": "elizabeth-line"
+     },
+     "path": {
+      "stopPoints": [
+       {
+        "id": "910GCANWHRF",
+        "name": "Canary Wharf"
+       }
+      ]
+     },
+     "isDisrupted": false,
+     "instruction": {
+      "summary": "Elizabeth line to Canary Wharf Rail Station"
+     }
+    },
+    {
+     "duration": 5,
+     "departureTime": "2026-09-26T08:07:00",
+     "arrivalTime": "2026-09-26T08:12:00",
+     "departurePoint": {
+      "naptanId": "910GCANWHRF",
+      "platformName": "",
+      "commonName": "Canary Wharf"
+     },
+     "arrivalPoint": {
+      "platformName": "",
+      "commonName": "Canary Wharf Underground Station"
+     },
+     "routeOptions": [
+      {
+       "name": "",
+       "directions": [
+        ""
+       ],
+       "lineIdentifier": null
+      }
+     ],
+     "mode": {
+      "id": "walking",
+      "name": "walking"
+     },
+     "path": {
+      "stopPoints": [
+       {
+        "id": "",
+        "name": "Canary Wharf Underground Station"
+       }
+      ]
+     },
+     "isDisrupted": false,
+     "interChangeDuration": "5",
+     "interChangePosition": "IDEST",
+     "instruction": {
+      "summary": "Walk to Canary Wharf Underground Station"
+     }
+    }
+   ]
+  }
+ ]
+}

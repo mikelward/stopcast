@@ -48,6 +48,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -143,6 +144,9 @@ import app.stopdash.ui.StationSearchScreen
 import app.stopdash.ui.StationSearchViewModel
 import app.stopdash.ui.StationStopsViewModel
 import app.stopdash.ui.StopRef
+import app.stopdash.ui.TripScreen
+import app.stopdash.ui.TripViewModel
+import app.stopdash.domain.TripTiming
 import app.stopdash.ui.WriteFailures
 import app.stopdash.ui.theme.StopDashTheme
 import app.stopdash.widget.LiveWidgetRefreshResult
@@ -157,6 +161,7 @@ import com.mikelward.androidlog.android.DebugReport
 import com.mikelward.androidlog.android.ReportScreenshot
 import com.mikelward.androidlog.android.ShareOutcome
 import java.io.File
+import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -603,6 +608,9 @@ class MainActivity : ComponentActivity() {
                                         hereOriginIds(state.eagerStops, state.nearbyStops, state.distanceMeters, hidden)
                                             .mapNotNull { byId[it] }
                                     },
+                                    // The Planner starts from the nearest stop of any mode, hidden or
+                                    // not (it walks on to a better one); hidden modes filter its routes.
+                                    anchors = state.nearbyStops,
                                     distanceMeters = state.distanceMeters,
                                     clusters = state.eager + state.more,
                                     hiddenModes = hidden,
@@ -1625,6 +1633,7 @@ class MainActivity : ComponentActivity() {
                 locationBanner = fromNearby.locationBanner,
                 keyPrefix = "from",
                 fromName = stationName,
+                fromStopIds = stationStopIds,
                 onLocate = onBackToNearMe,
             )
         } else {
@@ -1666,6 +1675,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun HereTripArea(
         origin: List<StopRef>,
+        // The stops a trip from here may start at, whatever their modes: the nearest is the
+        // Planner's start. Empty uses [origin] (a From… station starts at its own stops).
+        anchors: List<StopRef> = emptyList(),
         // Each stop's distance from the rider: the trip's rows show a line once, from its nearest
         // stop, ordered nearest first, with distances in the headers, as the near-me list does.
         distanceMeters: Map<String, Double>,
@@ -1695,12 +1707,12 @@ class MainActivity : ComponentActivity() {
         // searched station's (From…), whose trip is titled "‹station› ➔ ‹to›" by [fromName].
         keyPrefix: String = "here",
         fromName: String? = null,
+        // A From… station's own stops: its trip starts at one of them, never a neighbor.
+        fromStopIds: Set<String> = emptySet(),
         // The crosshairs from a From… station's trip: back to the near-me list. Null re-locates.
         onLocate: (() -> Unit)? = null,
     ) {
         val appContext = applicationContext
-        val originKey = remember(origin) { origin.map { it.id }.sorted().joinToString(",") }
-        val repick by repicked.collectAsStateWithLifecycle()
         ConsumeForegroundReturn(
             pending = foregroundReturnPending,
             isBusy = isRelocating,
@@ -1762,74 +1774,89 @@ class MainActivity : ComponentActivity() {
         } else {
             stringResource(R.string.journey_title, fromName, toName)
         }
-        val toOwner = remember(toId) { toStores.ownerFor(toId, this@MainActivity) }
-        val toModel: StationStopsViewModel = viewModel(
-            viewModelStoreOwner = toOwner,
+        // A trip with a change (SPEC *Trips with a change*): TfL's Journey Planner from the nearest
+        // origin stop to the destination, timed by live trains. The Planner takes a stop or station
+        // id, not an interchange ("HUB…"): an ordinary stop is planned to as picked, at once; an
+        // interchange is looked up first for one of its own member stops.
+        val toStopId = if (!toId.startsWith(HUB_PREFIX)) {
+            toId
+        } else {
+            val toOwner = remember(toId) { toStores.ownerFor(toId, this@MainActivity) }
+            val toModel: StationStopsViewModel = viewModel(
+                viewModelStoreOwner = toOwner,
+                factory = viewModelFactory {
+                    initializer { StationStopsViewModel(stationFinder, toId, warn = ::logDepartureWarning) }
+                },
+            )
+            val to by toModel.state.collectAsStateWithLifecycle()
+            val members = (to as? StationStopsViewModel.State.Ready)?.stops
+            if (members == null) {
+                StationPlaceholderScreen(
+                    title = title,
+                    state = to,
+                    onRetry = toModel::retry,
+                    onBack = close,
+                    // From a From… station, back to near me; from here, re-locate, as the trip's page does.
+                    onLocate = onLocate ?: relocate,
+                )
+                return
+            }
+            (members.firstOrNull { !it.id.startsWith(HUB_PREFIX) } ?: members.first()).id
+        }
+        // From a From… station, one of its own stops (the neighbors around it are no start); else
+        // the stop nearest the rider.
+        val starts = anchors.ifEmpty { origin }.filter { !it.id.startsWith(HUB_PREFIX) && it.lines.isNotEmpty() }
+            .ifEmpty { origin.filterNot { it.id.startsWith(HUB_PREFIX) } }
+        val fromStop = (starts.filter { it.id in fromStopIds }.ifEmpty { starts })
+            .minByOrNull { distanceMeters[it.id] ?: Double.MAX_VALUE } ?: origin.first()
+        // Keyed on both ends, so a relocation to a new nearest stop plans afresh.
+        val tripKey = "${fromStop.id}>$toStopId"
+        val owner = remember(tripKey) { stores.ownerFor(tripKey, this@MainActivity) }
+        val trip: TripViewModel = viewModel(
+            viewModelStoreOwner = owner,
             factory = viewModelFactory {
                 initializer {
-                    StationStopsViewModel(
-                        stationFinder,
-                        toId,
-                        warn = ::logDepartureWarning,
-                        // The destination's surroundings, by the station's own public position.
-                        around = { center ->
-                            stationAreaStopFinder.nearbyStops(
-                                center.latitude,
-                                center.longitude,
-                                DirectTrips.DESTINATION_RADIUS_METERS,
-                            )
-                        },
-                    )
+                    TripViewModel(journeyPlanner, departuresClient(appContext), fromStop.id, toStopId, warn = ::logDepartureWarning)
                 }
             },
         )
-        val to by toModel.state.collectAsStateWithLifecycle()
-        val destination = (to as? StationStopsViewModel.State.Ready)?.stops
-        if (destination == null) {
-            StationPlaceholderScreen(
-                title = title,
-                state = to,
-                onRetry = toModel::retry,
-                onBack = close,
-                // From a From… station, back to near me; from here, re-locate, as the trip's page does.
-                onLocate = onLocate ?: relocate,
-            )
-            return
+        val lifecycleOwner = LocalLifecycleOwner.current
+        SideEffect { trip.hiddenModes = hiddenModes }
+        // A re-pick of the nearby set (a fresh fix, a retried location) that kept the same nearest
+        // stop keeps this trip, but its walk and live times follow the new fix at once rather than
+        // wait for the next tick.
+        val repick by repicked.collectAsStateWithLifecycle()
+        // The model remembers which re-pick it refreshed for, so a rotation (a new effect over the
+        // retained model) doesn't fetch again.
+        LaunchedEffect(trip, repick) { trip.refreshFor(repick?.id) }
+        // The list's own foreground tick: live times refresh, and a plan past its reuse is planned
+        // again, only while the trip is on screen (no background work, SPEC *Trips with a change*).
+        LaunchedEffect(lifecycleOwner, trip) {
+            autoRefresh(
+                lifecycleOwner.lifecycle,
+                // A relocation in flight hands over a re-pick when it lands: a tick meanwhile would
+                // fetch for an origin about to change.
+                isRefreshing = { trip.state.value.refreshing || trip.state.value.planning || isRelocating() },
+            ) { trip.refresh() }
         }
-        // Keyed on the origin set, so a relocation that changes it fetches the new stops afresh.
-        val owner = remember(originKey) { stores.ownerFor(originKey, this@MainActivity) }
-        CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
-            LookDepartures(
-                stops = origin,
-                locationBanner = locationBanner,
-                hereTiers = remember(clusters, originKey, distanceMeters) {
-                    hereTripTiers(clusters, origin.mapTo(HashSet()) { it.id }, distanceMeters)
-                },
-                title = title,
-                onClose = close,
-                // Changing the destination drops the trip's model: while the search is up nothing
-                // of the trip is on screen to stop its fetches during a re-locate, and the next
-                // destination's page is built afresh from the current stops.
-                onPlanTo = {
-                    stores.clearAll()
-                    onPlanTo()
-                },
-                destination = destination,
-                destinationName = toName,
-                onClearDestination = null,
-                writeFailures = writeFailures,
-                refreshOnReturn = false,
-                repick = repick,
-                // Refresh re-locates first, as the list's does, then refreshes on the same set; a
-                // moved-to set works the origins out again.
-                onRefresh = relocate,
-                relocating = relocating,
-                onLocate = onLocate,
-                distanceMeters = distanceMeters,
-                hiddenModes = hiddenModes,
-                onShowAllModes = showAllModes,
-            )
-        }
+        val tripState by trip.state.collectAsStateWithLifecycle()
+        // From here the rider still has to reach the first stop; at a From… station they're at its
+        // own stops (a neighbor, when every own stop is hidden, is still a walk from it).
+        val access = if (fromStop.id in fromStopIds) Duration.ZERO else TripTiming.accessWalk(distanceMeters[fromStop.id] ?: 0.0)
+        TripScreen(
+            title = title,
+            state = tripState,
+            now = tickingNow(),
+            access = access,
+            onBack = close,
+            onRetry = trip::retry,
+            locationBanner = locationBanner.collectAsStateWithLifecycle().value,
+            relocating = relocating.collectAsStateWithLifecycle().value,
+            // From a From… station, back to near me; from here, re-locate.
+            onRelocate = onLocate ?: relocate,
+            hiddenModes = hiddenModes,
+            onShowAllModes = showAllModes,
+        )
     }
 
     /**
@@ -2076,6 +2103,21 @@ class MainActivity : ComponentActivity() {
                 requestPool = SharedTflRequestPool.pool,
             )
         }
+
+        // A trip with a change's planner (SPEC *Trips with a change*): on demand while a trip is on
+        // screen, never on the refresh path of the list.
+        private val journeyPlanner by lazy {
+            KtorTflClient(
+                httpClient,
+                appKey = { UserApiKeySetting.current },
+                rateLimiterFor = SharedTflRateLimiter::rateLimiterFor,
+                requestPool = SharedTflRequestPool.pool,
+                warn = ::logDepartureWarning,
+            )
+        }
+
+        // The Planner takes stop and station ids but not an interchange's.
+        private const val HUB_PREFIX = "HUB"
 
         // The station view has no location fix to wait on, so its auto-refresh is never held off by one.
         private val NOT_RELOCATING: StateFlow<Boolean> = MutableStateFlow(false)

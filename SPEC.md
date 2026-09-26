@@ -915,6 +915,9 @@ trip if one is held, never a blank. Retry is disabled while its call is in fligh
 and falls back the same way; it is retried on the next refresh. Nothing retries in a loop:
 Planner and arrivals requests go through the same rate limiter as every TfL request.
 
+**Walking** is capped at 15 minutes per walk (the Planner's `maxWalkingMinutes`), so it never offers
+a long walk beside the rides; configurable later.
+
 **One stop per end.** The Planner takes a single stop or station id for each end, not an
 interchange's or a folded search result's several stands, so each end is sent as one stop: the
 nearest stop to the rider (or the *From…* station's own stop), and the picked result's own stop.

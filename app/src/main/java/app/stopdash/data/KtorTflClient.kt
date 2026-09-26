@@ -3,6 +3,7 @@ package app.stopdash.data
 import app.stopdash.domain.Departure
 import app.stopdash.domain.DepartureRows
 import app.stopdash.domain.HubInfo
+import app.stopdash.domain.JourneyPlanner
 import app.stopdash.domain.LineSequence
 import app.stopdash.domain.LineStatus
 import app.stopdash.domain.RouteSequenceSource
@@ -15,12 +16,14 @@ import app.stopdash.domain.StopLocation
 import app.stopdash.domain.TflClient
 import app.stopdash.domain.TflRateLimiter
 import app.stopdash.domain.TflRequestPool
+import app.stopdash.domain.TripRoute
 import app.stopdash.domain.cleanStopName
 import app.stopdash.domain.TflException
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.RedirectResponseException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.ServerResponseException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -69,7 +72,37 @@ class KtorTflClient(
     // Sink for recoverable response oddities (an unparseable disruption date), coarse facts only —
     // a stop id, never a coordinate or key (SPEC *Privacy*). No-op by default (tests, widget).
     private val warn: (String) -> Unit = {},
-) : TflClient, StopFinder, StationFinder, RouteSequenceSource, StopAreaSource {
+) : TflClient, StopFinder, StationFinder, RouteSequenceSource, StopAreaSource, JourneyPlanner {
+    override suspend fun journeys(fromId: String, toId: String): List<TripRoute> =
+        tflRequest { key ->
+            val dto = try {
+                httpClient.get("$baseUrl/Journey/JourneyResults/$fromId/to/$toId") {
+                    // No leg asks the rider to walk longer than this (the Planner's default allows
+                    // far more, offering an all-walk route beside the rides).
+                    parameter("maxWalkingMinutes", MAX_WALKING_MINUTES)
+                    applyAppKey(key)
+                    // The Planner can take several seconds to answer a trip it hasn't cached.
+                    allowSlowAnswer()
+                }.body<TflJourneyResultsDto>()
+            } catch (e: RedirectResponseException) {
+                // 300: the Planner couldn't place an end and offers look-alike places instead. The
+                // trip has no route StopDash can stand behind, so none is shown. The two ends together
+                // are a trip the rider chose, so neither is logged (SPEC *Privacy*).
+                warn("journey planner: HTTP ${e.response.status.value}")
+                return@tflRequest emptyList()
+            }
+            val routes = dto.toRoutes()
+            // Journeys offered but none readable: a decode failure, not "no routes" (which would be
+            // reused as a real answer for the plan's lifetime).
+            if (routes.isEmpty() && dto.journeys.isNotEmpty()) {
+                throw TflException.Unreachable("journey planner: ${dto.journeys.size} routes, none readable", null)
+            }
+            if (routes.size < dto.journeys.size) {
+                warn("journey planner: ${dto.journeys.size - routes.size} of ${dto.journeys.size} routes unreadable")
+            }
+            routes
+        }
+
     override suspend fun arrivals(stopId: String): List<Departure> =
         tflRequest { key ->
             httpClient.get("$baseUrl/StopPoint/$stopId/Arrivals") {
@@ -292,6 +325,9 @@ class KtorTflClient(
          * past OkHttp's 10 s default.
          */
         const val SLOW_SOCKET_TIMEOUT_MILLIS: Long = 30_000
+
+        /** The longest walk a planned trip may ask of the rider, in minutes (fixed for now). */
+        const val MAX_WALKING_MINUTES: Int = 15
 
         /** How many name-search matches to ask for — a screenful; a longer query narrows it. */
         const val SEARCH_MAX_RESULTS: Int = 20
