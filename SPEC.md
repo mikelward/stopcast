@@ -880,7 +880,9 @@ together) shows "Walk" where the pills go and its minutes, with no live row and 
 Tapping a route opens it, drawn with the list's own parts, **every leg a card**: the leg's platform header ("Highbury
 & Islington – Platform 2") over a route card of that line's live departures toward the change, then
 "6 stops to Whitechapel", then the next leg's header and card at the change station, down to "2 stops
-to Canary Wharf". Line status and stop closures for every leg show exactly as on the list:
+to Canary Wharf". A walk reads "5 min walk to ‹place›"; a walk to a station's entrance, which the
+Planner names by its street then the station ("Cannon Street, Cannon Street Rail Station"), goes by
+the station ("Cannon Street"), never the street repeated. Line status and stop closures for every leg show exactly as on the list:
 the ⚠ on a disrupted row, the status chip on a line with no trains, the closure card at a closed
 stop. **Every stop the rider gets off at** is checked too — each leg's alighting stop, including
 both ends of a walk between stations, and the destination — as a starred journey's far end is

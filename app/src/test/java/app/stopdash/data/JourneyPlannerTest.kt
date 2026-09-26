@@ -85,6 +85,15 @@ class JourneyPlannerTest {
     }
 
     @Test
+    fun `a walk to a station's entrance goes by the station, not its street`() = runTest {
+        val fixture = checkNotNull(javaClass.getResource("/fixtures/journey_results_archway_to_cannon_street.json")).readText()
+        // The Planner names it "Cannon Street, Cannon Street Rail Station".
+        val walk = client(fixture).journeys("940GZZLUACY", "910GCANONST")[1].legs.last()
+        assertTrue(walk.isWalk)
+        assertEquals("Cannon Street", walk.toName)
+    }
+
+    @Test
     fun `drops a route with a leg it can't read, and says how many`() = runTest {
         val broken = fixture.replaceFirst("\"departureTime\": \"2026-09-26T07:37:00\"", "\"departureTime\": \"soon\"")
         val warnings = mutableListOf<String>()

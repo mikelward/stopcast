@@ -134,4 +134,12 @@ class StopNameTest {
         assertEquals("Bank", abbreviateBranch("Bank"))
         assertEquals("Battersea", abbreviateBranch("Battersea"))
     }
+
+    @Test
+    fun `a Planner point at a station entrance goes by the station, not its street`() {
+        assertEquals("Cannon Street", pointName("Cannon Street, Cannon Street Rail Station"))
+        // A name whose last part is no station stays whole; one without a street is only cleaned.
+        assertEquals("High Street, Kensington", pointName("High Street, Kensington"))
+        assertEquals("Bank", pointName("Bank Underground Station"))
+    }
 }
