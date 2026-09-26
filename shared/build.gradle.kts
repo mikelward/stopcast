@@ -48,3 +48,10 @@ dependencies {
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
 }
+
+tasks.withType<Test>().configureEach {
+    // Robolectric 4.17's SDK 36 sandbox reads FileDescriptor internals through
+    // jdk.internal.access.SharedSecrets, which java.base doesn't export; without this
+    // every Robolectric test fails in setup with IllegalAccessException.
+    jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+}
