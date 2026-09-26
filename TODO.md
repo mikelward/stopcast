@@ -426,6 +426,11 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         `DepartureLabels`, `LinePill`); the change is a UI re-composition of `DepartureList` /
         `DepartureRowCard` / the header composables. Open: per-route star + tap treatment inside a
         multi-row card (keep long-press-to-star and tap-to-detail per row).
+  - [ ] **Show step-free / accessibility status** (maintainer, 2026-09-26). Wheelchair icons (and
+        similar) on the route detail's stop list and on the stop/station view, so a rider who needs
+        step-free access can see which stations have it. TfL's StopPoint data carries accessibility
+        properties; whether they're per station or per platform, and how current they are, is to
+        check. A step-free-access outage notice should then read against it.
   - [ ] **Tap a route row → all stops for that route** (maintainer, 2026-09-22). Extends the
         route-detail tap to show the route's full stop sequence, not just star + disruption text.
   - [x] **A unified, arrow-free appearance for the bus direction header** (maintainer, 2026-09-22;
