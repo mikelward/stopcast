@@ -1,5 +1,6 @@
 package app.stopdash.ui
 
+import app.stopdash.R
 import app.stopdash.domain.Departure
 import app.stopdash.domain.JourneyPlanner
 import app.stopdash.domain.LineRoute
@@ -551,6 +552,79 @@ class TripViewModelTest {
         val anticlockwise = train("loop", "W", 2)
         val state = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(listOf(clockwise, anticlockwise), now)))
         assertEquals(listOf(clockwise), legTrains(state, leg, now, mapOf("loop" to loop)))
+    }
+
+    @Test
+    fun `while a line's route loads, its trains toward the Planner's terminus show as on the main screen`() {
+        val leg = TripLeg("tube", "blue", "blue", "B", "B", "C", "C", at(20), at(30), path = listOf("C"), headings = listOf("End"))
+        val toEnd = train("blue", "End", 4)
+        val alsoOut = train("blue", "Elsewhere", 6)
+        val back = train("blue", "Start", 5).copy(direction = "inbound")
+        val state = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(listOf(toEnd, alsoOut, back), now)))
+        assertEquals(listOf(toEnd, alsoOut), pendingTrains(state, leg, now, emptyMap()))
+        // Once the route has loaded (or failed), the checked trains take over.
+        assertEquals(emptyList<Departure>(), pendingTrains(state, leg, now, mapOf("blue" to blue)))
+        assertEquals(emptyList<Departure>(), pendingTrains(state, leg, now, mapOf("blue" to null)))
+        // No terminus to match, and both directions here: none rather than a guess.
+        assertEquals(emptyList<Departure>(), pendingTrains(state, leg.copy(headings = emptyList()), now, emptyMap()))
+        // National Rail gives no direction: only trains heading for the terminus, not the whole board.
+        val board = listOf(toEnd, alsoOut, back).map { it.copy(direction = "") }
+        val rail = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(board, now)))
+        assertEquals(listOf(board[0]), pendingTrains(rail, leg, now, emptyMap()))
+        assertEquals(emptyList<Departure>(), pendingTrains(rail, leg.copy(headings = emptyList()), now, emptyMap()))
+        // A train with no destination isn't shown under the Planner's terminus.
+        val blank = train("blue", "", 3)
+        val pole = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(listOf(blank, toEnd), now)))
+        assertEquals(listOf(toEnd), pendingTrains(pole, leg, now, emptyMap()))
+        // A station whose snapshot holds only the other direction's trains: none, not the wrong way.
+        val wrongWay = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(listOf(back), now)))
+        assertEquals(emptyList<Departure>(), pendingTrains(wrongWay, leg, now, emptyMap()))
+        // A bus pole serves one way: its buses show even with no destination matching the terminus.
+        val busLeg = leg.copy(mode = "bus", headings = listOf("Town Centre"))
+        val buses = listOf(toEnd, alsoOut).map { it.copy(mode = "bus") }
+        val busPole = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(buses, now)))
+        assertEquals(buses, pendingTrains(busPole, busLeg, now, emptyMap()))
+    }
+
+    @Test
+    fun `before the route check only a bus to the terminus on no named branch shows plain`() {
+        val viaBank = train("134", "Morden", 2).copy(mode = "bus", branch = "Bank")
+        val plain = train("134", "Morden", 4).copy(mode = "bus")
+        val shortWorking = train("134", "Kennington", 3).copy(mode = "bus")
+        val leg = TripLeg("bus", "134", "134", "B", "B", "C", "C", at(20), at(30), path = listOf("C"), headings = listOf("Morden"))
+        assertEquals(setOf(viaBank, shortWorking), uncheckedPending(listOf(viaBank, plain, shortWorking), leg))
+        // An opened route's card leaves the doubtful ones out until the route check vouches for them.
+        val state = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(listOf(viaBank, plain, shortWorking), now)))
+        assertEquals(listOf(plain), pendingCardTrains(state, leg, now, emptyMap()))
+        // A rail service to the terminus may still run fast past the rider's stop: checked first.
+        val express = train("thameslink", "Brighton", 4).copy(direction = "")
+        val railLeg = leg.copy(mode = "national-rail", lineId = "thameslink", headings = listOf("Brighton"))
+        assertEquals(setOf(express), uncheckedPending(listOf(express), railLeg))
+        val rail = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(listOf(express), now)))
+        assertEquals(emptyList<Departure>(), pendingCardTrains(rail, railLeg, now, emptyMap()))
+    }
+
+    @Test
+    fun `a train still being checked that leaves too soon is read as can't catch`() {
+        val soon = train("blue", "End", 2)
+        val later = train("blue", "End", 8)
+        val reachable = at(5)
+        assertEquals(R.string.trip_train_unusable_description, trainDescription(soon, false, checking = true, reachable))
+        assertEquals(R.string.trip_train_checking_description, trainDescription(later, false, checking = true, reachable))
+        assertEquals(R.string.trip_train_unusable_description, trainDescription(later, false, checking = false, reachable))
+        assertEquals(R.string.trip_train_description, trainDescription(later, true, checking = false, reachable))
+    }
+
+    @Test
+    fun `the Planner's terminus matches a board's qualified name for it`() {
+        // The Planner's "Stratford" is the board's "Stratford (London)".
+        val board = train("mildmay", "Stratford (London)", 4).copy(direction = "")
+        val leg = TripLeg("overground", "mildmay", "mildmay", "B", "B", "C", "C", at(20), at(30), path = listOf("C"), headings = listOf("Stratford"))
+        val state = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(listOf(board), now)))
+        assertEquals(listOf(board), pendingTrains(state, leg, now, emptyMap()))
+        // Another station that merely starts the same isn't it.
+        val other = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(listOf(board.copy(destination = "Stratford International")), now)))
+        assertEquals(emptyList<Departure>(), pendingTrains(other, leg, now, emptyMap()))
     }
 
     @Test

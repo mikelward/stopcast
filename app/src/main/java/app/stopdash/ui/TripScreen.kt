@@ -1,6 +1,7 @@
 package app.stopdash.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -120,6 +121,71 @@ private fun legFilter(
         sequences,
     )
 }
+
+/**
+ * While [leg]'s line's route is still loading (absent from [sequences]), its live trains at the
+ * boarding stop as the main screen shows them, so the row isn't bare meanwhile (plain only when
+ * [uncheckedPending] can't doubt it, grayed until checked otherwise): those heading for the
+ * Planner's terminus and the rest of their direction, or, at a bus pole (one direction by nature),
+ * every one. Where TfL gives no direction (National Rail), only those heading for the terminus; at a
+ * station none heading there, none (its snapshot may just lack the leg's direction). Shown only: nothing times the route until the route check vouches for a
+ * train. Empty once the route has loaded (or failed), or when the arrivals are stale (D4).
+ */
+internal fun pendingTrains(
+    state: TripViewModel.State,
+    leg: TripLeg,
+    now: Instant,
+    sequences: Map<String, LineSequence?>,
+): List<Departure> {
+    if (leg.isWalk || leg.lineId in sequences) return emptyList()
+    val stop = state.live[leg.fromId] ?: return emptyList()
+    if (Staleness.isStale(Duration.between(stop.fetchedAt, now).toKotlinDuration())) return emptyList()
+    // A train with no destination couldn't be labeled but by the Planner's terminus, which the live
+    // feed never said it runs to: left out until the route check vouches for it.
+    val line = Countdown.upcoming(stop.departures.filter { it.lineId == leg.lineId && it.destination.isNotBlank() }, now)
+    val toward = line.filter { train -> towardTerminus(train, leg) }
+    // With no train heading for the terminus, only a bus pole (which serves one direction by nature)
+    // says which way its trains run; a station's snapshot may simply lack the leg's direction.
+    val bus = leg.mode.equals("bus", ignoreCase = true)
+    val directions = toward.ifEmpty { if (bus) line else emptyList() }.mapTo(HashSet()) { it.direction }
+    // A blank direction (National Rail's boards give none) says nothing about the way a train runs:
+    // only the trains heading for the Planner's terminus, never the rest of the board.
+    if ("" in directions) return toward
+    if (directions.size != 1 && toward.isEmpty()) return emptyList()
+    return line.filter { it.direction in directions }
+}
+
+// Whether [train] shows the Planner's terminus for [leg], allowing for a place's parenthetical either
+// name carries ("Stratford" for a board's "Stratford (London)"), never a longer name ("Stratford
+// International" is another station).
+private fun towardTerminus(train: Departure, leg: TripLeg): Boolean {
+    val destination = train.destination.withoutQualifier()
+    return leg.headings.any { it.withoutQualifier().equals(destination, ignoreCase = true) }
+}
+
+private val QUALIFIER = Regex("""\s*\([^()]*\)\s*$""")
+
+private fun String.withoutQualifier(): String = replace(QUALIFIER, "").trim()
+
+/**
+ * Of the [pendingTrains], those that may not call where [leg] gets off, shown grayed and read as still
+ * being checked until the route check vouches for them; only a bus to the terminus on no named branch
+ * shows plain meanwhile (maintainer, 2026-09-26). A train to another terminus or on a named branch
+ * ("via Bank") may take another way; and a rail service to the same terminus may still run fast past
+ * the rider's stop, which neither its destination nor its branch tells.
+ */
+internal fun uncheckedPending(pending: List<Departure>, leg: TripLeg): Set<Departure> =
+    pending.filterTo(HashSet()) { train ->
+        !leg.mode.equals("bus", ignoreCase = true) || !train.branch.isNullOrBlank() || !towardTerminus(train, leg)
+    }
+
+/** A leg card's trains while its route is checked: the [pendingTrains] less those [uncheckedPending]. */
+internal fun pendingCardTrains(
+    state: TripViewModel.State,
+    leg: TripLeg,
+    now: Instant,
+    sequences: Map<String, LineSequence?>,
+): List<Departure> = pendingTrains(state, leg, now, sequences).let { pending -> pending - uncheckedPending(pending, leg) }
 
 /**
  * Whether some listed route's live trains couldn't be checked against where the rider gets off:
@@ -528,9 +594,14 @@ private fun FirstLegRow(
     val leg = estimate.route.legs[index]
     val usable = legTrains(state, leg, now, sequences)
     // The line's trains this way, the other branch's too; those the rider can't use (leaving too
-    // soon, or not calling where they get off) are grayed.
-    val trains = usable?.let { lineTrains(state, leg, now, it, sequences) }
-    val usableSet = usable.orEmpty().toSet()
+    // soon, or not calling where they get off) are grayed. While the route is still being checked,
+    // the line's trains as the main screen shows them, timing nothing.
+    val pending = pendingTrains(state, leg, now, sequences)
+    val trains = pending.ifEmpty { null } ?: usable?.let { lineTrains(state, leg, now, it, sequences) }
+    // A train that may skip the stop the rider gets off at (another terminus, or a named branch) stays
+    // grayed, and is read as still being checked, until the route check vouches for it.
+    val checking = uncheckedPending(pending, leg)
+    val usableSet = usable.orEmpty().toSet() + pending.filterNot { it in checking }
     val reachable = estimate.legs.getOrNull(index)?.board ?: estimate.start
     val shown = shownTrains(trains.orEmpty(), reachable, usable = { it in usableSet })
     Row(
@@ -554,16 +625,29 @@ private fun FirstLegRow(
         val description = shown.map { (train, catchable) ->
             val time = Countdown.mergedLabel(listOf(train), now)
             val to = train.destination.ifBlank { leg.toName }
-            stringResource(if (catchable) R.string.trip_train_description else R.string.trip_train_unusable_description, time, to)
+            stringResource(trainDescription(train, catchable, train in checking, reachable), time, to)
         }.joinToString(", ")
         Text(
-            text = trainTimes(shown, now),
+            // No arrivals yet for the boarding stop (never fetched; a failed fetch is kept as failed).
+            text = trainTimes(shown, now, loading = state.live[leg.fromId] == null),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             modifier = if (shown.isEmpty()) Modifier else Modifier.semantics { contentDescription = description },
         )
     }
+}
+
+/**
+ * How TalkBack reads a first-leg train: plain when [catchable]; "can't catch" when it leaves before the
+ * rider can board at [reachable], whether or not its route is still [checking]; "checking route" for
+ * one the rider could reach whose route isn't vouched for yet; "can't catch" otherwise.
+ */
+@StringRes
+internal fun trainDescription(train: Departure, catchable: Boolean, checking: Boolean, reachable: Instant): Int = when {
+    catchable -> R.string.trip_train_description
+    checking && !train.expectedArrival.isBefore(reachable) -> R.string.trip_train_checking_description
+    else -> R.string.trip_train_unusable_description
 }
 
 /**
@@ -601,11 +685,14 @@ private fun DestinationsLabel(names: List<String>, modifier: Modifier = Modifier
     }
 }
 
-/** "3 · 11 min" in time order, trains the rider can't use grayed; "–" with none StopDash can vouch for. */
+/**
+ * "3 · 11 min" in time order, trains the rider can't use grayed; "Loading" while the boarding stop's
+ * arrivals haven't been fetched yet ([loading]); "–" with none StopDash can vouch for.
+ */
 @Composable
-private fun trainTimes(shown: List<Pair<Departure, Boolean>>, now: Instant) = buildAnnotatedString {
+private fun trainTimes(shown: List<Pair<Departure, Boolean>>, now: Instant, loading: Boolean) = buildAnnotatedString {
     if (shown.isEmpty()) {
-        append("–")
+        append(if (loading) stringResource(R.string.trip_times_loading) else "–")
         return@buildAnnotatedString
     }
     shown.forEachIndexed { i, (train, catchable) ->
@@ -704,7 +791,10 @@ private fun RideLeg(
     // The card shows each destination on its own row, so it shows the leg's line's other-branch
     // trains too (the way the leg goes), as the list would; only the usable ones time the route.
     // Stale arrivals show none (D4).
-    val trains = legTrains(state, leg, now, sequences)?.let { lineTrains(state, leg, now, it, sequences) }.orEmpty()
+    // While the route is checked, the line's trains as the main screen shows them, less those on a
+    // named branch that may skip the stop the rider gets off at (they join once the check vouches).
+    val trains = pendingCardTrains(state, leg, now, sequences)
+        .ifEmpty { legTrains(state, leg, now, sequences)?.let { lineTrains(state, leg, now, it, sequences) }.orEmpty() }
     val groups = remember(leg, trains, stop?.fetchedAt, state.statuses) {
         StopGrouping.groupByStop(
             DepartureRows.forStop(
