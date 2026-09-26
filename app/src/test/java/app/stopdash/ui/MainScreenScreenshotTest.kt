@@ -3450,6 +3450,32 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `the freshness stamp says only how long ago`() {
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(DeparturesUiState.Loaded(stops = emptyList(), fetchedAt = now.minusSeconds(90)), now, {})
+                }
+            }
+        }
+        // "1 min ago", not "Updated 1 min ago": the word bought nothing and cost top-bar room.
+        composeRule.onNodeWithText("1 min ago").assertExists()
+        composeRule.onNodeWithText("Updated 1 min ago").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a fresh stamp reads Just now`() {
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(DeparturesUiState.Loaded(stops = emptyList(), fetchedAt = now), now, {})
+                }
+            }
+        }
+        composeRule.onNodeWithText("Just now").assertExists()
+    }
+
+    @Test
     fun `a cold load with only a failure back yet keeps the pending stamp`() {
         composeRule.setContent {
             StopDashTheme(dynamicColor = false) {
@@ -3472,7 +3498,7 @@ class MainScreenScreenshotTest {
         }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Loading…").assertExists()
-        composeRule.onNodeWithText("Updated just now").assertDoesNotExist()
+        composeRule.onNodeWithText("Just now").assertDoesNotExist()
     }
 
     @Test

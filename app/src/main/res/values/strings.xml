@@ -3,8 +3,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="en">
     <string name="app_name">StopDash</string>
 
-    <!-- Freshness stamp in the top bar. %1$s is "just now" / "3 min ago". -->
-    <string name="updated_stamp">Updated %1$s</string>
     <string name="stale_stamp">Tap to refresh</string>
     <!-- Pending stamp shown before the first snapshot is available (cold start, while the
          persisted snapshot is read off disk), so the placeholder frame carries a stamp

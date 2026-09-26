@@ -1147,7 +1147,8 @@ than showing normal-looking times whose disruption status was never actually che
 
 Live predictions go stale within about a minute, and no surface may present stale data
 as if it were live (see **D4**). Every surface stamps what it shows with the age of the
-fetch ("updated just now", "2 min ago") and recomputes each countdown from that fetch
+fetch ("Just now", "2 min ago" — the app bar's stamp is the age alone, with no "Updated" to
+take up room; maintainer, 2026-09-26) and recomputes each countdown from that fetch
 time as the clock advances — so "3 min" becomes "1 min" between network calls without a
 new request, and the numbers stay honest.
 
