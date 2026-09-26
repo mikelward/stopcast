@@ -1090,6 +1090,18 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [x] **Farther bus cards replace "More bus stops"** (maintainer, 2026-09-25). A bus place in
         the *more* tier that adds a route the list doesn't show gets a collapsed card naming those
         routes, at most four, below the station cards within a mile. Offering them costs no request.
+  - [x] **A bus card names every route a tap would show** (maintainer, 2026-09-26). It used to name
+        only the routes no nearer card named, so a card read "N20" and opened to a 234.
+  - [ ] **Consider showing every route a stop carries** (maintainer, 2026-09-26, undecided). A bus
+        card names only the routes a tap would add; the rider may want the whole set — always, behind
+        a toggle, or at least on the opened card or a tap on the stop's header. The catch: the opened
+        card leaves out a route a nearer stop already shows, so a card naming it would promise a row
+        that doesn't appear unless the opened card repeats it too.
+  - [ ] **Consider when a night route counts** (maintainer, 2026-09-26, undecided). An N route
+        alone can earn a bus card by day, so the card shows "N20" and nothing is running. Options:
+        an N route counts only at night (~11pm–6am London time), never, or — the maintainer's lean,
+        not settled — also 6am–6pm, so a rider going out for the night sees it's there. Free either
+        way (TfL's night-only routes all start with N; 24-hour routes have plain numbers).
   - [ ] **Consider a cap per route and direction, with one "More" that raises it** (maintainer,
         2026-09-25, undecided). Show the nearest two places per unique route, direction and
         orientation of each mode. A single "More" at the very foot of the list raises that cap, and

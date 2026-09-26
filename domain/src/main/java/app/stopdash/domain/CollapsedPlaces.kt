@@ -54,15 +54,21 @@ object CollapsedPlaces {
 
     /**
      * [places] with their bus places narrowed to the cards to show (SPEC *Finding stops → Farther
-     * stations*), decided against [shownLineIds], the bus routes the screen shows: in order (nearest
-     * first), each bus place keeps the routes neither shown nor named by an earlier bus card, a place
-     * left with none is dropped, and at most [max] bus cards stay. A place in [opened] (tapped, so
-     * its departures show under it) always stays, and takes its slot under the cap and its routes
-     * before any other card is chosen, wherever it now sits. It still names only the routes not
-     * shown, as it did before the tap, so a card that is loading, failed or has nothing running
-     * doesn't start advertising a route it adds nothing for; once its own rows show every route it
-     * names (it has opened, and its rows replace the card) it keeps them all. Stations pass through
-     * unchanged.
+     * stations*), decided against [shownLineIds], the bus routes the screen shows.
+     *
+     * Whether a place **earns** a card: nearest first, each bus place earns one when it serves a
+     * route neither shown nor claimed by an earlier card, and at most [max] bus cards are kept.
+     *
+     * What a card **names**: every route a tap would show — each route not shown and not named by an
+     * opened card — whether or not a nearer card names it too (maintainer, 2026-09-26). Naming only
+     * the routes no earlier card named read "N20" on a card that opened to a 234.
+     *
+     * A place in [opened] (tapped, so its departures show under it) always stays, and takes its slot
+     * under the cap and its routes before any other card is chosen, wherever it now sits. It still
+     * names only the routes not shown, as it did before the tap, so a card that is loading, failed or
+     * has nothing running doesn't start advertising a route it adds nothing for; once its own rows
+     * show every route it names (it has opened, and its rows replace the card) it keeps them all.
+     * Cards keep [places]' order; stations pass through unchanged.
      */
     fun withBusesPicked(
         places: List<Place>,
@@ -75,18 +81,21 @@ object CollapsedPlaces {
         val kept = places.filter { isBus(it) && it.key in opened }.associate { place ->
             place.key to place.copy(lines = place.lines.filter { it.id !in shownLineIds }.ifEmpty { place.lines })
         }
-        val named = HashSet(shownLineIds)
-        kept.values.flatMapTo(named) { place -> place.lines.map { it.id } }
+        val unavailable = HashSet(shownLineIds)
+        kept.values.flatMapTo(unavailable) { place -> place.lines.map { it.id } }
+        val claimed = HashSet(unavailable)
+        val earned = HashMap<String, Place>()
         var buses = kept.size
-        return places.mapNotNull { place ->
-            if (!isBus(place)) return@mapNotNull place
-            kept[place.key]?.let { return@mapNotNull it }
-            if (buses >= max) return@mapNotNull null
-            val lines = place.lines.filter { it.id !in named }
-            if (lines.isEmpty()) return@mapNotNull null
+        val claimOrder = places.filter { isBus(it) && it.key !in kept }
+        for (place in claimOrder) {
+            if (buses >= max) break
+            if (place.lines.none { it.id !in claimed }) continue
             buses++
-            named += lines.map { it.id }
-            place.copy(lines = lines)
+            claimed += place.lines.map { it.id }
+            earned[place.key] = place.copy(lines = place.lines.filter { it.id !in unavailable })
+        }
+        return places.mapNotNull { place ->
+            if (!isBus(place)) place else kept[place.key] ?: earned[place.key]
         }
     }
 
