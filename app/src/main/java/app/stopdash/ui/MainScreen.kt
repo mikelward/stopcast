@@ -94,6 +94,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -144,6 +146,7 @@ import app.stopdash.domain.JourneyCall
 import app.stopdash.domain.JourneyChange
 import app.stopdash.domain.JourneyEnd
 import app.stopdash.domain.WidgetJourneyCheck
+import app.stopdash.domain.LineRef
 import app.stopdash.domain.LineSequence
 import app.stopdash.domain.StarredJourney
 import app.stopdash.domain.Journeys
@@ -215,6 +218,12 @@ fun MainScreen(
     nearbyKey: String? = null,
     // The Faraway favorites tap; the app hoists it above the overlays so opening one keeps it.
     farReveal: FarRevealState = rememberFarReveal(nearbyKey),
+    // What this list is a list of (a nearby set, a trip's origins): a new one starts the held
+    // loading cards afresh ([PendingTracker]). The nearby set's key by default.
+    listKey: Any? = nearbyKey,
+    // The list's held cards, kept above the list so they outlive a full-screen page over it (a
+    // route's detail) and a rotation; the near-me list hoists it above the app's overlays too.
+    pendingTracker: PendingTracker = rememberSaveable(listKey, saver = PendingTracker.Saver) { PendingTracker() },
     onToggleJourney: ((StarredJourney) -> Unit)? = null,
     // Dismisses the route page's tip on starring a journey; null (dismissed, or not read yet) hides it.
     onDismissJourneyTip: (() -> Unit)? = null,
@@ -333,7 +342,6 @@ fun MainScreen(
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     val starWriteFailedMessage = stringResource(R.string.star_write_failed)
-
     // The rows the screen renders, grouped against the live clock (SPEC D4) — computed once here so
     // both the list and the route-detail page below read the SAME rows. Empty for any non-Loaded
     // state. Cheap and pure; line statuses stamp each row so a disrupted line is marked (SPEC D3).
@@ -1200,7 +1208,11 @@ fun MainScreen(
                     // Not on a platform's own view, which is one place.
                     farther = if (platformRows != null) emptyList() else fartherShown,
                     // Hiding a mode applies to the loading cards too, as to the loaded rows.
-                    pending = if (platformRows != null) emptyList() else visiblePending(state.pendingStops, hiddenModes),
+                    // Unfiltered: hiding a mode drops its loading cards from view, but they're still
+                    // loading (see [DepartureList]'s held cards).
+                    pending = if (platformRows != null) emptyList() else state.pendingStops,
+                    holdLanded = platformRows == null,
+                    pendingTracker = pendingTracker,
                     onOpenFarther = onOpenFarther,
                     onOpenDetail = { row, focus ->
                         detailKey = row.detailKey()
@@ -1379,9 +1391,15 @@ private fun LoadedContent(
     // Each place's modes not yet hidden (by cluster), for a header's "Hide ‹mode›" items.
     modesByPlace: Map<String, Set<String>> = emptyMap(),
     // A cold load's stops not back yet ([DeparturesUiState.Loaded.pendingStops]), each a "Loading"
-    // card where it will land; empty where the view is one place (a platform, a journey).
+    // card where it will land; empty where the view is one place (a platform, a journey). Hidden
+    // modes are filtered out here, for display ([visiblePending]).
     pending: List<StopRef> = emptyList(),
+    // Whether a loading card that lands on screen is held as a card (see [DepartureList]).
+    holdLanded: Boolean = false,
+    pendingTracker: PendingTracker = remember { PendingTracker() },
 ) {
+    // Hiding a mode applies to the loading cards too, as to the loaded rows.
+    val shownPending = remember(pending, hiddenModes) { visiblePending(pending, hiddenModes) }
     // Whether an empty list can be trusted as a real "no departures". It can only when
     // EVERY retained stop is fresh and the refresh was complete: a stale or un-refreshed
     // stop's empty rows might be expired predictions, not a true absence, and newer
@@ -1449,7 +1467,7 @@ private fun LoadedContent(
             }
             // Starred journeys still show when nothing nearby has departures: their origins can be
             // farther away, and hiding them behind "No departures" would drop live trains.
-            if (rows.isEmpty() && journeyCards.isEmpty() && farJourneyCards.isEmpty() && onRevealFar == null && pending.isEmpty()) {
+            if (rows.isEmpty() && journeyCards.isEmpty() && farJourneyCards.isEmpty() && onRevealFar == null && shownPending.isEmpty()) {
                 // Scrollable even though it doesn't overflow: PullToRefreshBox reads the
                 // pull from a scrollable child's nested-scroll events, so a plain Column
                 // here would leave pull-to-refresh dead on the empty state (only the
@@ -1494,7 +1512,11 @@ private fun LoadedContent(
                     rows, now, starred, onToggleStar, starringAvailable, stopDistanceMeters,
                     farther = farther,
                     onOpenFarther = onOpenFarther,
-                    pending = pending,
+                    pending = shownPending,
+                    trackedPending = pending,
+                    hiddenModes = hiddenModes,
+                    holdLanded = holdLanded,
+                    pendingTracker = pendingTracker,
                     fetchedStopIds = state.stops.mapTo(HashSet()) { it.stopId } - state.openedLoadingStopIds,
                     unavailableStopIds = state.unavailableStopIds,
                     listState = listState,
@@ -1517,7 +1539,7 @@ private fun LoadedContent(
                     onRevealFar = onRevealFar,
                     // Not in a journey's own view, nor when every nearby row is already on a journey
                     // card above.
-                    nearbyEmptyNote = if (rows.isEmpty() && !journeyView && !nearbyShownAbove && pending.isEmpty()) {
+                    nearbyEmptyNote = if (rows.isEmpty() && !journeyView && !nearbyShownAbove && shownPending.isEmpty()) {
                         // With modes hidden, say so rather than "no departures": they may be running.
                         if (hiddenModes.isNotEmpty()) {
                             stringResource(
@@ -1631,6 +1653,16 @@ private fun DepartureList(
     onOpenFarther: (CollapsedPlaces.Place) -> Unit = {},
     // A cold load's stops not back yet, shown as "Loading" cards among the places ([pendingSlots]).
     pending: List<StopRef> = emptyList(),
+    // Whether this is the list that shows those cards, so one landing on screen is held as a card
+    // ([PendingTracker]); false on a platform or journey view.
+    holdLanded: Boolean = false,
+    // [pending] before hidden modes were filtered out: what the tracker follows, so hiding a mode
+    // doesn't read as its stops landing.
+    trackedPending: List<StopRef> = pending,
+    // The modes hidden from this list, filtered out of a held card's lines too.
+    hiddenModes: Set<String> = emptySet(),
+    // Where the held cards live ([MainScreen] keeps it, so they outlive this list).
+    pendingTracker: PendingTracker = remember { PendingTracker() },
     // The stops whose departures have been fetched, so an opened card with none shown can tell
     // "still loading" from "nothing running".
     fetchedStopIds: Set<String> = emptySet(),
@@ -1703,8 +1735,59 @@ private fun DepartureList(
     }
     // The places still loading, less any already on screen (a station with one platform back) —
     // judged by every row, closures included, since a closure-only place has no group.
-    val pendingPlaces = remember(pending, rows, stopDistanceMeters) {
-        pendingPlaces(pending, rows.mapTo(HashSet()) { placeOf(it.clusterId, it.stopId) }, stopDistanceMeters)
+    val shownPlaceKeys = remember(rows) { rows.mapTo(HashSet()) { placeOf(it.clusterId, it.stopId) } }
+    val pendingPlaces = remember(pending, shownPlaceKeys, stopDistanceMeters) {
+        pendingPlaces(pending, shownPlaceKeys, stopDistanceMeters)
+    }
+    val trackedPlaces = remember(trackedPending, shownPlaceKeys, stopDistanceMeters) {
+        pendingPlaces(trackedPending, shownPlaceKeys, stopDistanceMeters)
+    }
+    // A loading place that lands while its card is on screen stays a card, so the list doesn't jump
+    // under the rider's eyes (SPEC *Freshness → Cold load*); one that lands off screen opens in full.
+    // Which items the last frame drew, read only when a loading place lands (not on every scroll),
+    // so a plain field rather than state.
+    // Nothing counts as on screen once the list isn't (a full-screen page over it, another view):
+    // a stop landing meanwhile lands out of sight.
+    LaunchedEffect(listState, pendingTracker) {
+        try {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.mapTo(HashSet()) { it.key } }
+                .collect { pendingTracker.onScreen = it }
+        } finally {
+            pendingTracker.onScreen = emptySet()
+        }
+    }
+    // Only the list that shows the loading cards holds them: a platform or journey view doesn't
+    // (it has no loading cards, and a held place of the list's isn't one of its own).
+    // Nor does it track while shown elsewhere: a card left on screen as the rider drilled in would
+    // otherwise read as landing in view.
+    val held = remember(trackedPlaces, holdLanded, pendingTracker.revision) {
+        if (holdLanded) pendingTracker.update(trackedPlaces) else emptyMap()
+    }
+    // A held place that failed is let go (the banner names it), so if a later refresh brings it
+    // back it joins the list as any stop does, not as a card it never was. So is one loading again
+    // (a fresh cold load): it's held again only if it lands on screen again.
+    val letGo = remember(held, trackedPlaces, groups, fetchedStopIds) {
+        val stillPending = trackedPlaces.mapTo(HashSet()) { it.placeKey }
+        val groupPlaces = groups.mapTo(HashSet()) { groupPlace(it) }
+        held.values
+            .filter { it.placeKey in stillPending || heldCue(it, groupPlaces, fetchedStopIds) == null }
+            .map { it.placeKey }
+    }
+    if (letGo.isNotEmpty()) SideEffect { letGo.forEach(pendingTracker::forget) }
+    // A tapped card's rows keep the card's slot until a later refresh with nothing loading; then
+    // they take their own place in the list, as any stop's do, when the whole list re-sorts anyway.
+    // A refresh is a newer fetch, not a new list: the clock drops a gone departure every tick.
+    val settled = trackedPlaces.isEmpty()
+    val lastFetch = remember(rows) { rows.maxOfOrNull { it.fetchedAt } }
+    SideEffect {
+        if (settled && lastFetch != null && pendingTracker.opened.isNotEmpty()) {
+            pendingTracker.openedToRelease(lastFetch).forEach(pendingTracker::forget)
+        }
+    }
+    // Each loading card with every stop its place has waited on (lines, nearest distance), so one
+    // coming back empty doesn't strip the card; less any hidden mode.
+    val loadingCards = remember(pendingPlaces, trackedPlaces, held, hiddenModes, stopDistanceMeters) {
+        pendingPlaces.mapNotNull { withoutHidden(remeasured(pendingTracker.widened(it), stopDistanceMeters), hiddenModes) }
     }
     // A journey's heading (or, in its own view, its actions), closure notices, and trains or note —
     // shared by the near journeys at the top and the revealed faraway ones at the bottom, whose
@@ -1917,26 +2000,48 @@ private fun DepartureList(
         }
         // The loading places go where they'll land: by distance on the near-me list, below the
         // starred band; at the foot of the watched list, whose soonest-first order isn't known yet.
-        val listed = fartherGroups[null].orEmpty()
+        // A held place's groups stay with its card, in the card's slot, rather than at their own.
+        val unfarther = fartherGroups[null].orEmpty()
+        val groupsByPlace = unfarther.groupBy { groupPlace(it) }
+        val pendingKeys = trackedPlaces.mapTo(HashSet()) { it.placeKey }
+        val heldCards = held.values.mapNotNull { heldPlace ->
+            if (heldPlace.placeKey in pendingKeys) return@mapNotNull null
+            val place = withoutHidden(remeasured(heldPlace, stopDistanceMeters), hiddenModes) ?: return@mapNotNull null
+            heldCue(place, groupsByPlace.keys, fetchedStopIds)?.let { cue -> place to cue }
+        }
+        val heldKeys = heldCards.mapTo(HashSet()) { it.first.placeKey }
+        val listed = unfarther.filter { groupPlace(it) !in heldKeys }
+        // Every card in first-seen order, so one landing never reorders the cards around it.
+        val cards = (loadingCards.map { it to FartherCue.LOADING } + heldCards)
+            .sortedBy { (place, _) -> pendingTracker.order(place.placeKey) }
         // A place is in the starred band if any of its groups is, so no card splits a starred station.
         val starredPlaces = listed.filter { group -> group.rows.any { StarredRow.of(it) in starred } }.mapTo(HashSet()) { it.placeKey }
         val slots = pendingSlots(
             listed.map { placeDistanceMeters[it.placeKey] },
             listed.map { it.placeKey in starredPlaces },
-            pendingPlaces,
+            cards.map { it.first },
         )
-        fun pendingItems(slot: Int) = pendingPlaces.forEachIndexed { k, loading ->
-            if (slots[k] == slot) {
-                item(key = "pending|${loading.place.key}") {
-                    FartherCardView(FartherCard(loading.place), FartherCue.LOADING, onOpen = {}, showDistance = loading.distanced)
+        fun cardItems(slot: Int) = cards.forEachIndexed { k, (place, cue) ->
+            if (slots[k] != slot) return@forEachIndexed
+            if (place.placeKey in pendingTracker.opened && cue == FartherCue.TAP_TO_SEE) {
+                groupsByPlace[place.placeKey].orEmpty().forEach { group -> groupItems(1, group) }
+            } else {
+                // One key from "Loading" to "Tap to see", so the list keeps its anchor on the card.
+                item(key = pendingItemKey(place)) {
+                    FartherCardView(
+                        FartherCard(place.place),
+                        cue,
+                        onOpen = { pendingTracker.opened += place.placeKey },
+                        showDistance = place.distanced,
+                    )
                 }
             }
         }
         listed.forEachIndexed { index, group ->
-            pendingItems(index)
+            cardItems(index)
             groupItems(index, group)
         }
-        pendingItems(listed.size)
+        cardItems(listed.size)
         // Below the loaded places: the farther stations and bus places, each collapsed until tapped
         // (in [CollapsedPlaces.ordered]'s order).
         for (card in farther) {
@@ -2009,8 +2114,227 @@ internal fun visiblePending(pending: List<StopRef>, hiddenModes: Set<String>): L
     }
 }
 
-/** A place a cold load is still waiting on, as a collapsed card; [distanced] when its distance is known. */
-internal data class PendingPlace(val place: CollapsedPlaces.Place, val distanced: Boolean)
+/**
+ * A place a cold load is still waiting on, as a collapsed card: its [placeKey] (as [placeOf] keys a
+ * place), its [stopIds], and [distanced] when its distance is known.
+ */
+internal data class PendingPlace(
+    val place: CollapsedPlaces.Place,
+    val distanced: Boolean,
+    val placeKey: String = place.key.removePrefix("pending:"),
+    val stopIds: Set<String> = emptySet(),
+)
+
+/** The lazy-list key of [place]'s card, the same whether it says "Loading" or "Tap to see". */
+internal fun pendingItemKey(place: PendingPlace): String = "pending|${place.place.key}"
+
+/**
+ * Remembers the cold load's loading places across updates, so a place that lands while its card is
+ * [on screen][update] is held as a card ("Tap to see") rather than expanding in place — the list
+ * never jumps under the rider's eyes (SPEC *Freshness → Cold load*). One that lands off screen isn't
+ * held and opens in full. Also keeps each place's first-seen [order], so a card turning from
+ * "Loading" to "Tap to see" never moves among its neighbors.
+ */
+class PendingTracker {
+    /** The item keys the list drew last frame. */
+    internal var onScreen: Set<Any> = emptySet()
+
+    /** The held cards the rider has tapped open, by place. State, so a tap redraws the list. */
+    internal var opened: Set<String> by mutableStateOf(emptySet())
+    /** Bumped when a held place is let go, so a cached [update] result is taken again. */
+    internal var revision by mutableIntStateOf(0)
+        private set
+    private var previous: List<PendingPlace> = emptyList()
+    private val held = LinkedHashMap<String, PendingPlace>()
+    private val seen = HashMap<String, Int>()
+    // Each place as the union of every stop it has waited on, including ones already back: its
+    // stop ids, lines and nearest distance, so a card doesn't lose them as its stops come in.
+    private val merged = HashMap<String, PendingPlace>()
+
+    /** The places held so far, after [current] replaces the last update. */
+    internal fun update(current: List<PendingPlace>): Map<String, PendingPlace> {
+        current.forEach {
+            seen.getOrPut(it.placeKey) { seen.size }
+            merged[it.placeKey] = widened(it)
+        }
+        val still = current.mapTo(HashSet()) { it.placeKey }
+        previous
+            .filter { it.placeKey !in still && pendingItemKey(it) in onScreen }
+            .forEach { held[it.placeKey] = widened(it) }
+        previous = current
+        return held.toMap()
+    }
+
+    /** [place] with every stop, line and the nearest distance its place has waited on so far. */
+    internal fun widened(place: PendingPlace): PendingPlace {
+        val before = merged[place.placeKey] ?: return place
+        val meters = listOfNotNull(
+            before.place.meters.takeIf { before.distanced },
+            place.place.meters.takeIf { place.distanced },
+        ).minOrNull()
+        return before.copy(
+            place = before.place.copy(
+                meters = meters ?: before.place.meters,
+                lines = (before.place.lines + place.place.lines).distinctBy { it.id },
+            ),
+            distanced = meters != null,
+            stopIds = before.stopIds + place.stopIds,
+        )
+    }
+
+    // The latest fetch each opened card was first seen settled with, so a later one releases it.
+    private val openedSince = HashMap<String, Instant>()
+
+    /**
+     * The opened held cards to let go now that the list has a newer fetch ([lastFetch]) than when
+     * they were opened: their rows have kept the card's slot through the tap, and now join the list.
+     */
+    internal fun openedToRelease(lastFetch: Instant): List<String> {
+        openedSince.keys.retainAll(opened)
+        return opened.filter { it in held && lastFetch > openedSince.getOrPut(it) { lastFetch } }
+    }
+
+    /** Lets go of a held place (one that failed, or opened and since refreshed), so it's no longer held. */
+    internal fun forget(placeKey: String) {
+        if (held.remove(placeKey) != null) revision++
+        opened = opened - placeKey
+    }
+
+    /** Where [placeKey] first appeared among the loading places, for a stable card order. */
+    internal fun order(placeKey: String): Int = seen[placeKey] ?: Int.MAX_VALUE
+
+    companion object {
+        private fun encode(p: PendingPlace): ArrayList<Any> = arrayListOf(
+            p.placeKey, p.place.key, p.place.stationId, p.place.name, p.place.meters, p.distanced,
+            ArrayList(p.stopIds), ArrayList(p.place.lines.map { it.id }),
+            ArrayList(p.place.lines.map { it.name }), ArrayList(p.place.lines.map { it.mode }),
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        private fun decode(entry: List<Any>): PendingPlace {
+            val ids = entry[7] as List<String>
+            val names = entry[8] as List<String>
+            val modes = entry[9] as List<String>
+            return PendingPlace(
+                CollapsedPlaces.Place(
+                    key = entry[1] as String,
+                    stationId = entry[2] as String,
+                    name = entry[3] as String,
+                    meters = entry[4] as Double,
+                    lines = ids.indices.map { LineRef(ids[it], names[it], modes[it]) },
+                ),
+                distanced = entry[5] as Boolean,
+                placeKey = entry[0] as String,
+                stopIds = (entry[6] as List<String>).toSet(),
+            )
+        }
+
+        /**
+         * Keeps the held places, the first-seen order, and the loading cards on screen across a
+         * recreated screen, as plain lists — so a stop landing mid-rotation still holds its card.
+         */
+        val Saver = listSaver<PendingTracker, Any>(
+            save = { tracker ->
+                val shown = tracker.previous.filter { pendingItemKey(it) in tracker.onScreen }.map(tracker::widened)
+                listOf(
+                    ArrayList(tracker.held.values.map(::encode)),
+                    ArrayList(tracker.seen.entries.sortedBy { it.value }.map { it.key }),
+                    ArrayList(shown.map(::encode)),
+                    ArrayList(tracker.merged.values.map(::encode)),
+                    ArrayList(tracker.opened),
+                )
+            },
+            restore = { saved ->
+                PendingTracker().apply {
+                    @Suppress("UNCHECKED_CAST")
+                    (saved[0] as List<List<Any>>).map(::decode).forEach { held[it.placeKey] = it }
+                    @Suppress("UNCHECKED_CAST")
+                    (saved[1] as List<String>).forEach { seen[it] = seen.size }
+                    // The loading cards that were on screen count as still drawn until the new
+                    // list draws its own frame.
+                    @Suppress("UNCHECKED_CAST")
+                    previous = (saved[2] as List<List<Any>>).map(::decode)
+                    // Every place's stops so far, visible or not, so a card still knows a sibling
+                    // came back empty after the screen is recreated.
+                    @Suppress("UNCHECKED_CAST")
+                    (saved[3] as List<List<Any>>).map(::decode).forEach { merged[it.placeKey] = it }
+                    @Suppress("UNCHECKED_CAST")
+                    opened = (saved[4] as List<String>).toSet()
+                    onScreen = previous.mapTo(HashSet()) { pendingItemKey(it) }
+                }
+            },
+        )
+    }
+}
+
+/**
+ * A [PendingTracker] for the list of [listKey], saved with the key it belongs to. Like
+ * [rememberListStateFor], only a different known list starts a fresh one: a null key (the nearby
+ * set not resolved yet, as after process death) keeps the restored tracker until the list is known.
+ */
+@Composable
+fun rememberPendingTracker(listKey: String?): PendingTracker {
+    val holder = rememberSaveable(saver = PendingTrackerHolder.Saver) { PendingTrackerHolder() }
+    return holder.trackerFor(listKey)
+}
+
+/** The tracker [rememberPendingTracker] keeps, and the list it belongs to. */
+internal class PendingTrackerHolder(
+    private var owner: String? = null,
+    private var tracker: PendingTracker = PendingTracker(),
+) {
+    fun trackerFor(listKey: String?): PendingTracker {
+        if (listKey != null && listKey != owner) {
+            if (owner != null) tracker = PendingTracker()
+            owner = listKey
+        }
+        return tracker
+    }
+
+    companion object {
+        val Saver = listSaver<PendingTrackerHolder, Any?>(
+            save = { holder -> listOf(holder.owner, with(PendingTracker.Saver) { save(holder.tracker) }) },
+            restore = { saved ->
+                PendingTrackerHolder(
+                    owner = saved[0] as String?,
+                    tracker = saved[1]?.let { PendingTracker.Saver.restore(it) } ?: PendingTracker(),
+                )
+            },
+        )
+    }
+}
+
+/**
+ * [place] at its nearest stop's distance from the current fix ([stopDistanceMeters]), so a card
+ * kept across a move reads and sorts as the rows around it do; as it was when none of its stops has
+ * a distance (the watched list).
+ */
+internal fun remeasured(place: PendingPlace, stopDistanceMeters: Map<String, Double>): PendingPlace {
+    val meters = place.stopIds.mapNotNull { stopDistanceMeters[it] }.minOrNull() ?: return place
+    return place.copy(place = place.place.copy(meters = meters), distanced = true)
+}
+
+/** [place] without a hidden mode's lines, or null when it served only hidden modes. */
+internal fun withoutHidden(place: PendingPlace, hiddenModes: Set<String>): PendingPlace? {
+    if (hiddenModes.isEmpty() || place.place.lines.isEmpty()) return place
+    val kept = place.place.lines.filterNot { HiddenModes.isHidden(it.mode, hiddenModes) }
+    return if (kept.isEmpty()) null else place.copy(place = place.place.copy(lines = kept))
+}
+
+/**
+ * A held place's cue: "Tap to see" while it has groups to open ([groupPlaces]), a dash when it came
+ * back with nothing running ([fetchedStopIds]), else null — it failed, and the banner names it.
+ */
+internal fun heldCue(place: PendingPlace, groupPlaces: Set<String>, fetchedStopIds: Set<String>): FartherCue? = when {
+    place.placeKey in groupPlaces -> FartherCue.TAP_TO_SEE
+    place.stopIds.any { it in fetchedStopIds } -> FartherCue.NO_DEPARTURES
+    else -> null
+}
+
+/** The place a group belongs to, keyed as [placeOf] keys a stop (not [StopGroup.placeKey], which
+ *  splits a warned stop off on its own). */
+private fun groupPlace(group: StopGroup): String =
+    group.rows.first().let { placeOf(it.clusterId, it.stopId) }
 
 /**
  * The places [pending] stops make, one card each, keyed as [StopGrouping] keys a place, less any in
@@ -2038,6 +2362,8 @@ internal fun pendingPlaces(
                     lines = stops.flatMap { it.lines }.distinctBy { it.id },
                 ),
                 distanced = meters != null,
+                placeKey = key,
+                stopIds = stops.mapTo(HashSet()) { it.id },
             )
         }
     return if (nearMe) places.sortedBy { it.place.meters } else places

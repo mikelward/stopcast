@@ -13,6 +13,7 @@ import app.stopdash.ui.hereOriginIds
 import app.stopdash.ui.fartherCardsKey
 import app.stopdash.ui.fartherReached
 import app.stopdash.ui.reachedStopIds
+import app.stopdash.ui.PendingTracker
 import app.stopdash.domain.DirectTrips
 import app.stopdash.domain.stopPlace
 import app.stopdash.data.FileStarredPlacesStore
@@ -99,6 +100,7 @@ import app.stopdash.domain.Journeys
 import app.stopdash.data.DataStoreStarredJourneysStore
 import app.stopdash.ui.rememberFarReveal
 import app.stopdash.ui.rememberListStateFor
+import app.stopdash.ui.rememberPendingTracker
 import app.stopdash.domain.StarredJourney
 import app.stopdash.domain.CachingStopFinder
 import app.stopdash.domain.NearbyStopsCache
@@ -465,6 +467,11 @@ class MainActivity : ComponentActivity() {
                 )
                 // The Faraway favorites tap, held here for the same reason and following the same set.
                 val farReveal = rememberFarReveal((nearby as? NearbyStopsViewModel.State.Ready)?.clusterSetKey)
+                // The list's held loading cards ([PendingTracker]), held here too so an overlay over
+                // the list doesn't drop them; following the same set.
+                val departuresTracker = rememberPendingTracker(
+                    (nearby as? NearbyStopsViewModel.State.Ready)?.clusterSetKey,
+                )
                 val bugReportConsent: BugReportConsentViewModel = viewModel()
                 val requestBugReport = {
                     if (skipBugReportConsent) shareBugReport(bugReportRequestFor(nearby))
@@ -653,6 +660,7 @@ class MainActivity : ComponentActivity() {
                                     onForegroundReturnConsumed = { returnLatch.pending = false },
                                     listState = departuresListState,
                                     farReveal = farReveal,
+                                    pendingTracker = departuresTracker,
                                 )
                             }
                             else -> {
@@ -914,6 +922,9 @@ class MainActivity : ComponentActivity() {
         // The departures list's scroll position, hoisted by the caller so it survives the overlays.
         listState: LazyListState = rememberLazyListState(),
         farReveal: FarRevealState? = null,
+        // The held loading cards, hoisted with [listState] for the same reason; null keeps them in
+        // the screen.
+        pendingTracker: PendingTracker? = null,
         // The crosshairs, where it doesn't re-locate here: a From… station page's return to near me.
         onLocate: (() -> Unit)? = null,
         // A searched station's page (From…) is this same list around the station: its own retained
@@ -1134,6 +1145,7 @@ class MainActivity : ComponentActivity() {
             // reconcile composition is factored into [relocateAction] so a regression back to a
             // departures-only refresh is caught by a unit test.
             val shownFarReveal = farReveal ?: rememberFarReveal(stopsKey)
+            val shownTracker = pendingTracker ?: rememberSaveable(stopsKey, saver = PendingTracker.Saver) { PendingTracker() }
             // Each shown journey's fetched stops, as the screen last reported them; read by a relocate.
             val journeyStopIds = remember { mutableStateOf(emptyMap<String, Set<String>>()) }
             val openJourneyKey = remember { mutableStateOf<String?>(null) }
@@ -1238,6 +1250,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 MainScreen(
                     listState = listState,
+                    pendingTracker = shownTracker,
                     state = shownState,
                     now = tickingNow(),
                     // Re-locates then re-fetches (see onRelocate above) — the same action a return
@@ -1553,6 +1566,9 @@ class MainActivity : ComponentActivity() {
             onClearTo()
         }
         val ready = state as? NearbyStopsViewModel.State.Ready
+        // The page's held loading cards ([PendingTracker]), held here — above the To… flow, which
+        // takes the list out of composition — so closing it keeps them; following the stop set.
+        val listTracker = rememberPendingTracker(ready?.clusterSetKey)
         if (ready == null) {
             // Nothing to show from yet (or the lookup failed): the station's placeholder, whose
             // retry looks again. Any list or trip kept from before is dropped, so a recovered page
@@ -1636,6 +1652,7 @@ class MainActivity : ComponentActivity() {
                 stationTitle = stationName,
                 onCloseStation = onClose,
                 onLocate = onBackToNearMe,
+                pendingTracker = listTracker,
             )
         }
     }
@@ -1946,6 +1963,8 @@ class MainActivity : ComponentActivity() {
             MainScreen(
                 state = trip?.state ?: state,
                 now = now,
+                // Each station page or trip origin set has its own model, and so its own list.
+                listKey = viewModel,
                 onRefresh = onRefresh ?: { viewModel.refresh() },
                 onLocate = onLocate,
                 refreshing = refreshing || relocatingNow,

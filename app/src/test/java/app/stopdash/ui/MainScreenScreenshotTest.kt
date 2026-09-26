@@ -3381,6 +3381,40 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `a stop landing under the rider's eyes stays a card until tapped`() {
+        // SPEC *Freshness → Cold load*: its "Loading" card was on screen, so it turns to "Tap to see"
+        // rather than expanding and pushing the list; a tap opens it in place.
+        val kingsCross = StopRef("940GZZLUKSX", "King's Cross St. Pancras", listOf(LineRef("victoria", "Victoria", "tube")))
+        var state by mutableStateOf<DeparturesUiState>(
+            DeparturesUiState.Loaded(
+                stops = emptyList(),
+                fetchedAt = now,
+                statusPending = true,
+                disruptionUnknown = true,
+                pendingStops = listOf(kingsCross),
+            ),
+        )
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(state, now, {}, stopDistanceMeters = mapOf("940GZZLUKSX" to 120.0))
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Loading").assertExists()
+
+        state = DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Tap to see").assertExists()
+        composeRule.onNodeWithText("Brixton").assertDoesNotExist()
+
+        composeRule.onNodeWithText("Tap to see").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Brixton").assertExists()
+    }
+
+    @Test
     fun `the loading placeholder carries a pending stamp`() {
         // Cold start, before the persisted snapshot is read: the frame is a placeholder, but
         // it still shows a stamp ("Loading…") so the top bar is present from the first frame

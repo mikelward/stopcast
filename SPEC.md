@@ -978,7 +978,13 @@ about when data has gone stale.
   National Rail board shouldn't hold up the tube). A stop still out shows as a collapsed card —
   its name, distance and lines, with "Loading" where the times go — in the place it will land:
   by distance on a near-me or station list (below any starred ones), at the foot of the watched
-  list, whose soonest-first order can't be known until it's in. Line status is checked once
+  list, whose soonest-first order can't be known until it's in. The list never jumps under the
+  rider's eyes: a card on screen when its stop lands stays a card, now reading "Tap to see" (a
+  dash if nothing's running), and a tap opens it where it is, even after a rotation, until the
+  next refresh re-sorts the list; one that
+  lands off screen opens in full, and rows landing above the screen don't move what's on it. When
+  every stop is back with nothing running anywhere, the screen says so ("No upcoming
+  departures") rather than keep a list of dashes. Line status is checked once
   every stop is back, so until then the list says it's still checking for disruptions. A
   part-loaded list is never saved for the widget or the next launch; only the whole batch is. A
   load cut short (a relocation) names the stops it never got, like any other failed stop. With
