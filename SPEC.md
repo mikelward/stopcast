@@ -288,7 +288,8 @@ The app finds stops two ways:
   a pin: nothing is saved and the destination isn't added to the search's *Recent*. A departure
   whose route is still loading, failed to load, or can't be followed is left out and the page says
   so ("Checking routes…", "Some routes couldn't be checked") rather than pass a short list off as
-  complete (principle 2); only when everything was checked does it say "No direct trips to ‹place›
+  complete (principle 2), and the debug log names each departure it couldn't check — its line, its
+  boarding stop and why — as it does for a trip's legs and a journey card's trains; only when everything was checked does it say "No direct trips to ‹place›
   soon". Direct only: a trip needing a change is **journey planning**, the eventual goal and a
   follow-up (`TODO.md`), and starring the trip as a journey is one too. The routes are the same
   per-line lookups a route page makes (a request or two per line a day, cached); the destination

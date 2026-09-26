@@ -87,6 +87,9 @@ data class JourneyTrains(
     // Trains that don't reach the far end but share its route as far as a stop where one that does
     // can be caught ([JourneyChange]); [Journeys.changesWithoutDirect] says when to show them.
     val changes: List<JourneyChange> = emptyList(),
+    // The departures left out as unchecked (a cause of [unresolved]), by line, stop and reason, for
+    // the debug log.
+    val misses: Set<RouteMiss> = emptySet(),
 )
 
 /**
@@ -293,7 +296,11 @@ object Journeys {
         val changes = ArrayList<JourneyChange>()
         val atOrigin = rows.filter { it.stopId == segment.originId && it.stopDisruption == null }
         // A departure TfL gave no line id can't be checked against any route: it may well call there.
-        if (atOrigin.any { it.lineId.isBlank() && it.upcoming.isNotEmpty() }) unresolved = true
+        val misses = LinkedHashSet<RouteMiss>()
+        atOrigin.filter { it.lineId.isBlank() && it.upcoming.isNotEmpty() }.forEach { row ->
+            unresolved = true
+            misses += RouteMiss(row.lineId, row.stopId, RouteStops.Resolution.NoLine)
+        }
         val kept = atOrigin
             .filter { it.lineId.isNotBlank() }
             .mapNotNull { row ->
@@ -329,8 +336,12 @@ object Journeys {
                 // send a rider to change on.
                 val changing = LinkedHashMap<String, MutableList<Departure>>()
                 val calling = row.upcoming.filter { departure ->
-                    val path = RouteStops.ahead(sequence, segment.originId, departure.destination, departure.branch, row.lineId, bus)
-                    if (path == null) unresolved = true
+                    val resolution = RouteStops.resolve(sequence, segment.originId, departure.destination, departure.branch, row.lineId, bus)
+                    val path = (resolution as? RouteStops.Resolution.Found)?.stops
+                    if (path == null) {
+                        unresolved = true
+                        misses += RouteMiss(row.lineId, segment.originId, resolution)
+                    }
                     val hits = path?.filter { it.id in destinations }.orEmpty()
                     hits.mapTo(reached) { it.id }
                     if (hits.isEmpty() && path != null && !bus && journey?.bus != true) {
@@ -348,7 +359,7 @@ object Journeys {
                 }
                 if (calling.isEmpty()) null else row.copy(upcoming = calling, destination = calling.first().destination)
             }
-        return JourneyTrains(kept, pending, unresolved, routeFailed, reached, changes)
+        return JourneyTrains(kept, pending, unresolved, routeFailed, reached, changes, misses)
     }
 
     /**

@@ -43,6 +43,7 @@ class DirectTripsTest {
         assertEquals(listOf(60L, 300L), result.stops.single().departures.map { it.expectedArrival.epochSecond - now.epochSecond })
         assertFalse(result.pending)
         assertFalse(result.unresolved)
+        assertTrue(result.misses.isEmpty())
     }
 
     @Test
@@ -82,6 +83,25 @@ class DirectTripsTest {
         assertTrue(DirectTrips.filter(listOf(unknownDestination), listOf(station("BOTA", "Bottom A")), mapOf("rail" to rail)).unresolved)
         val noLine = stop("TOP", "Top", departure("Bottom A", 60, lineId = ""))
         assertTrue(DirectTrips.filter(listOf(noLine), listOf(station("BOTA", "Bottom A")), mapOf("rail" to rail)).unresolved)
+    }
+
+    @Test
+    fun `each train left out unchecked is named with its reason, a failed route is not`() {
+        val top = stop("TOP", "Top", departure("Nowhere", 60), departure("", 90, lineId = ""), departure("Bottom A", 120))
+        val result = DirectTrips.filter(listOf(top), listOf(station("BOTA", "Bottom A")), mapOf("rail" to rail))
+        assertEquals(
+            setOf(
+                RouteMiss("rail", "TOP", RouteStops.Resolution.NoMatch),
+                RouteMiss("", "TOP", RouteStops.Resolution.NoLine),
+            ),
+            result.misses,
+        )
+        // The resolved train is kept, not named.
+        assertEquals(1, result.stops.single().departures.size)
+        // A route that failed to load is logged by its fetch, so it's unresolved here but not a miss.
+        val failed = DirectTrips.filter(listOf(stop("TOP", "Top", departure("Bottom A", 60))), listOf(station("BOTA", "Bottom A")), mapOf("rail" to null))
+        assertTrue(failed.unresolved)
+        assertTrue(failed.misses.isEmpty())
     }
 
     @Test

@@ -183,6 +183,11 @@ what the app saw, so the log carries **coarse state and reasons**, and nothing m
   milliseconds only, no stop or place,
 - **which disruption/status lookup was unknown and why** (e.g. a line TfL returned no
   status for, or a prediction with no line id to check),
+- **which departure couldn't be checked against its line's route and why**, where a trip, a
+  *To…* page or a journey card says some routes couldn't be checked — its line id, the stop ID
+  it boards at and the reason (e.g. its destination matches no route) — and, by line id only,
+  a starred journey its line's route can't place (never its two ends together, which would
+  record a route you travel),
 - a **failed Play update check, or a failed attempt to open the Play listing** (release
   builds only — see *What leaves the device*): the caught exception's class name (e.g.
   `IllegalStateException`), or a fixed "no app to open the Play listing" reason — never any
