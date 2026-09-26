@@ -231,6 +231,28 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `the near-me list's top bar carries the Directions button, light`() = nearMeWithDirections("main-directions.png", dark = false)
+
+    @Test
+    fun `the near-me list's top bar carries the Directions button, dark`() = nearMeWithDirections("main-directions-dark.png", dark = true)
+
+    private fun nearMeWithDirections(name: String, dark: Boolean) {
+        var planned = false
+        capture(name, dark = dark) {
+            MainScreen(
+                DeparturesUiState.Loaded(stops(now.minusSeconds(60)), now.minusSeconds(60), lineStatuses = statuses()),
+                now,
+                {},
+                onPlanTo = { planned = true },
+            )
+        }
+        // The button sits beside the stamp without pushing it off the bar.
+        composeRule.onNodeWithText("1 min ago").assertExists()
+        composeRule.onNodeWithContentDescription("To…").performClick()
+        assertTrue(planned)
+    }
+
+    @Test
     fun `with every mode nearby hidden the list says so rather than that nothing runs`() {
         val busOnly = StopArrivals(
             "490000001A",

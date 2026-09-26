@@ -82,4 +82,34 @@ class MainScreenFromMenuTest {
         composeRule.onNodeWithText("To…").performClick()
         composeRule.runOnIdle { assertTrue(planned) }
     }
+
+    @Test
+    fun appBar_toButtonPlansATripInOneTap() {
+        var planned = false
+        composeRule.setContent {
+            StopDashTheme {
+                MainScreen(
+                    state = DeparturesUiState.Loading,
+                    now = now,
+                    onRefresh = {},
+                    onPlanTo = { planned = true },
+                )
+            }
+        }
+
+        // The Directions button beside the crosshairs: To… without opening the overflow.
+        composeRule.onNodeWithContentDescription("To…").performClick()
+        composeRule.runOnIdle { assertTrue(planned) }
+    }
+
+    @Test
+    fun appBar_noToButtonWithoutATrip() {
+        composeRule.setContent {
+            StopDashTheme {
+                MainScreen(state = DeparturesUiState.Loading, now = now, onRefresh = {})
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("To…").assertDoesNotExist()
+    }
 }

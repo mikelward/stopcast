@@ -841,7 +841,8 @@ kept on the device with the rest of the user's config and never logged (*Privacy
 
 ### Trips with a change
 
-*Planned* (maintainer, 2026-09-26; mocked the same day). *To…* plans a trip to a **stop** — a station
+*Planned* (maintainer, 2026-09-26; mocked the same day). *To…* — on the near-me list, one tap on the
+app bar's **Directions** button (maintainer, 2026-09-26; the overflow keeps its *To…* too) — plans a trip to a **stop** — a station
 or bus stop picked from the station search, never an address or a map point — from the rider's
 nearest stop of any mode (the Planner walks on to a better one itself), or from the *From…* station when one is set. The search page keeps its look (each
 result's name over its modes); it gains only a "From" chip naming the start ("Here", or the *From…*

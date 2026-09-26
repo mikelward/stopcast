@@ -1080,9 +1080,16 @@ fun MainScreen(
                     IconButton(onClick = onLocate ?: onRefresh) {
                         Icon(CrosshairIcon, contentDescription = stringResource(R.string.locate_here))
                     }
-                    // A station's "To…": pick where to, and keep only the departures that go there.
+                    // A station's "To…": pick where to, and plan the trip there.
                     if (stationTitle != null && onPlanTo != null && platformRows == null && !journeyViewOpen) {
                         TextButton(onClick = onPlanTo) { Text(stringResource(R.string.menu_to)) }
+                    }
+                    // Near me, the same in one tap: the Directions glyph, To… for a screen reader. The
+                    // overflow keeps its To… item beside From….
+                    if (stationTitle == null && onPlanTo != null && platformRows == null && !journeyViewOpen) {
+                        IconButton(onClick = onPlanTo) {
+                            Icon(DirectionsIcon, contentDescription = stringResource(R.string.menu_to))
+                        }
                     }
                     if (stationTitle == null) {
                         AppOverflowMenu(updateAvailable, onOpenAppListing) { close ->
@@ -1095,8 +1102,8 @@ fun MainScreen(
                                     },
                                 )
                             }
-                            // To… from here: pick a destination, then the direct trips from the
-                            // stops near the rider (SPEC *Finding stops → From… To…*).
+                            // To… from here: pick a destination, then plan the trip from the stops
+                            // near the rider (SPEC *Trips with a change*).
                             if (onPlanTo != null) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.menu_to)) },

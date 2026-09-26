@@ -860,8 +860,8 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       - [ ] **Step by step** (later milestone): the next action as an ongoing notification, with
             a nudge a stop before each change. A foreground service and a new wakeup, so it's a
             battery and permission decision stated when it's picked up.
-      - [ ] **One-tap trips** (if trips work well): an app-bar shortcut straight into *To…*, which
-            means first freeing app-bar room by shrinking the "Last update" freshness stamp.
+      - [x] **One-tap trips**: the near-me top bar's Directions button opens *To…* in one tap, with
+            room freed by shortening the freshness stamp to "1 min ago" (maintainer, 2026-09-26).
       - [ ] **Better than a bare "est."** (maintainer, 2026-09-26): a leg past its live predictions
             boards "as the rider arrives" on a frequent line, marked "est." — a stopgap. Handle it
             better: a timetable- or headway-based wait, and inferring or knowing whether the rider is
