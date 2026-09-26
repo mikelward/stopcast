@@ -320,4 +320,10 @@ class PendingPlacesTest {
             aboveLoadedRows(listOf("card|B", "pending|pending:A"), alwaysHold = setOf("pending|pending:A", "pending|pending:Z")),
         )
     }
+
+    @Test
+    fun `a stop notice slots by distance like a loading card`() {
+        // Groups at 80 m and 400 m; a notice at 250 m goes between them, one with no distance at the foot.
+        assertEquals(listOf(1, 2), distanceSlots(listOf(80.0, 400.0), listOf(false, false), listOf(250.0, null)))
+    }
 }

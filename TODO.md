@@ -604,16 +604,14 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           each rather than one joined card), so it's a **product/design decision** for the
           maintainer, not autopilot's to take. SPEC *Disruptions* now states the joined-text limit
           plainly rather than over-promising a per-notice fold.
-    - [ ] **Render a stop closure as a normal stop/cluster section, closure card in place of
-          departures** (maintainer, 2026-09-22). Today a closure is a header-less standalone card
-          pulled ahead of the whole list (the screen filters closures out before grouping). The
-          maintainer's preferred shape: a closed stop looks like any other stop/cluster section —
-          its name header and distance, ordered by distance among the other places — but with a card
-          explaining the closure where its departures would be (its still-fetched departures stay
-          shown too, per the coarse-closure-data rule). This drops the "closures lead" special-casing
-          in `MainScreen` (the `closureRows` extraction) and in `byStopDistance`/`StopGrouping`, so a
-          closure rides with its stop by distance like an alert now does — the same "no special order"
-          the alert got. Touches SPEC *Disruptions* and the near-me ordering; its own PR.
+    - [x] **Render a stop notice in place, not pinned to the top** (maintainer, 2026-09-26; landed).
+          On the near-me list a notice rides with its place at the place's distance: a lettered
+          pole's notice on that pole, a station's or interchange's as its own group (heading,
+          distance, notice) above the place's first section, a closed station with nothing running
+          as that group alone. Closures (by wording) get a "Closed" chip and the error tone; other
+          notices a quieter tone. At most once per interchange. The watched list and platform view
+          keep the standalone card. `byStopDistance` still sorts notices first, which no longer
+          places them; dropping that key is a cleanup.
     - [ ] **Unify how we identify and group a place across disruptions, departures, and direction**
           (maintainer, 2026-09-22). The stop-disruption fold now groups by hub → real StopArea →
           stop, and the strip matches a wildly-spelled name (King's Cross St. Pancras appears in TfL
