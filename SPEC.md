@@ -1193,10 +1193,14 @@ setting.
 
 ### Scroll cue
 
-A scrolling screen fades its top or bottom edge into the background while there is more to
-scroll past that edge, and shows no fade where the list ends. Without it, a list that happens
-to stop near the bottom of the screen reads the same as one cut off mid-content, so a rider
-misses stops or settings below the fold (maintainer, 2026-09-26). It covers every
+A scrolling screen marks its top or bottom edge while there is more to scroll past that edge,
+and marks nothing where the list ends. Without it, a list that happens to stop near the bottom
+of the screen reads the same as one cut off mid-content, so a rider misses stops or settings
+below the fold (maintainer, 2026-09-26). The mark is a short fade into the background with an
+up or down chevron centered over it — a fade alone proved too easy to miss, and the chevron
+follows Type Launcher's scroll chevrons. It is a hint, not a control: a tap on it reaches the
+row underneath, whose middle is its destination, and screen readers skip it, since their users
+already scroll by gesture. It covers every
 scrolling screen on the phone — the near-me list and its empty and error states, a route's
 page, station search, the location gate, Settings, and Licenses. Dialogs are left as the
 platform draws them, and the watch's list already scales its edges.

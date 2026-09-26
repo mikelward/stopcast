@@ -110,7 +110,7 @@ internal fun LicensesContent(
             // a tap so the list stays scannable.
             val listState = rememberLazyListState()
             LazyColumn(
-                modifier = Modifier.fillMaxSize().scrollEdgeFade(listState, MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxSize().scrollEdgeCue(listState, scrollCueColors(MaterialTheme.colorScheme.surface)),
                 state = listState,
                 contentPadding = PaddingValues(bottom = 8.dp),
             ) {

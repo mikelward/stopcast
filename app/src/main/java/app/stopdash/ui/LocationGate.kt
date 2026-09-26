@@ -2,8 +2,11 @@ package app.stopdash.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -81,7 +84,11 @@ fun LocationGate(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.background)
+            // The gate is drawn edge to edge with nothing above it insetting for the system bars,
+            // so the viewport steps inside them here: otherwise the scroll cue's chevrons would
+            // sit under the gesture handle and the status bar (Codex on #244).
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .scrollEdgeCue(scrollState, scrollCueColors(MaterialTheme.colorScheme.background))
             .verticalScroll(scrollState)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
