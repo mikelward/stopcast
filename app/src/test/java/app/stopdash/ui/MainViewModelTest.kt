@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -488,6 +489,38 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `a cold load all back within the grace paints once, whole`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val vm = viewModel(GatedClient(seeds[1].id, gate))
+        // One stop is in, but the grace isn't up: nothing part-shown yet.
+        advanceTimeBy(FIRST_PAINT_GRACE_MS - 100)
+        runCurrent()
+        assertEquals(DeparturesUiState.Loading, vm.state.value)
+
+        gate.complete(Unit)
+        runCurrent()
+        val shown = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(seeds.map { it.id }.toSet(), shown.stops.mapTo(HashSet()) { it.stopId })
+        assertTrue(shown.pendingStops.isEmpty())
+        // Nothing held back paints over it once the grace runs out.
+        advanceUntilIdle()
+        assertTrue((vm.state.value as DeparturesUiState.Loaded).pendingStops.isEmpty())
+    }
+
+    @Test
+    fun `a cold load still out after the grace shows what's in`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val vm = viewModel(GatedClient(seeds[1].id, gate))
+        advanceTimeBy(FIRST_PAINT_GRACE_MS + 1)
+        runCurrent()
+        val partial = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(listOf(seeds[0].id), partial.stops.map { it.stopId })
+        assertEquals(listOf(seeds[1].id), partial.pendingStops.map { it.id })
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
     fun `a refresh over a kept snapshot never part-shows`() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val store = FakeStore(
@@ -633,6 +666,35 @@ class MainViewModelTest {
         closureGate.complete(Unit)
         advanceUntilIdle()
         assertEquals(DeparturesUiState.Error(DeparturesUiState.Error.Kind.OFFLINE), vm.state.value)
+    }
+
+    @Test
+    fun `a closure after every stop failed shows at once, within the grace`() = runTest(dispatcher) {
+        val closureGate = CompletableDeferred<Unit>()
+        val statusGate = CompletableDeferred<Unit>()
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String): List<Departure> = throw TflException.Offline(null)
+            override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+                statusGate.await()
+                return emptyList()
+            }
+            override suspend fun stopDisruptions(stopId: String): List<StopDisruption> {
+                if (stopId != seeds[0].id) return emptyList()
+                closureGate.await()
+                return listOf(StopDisruption("Station closed until further notice"))
+            }
+        }
+        val vm = viewModel(client)
+        runCurrent()
+        assertEquals(DeparturesUiState.Error(DeparturesUiState.Error.Kind.OFFLINE), vm.state.value)
+
+        // Still inside the grace: the closure replaces the error at once, not held back.
+        closureGate.complete(Unit)
+        runCurrent()
+        val shown = vm.state.value as DeparturesUiState.Loaded
+        assertEquals(listOf(seeds[0].id), shown.stops.map { it.stopId })
+        statusGate.complete(Unit)
+        advanceUntilIdle()
     }
 
     @Test

@@ -1093,9 +1093,11 @@ about when data has gone stale.
   differently are named without one, rather than given a reason untrue of some. A failure in an
   opened farther-station card isn't named: the warning falls back to "some stops". A snapshot
   restored from disk names the stops but not the reason, which isn't kept.
-- **Cold load** (nothing saved to show yet): the app shows each stop as soon as its departures
-  and closure check are back, rather than a spinner until the slowest stop answers (one slow
-  National Rail board shouldn't hold up the tube). A stop still out shows as a collapsed card —
+- **Cold load** (nothing saved to show yet): the app waits up to **2 s** for the whole batch
+  (maintainer, 2026-09-26), showing its loading stamp meanwhile, so a typical load (well under a
+  second to two) paints once, whole, with nothing to jump or tap. Past that, it shows each stop as
+  soon as its departures and closure check are back, rather than a spinner until the slowest stop
+  answers (one slow National Rail board shouldn't hold up the tube). A stop still out shows as a collapsed card —
   its name, distance and lines, with "Loading" where the times go — in the place it will land:
   by distance on a near-me or station list (below any starred ones), at the foot of the watched
   list, whose soonest-first order can't be known until it's in. The list never jumps under the

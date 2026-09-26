@@ -109,6 +109,13 @@ internal val LINE_STATUS_REUSE: Duration = Duration.ofSeconds(90)
 internal val FAR_ARRIVALS_REUSE: Duration = Duration.ofSeconds(90)
 
 /**
+ * How long a cold load with nothing on screen holds back its first partial list (SPEC *Freshness →
+ * Cold load*): most loads are back well inside it and paint once, whole; a slower stop then shows
+ * as a "Loading" card rather than holding the rest.
+ */
+internal const val FIRST_PAINT_GRACE_MS = 2_000L
+
+/**
  * Owns the departures snapshot the screen renders (SPEC staleness contract): the fetch
  * runs off the main thread in [viewModelScope]; the screen only ever reads [state].
  * A failed stop is logged and skipped so one bad stop doesn't blank the others; only
@@ -1236,6 +1243,21 @@ class MainViewModel(
             // already part-shown this way. A kept snapshot stays on screen until the batch is done.
             // Never saved: a part-loaded list isn't a snapshot (SPEC D4).
             val coldAtStart = previous !is DeparturesUiState.Loaded || previous.statusPending || coldLoadUnfinished
+            // With nothing on screen yet, the first partial list waits up to [FIRST_PAINT_GRACE_MS]
+            // (the loading stamp shows meanwhile), so a typical load paints once, whole, rather than
+            // stop by stop; a stop still out then shows as a card (SPEC *Freshness → Cold load*).
+            var inGrace = _state.value is DeparturesUiState.Loading
+            var heldPartial: DeparturesUiState.Loaded? = null
+            val graceJob = if (!inGrace) null else launch {
+                delay(FIRST_PAINT_GRACE_MS)
+                inGrace = false
+                val partial = heldPartial ?: return@launch
+                heldPartial = null
+                if (_state.value is DeparturesUiState.Loading) {
+                    _state.value = partial
+                    coldLoadUnfinished = true
+                }
+            }
             val batch = fetchBatch(toFetch, prior, now, reuse, onProgress = if (!coldAtStart) null else { shown, waiting, failed ->
                 val current = _state.value
                 val coldLoad = current is DeparturesUiState.Loading ||
@@ -1249,8 +1271,11 @@ class MainViewModel(
                     // still out. The batch below has the last word (a closure alone still shows).
                     _state.value = DeparturesUiState.Error(toFetch.firstNotNullOf { failed[it.id] })
                     coldLoadUnfinished = true
+                    // Said at once, so the grace is over: a closure landing after it shows at once too.
+                    inGrace = false
+                    heldPartial = null
                 } else if (coldLoad && (shown.isNotEmpty() || (failed.isNotEmpty() && waiting.isNotEmpty()))) {
-                    _state.value = DeparturesUiState.Loaded(
+                    val partial = DeparturesUiState.Loaded(
                         stops = shown,
                         fetchedAt = shown.maxOfOrNull { it.fetchedAt } ?: now,
                         // Line status is checked once every stop is in; until then it's unchecked.
@@ -1263,9 +1288,16 @@ class MainViewModel(
                             .associate { it.id to DeparturesUiState.FailedStop(it.name, failed.getValue(it.id)) },
                         unavailableStopIds = failed.keys - shown.mapTo(HashSet()) { it.stopId },
                     )
-                    coldLoadUnfinished = true
+                    if (inGrace) {
+                        heldPartial = partial
+                    } else {
+                        _state.value = partial
+                        coldLoadUnfinished = true
+                    }
                 }
             })
+            // Done within the grace: the whole batch paints below, once.
+            graceJob?.cancel()
             val merged = batch.merged
             val firstError = batch.firstError
             val anyArrivalsFailed = batch.anyArrivalsFailed
