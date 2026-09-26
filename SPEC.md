@@ -1307,7 +1307,13 @@ surface.)
   under one of them, the first whose own TfL fetch works, which keeps it while it keeps asking.
   Only times National Rail gives are shown: a cancelled train, or one "Delayed" with no estimate,
   is left out, and the TfL-run services it also lists (Overground, Elizabeth line, and tube trains
-  on shared platforms, such as the District at Richmond) come from TfL alone. The optional dependency fails on its own: a failed board (down, rate-limited, a bad key,
+  on shared platforms, such as the District at Richmond) come from TfL alone. A board's train
+  joins TfL's line by the **operator's code**, mapped to TfL's own line id, not by its brand name
+  (maintainer, 2026-09-26): West Midlands Trains runs as two brands TfL has no line for, and
+  "Northern" would take the tube line's id. A line TfL has no entry for at all (the Caledonian
+  Sleeper) is one TfL answers "not recognised" for: its route page says the stops are unavailable,
+  with no retry, and its status isn't asked again that session — its rows stay unchecked, never
+  clean. The optional dependency fails on its own: a failed board (down, rate-limited, a bad key,
   a garbled answer) leaves the station's TfL departures in place, its National Rail lines' status rows saying
   "No data", and is logged; it never fails the stop or blanks the list. **Cost:
   £0**, one request per rail station per refresh against the user's own key's limit.

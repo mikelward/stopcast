@@ -118,6 +118,9 @@ internal fun rememberRouteStops(row: DepartureRow, next: Departure?, retry: Int)
                 resolve(repository.load(row.lineId, row.direction))
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: TflException.NotFound) {
+                // TfL has no route for this line: unavailable, with no retry that could never work.
+                RouteStopsUi.Unavailable(RouteStops.Resolution.UnknownLine)
             } catch (e: TflException) {
                 // Already logged (sanitized) by the repository; surfaced here with its reason.
                 RouteStopsUi.Failed(

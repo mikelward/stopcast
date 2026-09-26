@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -24,6 +25,9 @@ import app.stopdash.domain.LineRef
 import app.stopdash.domain.LineStatus
 import app.stopdash.domain.RouteFocus
 import app.stopdash.domain.RouteStop
+import app.stopdash.domain.RouteSequenceSource
+import app.stopdash.domain.RouteStopsRepository
+import app.stopdash.domain.TflException
 import app.stopdash.domain.LineRoute
 import app.stopdash.domain.LineSequence
 import app.stopdash.domain.StarredJourney
@@ -982,6 +986,33 @@ class RouteDetailScreenScreenshotTest {
         composeRule.onNodeWithText("Couldn't load stops — you're offline").assertIsDisplayed()
         composeRule.onNodeWithText("Retry").performClick()
         assertEquals(1, retried)
+    }
+
+    @Test
+    fun stopListForALineTfLDoesntKnow_saysUnavailableWithNoRetry() {
+        // TfL answers 404 for a line it has no entry for (a National Rail service it doesn't carry):
+        // asking again can't help, so the page says unavailable rather than offer a Retry.
+        val repository = RouteStopsRepository(
+            object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String): LineSequence =
+                    throw TflException.NotFound(null)
+            },
+        )
+        val row = healthyRow()
+        composeRule.setContent {
+            StopDashTheme {
+                CompositionLocalProvider(LocalRouteStops provides repository) {
+                    RouteStopsSection(
+                        state = rememberRouteStops(row, row.upcoming.first(), retry = 0),
+                        railColor = androidx.compose.ui.graphics.Color.Blue,
+                        onRetry = {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Stop list unavailable").assertIsDisplayed()
+        composeRule.onNodeWithText("Retry").assertDoesNotExist()
     }
 
     // Public network facts for the Victoria line example: the lines a rider can change to.

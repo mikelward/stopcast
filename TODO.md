@@ -945,10 +945,12 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         slot, so the scroll anchor holds.
   - [ ] **Say what a loading card waits on** ("National Rail" vs TfL) if the plain "Loading"
         proves unclear; the client would need to expose which stops take a Darwin board.
-  - [ ] **A line TfL doesn't know still reads "can't reach TfL"** on its route page, with a
-        Retry that can never work: a 404 for the line id (a National Rail operator TfL has no
-        line for, e.g. `lnr-wmr`) maps to Unreachable. It should say the stops aren't available
-        for that line, with no Retry.
+  - [x] **A line TfL doesn't know still reads "can't reach TfL"** on its route page, with a
+        Retry that can never work (landed). A 404 is now its own `TflException.NotFound`: the route
+        page says the stops are unavailable with no Retry, and a line-status 404 is remembered for
+        the session instead of asked every refresh. The `lnr-wmr` case itself was our id, not
+        TfL's: a board's line id now comes from the operator's code (`LM` →
+        `west-midlands-trains`), which also stops Northern trains taking the tube's `northern`.
   - [x] **A "More" tap fetches only the newly revealed page, not the whole set** (landed). `reveal()`
         no longer calls `refresh()`; it fetches just the stops not already shown and merges them into
         the current `Loaded` via `fetchIncremental`, persisting the widened set only when the fetch

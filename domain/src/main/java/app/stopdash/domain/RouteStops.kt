@@ -150,6 +150,8 @@ object RouteStops {
         data object NoMatch : Resolution
         /** More than one distinct path matches; [paths] of them. */
         data class Ambiguous(val paths: Int) : Resolution
+        /** TfL has no route for the line at all (a National Rail service it doesn't know). */
+        data object UnknownLine : Resolution
     }
 
     /** The stop list, or null when [resolve] can't say which path the train takes. */
@@ -384,6 +386,7 @@ class RouteStopsRepository(
             RouteStops.Resolution.NotOnRoute -> "stop not on any route"
             RouteStops.Resolution.NoMatch -> "destination matches no route"
             is RouteStops.Resolution.Ambiguous -> "${resolution.paths} possible paths"
+            RouteStops.Resolution.UnknownLine -> "line not known to TfL"
         }
         warn("route stops unavailable for line $lineId at stop $stopId: $reason")
     }

@@ -798,6 +798,13 @@ class KtorTflClientTest {
     }
 
     @Test
+    fun `a 404 maps to NotFound, so a line TfL doesn't know isn't retried`() {
+        assertThrows(TflException.NotFound::class.java) {
+            runTest { client("{}", status = HttpStatusCode.NotFound).lineStatuses(listOf("caledonian-sleeper")) }
+        }
+    }
+
+    @Test
     fun `another non-2xx maps to Unreachable`() {
         assertThrows(TflException.Unreachable::class.java) {
             runTest { client("{}", status = HttpStatusCode.InternalServerError).arrivals("940GZZLUVIC") }

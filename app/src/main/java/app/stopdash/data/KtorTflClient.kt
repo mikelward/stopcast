@@ -256,10 +256,10 @@ class KtorTflClient(
         } catch (e: ClientRequestException) {
             // 4xx. 429 is the one the UI treats specially (a user app_key lifts the
             // limit); any other client error is "reached TfL, request rejected".
-            throw if (e.response.status == HttpStatusCode.TooManyRequests) {
-                TflException.RateLimited(e)
-            } else {
-                TflException.Unreachable("HTTP ${e.response.status.value}", e)
+            throw when (e.response.status) {
+                HttpStatusCode.TooManyRequests -> TflException.RateLimited(e)
+                HttpStatusCode.NotFound -> TflException.NotFound(e)
+                else -> TflException.Unreachable("HTTP ${e.response.status.value}", e)
             }
         } catch (e: ServerResponseException) {
             throw TflException.Unreachable("HTTP ${e.response.status.value}", e)
