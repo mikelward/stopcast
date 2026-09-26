@@ -227,6 +227,52 @@ class RouteStopsTest {
     }
 
     @Test
+    fun `two loads of one line at once share its requests`() = runTest {
+        val calls = mutableListOf<String>()
+        val gate = CompletableDeferred<Unit>()
+        val repository = RouteStopsRepository(
+            source = object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String): LineSequence {
+                    calls += "$lineId/$direction"
+                    gate.await()
+                    return bus
+                }
+            },
+        )
+        // A trip loading the line while its page, opened meanwhile, loads it too.
+        val trip = async { repository.load("14", "") }
+        val page = async { repository.load("14", "") }
+        runCurrent()
+        gate.complete(Unit)
+        assertEquals(trip.await(), page.await())
+        assertEquals(listOf("14/inbound", "14/outbound"), calls)
+    }
+
+    @Test
+    fun `a load joined by another still finishes when the first is canceled`() = runTest {
+        val calls = mutableListOf<String>()
+        val gate = CompletableDeferred<Unit>()
+        val repository = RouteStopsRepository(
+            source = object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String): LineSequence {
+                    calls += "$lineId/$direction"
+                    gate.await()
+                    return bus
+                }
+            },
+        )
+        val first = async { repository.load("14", "inbound") }
+        val second = async { repository.load("14", "inbound") }
+        runCurrent()
+        // The screen that started the request leaves; the one waiting on it asks again itself.
+        first.cancel()
+        runCurrent()
+        gate.complete(Unit)
+        assertEquals(bus.routes, second.await().routes)
+        assertEquals(listOf("14/inbound", "14/inbound"), calls)
+    }
+
+    @Test
     fun `a line's two directions are fetched at once, not in turn`() = runTest {
         val started = mutableListOf<String>()
         val gate = CompletableDeferred<Unit>()
