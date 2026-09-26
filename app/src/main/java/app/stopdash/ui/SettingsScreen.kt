@@ -118,7 +118,13 @@ fun SettingsScreen(
             // The rows scroll under the fixed header, so a large text size (up to 160%) stacked on
             // a large Android font scale can't push the lower controls off a short screen where
             // they'd be unreachable (Codex).
-            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            val scrollState = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.surface)
+                    .verticalScroll(scrollState),
+            ) {
                 // Text size (display scaling, SPEC *Display size*): a slider that mirrors — and
                 // moves — the same size a two-finger pinch changes, plus the switch that gates the
                 // pinch. Read from the theme's shared handle so the slider, the pinch, and the app

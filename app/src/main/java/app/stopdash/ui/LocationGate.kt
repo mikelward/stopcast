@@ -77,10 +77,12 @@ fun LocationGate(
     // short viewport + large font scale make it taller than the screen — the stuck states now
     // carry a third action (Send bug report), which can tip a landscape/160% layout over (Codex
     // P2 on #86). Matches MainScreen's Centered idiom.
+    val scrollState = rememberScrollState()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.background)
+            .verticalScroll(scrollState)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
