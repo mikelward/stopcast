@@ -81,14 +81,6 @@ data class StopRef(
     val towards: String = "",
 )
 
-/** The base backoff before restarting a failed dismissed-set read; doubled each attempt, and reset
- *  after any successful emission. */
-private const val DISMISSED_READ_RETRY_MS = 500L
-
-/** The ceiling the dismissed-set read backoff is capped at, so a persistently failing store is
- *  retried forever at a steady, quiet interval rather than giving up (storage can recover later). */
-private const val DISMISSED_READ_RETRY_MAX_MS = 30_000L
-
 /** How recently a stop's arrivals must have come back for a refresh to carry it over without a
  *  request (see MainViewModel.recentlyFetched): the shared [ArrivalsCache.TTL], so the list reuses
  *  its own fetches as it does another screen's. Under the 60 s auto-refresh, so a scheduled refresh
@@ -641,32 +633,8 @@ class MainViewModel(
                 warn("starred set read failed: ${reason(e)}")
             }
         }
-        viewModelScope.launch {
-            // A read failure fails safe to "nothing dismissed" (every alert shown) — the same
-            // direction the store's empty fallback takes, so a set we can't read never hides a card.
-            // A transient error RESTARTS the collection with capped backoff rather than terminating
-            // it: a dead collector would silently stop dismiss from taking effect (a later write would
-            // update the store with no one listening) until the ViewModel is recreated. The backoff
-            // never gives up (storage can recover later) and resets after any good emission, so
-            // occasional, non-consecutive failures don't ratchet it to the ceiling.
-            var backoff = DISMISSED_READ_RETRY_MS
-            while (true) {
-                try {
-                    dismissedStore.dismissed().collect {
-                        _dismissed.value = it
-                        backoff = DISMISSED_READ_RETRY_MS
-                    }
-                    break
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    _dismissed.value = emptySet()
-                    warn("dismissed set read failed, retrying: ${reason(e)}")
-                    delay(backoff)
-                    backoff = (backoff * 2).coerceAtMost(DISMISSED_READ_RETRY_MAX_MS)
-                }
-            }
-        }
+        // Every alert shown until the dismissed set is read; followed for the model's life.
+        viewModelScope.launch { followDismissed(dismissedStore, _dismissed, warn) }
         // Show the persisted last-good at once (a stamped placeholder, aged), then refresh.
         // The read is off the main thread and the first frame is already the Loading
         // placeholder, so nothing blocks on the DataStore read (SPEC snapshot-render). The
@@ -1858,20 +1826,7 @@ class MainViewModel(
      * the widget shows no alerts, so it needs no redraw.
      */
     fun dismissAlert(row: DepartureRow) {
-        val alert = DismissedAlert.of(row) ?: return
-        viewModelScope.launch {
-            try {
-                // NonCancellable, like a star: a dismiss tapped just before leaving the page still lands.
-                withContext(NonCancellable + io) { dismissedStore.dismiss(alert) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                warn("alert dismiss failed: ${reason(e)}")
-                // The write didn't take and the store won't re-emit, so the card silently stays —
-                // tell the user rather than let the dismiss tap look broken.
-                _dismissWriteFailed.value = true
-            }
-        }
+        viewModelScope.launch { dismissAlert(dismissedStore, row, io, _dismissWriteFailed, warn) }
     }
 
     /**

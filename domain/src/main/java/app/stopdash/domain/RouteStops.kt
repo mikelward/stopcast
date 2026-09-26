@@ -241,6 +241,57 @@ object RouteStops {
         )
     }
 
+    /**
+     * The stops a planned [leg] rides, for a page with no train to follow: the route from where it
+     * boards, by way of the most of the Planner's path and where it gets off, on to the Planner's
+     * terminus, as a train's list runs — so a line that forks toward one terminus (the Northern
+     * line's Bank and Charing Cross branches) follows the leg's own branch. The terminus is a later
+     * stop so named, else the route's end if the route is named for it (or on a bus, whose blind
+     * names a place, not a stop); a way reaching no such terminus is dropped rather than guessed.
+     * Failing a single way, [resolve] toward the Planner's terminus, if that passes where the leg
+     * gets off. [boarding] is already [LineSequence.callingAt] the boarding stop.
+     */
+    fun forLeg(boarding: LineSequence, leg: TripLeg): Resolution {
+        // Where it gets off by the id the Planner names, as where it boards: a station's other id
+        // in the same interchange (a sibling platform) is the same place.
+        val sequence = boarding.callingAt(leg.toId)
+        fun alights(id: String) = id == leg.toId || (leg.toArea.isNotEmpty() && sequence.stopAreas[id] == leg.toArea)
+        // How much of the planned path a way calls at, in order: branches that share their first
+        // stops only part where the path does.
+        fun followed(stops: List<String>): Int {
+            var at = 0
+            return leg.path.count { planned ->
+                val found = (at until stops.size).firstOrNull { stops[it] == planned || sequence.stopAreas[stops[it]] == planned }
+                    ?: return@count false
+                at = found + 1
+                true
+            }
+        }
+        val bus = leg.mode.equals("bus", ignoreCase = true)
+        val termini = leg.headings.ifEmpty { listOf(leg.toName) }
+        fun terminus(name: String?) = termini.any { it.equals(name, ignoreCase = true) }
+        val candidates = sequence.routes.flatMap { route ->
+            visits(route, leg.fromId).mapNotNull { i ->
+                val off = (i + 1 until route.stopIds.size).firstOrNull { alights(route.stopIds[it]) } ?: return@mapNotNull null
+                val end = (off until route.stopIds.size).firstOrNull { terminus(sequence.stopNames[route.stopIds[it]]) }
+                    ?: route.stopIds.lastIndex.takeIf { bus || terminus(terminusOf(route.name)) }
+                    ?: return@mapNotNull null
+                route.stopIds.subList(i, off + 1) to route.stopIds.subList(i, end + 1)
+            }
+        }.distinct().groupBy({ (ridden, _) -> followed(ridden.drop(1)) }, { (_, full) -> full })
+        val best = candidates.keys.maxOrNull()
+        val paths = if (best == null || (leg.path.isNotEmpty() && best == 0)) emptyList() else candidates.getValue(best).distinct()
+        paths.singleOrNull()?.let { path ->
+            return Resolution.Found(
+                path.map { id -> RouteStop(id, sequence.stopNames[id].orEmpty(), Connections.of(sequence.stopLines[id].orEmpty(), leg.lineId)) },
+            )
+        }
+        // The terminus alone must still pass where the leg gets off, or the list isn't the leg's.
+        val byTerminus = resolve(sequence, leg.fromId, leg.headings.firstOrNull() ?: leg.toName, null, leg.lineId, bus)
+        if (byTerminus is Resolution.Found && byTerminus.stops.drop(1).none { alights(it.id) }) return Resolution.NoMatch
+        return byTerminus
+    }
+
     /** From each visit to [stopId] on [route] (bar its last stop) through the route's end. */
     private fun toEnd(route: LineRoute, stopId: String): List<Pair<LineRoute, List<String>>> =
         visits(route, stopId).filter { it < route.stopIds.lastIndex }

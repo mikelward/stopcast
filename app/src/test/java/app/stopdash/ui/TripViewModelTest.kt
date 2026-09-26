@@ -8,6 +8,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import app.stopdash.R
 import app.stopdash.domain.ArrivalsCache
 import app.stopdash.domain.Departure
+import app.stopdash.domain.DismissedAlertsStore
+import app.stopdash.domain.DismissedAlert
 import app.stopdash.domain.JourneyPlanner
 import app.stopdash.domain.LineRoute
 import app.stopdash.domain.LineSequence
@@ -140,6 +142,38 @@ class TripViewModelTest {
         // A trip let go takes its route with it, so the next trip sharing the handle opens none.
         store.clear()
         assertNull(saved.get<String>("openRoute"))
+    }
+
+    @Test
+    fun `a trip's alert dismissals are the shared store's, and a failed one is said`() = runTest(dispatcher) {
+        val stored = MutableStateFlow(emptySet<DismissedAlert>())
+        var failing = false
+        val store = object : DismissedAlertsStore {
+            override fun dismissed() = stored
+            override suspend fun dismiss(alert: DismissedAlert) {
+                if (failing) throw java.io.IOException("disk full")
+                stored.value = stored.value + alert
+            }
+            override suspend fun reconcile(live: Set<DismissedAlert>, checkedPlaces: Set<String>) {}
+        }
+        val failures = WriteFailures()
+        val trip = TripViewModel(
+            FakePlanner(listOf(route)), FakeClient(mutableMapOf()), "A", listOf("C"), io = dispatcher,
+            dismissedStore = store, writeFailures = failures,
+        )
+        val delayed = LineStatus("blue", 9, "Minor Delays")
+        val row = legStatusRow(TripViewModel.State(statuses = mapOf("blue" to delayed)), route.legs[1], now)
+        trip.dismissAlert(row)
+        advanceUntilIdle()
+        assertEquals(setOf(DismissedAlert.ofLineStatus(delayed)), trip.dismissed.value)
+        failing = true
+        trip.dismissAlert(row.copy(status = delayed.copy(description = "Severe Delays", severity = 6)))
+        advanceUntilIdle()
+        // Shared with the list's models, so whichever screen shows next says so.
+        assertTrue(trip.dismissWriteFailed.value)
+        assertTrue(failures.dismiss.value)
+        trip.dismissWriteFailureShown()
+        assertFalse(trip.dismissWriteFailed.value)
     }
 
     @Test
@@ -638,6 +672,15 @@ class TripViewModelTest {
     }
 
     @Test
+    fun `a leg with no trains opens to its line's disruption, never a good service`() {
+        val leg = route.legs[1]
+        val good = TripViewModel.State(statuses = mapOf("blue" to LineStatus("blue", LineStatus.GOOD_SERVICE, "Good Service")))
+        assertNull(legStatusRow(good, leg, now).status)
+        val delayed = TripViewModel.State(statuses = mapOf("blue" to LineStatus("blue", 9, "Minor Delays")))
+        assertEquals("Minor Delays", legStatusRow(delayed, leg, now).status?.description)
+    }
+
+    @Test
     fun `journeys that ride alike are one route`() {
         val later = TripRoute(route.legs.map { it.copy(departure = it.departure.plusSeconds(600), arrival = it.arrival.plusSeconds(600)) })
         val state = TripViewModel.State(routes = listOf(route, later))
@@ -783,6 +826,25 @@ class TripViewModelTest {
         val leg = pending.routes!!.single().legs.single()
         assertEquals("Bn", leg.fromId)
         assertTrue(legLoading(pending, leg, mapOf("1" to road)))
+    }
+
+    @Test
+    fun `a bus leg's line page lists the stops from the pole its bus uses`() {
+        // Its route loaded only for the page (the trip's load failed): the Planner's pole is the
+        // other side of the road, which the northbound route never calls at.
+        val stops = legStops(plannerBus, road) as RouteStopsUi.Loaded
+        assertEquals(listOf("Bn", "Xn", "Cn"), stops.stops.map { it.id })
+    }
+
+    @Test
+    fun `a bus leg's open page keeps its key once its pole is worked out`() {
+        // Opened from its "Loading" row at the Planner's pole; its route then places it at the other.
+        val state = TripViewModel.State(routes = listOf(TripRoute(listOf(plannerBus))))
+        val placed = onPoles(plannerBus, mapOf("1" to road))
+        assertEquals(
+            tripDetailKey(plannerBus, legStatusRow(state, plannerBus, now)),
+            tripDetailKey(placed, legStatusRow(state, placed, now)),
+        )
     }
 
     @Test
