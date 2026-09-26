@@ -85,11 +85,12 @@ data class TflJourneyLegDto(
 
 /**
  * A service's terminus as the front of the train or bus shows it: a stop name cleaned
- * ([cleanStopName]), and a bus station by its place, as its buses' blinds read ("London Bridge Bus
- * Station" is "London Bridge").
+ * ([cleanStopName]), without the branch the Planner names after it ("High Barnet Station via Charing
+ * Cross" is "High Barnet"), and a bus station by its place, as its buses' blinds read ("London Bridge
+ * Bus Station" is "London Bridge").
  */
 private fun signedName(terminus: String): String {
-    val name = terminus.trim()
+    val name = terminus.substringBefore(" via ").trim().ifBlank { terminus.trim() }
     val place = if (name.endsWith(BUS_STATION, ignoreCase = true)) name.dropLast(BUS_STATION.length).trim() else name
     return cleanStopName(place.ifBlank { name })
 }
