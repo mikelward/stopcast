@@ -309,6 +309,10 @@ class TripViewModelTest {
         val landing = TripViewModel.State(routes = listOf(route), planning = true)
         assertEquals(listOf("old"), sequenceLineIds(landing, emptySet(), settled = listOf("old")))
         assertEquals(listOf("red", "blue"), sequenceLineIds(landing.copy(planning = false), emptySet(), settled = listOf("old")))
+        // A re-plan keeps the last plan until it lands whole: its lines load at once, even with none
+        // settled (a screen shown again over a retained trip).
+        val replanning = landing.copy(plannedAt = now)
+        assertEquals(listOf("red", "blue"), sequenceLineIds(replanning, emptySet(), settled = emptyList()))
     }
 
     @Test

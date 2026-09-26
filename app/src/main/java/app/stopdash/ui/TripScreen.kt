@@ -377,9 +377,13 @@ internal fun tripEstimates(
     return TripTiming.rank(estimates).distinctBy { routeKey(it.route) }
 }
 
-/** The lines whose route data a trip loads: [settled] while a plan is still landing, else [timedLineIds]. */
+/**
+ * The lines whose route data a trip loads: [settled] while a first plan's answers are still landing,
+ * else [timedLineIds]. A re-plan keeps the last plan until it lands whole, so that plan's lines load
+ * at once, even on a screen shown again with nothing settled yet.
+ */
 internal fun sequenceLineIds(state: TripViewModel.State, hidden: Set<String>, settled: List<String>): List<String> =
-    if (state.planning) settled else timedLineIds(state.routes.orEmpty(), hidden)
+    if (state.planning && state.plannedAt == null) settled else timedLineIds(state.routes.orEmpty(), hidden)
 
 /** The lines of the routes a trip times: not riding a [hidden] mode, and within the cap ([TripViewModel.bestOf]). */
 internal fun timedLineIds(routes: List<TripRoute>, hidden: Set<String>): List<String> =
