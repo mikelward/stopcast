@@ -11,8 +11,10 @@ import kotlin.math.ceil
  * run time, plus its change time, gives when the rider can board the next leg.
  *
  * A leg with no live train in reach falls back to the Planner's own time for it while the rider can
- * still make the Planner's departure ([Basis.ESTIMATED]); once they can't, nothing says when the next
- * train leaves, so the arrival is withheld ([Basis.UNKNOWN]) rather than guessed.
+ * still make the Planner's departure ([Basis.ESTIMATED]). Past that, a line running every few minutes
+ * ([FREQUENT_MODES]) whose live trains all leave before the rider reaches it — its predictions end
+ * short of them — is boarded as they arrive ([Basis.ESTIMATED]); anything else, nothing says when the
+ * next train leaves, so the arrival is withheld ([Basis.UNKNOWN]) rather than guessed.
  */
 object TripTiming {
     /** How far StopDash stands behind a route's arrival, best first. */
@@ -57,6 +59,9 @@ object TripTiming {
         live: (Int) -> List<Departure>?,
         notRunning: Set<String> = emptySet(),
         unknown: Set<String> = emptySet(),
+        // Whether leg [index]'s arrivals came from a fetch that succeeded: after a failed refresh the
+        // last ones stand, aged, but don't vouch that the line is still running.
+        current: (Int) -> Boolean = { true },
     ): Estimate {
         val blocked = route.rides.any { it.lineId in notRunning }
         val unchecked = !blocked && route.rides.any { it.lineId in unknown }
@@ -67,12 +72,24 @@ object TripTiming {
             val timing = if (leg.isWalk) {
                 LegTiming(ready, ready.plus(leg.run), null, false)
             } else {
-                val train = live(index)?.filter { !it.expectedArrival.isBefore(ready) }?.minByOrNull { it.expectedArrival }
+                val trains = live(index)
+                val train = trains?.filter { !it.expectedArrival.isBefore(ready) }?.minByOrNull { it.expectedArrival }
                 when {
                     train != null -> LegTiming(train.expectedArrival, train.expectedArrival.plus(leg.run), train, true)
                     !leg.departure.isBefore(ready) -> {
                         if (basis == Basis.LIVE) basis = Basis.ESTIMATED
                         LegTiming(leg.departure, leg.arrival, null, false)
+                    }
+                    // Its live trains vouched for and running, just not predicted as far ahead as the
+                    // rider gets there: on a line every few minutes, the next one is about then. Not on a
+                    // line with no trains (done for the night), one not running (its last predictions
+                    // may outlive it), nor one whose arrivals failed, even with its last ones held.
+                    // And only where its predictions run far enough ahead to have stopped at the feed's
+                    // horizon: a last one soon after now may be the night's final train.
+                    leg.mode.lowercase() in FREQUENT_MODES && leg.lineId !in notRunning && current(index) &&
+                        !trains.isNullOrEmpty() && !trains.maxOf { it.expectedArrival }.isBefore(now.plus(PREDICTION_HORIZON)) -> {
+                        if (basis == Basis.LIVE) basis = Basis.ESTIMATED
+                        LegTiming(ready, ready.plus(leg.run), null, false)
                     }
                     else -> {
                         basis = Basis.UNKNOWN
@@ -107,6 +124,19 @@ object TripTiming {
         val seconds = meters * DETOUR / WALK_METERS_PER_SECOND
         return Duration.ofMinutes(ceil(seconds / 60.0).toLong())
     }
+
+    /**
+     * Modes whose trains run every few minutes all day, so a rider reaching one past its live
+     * predictions boards about as they arrive. Not National Rail, trams or buses: a wait there can
+     * be long enough to matter.
+     */
+    val FREQUENT_MODES = setOf("tube", "dlr", "overground", "elizabeth-line")
+
+    /**
+     * How far ahead a frequent line's predictions must reach to be read as running on past them: TfL
+     * predicts about half an hour ahead, so a last prediction sooner than this may be the last train.
+     */
+    val PREDICTION_HORIZON: Duration = Duration.ofMinutes(20)
 
     /** TfL `statusSeverity` values for a line not running: closed, suspended, planned closure, not running, service closed. */
     val NOT_RUNNING_SEVERITIES = setOf(1, 2, 4, 16, 20)

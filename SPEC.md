@@ -909,9 +909,13 @@ orders the routes within a tier, so "fastest" never assumes a connection the rid
 train in reach yet (none predicted that far ahead, its arrivals failed, or they have gone stale under
 D4) falls back to the
 Planner's own time for it, as long as the rider can reach the Planner's departure for that leg
-(the legs before it, or the walk from "Here", get the rider there in time). If they can't, the
-Planner's train is missed and nothing says when the next one leaves, so StopDash **withholds that
-route's arrival** rather than guess a wait: the route shows "arrival unknown" in place of duration · arrival, and
+(the legs before it, or the walk from "Here", get the rider there in time). A Tube, DLR, Overground
+or Elizabeth line leg the rider reaches past its live predictions (its trains running, just not
+predicted that far ahead, its predictions reaching at least 20 minutes out) is boarded as they
+arrive, since those lines run every few minutes (maintainer, 2026-09-26); predictions ending sooner may
+be the night's last train. Otherwise the Planner's train is missed and nothing says when the next one
+leaves (a National Rail, tram or bus leg, a line with no trains, or arrivals that failed), so StopDash
+**withholds that route's arrival** rather than guess a wait: the route shows "arrival unknown" in place of duration · arrival, and
 sorts after every route in its tier that has an arrival, until a refresh brings live trains for the
 leg. Otherwise its arrival reads **"est."** instead of "about", and within
 its tier it sorts **after every route whose legs are all live**, so an estimate is never listed first
