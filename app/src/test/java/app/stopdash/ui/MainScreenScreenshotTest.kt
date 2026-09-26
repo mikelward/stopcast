@@ -3382,8 +3382,49 @@ class MainScreenScreenshotTest {
 
     @Test
     fun `a stop landing under the rider's eyes stays a card until tapped`() {
-        // SPEC *Freshness → Cold load*: its "Loading" card was on screen, so it turns to "Tap to see"
-        // rather than expanding and pushing the list; a tap opens it in place.
+        // SPEC *Freshness → Cold load*: its "Loading" card was on screen above departures already
+        // shown, so it turns to "Tap to see" rather than expanding and pushing them; a tap opens it.
+        val kingsCross = StopRef("940GZZLUKSX", "King's Cross St. Pancras", listOf(LineRef("victoria", "Victoria", "tube")))
+        val eustonSquare = StopArrivals(
+            "940GZZLUESQ",
+            "Euston Square",
+            listOf(dep("circle", "Circle", "eastbound", "Aldgate", 300, "Platform 1")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        val distances = mapOf("940GZZLUKSX" to 120.0, "940GZZLUESQ" to 400.0)
+        var state by mutableStateOf<DeparturesUiState>(
+            DeparturesUiState.Loaded(
+                stops = listOf(eustonSquare),
+                fetchedAt = now,
+                statusPending = true,
+                disruptionUnknown = true,
+                pendingStops = listOf(kingsCross),
+            ),
+        )
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(state, now, {}, stopDistanceMeters = distances)
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Loading").assertExists()
+
+        state = DeparturesUiState.Loaded(listOf(oneStarrableStop(), eustonSquare), now.minusSeconds(60))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Tap to see").assertExists()
+        composeRule.onNodeWithText("Brixton").assertDoesNotExist()
+
+        composeRule.onNodeWithText("Tap to see").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Brixton").assertExists()
+    }
+
+    @Test
+    fun `a stop landing with no departures below it opens in full`() {
+        // SPEC *Freshness → Cold load*: nothing loaded is drawn below its card, so opening it pushes
+        // nothing the rider is reading; it opens where it is rather than waiting on a tap.
         val kingsCross = StopRef("940GZZLUKSX", "King's Cross St. Pancras", listOf(LineRef("victoria", "Victoria", "tube")))
         var state by mutableStateOf<DeparturesUiState>(
             DeparturesUiState.Loaded(
@@ -3406,12 +3447,8 @@ class MainScreenScreenshotTest {
 
         state = DeparturesUiState.Loaded(listOf(oneStarrableStop()), now.minusSeconds(60))
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("Tap to see").assertExists()
-        composeRule.onNodeWithText("Brixton").assertDoesNotExist()
-
-        composeRule.onNodeWithText("Tap to see").performClick()
-        composeRule.waitForIdle()
         composeRule.onNodeWithText("Brixton").assertExists()
+        composeRule.onNodeWithText("Tap to see").assertDoesNotExist()
     }
 
     @Test
