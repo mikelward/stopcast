@@ -576,6 +576,10 @@ class MainViewModel(
     // [lineStatusReuse] so a refresh a minute after the last one needn't re-ask about the same lines.
     // A line TfL gave no status for, or a failed request, is never cached. In-memory, main thread.
     private val lineStatusCache = mutableMapOf<String, Pair<Instant, LineStatus>>()
+    // Lines TfL answered 404 for ("not recognised": a National Rail service it has no line for).
+    // Not asked about again this session — the answer won't change — and never determined, so their
+    // rows still read as unchecked rather than clean (SPEC principle 1).
+    private val unknownLineIds = HashSet<String>()
 
     // When each stop's arrivals last came back from a fetch by THIS ViewModel (the cycle's start
     // stamp). What makes a stop eligible to be carried over ([recentlyFetched]): a stop restored from
@@ -1042,7 +1046,7 @@ class MainViewModel(
             val cachedStatuses = lineIds.mapNotNull { id ->
                 lineStatusCache[id]?.takeIf { (at, _) -> isWithin(at, now, lineStatusReuse) }?.second
             }
-            val toQuery = lineIds - cachedStatuses.mapTo(HashSet()) { it.lineId }
+            val toQuery = lineIds - cachedStatuses.mapTo(HashSet()) { it.lineId } - unknownLineIds
             lineStatusRequests = if (toQuery.isNotEmpty()) 1 else 0
             // With nothing left to ask, the cached verdicts stand on their own.
             if (lineIds.isNotEmpty() && toQuery.isEmpty()) {
@@ -1069,6 +1073,13 @@ class MainViewModel(
                     }
                 } catch (e: CancellationException) {
                     throw e
+                } catch (e: TflException.NotFound) {
+                    // TfL knows none of the lines asked about (it leaves an unknown one out of an
+                    // answer that has a known one): remembered, so a refresh doesn't ask again.
+                    unknownLineIds += toQuery
+                    lineStatuses = cachedStatuses.filter { it.disrupted }.associateBy { it.lineId }
+                    determinedLineIds = cachedStatuses.mapTo(mutableSetOf()) { it.lineId }
+                    warn("line status: TfL doesn't know line(s) ${toQuery.joinToString(",")}; not asked again")
                 } catch (e: Exception) {
                     // Only the cached verdicts are determined, so every line this request was for
                     // reads undetermined — the flag the callers derive is set (SPEC principle 1).

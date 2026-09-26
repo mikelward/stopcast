@@ -489,6 +489,29 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `a line TfL doesn't know is asked about once and stays unchecked`() = runTest(dispatcher) {
+        var statusCalls = 0
+        val client = object : TflClient {
+            override suspend fun arrivals(stopId: String) = listOf(departure("caledonian-sleeper", "Caledonian Sleeper", 300))
+            override suspend fun lineStatuses(lineIds: Collection<String>): List<LineStatus> {
+                statusCalls++
+                throw TflException.NotFound(null)
+            }
+            override suspend fun stopDisruptions(stopId: String) = emptyList<StopDisruption>()
+        }
+        val vm = viewModel(client)
+        advanceUntilIdle()
+        assertEquals(1, statusCalls)
+        assertTrue((vm.state.value as DeparturesUiState.Loaded).disruptionUnknown)
+
+        // TfL's answer won't change: a refresh doesn't ask again, and the line still isn't clean.
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(1, statusCalls)
+        assertTrue((vm.state.value as DeparturesUiState.Loaded).disruptionUnknown)
+    }
+
+    @Test
     fun `a cold load all back within the grace paints once, whole`() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val vm = viewModel(GatedClient(seeds[1].id, gate))

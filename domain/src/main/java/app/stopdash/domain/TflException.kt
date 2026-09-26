@@ -15,6 +15,13 @@ sealed class TflException(message: String, cause: Throwable?) : Exception(messag
     /** TfL returned 429 — a user-supplied `app_key` raises the limit (SPEC D7). */
     class RateLimited(cause: Throwable?) : TflException("rate limited", cause)
 
+    /**
+     * TfL answered 404: it doesn't know what was asked for ("The following line id is not
+     * recognised" — a National Rail service it has no line for). Asking again won't change it, so a
+     * surface says the thing isn't available rather than offer a retry.
+     */
+    class NotFound(cause: Throwable?) : TflException("HTTP 404", cause)
+
     /** Reached TfL but the request still failed — a non-2xx, or a decode failure. */
     class Unreachable(reason: String, cause: Throwable?) : TflException(reason, cause)
 
