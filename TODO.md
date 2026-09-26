@@ -917,12 +917,10 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
   - [x] **A cold load waited for its slowest stop** (maintainer, 2026-09-25). Each stop now shows
         as it lands; one still out is a collapsed "Loading" card where it will go. Only the whole
         batch is saved.
-  - [ ] **Don't make a cold load's list jump** (maintainer, 2026-09-25). A "Loading" card that
-        is on screen when its stop lands should stay a card and turn to "Tap to see", opening in
-        place on a tap (a dash if nothing's running); one off screen when it lands expands as now.
-        On the watched list the card keeps its foot position until tapped. Rows landing above the
-        screen never push the scroll: the list anchors on the top item's key, which a card turning
-        into rows loses, so that swap has to keep the key or restore the offset.
+  - [x] **Don't make a cold load's list jump** (maintainer, 2026-09-25). A "Loading" card on
+        screen when its stop lands stays a card, now "Tap to see" (a dash if nothing's running),
+        and opens in place on a tap; one off screen expands. The card keeps its list key and
+        slot, so the scroll anchor holds.
   - [ ] **Say what a loading card waits on** ("National Rail" vs TfL) if the plain "Loading"
         proves unclear; the client would need to expose which stops take a Darwin board.
   - [ ] **A line TfL doesn't know still reads "can't reach TfL"** on its route page, with a

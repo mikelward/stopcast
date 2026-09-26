@@ -3,6 +3,8 @@ package app.stopdash.ui
 import app.stopdash.domain.LineRef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Where a cold load's still-loading stops show ([pendingPlaces], [pendingSlots]). */
@@ -98,5 +100,199 @@ class PendingPlacesTest {
         // Once the batch is whole, only what came back counts: a failed stop's lines keep their cards.
         assertEquals(setOf("A"), reachedStopIds(partial.copy(pendingStops = emptyList(), statusPending = false)))
         assertEquals(null, reachedStopIds(DeparturesUiState.Loading))
+    }
+
+    private fun place(id: String, name: String) =
+        pendingPlaces(listOf(StopRef(id, name)), emptySet(), emptyMap()).single()
+
+    @Test
+    fun `a place that lands on screen is held as a card, one off screen isn't`() {
+        val near = place("940GZZLUESQ", "Euston Square")
+        val far = place("910GEUSTON", "London Euston")
+        val tracker = PendingTracker()
+        tracker.update(listOf(near, far))
+        // Both land; only Euston Square's card was drawn.
+        tracker.onScreen = setOf(pendingItemKey(near))
+        val held = tracker.update(emptyList())
+        assertEquals(setOf(near.placeKey), held.keys)
+    }
+
+    @Test
+    fun `a held card keeps its place among the loading ones`() {
+        val a = place("A", "A")
+        val b = place("B", "B")
+        val tracker = PendingTracker()
+        tracker.update(listOf(a, b))
+        tracker.onScreen = setOf(pendingItemKey(a))
+        tracker.update(listOf(b))
+        assertTrue(tracker.order(a.placeKey) < tracker.order(b.placeKey))
+    }
+
+    @Test
+    fun `a held card says tap to see, a dash with nothing running, and goes if it failed`() {
+        val p = place("940GZZLUESQ", "Euston Square")
+        assertEquals(FartherCue.TAP_TO_SEE, heldCue(p, setOf(p.placeKey), setOf("940GZZLUESQ")))
+        assertEquals(FartherCue.NO_DEPARTURES, heldCue(p, emptySet(), setOf("940GZZLUESQ")))
+        assertEquals(null, heldCue(p, emptySet(), emptySet()))
+    }
+
+    @Test
+    fun `held cards survive a recreated screen`() {
+        val p = pendingPlaces(
+            listOf(StopRef("940GZZLUESQ", "Euston Square", listOf(circle))),
+            emptySet(),
+            mapOf("940GZZLUESQ" to 80.0),
+        ).single()
+        val tracker = PendingTracker()
+        tracker.update(listOf(p))
+        tracker.onScreen = setOf(pendingItemKey(p))
+        tracker.update(emptyList())
+
+        val restored = recreated(tracker)
+        assertEquals(mapOf(p.placeKey to p), restored.update(emptyList()))
+        assertEquals(0, restored.order(p.placeKey))
+    }
+
+    @Test
+    fun `a stop landing mid-rotation still holds the card that was on screen`() {
+        val p = place("940GZZLUESQ", "Euston Square")
+        val tracker = PendingTracker()
+        tracker.update(listOf(p))
+        tracker.onScreen = setOf(pendingItemKey(p))
+
+        // Recreated while still loading; it lands before the new list draws a frame.
+        val restored = recreated(tracker)
+        assertEquals(setOf(p.placeKey), restored.update(emptyList()).keys)
+    }
+
+    private fun recreated(tracker: PendingTracker): PendingTracker {
+        val saved = with(PendingTracker.Saver) { androidx.compose.runtime.saveable.SaverScope { true }.save(tracker) }!!
+        return PendingTracker.Saver.restore(saved)!!
+    }
+
+    @Test
+    fun `a held card remembers a stop that came back before the rest`() {
+        fun station(vararg ids: String) =
+            pendingPlaces(ids.map { StopRef(it, "Euston Square", clusterId = "940GZZLUESQ") }, emptySet(), emptyMap()).single()
+        val tracker = PendingTracker()
+        tracker.update(listOf(station("A", "B")))
+        // A comes back empty; B is still out, then fails while the card is on screen.
+        tracker.update(listOf(station("B")))
+        tracker.onScreen = setOf(pendingItemKey(station("B")))
+        val held = tracker.update(emptyList()).values.single()
+        assertEquals(setOf("A", "B"), held.stopIds)
+        assertEquals(FartherCue.NO_DEPARTURES, heldCue(held, emptySet(), setOf("A")))
+    }
+
+    @Test
+    fun `a loading card keeps the lines and distance of a stop already back`() {
+        val a = StopRef("A", "Euston Square", listOf(circle), clusterId = "940GZZLUESQ")
+        val b = StopRef("B", "Euston Square", listOf(metropolitan), clusterId = "940GZZLUESQ")
+        val meters = mapOf("A" to 80.0, "B" to 90.0)
+        val tracker = PendingTracker()
+        tracker.update(pendingPlaces(listOf(a, b), emptySet(), meters))
+        // A comes back empty; the card for B still shows both lines, at A's distance.
+        val onlyB = pendingPlaces(listOf(b), emptySet(), meters)
+        tracker.update(onlyB)
+        val card = tracker.widened(onlyB.single())
+        assertEquals(setOf("circle", "metropolitan"), card.place.lines.mapTo(HashSet()) { it.id })
+        assertEquals(80.0, card.place.meters, 0.0)
+    }
+
+    @Test
+    fun `a hidden mode comes off a held card, and a card of only that mode goes`() {
+        val bus = LineRef("73", "73", "bus")
+        val mixed = pendingPlaces(listOf(StopRef("X", "X", listOf(circle, bus))), emptySet(), emptyMap()).single()
+        val busOnly = pendingPlaces(listOf(StopRef("Y", "Y", listOf(bus))), emptySet(), emptyMap()).single()
+        assertEquals(listOf("circle"), withoutHidden(mixed, setOf("bus"))!!.place.lines.map { it.id })
+        assertEquals(null, withoutHidden(busOnly, setOf("bus")))
+    }
+
+    @Test
+    fun `a recreated screen keeps what an off-screen card knew and which cards were opened`() {
+        val a = StopRef("A", "Euston Square", listOf(circle), clusterId = "940GZZLUESQ")
+        val b = StopRef("B", "Euston Square", listOf(metropolitan), clusterId = "940GZZLUESQ")
+        val tracker = PendingTracker()
+        tracker.update(pendingPlaces(listOf(a, b), emptySet(), emptyMap()))
+        val onlyB = pendingPlaces(listOf(b), emptySet(), emptyMap())
+        tracker.update(onlyB)
+        tracker.opened = setOf("other")
+
+        // Recreated with the card off screen; later it's on screen when B fails.
+        val restored = recreated(tracker)
+        assertEquals(setOf("other"), restored.opened)
+        restored.update(onlyB)
+        restored.onScreen = setOf(pendingItemKey(onlyB.single()))
+        assertEquals(setOf("A", "B"), restored.update(emptyList()).values.single().stopIds)
+    }
+
+    @Test
+    fun `a failed held place is let go, so a later load isn't held`() {
+        val p = place("940GZZLUESQ", "Euston Square")
+        val tracker = PendingTracker()
+        tracker.update(listOf(p))
+        tracker.onScreen = setOf(pendingItemKey(p))
+        assertEquals(setOf(p.placeKey), tracker.update(emptyList()).keys)
+
+        val before = tracker.revision
+        tracker.forget(p.placeKey)
+        // A cached held map is taken again, since the list's inputs haven't changed.
+        assertEquals(before + 1, tracker.revision)
+        assertTrue(tracker.update(emptyList()).isEmpty())
+        tracker.forget(p.placeKey)
+        assertEquals(before + 1, tracker.revision)
+    }
+
+    @Test
+    fun `a kept card takes its distance from the current fix`() {
+        val stops = listOf(StopRef("A", "Euston Square", clusterId = "940GZZLUESQ"), StopRef("B", "Euston Square", clusterId = "940GZZLUESQ"))
+        val p = pendingPlaces(stops, emptySet(), mapOf("A" to 100.0, "B" to 300.0)).single()
+        assertEquals(100.0, p.place.meters, 0.0)
+
+        // Same stops, a new fix: the nearest is now B.
+        val moved = remeasured(p, mapOf("A" to 800.0, "B" to 400.0))
+        assertEquals(400.0, moved.place.meters, 0.0)
+        assertTrue(moved.distanced)
+        // The watched list has no distances: the card stays as it was.
+        assertEquals(p, remeasured(p, emptyMap()))
+    }
+
+    @Test
+    fun `a restored tracker waits out an unknown list, and a different list starts afresh`() {
+        val p = place("940GZZLUESQ", "Euston Square")
+        val holder = PendingTrackerHolder()
+        val tracker = holder.trackerFor("set-a")
+        tracker.update(listOf(p))
+        tracker.onScreen = setOf(pendingItemKey(p))
+        tracker.update(emptyList())
+        val saved = with(PendingTrackerHolder.Saver) { androidx.compose.runtime.saveable.SaverScope { true }.save(holder) }!!
+        val restored = PendingTrackerHolder.Saver.restore(saved)!!
+
+        // After process death the nearby set isn't known yet: the restored tracker stays.
+        val kept = restored.trackerFor(null)
+        assertSame(kept, restored.trackerFor("set-a"))
+        assertEquals(setOf(p.placeKey), kept.update(emptyList()).keys)
+        assertTrue(restored.trackerFor("set-b").update(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun `an opened card keeps its slot until the list refreshes`() {
+        val p = place("940GZZLUESQ", "Euston Square")
+        val tracker = PendingTracker()
+        tracker.update(listOf(p))
+        tracker.onScreen = setOf(pendingItemKey(p))
+        tracker.update(emptyList())
+        tracker.opened += p.placeKey
+
+        val fetched = java.time.Instant.parse("2026-01-01T08:00:00Z")
+        assertTrue(tracker.openedToRelease(fetched).isEmpty())
+        assertTrue(tracker.openedToRelease(fetched).isEmpty())
+        // The clock dropping a gone departure isn't a refresh (no newer fetch).
+        assertTrue(tracker.openedToRelease(fetched.minusSeconds(30)).isEmpty())
+        // A refresh: the card lets go, and its rows join the list.
+        assertEquals(listOf(p.placeKey), tracker.openedToRelease(fetched.plusSeconds(60)))
+        tracker.forget(p.placeKey)
+        assertTrue(tracker.update(emptyList()).isEmpty())
+        assertTrue(tracker.opened.isEmpty())
     }
 }
