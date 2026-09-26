@@ -75,12 +75,25 @@ data class TflJourneyLegDto(
             path = path.stopPoints.map { it.id }.filter { it.isNotBlank() },
             changeAfter = Duration.ofMinutes(change ?: 0),
             headings = routeOptions.firstOrNull()?.directions.orEmpty()
-                .map { cleanStopName(it) }.filter { it.isNotBlank() }.distinct(),
+                .map { signedName(it) }.filter { it.isNotBlank() }.distinct(),
             fromArea = departurePoint.stopPair(),
             toArea = arrivalPoint.stopPair(),
         )
     }
 }
+
+/**
+ * A service's terminus as the front of the train or bus shows it: a stop name cleaned
+ * ([cleanStopName]), and a bus station by its place, as its buses' blinds read ("London Bridge Bus
+ * Station" is "London Bridge").
+ */
+private fun signedName(terminus: String): String {
+    val name = terminus.trim()
+    val place = if (name.endsWith(BUS_STATION, ignoreCase = true)) name.dropLast(BUS_STATION.length).trim() else name
+    return cleanStopName(place.ifBlank { name })
+}
+
+private const val BUS_STATION = " Bus Station"
 
 @Serializable
 data class TflJourneyPointDto(

@@ -187,4 +187,12 @@ class JourneyPlannerTest {
         assertEquals("490G000850", legs[1].toArea)
         assertEquals("", legs[2].toArea)
     }
+
+    @Test
+    fun `a bus to a bus station is headed by its place, as its blind reads`() = runTest {
+        // Recorded, trimmed: the Planner's 43 runs to "London Bridge Bus Station"; its buses read "London Bridge".
+        val body = checkNotNull(javaClass.getResource("/fixtures/journey_results_archway_to_london_bridge_bus.json")).readText()
+        val bus = client(body).journeys("940GZZLUACY", "940GZZLULNB").single().rides.single()
+        assertEquals(listOf("London Bridge"), bus.headings)
+    }
 }
