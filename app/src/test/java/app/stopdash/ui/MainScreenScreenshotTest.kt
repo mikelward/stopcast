@@ -3422,6 +3422,50 @@ class MainScreenScreenshotTest {
     }
 
     @Test
+    fun `a held stop with nothing running and a closure notice says closed`() {
+        // SPEC *Freshness → Cold load*: a card held on screen whose stop came back with nothing
+        // running reads "Closed" when its notice says the station is closed, not a bare dash.
+        val kingsCross = StopRef("940GZZLUKSX", "King's Cross St. Pancras", listOf(LineRef("victoria", "Victoria", "tube")))
+        val eustonSquare = StopArrivals(
+            "940GZZLUESQ",
+            "Euston Square",
+            listOf(dep("circle", "Circle", "eastbound", "Aldgate", 300, "Platform 1")),
+            fetchedAt = now.minusSeconds(60),
+        )
+        val closedKingsCross = StopArrivals(
+            "940GZZLUKSX",
+            "King's Cross St. Pancras",
+            emptyList(),
+            fetchedAt = now.minusSeconds(60),
+            lines = kingsCross.lines,
+            disruptions = listOf(StopDisruption("Station closed due to a fire alert")),
+        )
+        val distances = mapOf("940GZZLUKSX" to 120.0, "940GZZLUESQ" to 400.0)
+        var state by mutableStateOf<DeparturesUiState>(
+            DeparturesUiState.Loaded(
+                stops = listOf(eustonSquare),
+                fetchedAt = now,
+                statusPending = true,
+                disruptionUnknown = true,
+                pendingStops = listOf(kingsCross),
+            ),
+        )
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(state, now, {}, stopDistanceMeters = distances)
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Loading").assertExists()
+
+        state = DeparturesUiState.Loaded(listOf(closedKingsCross, eustonSquare), now.minusSeconds(60))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Closed").assertExists()
+    }
+
+    @Test
     fun `a stop landing with no departures below it opens in full`() {
         // SPEC *Freshness → Cold load*: nothing loaded is drawn below its card, so opening it pushes
         // nothing the rider is reading; it opens where it is rather than waiting on a tap.

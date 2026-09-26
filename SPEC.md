@@ -318,7 +318,8 @@ The app finds stops two ways:
   **one row of the lines it adds** and **"Tap to see"** where the times would be (maintainer,
   2026-09-25). A tap looks up the station's stops and loads their departures, and the card **opens
   in place**, below the loaded places, so the list doesn't jump; the cue reads "Loading…" meanwhile,
-  "Tap to retry" if it failed (a tap retries), and a line row's dash if nothing is running. An
+  "Tap to retry" if it failed (a tap retries), and a line row's dash if nothing is running ("Closed"
+  when its notice says the station is closed, as for a held card under *Freshness → Cold load*). An
   opened station shows only what the list doesn't already show from a nearer stop, like any
   near-me place, and refreshes with the list. It is **held for the session, not saved**
   (maintainer, 2026-09-25): it stays open while the list still offers it, closes when a move stops
@@ -1103,7 +1104,9 @@ about when data has gone stale.
   list, whose soonest-first order can't be known until it's in. The list never jumps under the
   rider's eyes: a card on screen when its stop lands, **with a place's loaded rows below it** (times,
   or a status such as a suspended line — anything the rider may be reading), stays a
-  card, now reading "Tap to see" (a dash if nothing's running), and a tap opens it where it is,
+  card, now reading "Tap to see" (a dash if nothing's running, or **"Closed"** when a notice in force
+  says the stop or station itself is closed — its own wording, "Bus Stop Closed", "Station closed…",
+  since a lift or entrance notice doesn't close the stop; maintainer, 2026-09-26), and a tap opens it where it is,
   even after a rotation, until the next refresh re-sorts the list. One with only cards (or nothing)
   below it opens in full, since it pushes nothing loaded the rider is reading — so the nearest tube,
   landing after the buses above it, isn't left behind a tap (maintainer, 2026-09-26). On the watched

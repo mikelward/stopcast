@@ -22,6 +22,8 @@ class FartherCueTest {
         assertEquals("one failed, one still to come", FartherCue.LOADING, fartherCue(card, emptySet(), setOf("A")))
         assertEquals(FartherCue.RETRY, fartherCue(card, emptySet(), setOf("A", "B")))
         assertEquals(FartherCue.NO_DEPARTURES, fartherCue(card, setOf("B"), setOf("A")))
+        // A notice in force says a stop is closed: the card says so rather than a dash.
+        assertEquals(FartherCue.CLOSED, fartherCue(card, setOf("B"), setOf("A"), closedStopIds = setOf("A")))
     }
 
     @Test
