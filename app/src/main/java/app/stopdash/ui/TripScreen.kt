@@ -371,7 +371,10 @@ internal fun tripEstimates(
     val unknown = state.statusUnknown +
         routes.flatMap { route -> route.rides.map { it.lineId } }.filterNot { it in state.statuses }
     val estimates = routes.map { route ->
-        TripTiming.estimate(route, now, access, { index -> legTrains(state, route.legs[index], now, sequences) }, notRunning, unknown)
+        TripTiming.estimate(
+            route, now, access, { index -> legTrains(state, route.legs[index], now, sequences) }, notRunning, unknown,
+            current = { index -> state.live[route.legs[index].fromId]?.failed != true },
+        )
             .let { if (originUnconfirmed && it.basis == TripTiming.Basis.LIVE) it.copy(basis = TripTiming.Basis.ESTIMATED) else it }
     }
     // Journeys the Planner times differently but rides alike are one route here (one key in the

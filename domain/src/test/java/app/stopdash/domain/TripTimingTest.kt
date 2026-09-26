@@ -96,6 +96,30 @@ class TripTimingTest {
     }
 
     @Test
+    fun `a frequent line past its live predictions is boarded on arrival, as an estimate`() {
+        // Red at 12 reaches B ready at 25; blue's predictions end at 22 (its horizon), and the Planner's blue at 20 is gone.
+        val live = mapOf(0 to listOf(train("red", 12)), 1 to listOf(train("blue", 18), train("blue", 22)))
+        val estimate = TripTiming.estimate(twoLegs, now, Duration.ZERO, { live[it] })
+        assertEquals(TripTiming.Basis.ESTIMATED, estimate.basis)
+        assertEquals(at(25), estimate.legs[1].board)
+        assertFalse(estimate.legs[1].live)
+        assertEquals(at(35), estimate.arrival)
+        // Not a line with no trains (not running, or done for the night), nor one whose arrivals failed.
+        assertEquals(TripTiming.Basis.UNKNOWN, TripTiming.estimate(twoLegs, now, Duration.ZERO, { if (it == 0) live[0] else emptyList() }).basis)
+        assertEquals(TripTiming.Basis.UNKNOWN, TripTiming.estimate(twoLegs, now, Duration.ZERO, { if (it == 0) live[0] else null }).basis)
+        // Nor one whose predictions end soon after now: that may be the night's last train.
+        val lastSoon = mapOf(0 to listOf(train("red", 12)), 1 to listOf(train("blue", 8)))
+        assertEquals(TripTiming.Basis.UNKNOWN, TripTiming.estimate(twoLegs, now, Duration.ZERO, { lastSoon[it] }).basis)
+        // Nor one whose last refresh failed, its earlier arrivals held.
+        assertEquals(TripTiming.Basis.UNKNOWN, TripTiming.estimate(twoLegs, now, Duration.ZERO, { live[it] }, current = { it != 1 }).basis)
+        // Nor one not running, whose last predictions may outlive it.
+        assertEquals(TripTiming.Basis.UNKNOWN, TripTiming.estimate(twoLegs, now, Duration.ZERO, { live[it] }, notRunning = setOf("blue")).basis)
+        // Nor an infrequent one, where the wait could matter.
+        val rail = TripRoute(listOf(twoLegs.legs[0], twoLegs.legs[1].copy(mode = "national-rail")))
+        assertEquals(TripTiming.Basis.UNKNOWN, TripTiming.estimate(rail, now, Duration.ZERO, { live[it] }).basis)
+    }
+
+    @Test
     fun `a walk between stations takes the Planner's minutes`() {
         val route = TripRoute(
             listOf(
