@@ -863,7 +863,10 @@ as "via Bank", or any rail service, which may run fast to the same terminus) gra
 before any live train, the Planner's terminus (never the stop the leg gets off at, which reads as
 the line's destination), failing that "from" the boarding stop. The times read "Loading" until the
 boarding stop's arrivals arrive, and "–" when none can be vouched for (*Text is chosen to fit its
-space*). A route that is all walking (two stops close
+space*). A bus stop the Planner names by its stop pair (a road's two poles) boards at the pole its
+bus uses, worked out from the line's route: the pole the Planner names can be the other side of the
+road, where the buses run the other way. Both poles are fetched, and the times read "Loading" until
+the route says which. A route that is all walking (two stops close
 together) shows "Walk" where the pills go and its minutes, with no live row and no arrivals request.
 
 Tapping a route opens it, drawn with the list's own parts, **every leg a card**: the leg's platform header ("Highbury

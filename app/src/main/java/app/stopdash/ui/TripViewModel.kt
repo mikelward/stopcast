@@ -59,6 +59,10 @@ class TripViewModel(
     // Emits when where departures come from changes (a National Rail key added or removed): the
     // current value first, then each change, as the list's model takes it.
     departureSourceChanges: Flow<Any?> = emptyFlow(),
+    // A bus stop pair's poles ("490G…", a road's two sides): a bus leg's boarding stop is fetched on
+    // every pole of its pair, since the one the Planner names can be the side the bus doesn't use.
+    // None by default (a test); the app looks them up once a day.
+    private val poles: suspend (String) -> List<String> = { emptyList() },
 ) : ViewModel() {
     /** One boarding stop's last arrivals and when they were fetched; [failed] when the last fetch failed. */
     data class StopLive(val departures: List<Departure>, val fetchedAt: Instant, val failed: Boolean = false)
@@ -80,6 +84,9 @@ class TripViewModel(
         // The last plan reached only some of the trip's stops (a complex's other stations failed):
         // its routes stand, and the trip says it couldn't plan to every station, with a retry.
         val planIncomplete: Boolean = false,
+        // Each bus stop pair's poles the trip has looked up (and so fetches): a leg may board at one
+        // before its arrivals are in, reading "Loading" meanwhile. A pair whose lookup failed is absent.
+        val areaPoles: Map<String, List<String>> = emptyMap(),
     )
 
     private val _state = MutableStateFlow(
@@ -120,7 +127,7 @@ class TripViewModel(
             _state.update { it.copy(live = cached(routes, it.live)) }
             val now = clock()
             val live = _state.value.live
-            if (boardingStops(routes).any { id -> live[id]?.let { !recentEnough(it, now) } ?: true }) refresh()
+            if (stopsOf(routes).any { id -> live[id]?.let { !recentEnough(it, now) } ?: true }) refresh()
             return
         }
         started = true
@@ -249,13 +256,17 @@ class TripViewModel(
             ?.let(::bestOf) ?: return
         val lines = routes.flatMap { route -> route.rides.map { it.lineId } }.distinct()
         // Arrivals another screen fetched since show at once; only a stop not fetched within
-        // [ArrivalsCache.TTL] is asked for again.
+        // [ArrivalsCache.TTL] is asked for again. Refreshing from the start, so the trip reads as
+        // checking while its bus stop pairs are looked up too.
         _state.update { it.copy(refreshing = true, live = cached(routes, it.live)) }
-        val now = clock()
-        // A departure source changed while this refresh's arrivals are out: they're from the old one.
-        val source = sourceGeneration
-        val stops = boardingStops(routes).filter { id -> _state.value.live[id]?.let { !recentEnough(it, now) } ?: true }
         try {
+            // Each bus stop pair's poles first (once a day, usually from the file cache): every one is fetched.
+            lookUpPoles(routes)
+            _state.update { it.copy(live = cached(routes, it.live)) }
+            val now = clock()
+            // A departure source changed while this refresh's arrivals are out: they're from the old one.
+            val source = sourceGeneration
+            val stops = stopsOf(routes).filter { id -> _state.value.live[id]?.let { !recentEnough(it, now) } ?: true }
             coroutineScope {
                 val statuses = async { fetchStatuses(lines) }
                 val live = stops.map { id -> async { id to fetchStop(id) } }.awaitAll()
@@ -283,9 +294,37 @@ class TripViewModel(
         return !held.failed && !age.isNegative && age < ArrivalsCache.TTL
     }
 
+    // Each bus stop pair's poles, looked up once per model ([poles]); a failed lookup is asked again
+    // on the next refresh, the Planner's own pole standing meanwhile.
+    private val areaPoles = HashMap<String, List<String>>()
+
+    private suspend fun lookUpPoles(routes: List<TripRoute>) {
+        val areas = routes.flatMap { route -> route.rides.map { it.fromArea } }.filter { it.isNotBlank() && it !in areaPoles }.distinct()
+        if (areas.isEmpty()) return
+        coroutineScope {
+            areas.map { area ->
+                async {
+                    area to try {
+                        withContext(io) { poles(area) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: TflException) {
+                        warn("trip stop pair lookup failed: ${e::class.simpleName} for stop $area")
+                        null
+                    }
+                }
+            }.awaitAll()
+        }.forEach { (area, found) -> if (found != null) areaPoles[area] = found }
+        _state.update { it.copy(areaPoles = areaPoles.toMap()) }
+    }
+
+    // The stops [routes] board at: each ride's own, and every pole of a bus stop pair it boards at.
+    private fun stopsOf(routes: List<TripRoute>): List<String> =
+        (boardingStops(routes) + routes.flatMap { route -> route.rides.flatMap { areaPoles[it.fromArea].orEmpty() } }).distinct()
+
     private fun cached(routes: List<TripRoute>, live: Map<String, StopLive>): Map<String, StopLive> {
         val now = clock()
-        val newer = boardingStops(routes).mapNotNull { id ->
+        val newer = stopsOf(routes).mapNotNull { id ->
             val entry = arrivals.get(id, now, client.arrivalsSource()) ?: return@mapNotNull null
             val held = live[id]
             if (held != null && !entry.fetchedAt.isAfter(held.fetchedAt)) return@mapNotNull null

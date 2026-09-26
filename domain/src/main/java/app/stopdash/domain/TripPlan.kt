@@ -11,6 +11,10 @@ import java.time.Instant
  * [path] is the stop ids the leg calls at after boarding, through [toId]; [changeAfter] is the time
  * the Planner allows to change to the next leg; [headings] is the terminus the Planner's service
  * runs to ("Stanmore"), as its front and a station card show it, for when no live train does.
+ *
+ * A bus leg's ends are stop pairs to the Planner ("490G…", a road's two poles), [fromArea] and
+ * [toArea]; [fromId] and [toId] are the poles it names within them, which can be the other side of
+ * the road from the one the bus uses. Empty for any other stop.
  */
 data class TripLeg(
     val mode: String,
@@ -25,6 +29,8 @@ data class TripLeg(
     val path: List<String> = emptyList(),
     val changeAfter: Duration = Duration.ZERO,
     val headings: List<String> = emptyList(),
+    val fromArea: String = "",
+    val toArea: String = "",
 ) {
     val isWalk: Boolean get() = mode.equals(WALKING, ignoreCase = true)
 
