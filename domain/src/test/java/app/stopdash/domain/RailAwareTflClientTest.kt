@@ -234,5 +234,11 @@ class RailAwareTflClientTest {
         assertEquals("great-northern", railLineId("Great Northern"))
         assertEquals("c2c", railLineId("c2c"))
         assertEquals("london-north-eastern-railway", railLineId("London North Eastern Railway"))
+        // By operator code where the name doesn't slug to TfL's id: West Midlands Trains' brands,
+        // and Northern, whose name would take the tube's Northern line id.
+        assertEquals("west-midlands-trains", railLineId("London Northwestern Railway", "LM"))
+        assertEquals("northern-rail", railLineId("Northern", "NT"))
+        // An operator TfL has no line for keeps its slug.
+        assertEquals("caledonian-sleeper", railLineId("Caledonian Sleeper", "CS"))
     }
 }

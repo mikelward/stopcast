@@ -218,8 +218,46 @@ const val NATIONAL_RAIL_MODE = "national-rail"
 val TFL_RUN_OPERATORS = setOf("LO", "XR", "LT")
 
 /**
- * A National Rail operator's TfL-style line id ("Great Northern" → `great-northern`), so its
- * departures and TfL's status for the line share one row.
+ * TfL's National Rail line id for each operator's code (Darwin's `operatorCode`), from TfL's
+ * `/Line/Mode/national-rail`. The operator's *name* doesn't always slug to it: West Midlands Trains
+ * (`LM`) runs as "London Northwestern Railway" / "West Midlands Railway", whose slug TfL doesn't
+ * know (every status and route request 404s), and Northern (`NT`) would slug to `northern`, the
+ * tube line's id, taking its status. Checked 2026-09-26.
  */
-fun railLineId(operator: String): String =
-    operator.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+private val TFL_RAIL_LINE_IDS = mapOf(
+    "AW" to "transport-for-wales",
+    "CC" to "c2c",
+    "CH" to "chiltern-railways",
+    "EM" to "east-midlands-railway",
+    "GC" to "grand-central",
+    "GN" to "great-northern",
+    "GR" to "london-north-eastern-railway",
+    "GW" to "great-western-railway",
+    "GX" to "gatwick-express",
+    "HT" to "hull-trains",
+    "HX" to "heathrow-express",
+    "IL" to "island-line",
+    "LD" to "lumo",
+    "LE" to "greater-anglia",
+    "LM" to "west-midlands-trains",
+    "ME" to "merseyrail",
+    "NT" to "northern-rail",
+    "SE" to "southeastern",
+    "SN" to "southern",
+    "SR" to "scotrail",
+    "SW" to "south-western-railway",
+    "TL" to "thameslink",
+    "TP" to "transpennine-express",
+    "VT" to "avanti-west-coast",
+    "XC" to "crosscountry",
+)
+
+/**
+ * A National Rail operator's TfL line id, so its departures and TfL's status and route for the
+ * line share one row: TfL's own id for a known [operatorCode], else the operator's name as a slug
+ * ("Great Northern" → `great-northern`) — which, for an operator TfL has no line for (the
+ * Caledonian Sleeper), TfL answers 404 and the app treats as a line it doesn't know.
+ */
+fun railLineId(operator: String, operatorCode: String? = null): String =
+    operatorCode?.uppercase()?.let { TFL_RAIL_LINE_IDS[it] }
+        ?: operator.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
