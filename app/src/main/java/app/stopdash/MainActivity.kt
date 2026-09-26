@@ -15,6 +15,7 @@ import app.stopdash.ui.fartherReached
 import app.stopdash.ui.reachedStopIds
 import app.stopdash.ui.PendingTracker
 import app.stopdash.domain.DirectTrips
+import app.stopdash.domain.PlanTargets
 import app.stopdash.domain.stopPlace
 import app.stopdash.data.FileStarredPlacesStore
 import kotlinx.coroutines.flow.first
@@ -1779,9 +1780,10 @@ class MainActivity : ComponentActivity() {
         // A trip with a change (SPEC *Trips with a change*): TfL's Journey Planner from the nearest
         // origin stop to the destination, timed by live trains. The Planner takes a stop or station
         // id, not an interchange ("HUB…"): an ordinary stop is planned to as picked, at once; an
-        // interchange is looked up first for one of its own member stops.
-        val toStopId = if (!toId.startsWith(HUB_PREFIX)) {
-            toId
+        // interchange is looked up first and planned to at each of its stations and its bus stops,
+        // the best way there whatever the line or mode.
+        val toStopIds = if (!toId.startsWith(HUB_PREFIX)) {
+            listOf(toId)
         } else {
             val toOwner = remember(toId) { toStores.ownerFor(toId, this@MainActivity) }
             val toModel: StationStopsViewModel = viewModel(
@@ -1803,7 +1805,7 @@ class MainActivity : ComponentActivity() {
                 )
                 return
             }
-            (members.firstOrNull { !it.id.startsWith(HUB_PREFIX) } ?: members.first()).id
+            PlanTargets.of(members.map { PlanTargets.Member(it.id, it.lines) }).ifEmpty { listOf(members.first().id) }
         }
         // From a From… station, one of its own stops (the neighbors around it are no start); else
         // the stop nearest the rider.
@@ -1812,13 +1814,13 @@ class MainActivity : ComponentActivity() {
         val fromStop = (starts.filter { it.id in fromStopIds }.ifEmpty { starts })
             .minByOrNull { distanceMeters[it.id] ?: Double.MAX_VALUE } ?: origin.first()
         // Keyed on both ends, so a relocation to a new nearest stop plans afresh.
-        val tripKey = "${fromStop.id}>$toStopId"
+        val tripKey = "${fromStop.id}>${toStopIds.joinToString(",")}"
         val owner = remember(tripKey) { stores.ownerFor(tripKey, this@MainActivity) }
         val trip: TripViewModel = viewModel(
             viewModelStoreOwner = owner,
             factory = viewModelFactory {
                 initializer {
-                    TripViewModel(journeyPlanner, departuresClient(appContext), fromStop.id, toStopId, warn = ::logDepartureWarning)
+                    TripViewModel(journeyPlanner, departuresClient(appContext), fromStop.id, toStopIds, warn = ::logDepartureWarning)
                 }
             },
         )

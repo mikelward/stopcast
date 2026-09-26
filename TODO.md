@@ -838,15 +838,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
       - [ ] **Gray unreachable trains in the leg-by-leg cards** (the list's first-leg row does).
       - [ ] **"From" chip on the destination search** naming the start ("Here" or the station).
       - [ ] **Station page's own *To…*** still shows direct trains only; move it to trips.
-      - [ ] **Plan to every station of a complex** (maintainer, 2026-09-26: the goal is the best
-            way to King's Cross St. Pancras whatever the line or mode). Today one member stop is
-            sent, and the Planner only walks on from its mode: aimed at the Underground it offered
-            Blackfriars "Thameslink then Metropolitan" (10 min) where Thameslink direct to St Pancras
-            is 7. Plan once per distinct station (members of one name merged, e.g. St Pancras'
-            two codes) plus one bus stop area (the Planner walks between stands), merge, and keep
-            the best few routes before fetching live times: 5 Planner calls per plan at King's
-            Cross, 2-3 at a typical interchange, 1 elsewhere. Not the complex's centre point: it
-            ended every trip at a street address with a 3-9 min walk and didn't fix the bias.
+      - [x] **Plan to every station of a complex** (maintainer, 2026-09-26: the best way to King's
+            Cross St. Pancras whatever the line or mode): once per station code plus one bus
+            stop, in parallel, merged, the soonest six routes timed.
       - [ ] **Configurable walking limit** (maintainer, 2026-09-26): the Planner's
             `maxWalkingMinutes`, fixed at 15 for now.
       - [ ] **Mode toggles** at the top of a trip, remembered across trips (the Planner's `mode=`).

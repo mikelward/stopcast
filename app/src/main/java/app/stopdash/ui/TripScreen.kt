@@ -224,7 +224,8 @@ internal fun tripEstimates(
     originUnconfirmed: Boolean = false,
 ): List<TripTiming.Estimate>? {
     val routes = state.routes
-        ?.filterNot { route -> route.rides.any { HiddenModes.isHidden(it.mode, hidden) } } ?: return null
+        ?.filterNot { route -> route.rides.any { HiddenModes.isHidden(it.mode, hidden) } }
+        ?.let(TripViewModel::bestOf) ?: return null
     val notRunning = TripTiming.notRunning(state.statuses.values)
     // A line with no status known (left out of TfL's answer, or a failed check) can't be vouched
     // for as running.
@@ -240,6 +241,15 @@ internal fun tripEstimates(
     // can't, and the best stands for the route.
     return TripTiming.rank(estimates).distinctBy { routeKey(it.route) }
 }
+
+/** The lines whose route data a trip loads: [settled] while a plan is still landing, else [timedLineIds]. */
+internal fun sequenceLineIds(state: TripViewModel.State, hidden: Set<String>, settled: List<String>): List<String> =
+    if (state.planning) settled else timedLineIds(state.routes.orEmpty(), hidden)
+
+/** The lines of the routes a trip times: not riding a [hidden] mode, and within the cap ([TripViewModel.bestOf]). */
+internal fun timedLineIds(routes: List<TripRoute>, hidden: Set<String>): List<String> =
+    TripViewModel.bestOf(routes.filterNot { route -> route.rides.any { HiddenModes.isHidden(it.mode, hidden) } })
+        .flatMap { route -> route.rides.map { it.lineId } }.distinct()
 
 /** A route's identity across refreshes and re-ranking: its lines and stops in order. */
 internal fun routeKey(route: TripRoute): String =
@@ -276,11 +286,12 @@ internal fun TripScreen(
     hiddenModes: Set<String> = emptySet(),
     onShowAllModes: () -> Unit = {},
 ) {
-    // Only the shown routes' lines: a hidden mode's routes load no route data.
-    val lineIds = remember(state.routes, hiddenModes) {
-        state.routes.orEmpty()
-            .filterNot { route -> route.rides.any { HiddenModes.isHidden(it.mode, hiddenModes) } }
-            .flatMap { route -> route.rides.map { it.lineId } }.distinct()
+    // Only the timed routes' lines: a hidden mode's routes, and those past the cap, load no route data.
+    // While a plan's answers are still landing, the last settled plan's lines stand, so a passing
+    // top six never starts loads a later answer would make pointless.
+    val settledLines = remember { arrayOf(emptyList<String>()) }
+    val lineIds = remember(state.routes, hiddenModes, state.planning) {
+        sequenceLineIds(state, hiddenModes, settledLines[0]).also { settledLines[0] = it }
     }
     val sequences = rememberLineSequences(lineIds, now)
     val originUnconfirmed = relocating || locationBanner != null
@@ -386,10 +397,19 @@ private fun TripPlaceholder(state: TripViewModel.State, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun PlanFailure(error: DeparturesUiState.Error.Kind, planning: Boolean, onRetry: () -> Unit) {
+private fun PlanFailure(error: DeparturesUiState.Error.Kind, planning: Boolean, onRetry: () -> Unit) =
+    PlanNotice(stringResource(R.string.trip_plan_failed, stringResource(errorMessage(error))), planning, onRetry)
+
+/** A plan that reached only some of a complex's stations: the routes shown may not be the best. */
+@Composable
+private fun PlanIncomplete(planning: Boolean, onRetry: () -> Unit) =
+    PlanNotice(stringResource(R.string.trip_plan_incomplete), planning, onRetry)
+
+@Composable
+private fun PlanNotice(text: String, planning: Boolean, onRetry: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(
-            stringResource(R.string.trip_plan_failed, stringResource(errorMessage(error))),
+            text,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier.weight(1f),
@@ -413,6 +433,7 @@ private fun RouteList(
         modifier = Modifier.fillMaxSize().testTag("tripRoutes"),
     ) {
         state.planError?.let { error -> item(key = "error") { PlanFailure(error, state.planning, onRetry) } }
+        if (state.planError == null && state.planIncomplete) item(key = "incomplete") { PlanIncomplete(state.planning, onRetry) }
         // A plan past its reuse is being planned again: its routes stay, stamped with their age.
         val plannedAt = state.plannedAt
         if (state.planning && plannedAt != null) {
@@ -613,6 +634,7 @@ private fun RouteLegs(
     ) {
         // A re-plan that failed says so over the open route too, with its Retry, as the list does.
         state.planError?.let { error -> item(key = "error") { PlanFailure(error, state.planning, onRetry) } }
+        if (state.planError == null && state.planIncomplete) item(key = "incomplete") { PlanIncomplete(state.planning, onRetry) }
         item(key = "summary") { RouteSummary(estimate, state.statuses, Modifier.padding(vertical = 8.dp)) }
         statusNote(state, estimate.unchecked)?.let { checking -> item(key = "status") { StatusUnknown(checking) } }
         val firstStop = estimate.route.legs.firstOrNull()?.fromName
@@ -636,10 +658,12 @@ private fun RouteLegs(
 
 /**
  * Whether a line shown without ⚠ may still be disrupted, and why: true while a check for [unchecked]
- * lines runs, false once the check failed or left them unchecked, null when every line was checked.
+ * lines runs or is about to (a plan still landing), false once the check failed or left them
+ * unchecked, null when every line was checked.
  */
 internal fun statusNote(state: TripViewModel.State, unchecked: Boolean): Boolean? = when {
-    state.refreshing -> if (unchecked) true else null
+    // A plan still landing checks its lines when it settles: checking, not failed.
+    state.refreshing || state.planning -> if (unchecked) true else null
     state.statusFailed || unchecked -> false
     else -> null
 }

@@ -924,11 +924,21 @@ Planner and arrivals requests go through the same rate limiter as every TfL requ
 **Walking** is capped at 15 minutes per walk (the Planner's `maxWalkingMinutes`), so it never offers
 a long walk beside the rides; configurable later.
 
-**One stop per end.** The Planner takes a single stop or station id for each end, not an
-interchange's or a folded search result's several stands, so each end is sent as one stop: the
-nearest stop to the rider (or the *From…* station's own stop), and the picked result's own stop.
-The Planner walks the last stretch itself where a neighboring stop serves the trip better, so a
-same-named stand the search folded into the result is reached on foot rather than lost.
+**One stop per end, every station of a complex.** The Planner takes a single stop or station id for
+each end, not an interchange's or a folded search result's several stands, and it leans toward the
+end's own mode: aimed at King's Cross St. Pancras's Underground station it offered a change onto the
+Metropolitan line where Thameslink runs direct to St Pancras. So the start is one stop (the nearest
+to the rider, or the *From…* station's own stop), and a picked **station complex** (an interchange,
+TfL's `HUB…`) is planned to **once per station code** — never merged, since neither names nor ids
+tell a station's platform variant from another station — **plus once to one of its bus stops** (the Planner walks between
+stands), the requests in parallel (maintainer, 2026-09-26: the best way there whatever the line or
+mode). The answers merge, and of the routes not riding a hidden mode, the six arriving soonest by
+the Planner's timetable are timed; routes show as each answer lands. If some stations can't be planned to, the others'
+routes stand and the trip says "Couldn't plan to every station", with a retry; only a whole plan is
+reused. Not the complex's centre point: that ended every trip at a street address with a walk and
+didn't lift the lean. An ordinary pick is planned to as picked, the Planner walking the last
+stretch itself where a neighboring stop serves the trip better, so a same-named stand the search
+folded into the result is reached on foot rather than lost.
 
 **What leaves the phone:** both ends of the trip go to TfL's Journey Planner as stop ids — the
 nearest stop's id stands in for the rider's position, never a coordinate. It is free and keyless
@@ -936,7 +946,8 @@ nearest stop's id stands in for the rider's position, never a coordinate. It is 
 minutes old (the plan is held in memory only, so a trip reopened after process death re-plans), again
 every 15 minutes while the screen stays visible, on a re-locate to a new nearest stop, and once
 per tap of Retry: about four calls an hour for a trip left open, plus one per re-locate or Retry the
-rider makes. Ranking needs every listed route's live trains, so each refresh fetches arrivals
+rider makes. To a station complex each of those is one call per station plus one for its bus stops
+(about six at King's Cross, two or three at a typical interchange): about 24 an hour at King's Cross. Ranking needs every listed route's live trains, so each refresh fetches arrivals
 at every stop where any listed route boards a ride (its first stop and each change), once per
 stop however many routes share it: the Planner offers a handful of routes, so a few requests,
 under ten in practice, plus one line-status call for all their lines. Closure checks at the stops
