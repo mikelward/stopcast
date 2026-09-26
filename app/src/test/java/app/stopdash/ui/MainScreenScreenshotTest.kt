@@ -1948,12 +1948,13 @@ class MainScreenScreenshotTest {
         composeRule.waitForIdle()
         assertEquals(4, calls.size)
 
-        // Another day, with TfL down: the card keeps the route it has rather than lose it.
+        // Another day, with TfL down: the card keeps the route it has rather than lose it. Both
+        // directions are asked at once, so both requests go out.
         fail = true
         clock = now.plus(Duration.ofHours(50))
         screenNow = clock
         composeRule.waitForIdle()
-        assertEquals(5, calls.size)
+        assertEquals(6, calls.size)
         composeRule.onAllNodesWithText("Couldn't load the route").assertCountEquals(0)
     }
 

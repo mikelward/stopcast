@@ -14,6 +14,8 @@ import app.stopdash.domain.StopArrivals
 import app.stopdash.domain.TflException
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * A searched station's page narrowed by "To…" (SPEC *Finding stops → From… To…*): the [state] to
@@ -104,17 +106,23 @@ internal fun rememberLineSequences(lineIds: List<String>, now: Instant): Map<Str
     val recheck = now.epochSecond / 3600
     LaunchedEffect(repository, lineIds, recheck) {
         val routes = repository ?: return@LaunchedEffect
-        for (lineId in lineIds) {
-            val held = loaded[lineId]
-            if (held != null && routes.cached(lineId, "") != null) continue
-            loaded[lineId] = routes.cached(lineId, "") ?: try {
-                routes.load(lineId, "")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: TflException) {
-                // Logged (sanitized) by the repository. A day-old copy beats none; with none, null
-                // marks the failure so the page says some routes couldn't be checked.
-                held
+        // Every line at once: one slow line (a National Rail route can take TfL several seconds)
+        // no longer holds up the rest, and each is checked as soon as its own route arrives.
+        coroutineScope {
+            for (lineId in lineIds) {
+                val held = loaded[lineId]
+                if (held != null && routes.cached(lineId, "") != null) continue
+                launch {
+                    loaded[lineId] = routes.cached(lineId, "") ?: try {
+                        routes.load(lineId, "")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: TflException) {
+                        // Logged (sanitized) by the repository. A day-old copy beats none; with none,
+                        // null marks the failure so the page says some routes couldn't be checked.
+                        held
+                    }
+                }
             }
         }
     }

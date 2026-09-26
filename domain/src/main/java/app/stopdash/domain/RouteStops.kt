@@ -6,8 +6,13 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /**
@@ -298,6 +303,9 @@ class RouteStopsRepository(
     @Volatile private var stationsByHub: Map<String, List<IndexedStation>>? = if (stations == null) emptyMap() else null
     private val areaCache = ConcurrentHashMap<String, RouteStopsStore.Timed<List<StopLocation>>>()
     private val storeLock = Mutex()
+    // Route sequences share TfL's in-flight request pool with the live refresh, and a National Rail
+    // one can take seconds: at most this many at once, so live times always find a free slot.
+    private val fetchSlots = Semaphore(MAX_CONCURRENT_FETCHES)
     // Nothing to read from a store that keeps nothing, so no IO hop (a test's store is NONE).
     @Volatile private var storeRead = store === RouteStopsStore.NONE
 
@@ -407,27 +415,42 @@ class RouteStopsRepository(
      */
     suspend fun load(lineId: String, direction: String): LineSequence {
         warm()
-        var fetched = false
-        val sequence = RouteStops.directionsFor(direction).map { dir ->
-            cache.freshValue("$lineId/$dir") ?: try {
-                source.routeSequence(lineId, dir).also {
-                    cache["$lineId/$dir"] = RouteStopsStore.Timed(clock(), it)
-                    fetched = true
+        // Both directions at once: a National Rail line's sequence can take TfL several seconds to
+        // start answering, so fetching them in turn doubled the wait.
+        val parts = coroutineScope {
+            RouteStops.directionsFor(direction).map { dir ->
+                async {
+                    cache.freshValue("$lineId/$dir")?.let { return@async Result.success(it to false) }
+                    val started = clock()
+                    try {
+                        val fetched = fetchSlots.withPermit { source.routeSequence(lineId, dir) }
+                        cache["$lineId/$dir"] = RouteStopsStore.Timed(clock(), fetched)
+                        // Line, direction and time only: why a trip or card waited on its route.
+                        warn("route sequence fetched for line $lineId $dir in ${Duration.between(started, clock()).toMillis()} ms")
+                        Result.success(fetched to true)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: TflException) {
+                        warn("route sequence fetch failed for line $lineId $dir after ${Duration.between(started, clock()).toMillis()} ms: ${e::class.simpleName}")
+                        Result.failure(e)
+                    }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: TflException) {
-                warn("route sequence fetch failed for line $lineId: ${e::class.simpleName}")
-                // A direction fetched before the other failed is still kept.
-                if (fetched) save()
-                throw e
-            }
-        }.reduce(LineSequence::plus)
-        if (fetched) save()
+            }.awaitAll()
+        }
+        // A direction fetched while the other failed is still kept.
+        if (parts.any { it.getOrNull()?.second == true }) save()
+        parts.firstNotNullOfOrNull { it.exceptionOrNull() }?.let { throw it }
+        val sequence = parts.map { it.getOrThrow().first }.reduce(LineSequence::plus)
         return sequence.withStations(stationsByHub.orEmpty())
     }
 
     companion object {
+        /**
+         * Route sequences fetched at once, below the app's in-flight request pool (10), so the live
+         * refresh it shares that pool with is never queued behind slow route fetches.
+         */
+        const val MAX_CONCURRENT_FETCHES = 4
+
         /** How long a fetched route or stop area's poles is reused (maintainer, 2026-09-24). */
         val MAX_AGE: Duration = Duration.ofHours(24)
     }
