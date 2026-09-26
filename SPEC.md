@@ -819,12 +819,132 @@ changing mostly lands the rider on that same train at the fork. It names only wh
 the connecting train's time, which isn't known. Rail only: a bus's path is often the route's end,
 too loose to send a rider to change on. The widget keeps showing direct trains only.
 
-**Direct only, for now.** A journey that needs a change of line is routing — the eventual goal is starring
-home and work, which needs it, and it stays a non-goal until then. The tap-a-stop entry point has no
+**Direct only, for now.** A starred journey is one line between two stops; a starred trip with a change
+(the eventual goal behind starring home and work) builds on *Trips with a change* below. The tap-a-stop entry point has no
 cue of its own, so a starrable stop list opens with a one-line tip ("Tap a stop to star the journey
 there") until the user dismisses it (maintainer, 2026-09-24); the dismissal is kept with the app's
 settings. Starred journeys are
 kept on the device with the rest of the user's config and never logged (*Privacy*).
+
+### Trips with a change
+
+*Planned* (maintainer, 2026-09-26; mocked the same day). *To…* plans a trip to a **stop** — a station
+or bus stop picked from the station search, never an address or a map point — from the rider's
+nearest stop of any mode (the Planner walks on to a better one itself), or from the *From…* station when one is set. The search page keeps its look (each
+result's name over its modes); it gains only a "From" chip naming the start ("Here", or the *From…*
+station). The trip opens on a **list of routes, best first**: ordered first by how far StopDash
+stands behind each route (tiers, below — usable before not, fully live before "est."), and within a
+tier by the earliest end-to-end arrival, worked out leg by leg from live trains (below). The first
+route is therefore the fastest one StopDash can vouch for, not an earlier estimate. **Every route looks alike** — no
+route is expanded — as a card whose top row is its lines' pills in order (no station names, no
+arrows), a ⚠ where a leg is disrupted, and **duration · arrival** ("22 min · 08:24") at the end,
+where a number of changes might otherwise go; the duration is from now to that arrival, so it
+takes in the same walks, waits and legs. The pills wrap onto a second line when a route has
+many legs, and the time drops below them when it doesn't fit beside them. Under the top row is the
+first leg's live row, the train the rider would catch now. A route that is all walking (two stops close
+together) shows "Walk" where the pills go and its minutes, with no live row and no arrivals request.
+
+Tapping a route opens it, drawn with the list's own parts, **every leg a card**: the leg's platform header ("Highbury
+& Islington – Platform 2") over a route card of that line's live departures toward the change, then
+"6 stops to Whitechapel", then the next leg's header and card at the change station, down to "2 stops
+to Canary Wharf". Line status and stop closures for every leg show exactly as on the list:
+the ⚠ on a disrupted row, the status chip on a line with no trains, the closure card at a closed
+stop. **Every stop the rider gets off at** is checked too — each leg's alighting stop, including
+both ends of a walk between stations, and the destination — as a starred journey's far end is
+(*Alerts for the journey shown*): a closure or move shows where the rider gets off, from the same
+few-minute cache, and a failed check keeps the last known notice and claims nothing new. Routes sort
+in tiers: a route with a suspended or closed leg, or a closed stop it gets off at, sorts below every
+usable one, whether live or
+estimated (below), so a route that can't be ridden is never listed first while one that can exists.
+A route whose line status or closure check failed with nothing known yet sits between the two: below
+every route checked and open, above those known not to run, and says it couldn't check for
+disruptions, until a check succeeds.
+
+**TfL's Journey Planner chooses the lines and changes; StopDash's live arrivals give the times**
+(principle 1). The first leg counts down like any row. From "Here", the rider still has to reach the
+first stop. The list's distance is a straight line, not a walkable path, so the walk is
+estimated **conservatively** on the phone: that distance stretched for detours, at an unhurried pace,
+shown as the route's first dotted link ("~7 min walk") so the rider sees the assumption. First-leg
+trains that leave before the rider can get there are grayed; the estimate errs toward graying a
+train that could be caught rather than offering one that can't (from a *From…* station the rider is
+taken to be there already). A later leg shows the change station's live
+trains, with those the rider can't reach in time grayed. The **arrival is worked out leg by leg**:
+the first first-leg train the rider can reach plus its run time gives the time at the change, plus
+the change or walk time; the first live train there that the rider can reach starts the next leg,
+and so on to the end. A train only counts for a leg if its route **calls at that leg's alighting
+stop**, as a direct trip's trains must reach the destination (*Journeys*): on a branching line, a
+train for the other branch is shown but never used for the arrival. A train the list wouldn't count down — canceled, or with no time TfL
+stands behind (*Disruptions*) — is never a reachable train: it is skipped for the arrival and the
+ordering, and shown as the list shows it.
+Run and change times are the Planner's, so the arrival reads "about". The same end-to-end arrival
+orders the routes within a tier, so "fastest" never assumes a connection the rider can't make. A leg with no live
+train in reach yet (none predicted that far ahead, its arrivals failed, or they have gone stale under
+D4) falls back to the
+Planner's own time for it, as long as the rider can reach the Planner's departure for that leg
+(the legs before it, or the walk from "Here", get the rider there in time). If they can't, the
+Planner's train is missed and nothing says when the next one leaves, so StopDash **withholds that
+route's arrival** rather than guess a wait: the route shows "arrival unknown" in place of duration · arrival, and
+sorts after every route in its tier that has an arrival, until a refresh brings live trains for the
+leg. Otherwise its arrival reads **"est."** instead of "about", and within
+its tier it sorts **after every route whose legs are all live**, so an estimate is never listed first
+while a live-confirmed route exists. Walks
+between stations show as a dotted link with the Planner's minutes. **Every walk the Planner includes counts** toward which
+trains are reachable and toward the arrival: one before the first ride (from the stop sent to a
+better one), between stations, and after the last ride to the picked stop.
+
+**Lifecycle.** The trip screen appears at once, titled with both ends, with a "Planning…"
+placeholder; the Planner call runs off the render path. A plan is kept in memory for the trip and
+reused if the same trip is reopened within 15 minutes. From "Here", a re-locate (the crosshairs, or
+a fresh fix) that resolves to a different nearest stop discards the plan and re-plans at once,
+showing "Planning…" rather than the old station's routes. Any new fix, even one that resolves to
+the same stop, keeps the plan but recomputes the walk to the first stop and re-ranks the
+routes, so the reachable first-leg trains follow the rider. While a re-locate is in flight, or after
+one that fails (which keeps the old stop, as on the list, and shows the list's location banner over
+the trip), the origin is unconfirmed: until a fix is confirmed again, the walk is
+from the last confirmed position and every route's arrival reads "est." at best, never live-confirmed. A plan older than that is re-planned, on open
+or when it expires while the screen is visible, showing the older plan stamped with its age meanwhile,
+so a route that has since become viable can appear. An opened route is matched across a re-plan by its lines and
+stops in order, never by its place in the list; if the new plan no longer has it, the trip goes back
+to the refreshed list rather than keep showing a route the Planner no longer offers. The live times refresh with the list's refresh cycle
+while the screen is visible, and follow the list's staleness rule (D4): a stale leg withholds its
+countdowns rather than show them as live, and stops feeding the route's arrival and ordering: it falls
+back as above ("est.", or "arrival unknown" when the Planner's departure is no longer reachable). If planning fails, the screen says why with a **Retry**
+("Couldn't plan the trip: you're offline", as the list words its errors), over the last plan for the
+trip if one is held, never a blank. Retry is disabled while its call is in flight. A change station whose arrivals fail withholds that leg's times
+and falls back the same way; it is retried on the next refresh. Nothing retries in a loop:
+Planner and arrivals requests go through the same rate limiter as every TfL request.
+
+**One stop per end.** The Planner takes a single stop or station id for each end, not an
+interchange's or a folded search result's several stands, so each end is sent as one stop: the
+nearest stop to the rider (or the *From…* station's own stop), and the picked result's own stop.
+The Planner walks the last stretch itself where a neighboring stop serves the trip better, so a
+same-named stand the search folded into the result is reached on foot rather than lost.
+
+**What leaves the phone:** both ends of the trip go to TfL's Journey Planner as stop ids — the
+nearest stop's id stands in for the rider's position, never a coordinate. It is free and keyless
+(within TfL's anonymous budget). The Planner is called when a trip opens without a plan under 15
+minutes old (the plan is held in memory only, so a trip reopened after process death re-plans), again
+every 15 minutes while the screen stays visible, on a re-locate to a new nearest stop, and once
+per tap of Retry: about four calls an hour for a trip left open, plus one per re-locate or Retry the
+rider makes. Ranking needs every listed route's live trains, so each refresh fetches arrivals
+at every stop where any listed route boards a ride (its first stop and each change), once per
+stop however many routes share it: the Planner offers a handful of routes, so a few requests,
+under ten in practice, plus one line-status call for all their lines. Closure checks at the stops
+the routes get off at share the list's few-minute cache (bus poles batched), so each such stop costs
+a request at most once every few minutes, however many refreshes and routes include it. **Battery:** all of it runs only while the trip screen is visible, on the list's
+existing foreground refresh tick (the 15-minute re-plan is checked on that tick, not a timer of its
+own); a trip adds no background wakeup, alarm or worker, and nothing refreshes once the screen is
+left. The battery change is a few extra requests per visible refresh, on a screen that is already on. `docs/PRIVACY.md` describes this before it ships, naming
+the Journey Planner as a recipient of a trip's two ends together. **Play Data Safety: no new data
+type.** A pair of stop ids places the rider no more finely than the nearby-stops lookup's
+coordinates already do, so the **Location** type StopDash declares for that lookup (*Privacy*)
+covers it, for the same purpose (app functionality) and with the same handling (sent to TfL to
+answer the request, not collected or kept by StopDash); the form is re-checked before the release
+that ships it.
+
+**Later:** mode toggles at the top of a trip, remembered across trips (the Planner takes a mode
+list), and avoiding a line, done on the phone: the Planner has no way to exclude a line, so the trip
+asks it for alternative routes and drops those using the avoided line.
 
 ### Disruptions
 
@@ -1450,8 +1570,8 @@ Mirrors the sibling fleet:
 
 ## Non-goals
 
-- **Journey planning / routing** (the TfL Journey API). StopDash answers "what's next
-  from here", not "how do I get there".
+- **Door-to-door routing.** Trips go stop to stop (*Trips with a change*): no addresses, map
+  points, or walking directions to a door. StopDash still leads with "what's next from here".
 - **Non-TfL operators** outside the Unified API (coach, etc.), National Rail aside: its
   times come from National Rail's own feed once the user adds a key (*Data source*). Without
   one, TfL gives no times for them, so a National Rail line TfL reports disrupted at a station
