@@ -264,6 +264,26 @@ class TripScreenScreenshotTest {
     }
 
     @Test
+    fun an_open_route_starts_on_the_way() {
+        var started: TripRoute? = null
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                TripScreen(
+                    title = "To Canary Wharf", state = planned, now = now, access = Duration.ofMinutes(2),
+                    routeStops = RouteStopsRepository(source), onBack = {}, onRetry = {},
+                    onStart = { started = it },
+                )
+            }
+        }
+        // The list itself offers no Start: only an open route does.
+        composeRule.onNodeWithText("Start").assertDoesNotExist()
+        composeRule.onNodeWithText("27 min · ~08:29").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Start").performClick()
+        composeRule.runOnIdle { assertEquals(viaCanadaWater, started) }
+    }
+
+    @Test
     fun trip_leg_opens_its_line() {
         show(planned)
         composeRule.onNodeWithText("27 min · ~08:29").performClick()

@@ -1,5 +1,7 @@
 package app.stopdash.ui
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
 import app.stopdash.domain.DismissedAlert
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarHost
@@ -508,12 +510,15 @@ internal fun TripScreen(
     onDismissAlert: ((DepartureRow) -> Unit)? = null,
     dismissWriteFailed: Boolean = false,
     onDismissWriteFailureShown: () -> Unit = {},
+    // Start an open route on the way (SPEC *On the way*); null offers no Start.
+    onStart: ((TripRoute) -> Unit)? = null,
 ) {
     CompositionLocalProvider(LocalRouteStops provides routeStops) {
         TripContent(
             title, state, now, access, onBack, onRetry, locationBanner, relocating, onRelocate,
             hiddenModes, onShowAllModes, menu, openRoute,
             TripAlerts(dismissed, onDismissAlert, dismissWriteFailed, onDismissWriteFailureShown),
+            onStart,
         )
     }
 }
@@ -546,6 +551,7 @@ private fun TripContent(
     menu: AppMenuActions? = null,
     openRoute: MutableState<String?>? = null,
     alerts: TripAlerts = TripAlerts(emptySet(), null, false) {},
+    onStart: ((TripRoute) -> Unit)? = null,
 ) {
     // Only the timed routes' lines: a hidden mode's routes, and those past the cap, load no route data.
     // While a plan's answers are still landing, the last settled plan's lines stand, so a passing
@@ -654,6 +660,17 @@ private fun TripContent(
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        // An open route starts on the way from here: followed by its train to the destination.
+        bottomBar = {
+            if (open != null && onStart != null) {
+                Button(
+                    onClick = { onStart(open.route) },
+                    modifier = Modifier.fillMaxWidth().padding(16.dp).height(56.dp),
+                ) {
+                    Text(stringResource(R.string.on_the_way_start))
+                }
+            }
+        },
         topBar = {
             TopAppBar(
                 navigationIcon = {

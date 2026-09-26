@@ -25,6 +25,12 @@ import app.stopdash.widget.logWidgetSnapshotWarning
 import app.stopdash.domain.YourStops
 import app.stopdash.domain.StarredRowSet
 import app.stopdash.data.FileRecentStationsStore
+import app.stopdash.ui.OnTheWayScreen
+import app.stopdash.ui.OnTheWayActions
+import app.stopdash.ui.LocalOnTheWay
+import app.stopdash.ui.FollowActiveTrip
+import app.stopdash.ui.ActiveTripTracker
+import app.stopdash.data.FileActiveTripStore
 import app.stopdash.data.DataStoreSnapshotStore
 import app.stopdash.data.FileRouteStopsStore
 import android.content.Context
@@ -495,6 +501,12 @@ class MainActivity : ComponentActivity() {
                 // switch and composes the foreground-return observer in its aboveOverlay slot — above
                 // the switch — so a return that lands while an overlay is open is still seen (#136).
                 // The app's overflow actions, for a screen several layers down (a trip) to offer too.
+                // The trip on the way (SPEC *On the way*): followed here, above every screen, while the
+                // app is in the foreground; its screen is an overlay like Licenses, opened on Start.
+                var onTheWayOpen by rememberSaveable { mutableStateOf(false) }
+                val tracker = remember { activeTrip(applicationContext) }
+                val onTheWayScope = rememberCoroutineScope()
+                FollowActiveTrip(tracker)
                 CompositionLocalProvider(
                     LocalAppMenu provides AppMenuActions(
                         updateAvailable = updateAvailable.value,
@@ -502,9 +514,16 @@ class MainActivity : ComponentActivity() {
                         onSendBugReport = requestBugReport,
                         onOpenLicenses = openLicenses,
                     ),
+                    LocalOnTheWay provides OnTheWayActions { route, destinationName, readyAt ->
+                        onTheWayScope.launch {
+                            tracker.start(route, destinationName, readyAt)
+                            tracker.refresh()
+                        }
+                        onTheWayOpen = true
+                    },
                 ) {
                     NearbyArea(
-                        overlayOpen = licensesOpen || settingsOpen || stationSearchOpen || openStationId != null,
+                        overlayOpen = onTheWayOpen || licensesOpen || settingsOpen || stationSearchOpen || openStationId != null,
                         aboveOverlay = {
                             ForegroundReturnLatcher(
                                 isReady = { nearbyViewModel.state.value is NearbyStopsViewModel.State.Ready },
@@ -513,8 +532,26 @@ class MainActivity : ComponentActivity() {
                             )
                         },
                         overlayContent = {
-                            // Licenses wins if both are somehow set; each closes via its own Back.
-                            if (licensesOpen) {
+                            // The trip on the way first: it's what the rider opened last. Licenses wins
+                            // over the rest; each closes via its own Back.
+                            if (onTheWayOpen) {
+                                val onTheWay by tracker.trip.collectAsStateWithLifecycle()
+                                val progress by tracker.progress.collectAsStateWithLifecycle()
+                                val failed by tracker.failed.collectAsStateWithLifecycle()
+                                val end = {
+                                    onTheWayScope.launch { tracker.end() }
+                                    onTheWayOpen = false
+                                }
+                                OnTheWayScreen(
+                                    trip = onTheWay,
+                                    progress = progress,
+                                    failed = failed,
+                                    now = tickingNow(),
+                                    onEnd = end,
+                                    // Back leaves a trip on the way running; once it has arrived, it clears it.
+                                    onBack = { if (onTheWay == null) end() else onTheWayOpen = false },
+                                )
+                            } else if (licensesOpen) {
                                 LicensesScreen(onBack = { licensesOpen = false })
                             } else if (!settingsOpen) {
                                 StationSearchArea(
@@ -1899,6 +1936,8 @@ class MainActivity : ComponentActivity() {
             onDismissAlert = trip::dismissAlert,
             dismissWriteFailed = trip.dismissWriteFailed.collectAsStateWithLifecycle().value,
             onDismissWriteFailureShown = trip::dismissWriteFailureShown,
+            // Start: followed from here to [toName], the rider at the first stop once they've walked there.
+            onStart = LocalOnTheWay.current?.let { onTheWay -> { route -> onTheWay.start(route, toName, Instant.now().plus(access)) } },
         )
     }
 
@@ -2165,6 +2204,26 @@ class MainActivity : ComponentActivity() {
                 requestPool = SharedTflRequestPool.pool,
                 warn = ::logDepartureWarning,
             )
+        }
+
+        // The trip on the way (SPEC *On the way*): process-wide, so its screen and the main view share
+        // it, kept in a file in the app's no-backup directory (never backed up or sent) so a trip
+        // outlives the app being closed. Its train lookups go through the shared TfL budget.
+        private val activeTripLock = Any()
+        private var activeTripInstance: ActiveTripTracker? = null
+
+        private fun activeTrip(context: Context): ActiveTripTracker = synchronized(activeTripLock) {
+            activeTripInstance ?: run {
+                val store = FileActiveTripStore(File(context.applicationContext.noBackupFilesDir, "active-trip.json"), ::logDepartureWarning)
+                val client = departuresClient(context)
+                ActiveTripTracker(
+                    load = store::load,
+                    save = store::save,
+                    arrivals = client::arrivals,
+                    vehicles = journeyPlanner,
+                    warn = ::logDepartureWarning,
+                )
+            }.also { activeTripInstance = it }
         }
 
         // The Planner takes stop and station ids but not an interchange's.

@@ -857,8 +857,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
             route follows the rider there.
         - [x] Which train makes each departure, and one train's calls ahead (`VehicleSource`).
         - [x] Following a started trip from its train's calls (`OnTheWay`, `:domain`).
-        - [ ] Start, the trip's on-the-way screen, End trip, and picking another train; the trip
-              kept on the device.
+        - [x] Start, the trip's on-the-way screen and End trip; the trip kept on the device and
+              followed while the app is in the foreground.
+        - [ ] Picking another train by hand ("I'm on this one"), until location can see it.
         - [ ] The main view's pinned card.
         - [ ] "Get off soon" on its own channel (sound, vibration), the permission asked on Start.
         - [ ] **Not to merge until the maintainer's Play declarations:** the ongoing notification
