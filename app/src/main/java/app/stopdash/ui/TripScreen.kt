@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -466,11 +468,17 @@ internal fun TripScreen(
     onRelocate: () -> Unit = {},
     hiddenModes: Set<String> = emptySet(),
     onShowAllModes: () -> Unit = {},
+    // The app's own overflow: the update dot, the bug report and About, as on the list. Null (a
+    // test) shows no overflow.
+    menu: AppMenuActions? = null,
+    // The route open on screen, held by the trip ([TripViewModel.openRoute]) so it survives the
+    // screen leaving composition; null holds it in the screen.
+    openRoute: MutableState<String?>? = null,
 ) {
     CompositionLocalProvider(LocalRouteStops provides routeStops) {
         TripContent(
             title, state, now, access, onBack, onRetry, locationBanner, relocating, onRelocate,
-            hiddenModes, onShowAllModes,
+            hiddenModes, onShowAllModes, menu, openRoute,
         )
     }
 }
@@ -492,6 +500,8 @@ private fun TripContent(
     // Modes the rider hid: routes riding them are left out, with the list's "Show all".
     hiddenModes: Set<String> = emptySet(),
     onShowAllModes: () -> Unit = {},
+    menu: AppMenuActions? = null,
+    openRoute: MutableState<String?>? = null,
 ) {
     // Only the timed routes' lines: a hidden mode's routes, and those past the cap, load no route data.
     // While a plan's answers are still landing, the last settled plan's lines stand, so a passing
@@ -505,24 +515,65 @@ private fun TripContent(
     // other side of the road); everything below reads the trip this way.
     val state = remember(planned, sequences) { onPoles(planned, sequences) }
     val originUnconfirmed = relocating || locationBanner != null
+    var showAbout by rememberSaveable { mutableStateOf(false) }
+    if (showAbout && menu != null) {
+        AboutDialog(
+            onOpenLicenses = {
+                showAbout = false
+                menu.onOpenLicenses()
+            },
+            onDismiss = { showAbout = false },
+        )
+    }
     val estimates = remember(state, now, access, sequences, hiddenModes, originUnconfirmed) {
         tripEstimates(state, now, access, sequences, hiddenModes, originUnconfirmed)
     }
     // The list's cards; an open route is looked up among every way timed, so it stays open whichever
     // way its card shows.
     val cards = remember(estimates) { estimates?.let(::tripCards) }
-    var openKey by rememberSaveable { mutableStateOf<String?>(null) }
+    // The open route, kept twice: by the trip when it's given one ([openRoute]), which outlasts the
+    // screen leaving composition (an overlay) and, saved by the trip, the process too; and saved with
+    // the screen, for a trip that holds none. Read from the trip first; set in both.
+    val savedOpenKey = rememberSaveable { mutableStateOf<String?>(null) }
+    val heldOpenKey = remember(openRoute) {
+        openRoute?.also { if (it.value == null) it.value = savedOpenKey.value } ?: savedOpenKey
+    }
+    val openKey = heldOpenKey.value
+    fun setOpenKey(key: String?) {
+        heldOpenKey.value = key
+        savedOpenKey.value = key
+    }
     val open = estimates?.firstOrNull { routeKey(it.route) == openKey }
-    BackHandler { if (open != null) openKey = null else onBack() }
+    BackHandler { if (open != null) setOpenKey(null) else onBack() }
     Scaffold(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = { if (open != null) openKey = null else onBack() }) {
+                    IconButton(onClick = { if (open != null) setOpenKey(null) else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                actions = {
+                    if (menu != null) {
+                        AppOverflowMenu(menu.updateAvailable, menu.onOpenAppListing) { close ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.menu_send_bug_report)) },
+                                onClick = {
+                                    close()
+                                    menu.onSendBugReport()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.menu_about)) },
+                                onClick = {
+                                    close()
+                                    showAbout = true
+                                },
+                            )
+                        }
+                    }
+                },
             )
         },
     ) { padding ->
@@ -535,7 +586,7 @@ private fun TripContent(
                 when {
                     cards == null -> TripPlaceholder(state, onRetry)
                     open != null -> RouteLegs(open, state, now, access, sequences, onRetry)
-                    else -> RouteList(cards, state, now, sequences, onRetry, onOpen = { openKey = routeKey(it.route) })
+                    else -> RouteList(cards, state, now, sequences, onRetry, onOpen = { setOpenKey(routeKey(it.route)) })
                 }
             }
         }

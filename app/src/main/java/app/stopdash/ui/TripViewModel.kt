@@ -1,5 +1,8 @@
 package app.stopdash.ui
 
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.stopdash.domain.ArrivalsCache
@@ -63,6 +66,9 @@ class TripViewModel(
     // every pole of its pair, since the one the Planner names can be the side the bus doesn't use.
     // None by default (a test); the app looks them up once a day.
     private val poles: suspend (String) -> List<String> = { emptyList() },
+    // Keeps the open route ([openRoute]) across process death, from the activity's saved state: the
+    // screen's own saved state is gone while something else (the licenses) covers it. On the device.
+    private val savedState: SavedStateHandle = SavedStateHandle(),
 ) : ViewModel() {
     /** One boarding stop's last arrivals and when they were fetched; [failed] when the last fetch failed. */
     data class StopLive(val departures: List<Departure>, val fetchedAt: Instant, val failed: Boolean = false)
@@ -98,6 +104,29 @@ class TripViewModel(
 
     /** Modes the rider hid: routes riding them are neither shown nor fetched for. Set by the screen. */
     var hiddenModes: Set<String> = emptySet()
+
+    /**
+     * The route open on screen ([routeKey]), held here rather than by the screen, so it stays open
+     * across anything that takes the screen out of composition while the trip is kept: the licenses
+     * About opens, say, even if the process is recreated meanwhile.
+     */
+    val openRoute: MutableState<String?> = object : MutableState<String?> {
+        private val held = mutableStateOf(savedState.get<String>(KEY_OPEN_ROUTE))
+        override var value: String?
+            get() = held.value
+            set(key) {
+                held.value = key
+                savedState[KEY_OPEN_ROUTE] = key
+            }
+        override fun component1() = value
+        override fun component2(): (String?) -> Unit = { value = it }
+    }
+
+    // The saved handle can outlive this trip (it's the activity's, by the model's key): a trip
+    // planned afresh must not open this one's route.
+    override fun onCleared() {
+        savedState.remove<String>(KEY_OPEN_ROUTE)
+    }
 
     // A refresh asked for while one runs: run once more when it ends, so a re-pick (a new fix, a
     // mode shown again) is never dropped until the next tick.
@@ -366,6 +395,8 @@ class TripViewModel(
         }
 
     companion object {
+        private const val KEY_OPEN_ROUTE = "openRoute"
+
         private fun boardingStops(routes: List<TripRoute>): List<String> =
             routes.flatMap { route -> route.rides.map { it.fromId } }.filter { it.isNotBlank() }.distinct()
 
