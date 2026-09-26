@@ -295,4 +295,23 @@ class PendingPlacesTest {
         assertTrue(tracker.update(emptyList()).isEmpty())
         assertTrue(tracker.opened.isEmpty())
     }
+
+    @Test
+    fun `only a card with departures drawn below it would push them`() {
+        // A loading card, a place's departures, then another loading card and a farther card.
+        val keys = listOf("pending|pending:A", "header|B", "card|B", "pending|pending:C", "farther|D")
+        assertEquals(setOf("pending|pending:A", "header|B"), aboveLoadedRows(keys))
+        // Nothing loaded drawn below: every card opens where it is.
+        assertTrue(aboveLoadedRows(listOf("pending|pending:A", "farther|D")).isEmpty())
+        // A journey's trains count as loaded times too.
+        assertEquals(setOf("pending|pending:A"), aboveLoadedRows(listOf("pending|pending:A", "journey-card|J|G")))
+        assertEquals(setOf("pending|pending:A"), aboveLoadedRows(listOf("pending|pending:A", "journey-change-card|J|S|G")))
+        // A journey's settled "no trains" counts too.
+        assertEquals(setOf("pending|pending:A"), aboveLoadedRows(listOf("pending|pending:A", "journey-none|J")))
+        // A watched-list card is held wherever it's drawn, loaded rows below it or not.
+        assertEquals(
+            setOf("pending|pending:A"),
+            aboveLoadedRows(listOf("card|B", "pending|pending:A"), alwaysHold = setOf("pending|pending:A", "pending|pending:Z")),
+        )
+    }
 }

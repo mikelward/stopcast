@@ -1101,9 +1101,14 @@ about when data has gone stale.
   its name, distance and lines, with "Loading" where the times go — in the place it will land:
   by distance on a near-me or station list (below any starred ones), at the foot of the watched
   list, whose soonest-first order can't be known until it's in. The list never jumps under the
-  rider's eyes: a card on screen when its stop lands stays a card, now reading "Tap to see" (a
-  dash if nothing's running), and a tap opens it where it is, even after a rotation, until the
-  next refresh re-sorts the list; one that
+  rider's eyes: a card on screen when its stop lands, **with a place's loaded rows below it** (times,
+  or a status such as a suspended line — anything the rider may be reading), stays a
+  card, now reading "Tap to see" (a dash if nothing's running), and a tap opens it where it is,
+  even after a rotation, until the next refresh re-sorts the list. One with only cards (or nothing)
+  below it opens in full, since it pushes nothing loaded the rider is reading — so the nearest tube,
+  landing after the buses above it, isn't left behind a tap (maintainer, 2026-09-26). On the watched
+  list a card on screen always stays a card: it waits at the foot only because its soonest-first
+  place isn't known, and that place could be above what's on screen. One that
   lands off screen opens in full, and rows landing above the screen don't move what's on it. When
   every stop is back with nothing running anywhere, the screen says so ("No upcoming
   departures") rather than keep a list of dashes. Line status is checked once

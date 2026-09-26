@@ -1748,10 +1748,16 @@ private fun DepartureList(
     // so a plain field rather than state.
     // Nothing counts as on screen once the list isn't (a full-screen page over it, another view):
     // a stop landing meanwhile lands out of sight.
+    // A card with no distance (the watched list) is parked at the foot until its stop lands, so it's
+    // held whenever it's drawn: where the stop goes soonest-first isn't known until then.
+    val undistancedKeys = remember(trackedPlaces) {
+        trackedPlaces.filterNot { it.distanced }.mapTo(HashSet<Any>()) { pendingItemKey(it) }
+    }
+    val currentUndistanced by rememberUpdatedState(undistancedKeys)
     LaunchedEffect(listState, pendingTracker) {
         try {
-            snapshotFlow { listState.layoutInfo.visibleItemsInfo.mapTo(HashSet()) { it.key } }
-                .collect { pendingTracker.onScreen = it }
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.key } }
+                .collect { pendingTracker.onScreen = aboveLoadedRows(it, currentUndistanced) }
         } finally {
             pendingTracker.onScreen = emptySet()
         }
@@ -2136,7 +2142,10 @@ internal fun pendingItemKey(place: PendingPlace): String = "pending|${place.plac
  * "Loading" to "Tap to see" never moves among its neighbors.
  */
 class PendingTracker {
-    /** The item keys the list drew last frame. */
+    /**
+     * The item keys the list drew last frame with loaded times drawn below them ([aboveLoadedRows]):
+     * the cards whose opening would push what the rider may be reading.
+     */
     internal var onScreen: Set<Any> = emptySet()
 
     /** The held cards the rider has tapped open, by place. State, so a tap redraws the list. */
@@ -2312,6 +2321,24 @@ internal class PendingTrackerHolder(
 internal fun remeasured(place: PendingPlace, stopDistanceMeters: Map<String, Double>): PendingPlace {
     val meters = place.stopIds.mapNotNull { stopDistanceMeters[it] }.minOrNull() ?: return place
     return place.copy(place = place.place.copy(meters = meters), distanced = true)
+}
+
+// The item-key prefixes that aren't loaded rows: the loading and farther cards, headings (each sits
+// just above its own rows), and the faraway-journeys label and button. Every other item — a place's
+// group card, a journey's trains or its settled "none"/note — is something the rider may be reading.
+private val NOT_LOADED_KEYS = listOf("pending|", "farther|", "header|", "journey-header|", "far-journeys-")
+
+/**
+ * Of the list's drawn item [keys], top to bottom, the ones a landing card is held at: those with a
+ * loaded row drawn below them, since opening in full would push it down, while one with only cards
+ * (or nothing) below it opens where it is. A group showing only a status (a suspended line) or
+ * withheld countdowns still counts. Also any drawn key in [alwaysHold]: a watched-list card, parked
+ * at the foot only until its stop's soonest-first place is known, which could be anywhere above.
+ */
+internal fun aboveLoadedRows(keys: List<Any>, alwaysHold: Set<Any> = emptySet()): Set<Any> {
+    val lastLoaded = keys.indexOfLast { key -> key !is String || NOT_LOADED_KEYS.none { key.startsWith(it) } }
+    val above = if (lastLoaded <= 0) emptySet() else keys.subList(0, lastLoaded).toSet()
+    return if (alwaysHold.isEmpty()) above else above + keys.filter { it in alwaysHold }
 }
 
 /** [place] without a hidden mode's lines, or null when it served only hidden modes. */
