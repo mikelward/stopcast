@@ -574,6 +574,12 @@ that clipped both halves mid-glyph and a no-ellipsis preference alongside it (ma
 `…` carries no surrounding spaces. A fuller rider-readable branch form under pressure ("Charing
 X"→"via Charing Cross") remains a tracked refinement (`TODO.md`).
 
+**Text is chosen to fit its space** (maintainer, 2026-09-26). A word or label is picked in a form that
+fits where it goes, not written long and cut to fit: a status in a times slot is a short word that
+fits the slot ("Loading", "Tap to see", "Closed", "–"), never a phrase trailed with "…"; a name too
+long for its space takes its shorter forms (the abbreviations, then the floor, above) before
+anything is elided.
+
 The row set is not purely prediction-derived: a watched stop or line with a **known
 disruption** but **zero predictions** still contributes a row — a status row (for the
 stop, or for that service at the stop) carrying the disruption and no countdown,
@@ -848,7 +854,17 @@ arrows), a ⚠ where a leg is disrupted, and **duration · arrival** ("22 min ·
 where a number of changes might otherwise go; the duration is from now to that arrival, so it
 takes in the same walks, waits and legs. The pills wrap onto a second line when a route has
 many legs, and the time drops below them when it doesn't fit beside them. Under the top row is the
-first leg's live row, the train the rider would catch now. A route that is all walking (two stops close
+first leg's live row, the train the rider would catch now, **read like the main screen's row for that
+stop and line**: the line's pill, the destinations its trains show, and their times. While the
+line's route is still being checked, it shows the line's live trains at that stop (those heading for
+the Planner's terminus, whether or not a name adds a place such as "(London)") as the main screen
+does, timing nothing until the check vouches for them: only a bus to the terminus on no named branch
+shows plain meanwhile, and one that may skip the rider's stop (another terminus, a named branch such
+as "via Bank", or any rail service, which may run fast to the same terminus) grayed until then;
+before any live train, the Planner's terminus (never the stop the leg gets off at, which reads as
+the line's destination), failing that "from" the boarding stop. The times read "Loading" until the
+boarding stop's arrivals arrive, and "–" when none can be vouched for (*Text is chosen to fit its
+space*). A route that is all walking (two stops close
 together) shows "Walk" where the pills go and its minutes, with no live row and no arrivals request.
 
 Tapping a route opens it, drawn with the list's own parts, **every leg a card**: the leg's platform header ("Highbury

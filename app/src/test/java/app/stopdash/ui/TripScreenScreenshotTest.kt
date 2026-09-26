@@ -253,6 +253,8 @@ class TripScreenScreenshotTest {
         composeRule.onAllNodes(shows("from Highbury & Islington")).onFirst().assertExists()
         // Never the stop the leg gets off at, read as its destination.
         composeRule.onAllNodes(shows("Canada Water")).assertCountEquals(0)
+        // The boarding stop's arrivals aren't in yet: its times say so rather than show a dash.
+        composeRule.onAllNodes(hasText("Loading")).onFirst().assertExists()
     }
 
     @Test

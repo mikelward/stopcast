@@ -216,6 +216,9 @@
     <!-- In place of a route's line pills when the whole route is on foot. -->
     <string name="trip_walk_only">Walk</string>
     <!-- A walk between two stations, in the Planner's minutes. -->
+    <!-- A route's first-leg times while its boarding stop's arrivals are still being fetched: one
+         word that fits the times slot, no ellipsis (SPEC *Text is chosen to fit its space*). -->
+    <string name="trip_times_loading">Loading</string>
     <!-- A route's first leg with no train to show yet: where the rider boards it ("from Muswell Hill Road"). -->
     <string name="trip_first_leg_from">from %1$s</string>
     <string name="trip_walk">%1$d min walk to %2$s</string>
@@ -224,6 +227,8 @@
     <string name="trip_train_description">%1$s to %2$s</string>
     <!-- The same for a train the rider can't use (leaves too soon, or goes another way). -->
     <string name="trip_train_unusable_description">%1$s to %2$s, can\'t catch</string>
+    <!-- The same for a train on a named branch whose route to the rider's stop is still being checked. -->
+    <string name="trip_train_checking_description">%1$s to %2$s, checking route</string>
     <string name="trip_change">%1$d min to change</string>
     <!-- The rider's walk to the trip's first stop, estimated on the phone. -->
     <string name="trip_walk_first">~%1$d min walk to %2$s</string>
