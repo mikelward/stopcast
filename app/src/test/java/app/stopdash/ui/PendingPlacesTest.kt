@@ -134,6 +134,12 @@ class PendingPlacesTest {
         assertEquals(FartherCue.TAP_TO_SEE, heldCue(p, setOf(p.placeKey), setOf("940GZZLUESQ")))
         assertEquals(FartherCue.NO_DEPARTURES, heldCue(p, emptySet(), setOf("940GZZLUESQ")))
         assertEquals(null, heldCue(p, emptySet(), emptySet()))
+        // Nothing running and a notice saying the stop is closed, by stop or by place (a hub's
+        // folded notice names one pole); groups to open still win.
+        val closedStop = ClosedStops(setOf("940GZZLUESQ"), emptySet())
+        assertEquals(FartherCue.CLOSED, heldCue(p, emptySet(), setOf("940GZZLUESQ"), closedStop))
+        assertEquals(FartherCue.CLOSED, heldCue(p, emptySet(), emptySet(), ClosedStops(emptySet(), setOf(p.placeKey))))
+        assertEquals(FartherCue.TAP_TO_SEE, heldCue(p, setOf(p.placeKey), setOf("940GZZLUESQ"), closedStop))
     }
 
     @Test

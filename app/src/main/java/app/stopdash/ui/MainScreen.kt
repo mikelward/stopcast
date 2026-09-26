@@ -11,6 +11,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import app.stopdash.domain.AlertLinks
+import app.stopdash.domain.ClosedNotice
 import app.stopdash.domain.CollapsedPlaces
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -1707,6 +1708,8 @@ private fun DepartureList(
     // each gets a name header — the flat list gives a card no boarding location once >1 place is
     // on screen (SPEC D8). Pure and cheap; the caller ordered the rows.
     val closureRows = remember(rows) { rows.filter { it.stopDisruption != null } }
+    // The stops whose notice says they're closed, so a card with nothing running says "Closed".
+    val closedStops = remember(closureRows) { ClosedStops.of(closureRows) }
     // Pass the full row set: groupByStop groups only the non-closure rows but counts each closure
     // alert's stop as a place, so a lone departures group beside a closure-only stop still shows
     // its header (SPEC *Disruptions*).
@@ -1772,11 +1775,11 @@ private fun DepartureList(
     // A held place that failed is let go (the banner names it), so if a later refresh brings it
     // back it joins the list as any stop does, not as a card it never was. So is one loading again
     // (a fresh cold load): it's held again only if it lands on screen again.
-    val letGo = remember(held, trackedPlaces, groups, fetchedStopIds) {
+    val letGo = remember(held, trackedPlaces, groups, fetchedStopIds, closedStops) {
         val stillPending = trackedPlaces.mapTo(HashSet()) { it.placeKey }
         val groupPlaces = groups.mapTo(HashSet()) { groupPlace(it) }
         held.values
-            .filter { it.placeKey in stillPending || heldCue(it, groupPlaces, fetchedStopIds) == null }
+            .filter { it.placeKey in stillPending || heldCue(it, groupPlaces, fetchedStopIds, closedStops) == null }
             .map { it.placeKey }
     }
     if (letGo.isNotEmpty()) SideEffect { letGo.forEach(pendingTracker::forget) }
@@ -2013,7 +2016,7 @@ private fun DepartureList(
         val heldCards = held.values.mapNotNull { heldPlace ->
             if (heldPlace.placeKey in pendingKeys) return@mapNotNull null
             val place = withoutHidden(remeasured(heldPlace, stopDistanceMeters), hiddenModes) ?: return@mapNotNull null
-            heldCue(place, groupsByPlace.keys, fetchedStopIds)?.let { cue -> place to cue }
+            heldCue(place, groupsByPlace.keys, fetchedStopIds, closedStops)?.let { cue -> place to cue }
         }
         val heldKeys = heldCards.mapTo(HashSet()) { it.first.placeKey }
         val listed = unfarther.filter { groupPlace(it) !in heldKeys }
@@ -2056,7 +2059,7 @@ private fun DepartureList(
                 opened.forEach { group -> groupItems(1, group) }
             } else {
                 item(key = "farther|${card.place.key}") {
-                    FartherCardView(card, fartherCue(card, fetchedStopIds, unavailableStopIds), onOpen = onOpenFarther)
+                    FartherCardView(card, fartherCue(card, fetchedStopIds, unavailableStopIds, closedStops.stopIds), onOpen = onOpenFarther)
                 }
             }
         }
@@ -2349,13 +2352,39 @@ internal fun withoutHidden(place: PendingPlace, hiddenModes: Set<String>): Pendi
 }
 
 /**
- * A held place's cue: "Tap to see" while it has groups to open ([groupPlaces]), a dash when it came
- * back with nothing running ([fetchedStopIds]), else null — it failed, and the banner names it.
+ * A held place's cue: "Tap to see" while it has groups to open ([groupPlaces]); with none, "Closed"
+ * when a notice in force says so ([closed]), a dash when it came back with nothing running
+ * ([fetchedStopIds]), else null — it failed, and the banner names it.
  */
-internal fun heldCue(place: PendingPlace, groupPlaces: Set<String>, fetchedStopIds: Set<String>): FartherCue? = when {
+internal fun heldCue(
+    place: PendingPlace,
+    groupPlaces: Set<String>,
+    fetchedStopIds: Set<String>,
+    closed: ClosedStops = ClosedStops.NONE,
+): FartherCue? = when {
     place.placeKey in groupPlaces -> FartherCue.TAP_TO_SEE
+    place.placeKey in closed.placeKeys || place.stopIds.any { it in closed.stopIds } -> FartherCue.CLOSED
     place.stopIds.any { it in fetchedStopIds } -> FartherCue.NO_DEPARTURES
     else -> null
+}
+
+/**
+ * The stops (and their places, as [placeOf] keys them — a hub's folded notice names one pole) whose
+ * notice in force says the stop itself is closed ([ClosedNotice]), from the list's closure rows.
+ */
+internal data class ClosedStops(val stopIds: Set<String>, val placeKeys: Set<String>) {
+    companion object {
+        val NONE = ClosedStops(emptySet(), emptySet())
+
+        fun of(closureRows: List<DepartureRow>): ClosedStops {
+            val closed = closureRows.filter { ClosedNotice.saysClosed(it.stopDisruption.orEmpty()) }
+            if (closed.isEmpty()) return NONE
+            return ClosedStops(
+                closed.mapTo(HashSet()) { it.stopId },
+                closed.mapTo(HashSet()) { placeOf(it.clusterId, it.stopId) },
+            )
+        }
+    }
 }
 
 /** The place a group belongs to, keyed as [placeOf] keys a stop (not [StopGroup.placeKey], which
@@ -2410,14 +2439,20 @@ internal fun pendingSlots(groupMeters: List<Double?>, pinned: List<Boolean>, pen
     }
 
 /** What a collapsed card says where the times would be, and whether a tap acts on it. */
-internal enum class FartherCue(val tappable: Boolean) { TAP_TO_SEE(true), LOADING(false), RETRY(true), NO_DEPARTURES(false) }
+internal enum class FartherCue(val tappable: Boolean) { TAP_TO_SEE(true), LOADING(false), RETRY(true), NO_DEPARTURES(false), CLOSED(false) }
 
 /**
  * A collapsed card's cue, from its [FartherCard.load] and the fetch so far: [fetchedStopIds] came
  * back, [unavailableStopIds] failed. An opened card whose stops all failed offers a retry rather
- * than "Loading…" forever; one with a stop back but no departures to show says so.
+ * than "Loading…" forever; one with no departures to show says "Closed" when a notice in force says
+ * so ([closedStopIds]), else shows a dash once a stop is back.
  */
-internal fun fartherCue(card: FartherCard, fetchedStopIds: Set<String>, unavailableStopIds: Set<String>): FartherCue =
+internal fun fartherCue(
+    card: FartherCard,
+    fetchedStopIds: Set<String>,
+    unavailableStopIds: Set<String>,
+    closedStopIds: Set<String> = emptySet(),
+): FartherCue =
     when (val load = card.load) {
         null -> FartherCue.TAP_TO_SEE
         FartherLoad.Loading -> FartherCue.LOADING
@@ -2425,6 +2460,7 @@ internal fun fartherCue(card: FartherCard, fetchedStopIds: Set<String>, unavaila
         is FartherLoad.Open -> {
             val ids = load.distanceMeters.keys
             when {
+                ids.any { it in closedStopIds } -> FartherCue.CLOSED
                 ids.any { it in fetchedStopIds } -> FartherCue.NO_DEPARTURES
                 ids.isNotEmpty() && ids.all { it in unavailableStopIds } -> FartherCue.RETRY
                 else -> FartherCue.LOADING
@@ -2454,6 +2490,7 @@ private fun FartherCardView(
             FartherCue.RETRY -> R.string.farther_retry
             // A dash where the times go, as a line row with nothing running shows.
             FartherCue.NO_DEPARTURES -> R.string.status_no_departures
+            FartherCue.CLOSED -> R.string.farther_closed
         },
     )
     val cueSpoken = if (cue == FartherCue.NO_DEPARTURES) stringResource(R.string.status_no_departures_description) else cueText
@@ -2488,7 +2525,12 @@ private fun FartherCardView(
                     text = cueText,
                     modifier = Modifier.semantics { contentDescription = cueSpoken },
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (tappable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Error-toned, as the closure card at the top of the list is.
+                    color = when {
+                        tappable -> MaterialTheme.colorScheme.primary
+                        cue == FartherCue.CLOSED -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
         }
