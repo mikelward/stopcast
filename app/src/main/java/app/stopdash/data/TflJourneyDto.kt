@@ -76,6 +76,8 @@ data class TflJourneyLegDto(
             changeAfter = Duration.ofMinutes(change ?: 0),
             headings = routeOptions.firstOrNull()?.directions.orEmpty()
                 .map { cleanStopName(it) }.filter { it.isNotBlank() }.distinct(),
+            fromArea = departurePoint.stopPair(),
+            toArea = arrivalPoint.stopPair(),
         )
     }
 }
@@ -93,6 +95,9 @@ data class TflJourneyPointDto(
      * sometimes by nothing; the pole the rider stands at is its [individualStopId]. Any other stop
      * (a station) goes by its [naptanId]. Null when neither names one.
      */
+    /** The stop pair ("490G…") the Planner names a bus stop by, or empty for any other stop. */
+    fun stopPair(): String = naptanId?.takeIf { it.startsWith(STOP_PAIR_PREFIX) }.orEmpty()
+
     fun stopId(): String? {
         val pole = individualStopId?.takeIf { it.startsWith(BUS_STOP_PREFIX) && !it.startsWith(STOP_PAIR_PREFIX) }
         val id = naptanId?.takeIf { it.isNotBlank() }

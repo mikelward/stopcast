@@ -673,6 +673,88 @@ class TripViewModelTest {
         assertEquals(listOf(clockwise), legTrains(state, leg, now, mapOf("loop" to loop)))
     }
 
+    // Bus 1 both ways along a road: the stop pair BG's poles Bn (northbound) and Bs (southbound).
+    private val road = LineSequence(
+        routes = listOf(
+            LineRoute("North", listOf("As", "Bn", "Xn", "Cn")),
+            LineRoute("South", listOf("Cs", "Xs", "Bs", "Ad")),
+        ),
+        stopNames = mapOf("As" to "A", "Bn" to "B", "Xn" to "X", "Cn" to "C", "Cs" to "C", "Xs" to "X", "Bs" to "B", "Ad" to "A"),
+        stopAreas = mapOf("Bn" to "BG", "Bs" to "BG", "Xn" to "XG", "Xs" to "XG", "Cn" to "CG", "Cs" to "CG"),
+    )
+
+    // The Planner rides north from BG to CG by way of XG, naming the southbound pole of each pair.
+    private val plannerBus = TripLeg(
+        "bus", "1", "1", "Bs", "B", "Cs", "C", at(20), at(30), path = listOf("XG", "CG"), fromArea = "BG", toArea = "CG",
+    )
+
+    @Test
+    fun `a bus leg boards at the pole its bus uses, not the other side the Planner named`() {
+        val placed = onPoles(plannerBus, mapOf("1" to road))
+        assertEquals("Bn", placed.fromId)
+        assertEquals("Cn", placed.toId)
+        // Its route not in yet, or failed: as the Planner named it.
+        assertEquals(plannerBus, onPoles(plannerBus, emptyMap()))
+        assertEquals(plannerBus, onPoles(plannerBus, mapOf("1" to null)))
+        // Its northbound buses then time it; the other side's southbound ones never did.
+        val north = train("1", "C", 4).copy(mode = "bus")
+        val state = TripViewModel.State(
+            routes = listOf(TripRoute(listOf(plannerBus))),
+            live = mapOf("Bn" to TripViewModel.StopLive(listOf(north), now), "Bs" to TripViewModel.StopLive(listOf(train("1", "A", 2).copy(mode = "bus")), now)),
+        )
+        val onRoad = onPoles(state, mapOf("1" to road))
+        assertEquals(listOf(north), legTrains(onRoad, onRoad.routes!!.single().legs.single(), now, mapOf("1" to road)))
+        // The route keeps its key, so an open one stays open once its poles are known.
+        assertEquals(routeKey(state.routes!!.single()), routeKey(onRoad.routes!!.single()))
+        // A pole the trip never fetches (its pair's lookup failed) isn't boarded at: the Planner's stands.
+        val unfetched = state.copy(live = state.live - "Bn")
+        assertEquals("Bs", onPoles(unfetched, mapOf("1" to road)).routes!!.single().legs.single().fromId)
+        // One looked up and being fetched is, reading "Loading" until its arrivals are in.
+        val pending = onPoles(unfetched.copy(areaPoles = mapOf("BG" to listOf("Bn", "Bs"))), mapOf("1" to road))
+        val leg = pending.routes!!.single().legs.single()
+        assertEquals("Bn", leg.fromId)
+        assertTrue(legLoading(pending, leg, mapOf("1" to road)))
+    }
+
+    @Test
+    fun `a bus stop pair's buses wait for the route to say which side the bus uses`() {
+        val state = TripViewModel.State(live = mapOf("Bs" to TripViewModel.StopLive(listOf(train("1", "A", 2).copy(mode = "bus")), now)))
+        assertEquals(emptyList<Departure>(), pendingTrains(state, plannerBus, now, emptyMap()))
+        // Its row and an opened route's card read "Loading" meanwhile, not "–".
+        assertTrue(legLoading(state, plannerBus, emptyMap()))
+        assertFalse(legLoading(state, plannerBus, mapOf("1" to road)))
+        // Nor while its poles are still being looked up; after a failed lookup, the Planner's pole shows.
+        assertTrue(legLoading(state.copy(refreshing = true), plannerBus, mapOf("1" to road)))
+        assertFalse(legLoading(state.copy(refreshing = true, areaPoles = mapOf("BG" to listOf("Bs"))), plannerBus, mapOf("1" to road)))
+    }
+
+    @Test
+    fun `a bus leg's boarding stop is fetched on every pole of its pair`() = runTest(dispatcher) {
+        val client = FakeClient(mutableMapOf())
+        val trip = TripViewModel(
+            FakePlanner(listOf(TripRoute(listOf(plannerBus)))), client, "A", listOf("C"), clock = { now }, plans = TripPlans(), io = dispatcher,
+            poles = { area -> if (area == "BG") listOf("Bn", "Bs") else emptyList() },
+        )
+        trip.refresh()
+        advanceUntilIdle()
+        assertEquals(setOf("Bs", "Bn"), client.asked.toSet())
+    }
+
+    @Test
+    fun `a trip reads as checking while its bus stop pairs are looked up`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val trip = TripViewModel(
+            FakePlanner(listOf(TripRoute(listOf(plannerBus)))), FakeClient(mutableMapOf()), "A", listOf("C"), clock = { now },
+            plans = TripPlans(), io = dispatcher, poles = { gate.await(); listOf("Bn", "Bs") },
+        )
+        trip.refresh()
+        runCurrent()
+        assertTrue(trip.state.value.refreshing)
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(trip.state.value.refreshing)
+    }
+
     @Test
     fun `a bus leg's path by stop pair still tells which way a bus leaves`() {
         // The Planner names a bus leg's path by stop pair ("XG"); the route lists the poles in it.

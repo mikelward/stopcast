@@ -1835,6 +1835,7 @@ class MainActivity : ComponentActivity() {
                     TripViewModel(
                         journeyPlanner, departuresClient(appContext), fromStop.id, toStopIds, warn = ::logDepartureWarning,
                         arrivals = ArrivalsCache.SHARED, departureSourceChanges = RailApiKeySetting.changes,
+                        poles = { area -> routeStops(appContext).loadPoles(area).map { it.id } },
                     )
                 }
             },

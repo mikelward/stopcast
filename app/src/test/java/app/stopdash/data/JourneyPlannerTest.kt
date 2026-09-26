@@ -182,5 +182,9 @@ class JourneyPlannerTest {
         assertEquals("490000252S", legs[1].toId)
         assertEquals("490000252S", legs[2].fromId)
         assertEquals("490000008C", legs[2].toId)
+        // Each bus stop pair kept, for the pole its bus uses once its route is known.
+        assertEquals("490G000804", legs[1].fromArea)
+        assertEquals("490G000850", legs[1].toArea)
+        assertEquals("", legs[2].toArea)
     }
 }

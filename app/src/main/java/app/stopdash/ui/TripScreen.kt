@@ -110,6 +110,58 @@ internal fun leavesAlongLeg(train: Departure, leg: TripLeg, sequences: Map<Strin
     return ahead.getOrNull(1)?.let { isStop(sequence, it.id, next) } == true
 }
 
+/**
+ * Whether [leg]'s times aren't in yet: its boarding stop's arrivals not fetched, or, at a bus stop
+ * pair, its route not loaded to say which side the bus uses, or its poles still being looked up.
+ */
+internal fun legLoading(state: TripViewModel.State, leg: TripLeg, sequences: Map<String, LineSequence?>): Boolean =
+    state.live[leg.fromId] == null ||
+        (leg.fromArea.isNotEmpty() && (leg.lineId !in sequences || (state.refreshing && leg.fromArea !in state.areaPoles)))
+
+/**
+ * [state] with each route's legs [onPoles] — where the trip fetches the chosen pole: one of its
+ * pair's looked-up poles ([TripViewModel.State.areaPoles]), read as "Loading" until its arrivals are
+ * in. After a failed lookup the trip never fetches it, so the Planner's pole stands (the lookup is
+ * asked again on the next refresh).
+ */
+internal fun onPoles(state: TripViewModel.State, sequences: Map<String, LineSequence?>): TripViewModel.State {
+    val routes = state.routes ?: return state
+    fun fetched(leg: TripLeg, pole: String) = pole in state.live || pole in state.areaPoles[leg.fromArea].orEmpty()
+    val placed = routes.map { route ->
+        TripRoute(route.legs.map { leg -> onPoles(leg, sequences).takeIf { it.fromId == leg.fromId || fetched(leg, it.fromId) } ?: leg })
+    }
+    return if (placed == routes) state else state.copy(routes = placed)
+}
+
+/**
+ * [leg] boarding and alighting at the poles its bus uses. The Planner names a bus stop by its pair
+ * ([TripLeg.fromArea], a road's two poles) and one pole of it, which can be the other side of the
+ * road: its buses there run the other way. Of the pair's poles on the line's route ([sequences]),
+ * the one the route leaves by way of the leg's next stop, and the first pole of the alighting pair
+ * after it. Unchanged for a leg named by no pair, before its route loads (or when it failed), or
+ * where the route gives no single answer.
+ */
+internal fun onPoles(leg: TripLeg, sequences: Map<String, LineSequence?>): TripLeg {
+    if (leg.isWalk || (leg.fromArea.isEmpty() && leg.toArea.isEmpty())) return leg
+    val sequence = sequences[leg.lineId] ?: return leg
+    fun boards(id: String) = id == leg.fromId || (leg.fromArea.isNotEmpty() && sequence.stopAreas[id] == leg.fromArea)
+    fun alights(id: String) = id == leg.toId || (leg.toArea.isNotEmpty() && sequence.stopAreas[id] == leg.toArea)
+    val next = leg.path.firstOrNull()
+    val ends = sequence.routes.flatMap { route ->
+        route.stopIds.indices.filter { boards(route.stopIds[it]) }.mapNotNull { i ->
+            val on = route.stopIds.subList(i + 1, route.stopIds.size)
+            val off = on.indexOfFirst(::alights).takeIf { it >= 0 } ?: return@mapNotNull null
+            // The way the Planner rides: by its next stop, before or at where it gets off.
+            if (next != null && on.subList(0, off + 1).none { isStop(sequence, it, next) }) {
+                return@mapNotNull null
+            }
+            route.stopIds[i] to on[off]
+        }
+    }.distinct()
+    val (from, to) = ends.singleOrNull() ?: return leg
+    return if (from == leg.fromId && to == leg.toId) leg else leg.copy(fromId = from, toId = to)
+}
+
 // Whether the route's stop [id] is the Planner's [stop]: the stop itself, or, for a bus, the stop
 // pair ("490G…") the Planner names its path by, which holds both of a road's poles.
 private fun isStop(sequence: LineSequence, id: String, stop: String): Boolean =
@@ -147,6 +199,9 @@ internal fun pendingTrains(
     sequences: Map<String, LineSequence?>,
 ): List<Departure> {
     if (leg.isWalk || leg.lineId in sequences) return emptyList()
+    // A bus stop the Planner named by its pair: which side the bus uses isn't known until its route
+    // is, and the other side's buses run the other way.
+    if (leg.fromArea.isNotEmpty()) return emptyList()
     val stop = state.live[leg.fromId] ?: return emptyList()
     if (Staleness.isStale(Duration.between(stop.fetchedAt, now).toKotlinDuration())) return emptyList()
     // A train with no destination couldn't be labeled but by the Planner's terminus, which the live
@@ -328,7 +383,8 @@ internal fun timedLineIds(routes: List<TripRoute>, hidden: Set<String>): List<St
 
 /** A route's identity across refreshes and re-ranking: its lines and stops in order. */
 internal fun routeKey(route: TripRoute): String =
-    route.legs.joinToString("|") { "${it.mode}:${it.lineId}:${it.fromId}:${it.toId}" }
+    // A bus leg by its stop pairs, so its key holds once its poles are worked out ([onPoles]).
+    route.legs.joinToString("|") { "${it.mode}:${it.lineId}:${it.fromArea.ifEmpty { it.fromId }}:${it.toArea.ifEmpty { it.toId }}" }
 
 // How many of a first leg's trains its row times.
 private const val SHOWN_TRAINS = 3
@@ -372,7 +428,7 @@ internal fun TripScreen(
 @Composable
 private fun TripContent(
     title: String,
-    state: TripViewModel.State,
+    planned: TripViewModel.State,
     now: Instant,
     access: Duration,
     onBack: () -> Unit,
@@ -390,10 +446,13 @@ private fun TripContent(
     // While a plan's answers are still landing, the last settled plan's lines stand, so a passing
     // top six never starts loads a later answer would make pointless.
     val settledLines = remember { arrayOf(emptyList<String>()) }
-    val lineIds = remember(state.routes, hiddenModes, state.planning) {
-        sequenceLineIds(state, hiddenModes, settledLines[0]).also { settledLines[0] = it }
+    val lineIds = remember(planned.routes, hiddenModes, planned.planning) {
+        sequenceLineIds(planned, hiddenModes, settledLines[0]).also { settledLines[0] = it }
     }
     val sequences = rememberLineSequences(lineIds, now)
+    // Each bus leg at the poles its bus uses, once its route says which (the Planner's may be the
+    // other side of the road); everything below reads the trip this way.
+    val state = remember(planned, sequences) { onPoles(planned, sequences) }
     val originUnconfirmed = relocating || locationBanner != null
     val estimates = remember(state, now, access, sequences, hiddenModes, originUnconfirmed) {
         tripEstimates(state, now, access, sequences, hiddenModes, originUnconfirmed)
@@ -663,7 +722,7 @@ private fun FirstLegRow(
         }.joinToString(", ")
         Text(
             // No arrivals yet for the boarding stop (never fetched; a failed fetch is kept as failed).
-            text = trainTimes(shown, now, loading = state.live[leg.fromId] == null),
+            text = trainTimes(shown, now, loading = legLoading(state, leg, sequences)),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -853,7 +912,11 @@ private fun RideLeg(
                     LinePill(leg.lineName, leg.lineId, leg.mode)
                     state.statuses[leg.lineId]?.takeIf { it.disrupted }?.let { DisruptionChip(it.description) }
                     Box(Modifier.weight(1f))
-                    Text("–", style = MaterialTheme.typography.titleMedium)
+                    // "Loading" while its times aren't in yet, as the first-leg row says; "–" once none can be shown.
+                    Text(
+                        if (legLoading(state, leg, sequences)) stringResource(R.string.trip_times_loading) else "–",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                 }
             }
         } else {
