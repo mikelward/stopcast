@@ -1852,6 +1852,8 @@ class MainActivity : ComponentActivity() {
             state = tripState,
             now = tickingNow(),
             access = access,
+            // The same route data as the list checks its trains against (SPEC *Trips with a change*).
+            routeStops = routeStops(appContext),
             onBack = close,
             onRetry = trip::retry,
             locationBanner = locationBanner.collectAsStateWithLifecycle().value,

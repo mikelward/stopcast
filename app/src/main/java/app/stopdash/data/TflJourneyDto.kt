@@ -59,16 +59,16 @@ data class TflJourneyLegDto(
         // A ride with no line to follow can't be timed from live trains or checked for status.
         if (!walk && line?.id.isNullOrBlank()) return null
         // Nor one with an end the Planner didn't name: its trains can't be fetched or checked to call there.
-        if (!walk && (departurePoint.naptanId.isNullOrBlank() || arrivalPoint.naptanId.isNullOrBlank())) return null
+        if (!walk && (departurePoint.stopId() == null || arrivalPoint.stopId() == null)) return null
         val change = interChangeDuration?.trim()?.toLongOrNull()
             ?.takeIf { interChangePosition.equals("AFTER", ignoreCase = true) }
         return TripLeg(
             mode = modeId,
             lineId = line?.id.orEmpty(),
             lineName = line?.name.orEmpty(),
-            fromId = departurePoint.naptanId.orEmpty(),
+            fromId = departurePoint.stopId().orEmpty(),
             fromName = cleanStopName(departurePoint.commonName),
-            toId = arrivalPoint.naptanId.orEmpty(),
+            toId = arrivalPoint.stopId().orEmpty(),
             toName = cleanStopName(arrivalPoint.commonName),
             departure = departure,
             arrival = arrival,
@@ -81,7 +81,29 @@ data class TflJourneyLegDto(
 }
 
 @Serializable
-data class TflJourneyPointDto(val naptanId: String? = null, val commonName: String = "")
+data class TflJourneyPointDto(
+    val naptanId: String? = null,
+    val commonName: String = "",
+    // The one stop within [naptanId]: for a bus, the pole the rider stands at.
+    val individualStopId: String? = null,
+) {
+    /**
+     * The stop a leg boards or leaves at, as the live feed knows it. The Planner names a bus leg's
+     * ends by their stop pair ("490G…", both of a road's poles), which TfL gives no arrivals for, and
+     * sometimes by nothing; the pole the rider stands at is its [individualStopId]. Any other stop
+     * (a station) goes by its [naptanId]. Null when neither names one.
+     */
+    fun stopId(): String? {
+        val pole = individualStopId?.takeIf { it.startsWith(BUS_STOP_PREFIX) && !it.startsWith(STOP_PAIR_PREFIX) }
+        val id = naptanId?.takeIf { it.isNotBlank() }
+        return if (pole != null && (id == null || id.startsWith(STOP_PAIR_PREFIX))) pole else id
+    }
+
+    private companion object {
+        const val BUS_STOP_PREFIX = "490"
+        const val STOP_PAIR_PREFIX = "490G"
+    }
+}
 
 @Serializable
 data class TflJourneyRouteOptionDto(

@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
@@ -195,16 +194,16 @@ class TripScreenScreenshotTest {
     private fun show(state: TripViewModel.State) {
         composeRule.setContent {
             StopDashTheme(dynamicColor = false) {
-                CompositionLocalProvider(LocalRouteStops provides RouteStopsRepository(source)) {
-                    TripScreen(
-                        title = "To Canary Wharf",
-                        state = state,
-                        now = now,
-                        access = Duration.ofMinutes(2),
-                        onBack = {},
-                        onRetry = {},
-                    )
-                }
+                // No outer provider: the screen checks its trains against the repository it's given.
+                TripScreen(
+                    title = "To Canary Wharf",
+                    state = state,
+                    now = now,
+                    access = Duration.ofMinutes(2),
+                    routeStops = RouteStopsRepository(source),
+                    onBack = {},
+                    onRetry = {},
+                )
             }
         }
         composeRule.waitForIdle()

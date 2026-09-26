@@ -555,6 +555,37 @@ class TripViewModelTest {
     }
 
     @Test
+    fun `a bus leg's path by stop pair still tells which way a bus leaves`() {
+        // The Planner names a bus leg's path by stop pair ("XG"); the route lists the poles in it.
+        val loop = LineSequence(
+            routes = listOf(
+                LineRoute("Clockwise", listOf("B", "Xn", "C", "Yn", "Z")),
+                LineRoute("Anticlockwise", listOf("B", "Ys", "C", "Xs", "W")),
+            ),
+            stopNames = mapOf("B" to "B", "Xn" to "X", "Xs" to "X", "C" to "C", "Yn" to "Y", "Ys" to "Y", "Z" to "Z", "W" to "W"),
+            stopAreas = mapOf("Xn" to "XG", "Xs" to "XG", "Yn" to "YG", "Ys" to "YG"),
+        )
+        val leg = TripLeg("bus", "loop", "loop", "B", "B", "C", "C", at(20), at(30), path = listOf("XG", "CG"))
+        val clockwise = train("loop", "Z", 6).copy(mode = "bus")
+        val anticlockwise = train("loop", "W", 2).copy(mode = "bus")
+        val state = TripViewModel.State(live = mapOf("B" to TripViewModel.StopLive(listOf(clockwise, anticlockwise), now)))
+        assertEquals(listOf(clockwise), legTrains(state, leg, now, mapOf("loop" to loop)))
+    }
+
+    @Test
+    fun `a bus whose blind names an area and leaves the other way round a loop isn't usable`() {
+        // The Planner rides B to C by way of X; this pole's buses loop the other way, by way of Y.
+        val loop = LineSequence(
+            routes = listOf(LineRoute("Loop", listOf("B", "Ys", "C", "Xn", "Z"))),
+            stopNames = mapOf("B" to "B", "Ys" to "Y", "C" to "C", "Xn" to "X", "Z" to "Z"),
+            stopAreas = mapOf("Xn" to "XG", "Ys" to "YG"),
+        )
+        val leg = TripLeg("bus", "loop", "loop", "B", "B", "C", "C", at(20), at(30), path = listOf("XG", "C"))
+        val bus = train("loop", "Town Centre", 4).copy(mode = "bus")
+        assertEquals(false, leavesAlongLeg(bus, leg, mapOf("loop" to loop)))
+    }
+
+    @Test
     fun `while a line's route loads, its trains toward the Planner's terminus show as on the main screen`() {
         val leg = TripLeg("tube", "blue", "blue", "B", "B", "C", "C", at(20), at(30), path = listOf("C"), headings = listOf("End"))
         val toEnd = train("blue", "End", 4)
