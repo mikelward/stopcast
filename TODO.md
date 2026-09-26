@@ -868,8 +868,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
             already partway along the route (ties in with *On the way*), so a later leg is timed from
             where they are rather than from the stop they started at.
       - [ ] **Arrows between a route's pills** if space permits (dropped for width, 2026-09-26).
-      - [ ] **Shared-leg pill**: a leg several routes serve alike (buses 43 and 134 share the stops
-            to Highgate station) as one diagonally cut pill carrying both routes.
+      - [x] **Shared-leg pill**: a leg several routes serve alike (buses 43 and 134 share the stops
+            to Highgate station) as one diagonally cut pill carrying both routes, and a live row per
+            line in the one card (maintainer, 2026-09-26).
     - [ ] **Star a From… To… trip as a journey**: the trip has no single starred line, which
           `StarredJourney` places its ends on, so it needs a line-free journey first.
     - [x] **To… from the near-me list** (maintainer, 2026-09-24): the overflow's *To…* starts

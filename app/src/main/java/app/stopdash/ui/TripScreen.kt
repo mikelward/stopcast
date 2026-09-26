@@ -59,6 +59,7 @@ import app.stopdash.domain.Departure
 import app.stopdash.domain.DepartureRows
 import app.stopdash.domain.DirectTrips
 import app.stopdash.domain.HiddenModes
+import app.stopdash.domain.LineRef
 import app.stopdash.domain.LineSequence
 import app.stopdash.domain.LineStatus
 import app.stopdash.domain.RouteStops
@@ -357,9 +358,6 @@ internal fun tripEstimates(
     sequences: Map<String, LineSequence?>,
     hidden: Set<String> = emptySet(),
     originUnconfirmed: Boolean = false,
-    // The route open on screen ([routeKey]): kept as its card, even when another way riding the same
-    // lines times better, so it isn't swapped out from under the rider.
-    openKey: String? = null,
 ): List<TripTiming.Estimate>? {
     val routes = state.routes
         ?.filterNot { route -> route.rides.any { HiddenModes.isHidden(it.mode, hidden) } }
@@ -377,19 +375,45 @@ internal fun tripEstimates(
         )
             .let { if (originUnconfirmed && it.basis == TripTiming.Basis.LIVE) it.copy(basis = TripTiming.Basis.ESTIMATED) else it }
     }
-    // Journeys the Planner times differently but rides alike are one route here (one key in the
-    // list): each is timed, since a later timetable slot can still be caught when an earlier one
-    // can't, and the best stands for the route.
-    val ranked = TripTiming.rank(estimates).distinctBy { routeKey(it.route) }
-    // Ways riding the same lines in turn (changing at another stop) read alike, so they're one card:
-    // the best of them, or the open one.
-    val shown = ranked.groupBy { lineKey(it.route) }
-        .mapValues { (_, alike) -> alike.firstOrNull { routeKey(it.route) == openKey } ?: alike.first() }
-    return ranked.filter { shown[lineKey(it.route)] === it }
+    // Journeys the Planner times differently but rides alike are one route here (one key): each is
+    // timed, since a later timetable slot can still be caught when an earlier one can't, and the
+    // best stands for the route. Ways riding the same lines are all kept, for [tripCards] to choose.
+    return TripTiming.rank(estimates).distinctBy { routeKey(it.route) }
 }
 
 // The lines a route rides, in turn: what its card shows.
 private fun lineKey(route: TripRoute): String = route.rides.joinToString("|") { "${it.mode}:${it.lineId}" }
+
+/**
+ * [estimates] (best first, [tripEstimates]) as the list's cards, best first.
+ *
+ * Routes whose first ride goes between the same two stops by the same mode, then rides the same
+ * lines, **share a card** (the 43 or the 134 to Highgate station, then the Northern line): one
+ * header with the first ride's lines as a cut pill, and a row per line, best first.
+ *
+ * Ways riding the same lines in turn but changing elsewhere read alike, so only one of them is
+ * shown: the one in a shared card if any (so the lines that share a leg show together), else the
+ * best.
+ */
+internal fun tripCards(estimates: List<TripTiming.Estimate>): List<List<TripTiming.Estimate>> {
+    // Within a card, one route per first-ride line: the best.
+    val groups = estimates.groupBy { cardKey(it.route) }.values
+        .map { group -> group.distinctBy { it.route.rides.firstOrNull()?.lineId } }
+    val shared = groups.filter { it.size > 1 }.flatten().toSet()
+    val chosen = estimates.groupBy { lineKey(it.route) }.values
+        .map { alike -> alike.firstOrNull { it in shared } ?: alike.first() }.toSet()
+    return groups.map { group -> group.filter { it in chosen } }.filter { it.isNotEmpty() }
+        .sortedBy { card -> estimates.indexOf(card.first()) }
+}
+
+// Which card a route shares: its first ride's mode and ends (by stop pair for a bus, or by name at a
+// stop in no pair, as [onPoles] places it), and the lines after it; a route with no ride keeps its own.
+internal fun cardKey(route: TripRoute): String {
+    val first = route.rides.firstOrNull() ?: return routeKey(route)
+    val to = first.toArea.ifEmpty { if (first.fromArea.isNotEmpty()) first.toName else first.toId }
+    val after = route.rides.drop(1).joinToString("|") { "${it.mode}:${it.lineId}" }
+    return "${first.mode}:${first.fromArea.ifEmpty { first.fromId }}>$to|$after"
+}
 
 /**
  * The lines whose route data a trip loads: [settled] while a first plan's answers are still landing,
@@ -481,10 +505,13 @@ private fun TripContent(
     // other side of the road); everything below reads the trip this way.
     val state = remember(planned, sequences) { onPoles(planned, sequences) }
     val originUnconfirmed = relocating || locationBanner != null
-    var openKey by rememberSaveable { mutableStateOf<String?>(null) }
-    val estimates = remember(state, now, access, sequences, hiddenModes, originUnconfirmed, openKey) {
-        tripEstimates(state, now, access, sequences, hiddenModes, originUnconfirmed, openKey)
+    val estimates = remember(state, now, access, sequences, hiddenModes, originUnconfirmed) {
+        tripEstimates(state, now, access, sequences, hiddenModes, originUnconfirmed)
     }
+    // The list's cards; an open route is looked up among every way timed, so it stays open whichever
+    // way its card shows.
+    val cards = remember(estimates) { estimates?.let(::tripCards) }
+    var openKey by rememberSaveable { mutableStateOf<String?>(null) }
     val open = estimates?.firstOrNull { routeKey(it.route) == openKey }
     BackHandler { if (open != null) openKey = null else onBack() }
     Scaffold(
@@ -501,14 +528,14 @@ private fun TripContent(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             // With a route open, only its own legs' warnings frame it; the list takes every route's.
-            val shown = open?.let { listOf(it) } ?: estimates
+            val shown = open?.let { listOf(it) } ?: cards?.flatten()
             val check = remember(state, shown, now, sequences) { shown?.let { tripCheckState(state, it, now, sequences) } }
             TripBanners(shown, state, check, locationBanner, onRelocate, hiddenModes, onShowAllModes)
             Box(Modifier.fillMaxSize()) {
                 when {
-                    estimates == null -> TripPlaceholder(state, onRetry)
+                    cards == null -> TripPlaceholder(state, onRetry)
                     open != null -> RouteLegs(open, state, now, access, sequences, onRetry)
-                    else -> RouteList(estimates, state, now, sequences, onRetry, onOpen = { openKey = routeKey(it.route) })
+                    else -> RouteList(cards, state, now, sequences, onRetry, onOpen = { openKey = routeKey(it.route) })
                 }
             }
         }
@@ -606,7 +633,7 @@ private fun PlanNotice(text: String, planning: Boolean, onRetry: () -> Unit) {
 
 @Composable
 private fun RouteList(
-    estimates: List<TripTiming.Estimate>,
+    cards: List<List<TripTiming.Estimate>>,
     state: TripViewModel.State,
     now: Instant,
     sequences: Map<String, LineSequence?>,
@@ -635,17 +662,21 @@ private fun RouteList(
         // Lines not yet checked rank as unchecked, and say so: checking while a check runs, and
         // only a finished check says it couldn't.
         // A route revealed since the last refresh (a mode shown again) counts by its own lines.
-        statusNote(state, state.statusUnknown.isNotEmpty() || estimates.any { it.unchecked })?.let { checking -> item(key = "status") { StatusUnknown(checking) } }
-        if (estimates.isEmpty()) {
+        statusNote(state, state.statusUnknown.isNotEmpty() || cards.any { card -> card.any { it.unchecked } })?.let { checking -> item(key = "status") { StatusUnknown(checking) } }
+        if (cards.isEmpty()) {
             item(key = "none") { Text(stringResource(R.string.trip_no_routes), style = MaterialTheme.typography.bodyLarge) }
         }
-        items(estimates, key = { routeKey(it.route) }) { estimate ->
-            OutlinedCard(onClick = { onOpen(estimate) }, modifier = Modifier.fillMaxWidth()) {
-                RouteSummary(estimate, state.statuses, Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
-                val first = estimate.route.legs.indexOfFirst { !it.isWalk }
-                if (first >= 0) {
-                    HorizontalDivider()
-                    FirstLegRow(estimate, first, state, now, sequences)
+        // Routes sharing their first leg's stop and their later lines are one card: one header, and
+        // a row for each first-leg line. Tapping it opens the best of them.
+        items(cards, key = { cardKey(it.first().route) }) { card ->
+            OutlinedCard(onClick = { onOpen(card.first()) }, modifier = Modifier.fillMaxWidth()) {
+                RouteSummary(card, state.statuses, Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                card.forEach { estimate ->
+                    val first = estimate.route.legs.indexOfFirst { !it.isWalk }
+                    if (first >= 0) {
+                        HorizontalDivider()
+                        FirstLegRow(estimate, first, state, now, sequences)
+                    }
                 }
             }
         }
@@ -653,12 +684,15 @@ private fun RouteList(
 }
 
 /**
- * A route's top row: its lines' pills in order, a ⚠ beside each disrupted one, then duration ·
- * arrival — which drops below the pills when they leave no room beside them.
+ * A card's top row: its lines' pills in order — the first ride's lines as one cut pill when the
+ * card's routes differ only there ("43/134") — a ⚠ beside each disrupted one, then the best
+ * route's duration · arrival, which drops below the pills when they leave no room beside them.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RouteSummary(estimate: TripTiming.Estimate, statuses: Map<String, LineStatus>, modifier: Modifier = Modifier) {
+private fun RouteSummary(card: List<TripTiming.Estimate>, statuses: Map<String, LineStatus>, modifier: Modifier = Modifier) {
+    val estimate = card.first()
+    val firstLines = card.mapNotNull { it.route.rides.firstOrNull() }
     FlowRow(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -670,13 +704,21 @@ private fun RouteSummary(estimate: TripTiming.Estimate, statuses: Map<String, Li
             // All walking (two stops close together): no line to show, and no live row below.
             Text(stringResource(R.string.trip_walk_only), style = MaterialTheme.typography.titleSmall)
         }
-        rides.forEach { leg ->
+        rides.forEachIndexed { index, leg ->
             // A disrupted line's ⚠ sits beside its own pill (and wraps with it), so it's clear which
-            // leg it qualifies.
-            val status = statuses[leg.lineId]?.takeIf { it.disrupted }
+            // leg it qualifies; beside a cut pill, for any of its lines.
+            val lines = if (index == 0) firstLines else listOf(leg)
+            // Beside a cut pill, every disrupted line's details, each by its line.
+            val disrupted = lines.mapNotNull { line -> statuses[line.lineId]?.takeIf { it.disrupted }?.let { line to it } }
+            val warning = disrupted.singleOrNull()?.second?.description
+                ?: disrupted.map { (line, status) -> stringResource(R.string.trip_line_status, line.lineName, status.description) }
+                    .takeIf { it.isNotEmpty() }?.joinToString("; ")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                LinePill(leg.lineName, leg.lineId, leg.mode)
-                if (status != null) DisruptionWarningGlyph(status.description)
+                SharedLinePill(
+                    lines.map { LineRef(it.lineId, it.lineName, it.mode) },
+                    lines.map { it.lineName }.reduce { a, b -> stringResource(R.string.trip_lines_either, a, b) },
+                )
+                if (warning != null) DisruptionWarningGlyph(warning)
             }
         }
         Text(
@@ -845,7 +887,7 @@ private fun RouteLegs(
         // A re-plan that failed says so over the open route too, with its Retry, as the list does.
         state.planError?.let { error -> item(key = "error") { PlanFailure(error, state.planning, onRetry) } }
         if (state.planError == null && state.planIncomplete) item(key = "incomplete") { PlanIncomplete(state.planning, onRetry) }
-        item(key = "summary") { RouteSummary(estimate, state.statuses, Modifier.padding(vertical = 8.dp)) }
+        item(key = "summary") { RouteSummary(listOf(estimate), state.statuses, Modifier.padding(vertical = 8.dp)) }
         statusNote(state, estimate.unchecked)?.let { checking -> item(key = "status") { StatusUnknown(checking) } }
         val firstStop = estimate.route.legs.firstOrNull()?.fromName
         if (access > Duration.ZERO && firstStop != null) {
