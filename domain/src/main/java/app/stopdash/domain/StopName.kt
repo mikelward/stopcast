@@ -105,3 +105,13 @@ fun abbreviateBranch(branch: String): String =
     DestinationAbbreviations.abbreviate(branch)
         .split(" ")
         .joinToString(" ") { word -> if (word == "Cross") "X" else word }
+
+/**
+ * A point the Journey Planner names, cleaned ([cleanStopName]). A station entrance a walk ends at
+ * comes as its street, then the station ("Cannon Street, Cannon Street Rail Station"): it goes by
+ * the station. Any other name is only cleaned ("High Street, Kensington" stays whole).
+ */
+fun pointName(commonName: String): String {
+    val station = commonName.substringAfterLast(", ", missingDelimiterValue = "").trim()
+    return cleanStopName(station.takeIf { it.endsWith(" Station", ignoreCase = true) } ?: commonName)
+}

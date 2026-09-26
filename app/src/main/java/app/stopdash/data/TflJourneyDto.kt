@@ -3,6 +3,7 @@ package app.stopdash.data
 import app.stopdash.domain.TripLeg
 import app.stopdash.domain.TripRoute
 import app.stopdash.domain.cleanStopName
+import app.stopdash.domain.pointName
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
@@ -67,9 +68,9 @@ data class TflJourneyLegDto(
             lineId = line?.id.orEmpty(),
             lineName = line?.name.orEmpty(),
             fromId = departurePoint.stopId().orEmpty(),
-            fromName = cleanStopName(departurePoint.commonName),
+            fromName = pointName(departurePoint.commonName),
             toId = arrivalPoint.stopId().orEmpty(),
-            toName = cleanStopName(arrivalPoint.commonName),
+            toName = pointName(arrivalPoint.commonName),
             departure = departure,
             arrival = arrival,
             path = path.stopPoints.map { it.id }.filter { it.isNotBlank() },
@@ -94,6 +95,7 @@ private fun signedName(terminus: String): String {
 }
 
 private const val BUS_STATION = " Bus Station"
+
 
 @Serializable
 data class TflJourneyPointDto(

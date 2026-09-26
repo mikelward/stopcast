@@ -1,0 +1,425 @@
+{
+ "journeys": [
+  {
+   "startDateTime": "2026-09-26T18:31:00",
+   "duration": 28,
+   "arrivalDateTime": "2026-09-26T18:59:00",
+   "legs": [
+    {
+     "duration": 19,
+     "departureTime": "2026-09-26T18:31:00",
+     "arrivalTime": "2026-09-26T18:50:00",
+     "isDisrupted": true,
+     "mode": {
+      "id": "tube",
+      "name": "tube"
+     },
+     "departurePoint": {
+      "commonName": "Archway Underground Station",
+      "naptanId": "940GZZLUACY",
+      "individualStopId": "9400ZZLUACY2",
+      "icsCode": "1000008"
+     },
+     "arrivalPoint": {
+      "commonName": "Bank Underground Station",
+      "naptanId": "940GZZLUBNK",
+      "individualStopId": "9400ZZLUBNK5",
+      "icsCode": "1000013"
+     },
+     "routeOptions": [
+      {
+       "name": "Northern",
+       "directions": [
+        "Morden via Bank"
+       ],
+       "lineIdentifier": {
+        "id": "northern",
+        "name": "Northern"
+       }
+      }
+     ],
+     "path": {
+      "stopPoints": [
+       {
+        "id": "940GZZLUTFP",
+        "name": "Tufnell Park Underground Station"
+       },
+       {
+        "id": "940GZZLUKSH",
+        "name": "Kentish Town Underground Station"
+       },
+       {
+        "id": "940GZZLUCTN",
+        "name": "Camden Town Underground Station"
+       },
+       {
+        "id": "940GZZLUEUS",
+        "name": "Euston Underground Station"
+       },
+       {
+        "id": "940GZZLUKSX",
+        "name": "King's Cross St. Pancras Underground Station"
+       },
+       {
+        "id": "940GZZLUAGL",
+        "name": "Angel Underground Station"
+       },
+       {
+        "id": "940GZZLUODS",
+        "name": "Old Street Underground Station"
+       },
+       {
+        "id": "940GZZLUMGT",
+        "name": "Moorgate Underground Station"
+       },
+       {
+        "id": "940GZZLUBNK",
+        "name": "Bank Underground Station"
+       }
+      ]
+     }
+    },
+    {
+     "duration": 9,
+     "departureTime": "2026-09-26T18:50:00",
+     "arrivalTime": "2026-09-26T18:59:00",
+     "isDisrupted": false,
+     "interChangeDuration": "9",
+     "interChangePosition": "IDEST",
+     "mode": {
+      "id": "walking",
+      "name": "walking"
+     },
+     "departurePoint": {
+      "commonName": "Bank Underground Station",
+      "naptanId": "940GZZLUBNK",
+      "individualStopId": "9400ZZLUBNK5",
+      "icsCode": "1000013"
+     },
+     "arrivalPoint": {
+      "commonName": "Cannon Street, Cannon Street Rail Station",
+      "individualStopId": "4900CANONST1",
+      "icsCode": "1000337"
+     },
+     "routeOptions": [
+      {
+       "name": "",
+       "directions": [
+        ""
+       ]
+      }
+     ],
+     "path": {
+      "stopPoints": [
+       {
+        "name": "Cannon Street, Cannon Street Rail Station"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "startDateTime": "2026-09-26T18:32:00",
+   "duration": 28,
+   "arrivalDateTime": "2026-09-26T19:00:00",
+   "legs": [
+    {
+     "duration": 19,
+     "departureTime": "2026-09-26T18:32:00",
+     "arrivalTime": "2026-09-26T18:51:00",
+     "isDisrupted": true,
+     "mode": {
+      "id": "tube",
+      "name": "tube"
+     },
+     "departurePoint": {
+      "commonName": "Archway Underground Station",
+      "naptanId": "940GZZLUACY",
+      "individualStopId": "9400ZZLUACY2",
+      "icsCode": "1000008"
+     },
+     "arrivalPoint": {
+      "commonName": "Bank Underground Station",
+      "naptanId": "940GZZLUBNK",
+      "individualStopId": "9400ZZLUBNK5",
+      "icsCode": "1000013"
+     },
+     "routeOptions": [
+      {
+       "name": "Northern",
+       "directions": [
+        "Morden via Bank"
+       ],
+       "lineIdentifier": {
+        "id": "northern",
+        "name": "Northern"
+       }
+      }
+     ],
+     "path": {
+      "stopPoints": [
+       {
+        "id": "940GZZLUTFP",
+        "name": "Tufnell Park Underground Station"
+       },
+       {
+        "id": "940GZZLUKSH",
+        "name": "Kentish Town Underground Station"
+       },
+       {
+        "id": "940GZZLUCTN",
+        "name": "Camden Town Underground Station"
+       },
+       {
+        "id": "940GZZLUEUS",
+        "name": "Euston Underground Station"
+       },
+       {
+        "id": "940GZZLUKSX",
+        "name": "King's Cross St. Pancras Underground Station"
+       },
+       {
+        "id": "940GZZLUAGL",
+        "name": "Angel Underground Station"
+       },
+       {
+        "id": "940GZZLUODS",
+        "name": "Old Street Underground Station"
+       },
+       {
+        "id": "940GZZLUMGT",
+        "name": "Moorgate Underground Station"
+       },
+       {
+        "id": "940GZZLUBNK",
+        "name": "Bank Underground Station"
+       }
+      ]
+     }
+    },
+    {
+     "duration": 9,
+     "departureTime": "2026-09-26T18:51:00",
+     "arrivalTime": "2026-09-26T19:00:00",
+     "isDisrupted": false,
+     "interChangeDuration": "9",
+     "interChangePosition": "IDEST",
+     "mode": {
+      "id": "walking",
+      "name": "walking"
+     },
+     "departurePoint": {
+      "commonName": "Bank Underground Station",
+      "naptanId": "940GZZLUBNK",
+      "individualStopId": "9400ZZLUBNK5",
+      "icsCode": "1000013"
+     },
+     "arrivalPoint": {
+      "commonName": "Cannon Street, Cannon Street Rail Station",
+      "individualStopId": "4900CANONST1",
+      "icsCode": "1000337"
+     },
+     "routeOptions": [
+      {
+       "name": "",
+       "directions": [
+        ""
+       ]
+      }
+     ],
+     "path": {
+      "stopPoints": [
+       {
+        "name": "Cannon Street, Cannon Street Rail Station"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "startDateTime": "2026-09-26T18:34:00",
+   "duration": 32,
+   "arrivalDateTime": "2026-09-26T19:06:00",
+   "legs": [
+    {
+     "duration": 16,
+     "departureTime": "2026-09-26T18:34:00",
+     "arrivalTime": "2026-09-26T18:50:00",
+     "isDisrupted": false,
+     "interChangeDuration": "5",
+     "interChangePosition": "AFTER",
+     "mode": {
+      "id": "tube",
+      "name": "tube"
+     },
+     "departurePoint": {
+      "commonName": "Archway Underground Station",
+      "naptanId": "940GZZLUACY",
+      "individualStopId": "9400ZZLUACY2",
+      "icsCode": "1000008"
+     },
+     "arrivalPoint": {
+      "commonName": "Embankment Underground Station",
+      "naptanId": "940GZZLUEMB",
+      "individualStopId": "9400ZZLUEMB6",
+      "icsCode": "1000075"
+     },
+     "routeOptions": [
+      {
+       "name": "Northern",
+       "directions": [
+        "Battersea Power Station Underground Station via Charing Cross"
+       ],
+       "lineIdentifier": {
+        "id": "northern",
+        "name": "Northern"
+       }
+      }
+     ],
+     "path": {
+      "stopPoints": [
+       {
+        "id": "940GZZLUTFP",
+        "name": "Tufnell Park Underground Station"
+       },
+       {
+        "id": "940GZZLUKSH",
+        "name": "Kentish Town Underground Station"
+       },
+       {
+        "id": "940GZZLUCTN",
+        "name": "Camden Town Underground Station"
+       },
+       {
+        "id": "940GZZLUMTC",
+        "name": "Mornington Crescent Underground Station"
+       },
+       {
+        "id": "940GZZLUEUS",
+        "name": "Euston Underground Station"
+       },
+       {
+        "id": "940GZZLUWRR",
+        "name": "Warren Street Underground Station"
+       },
+       {
+        "id": "940GZZLUGDG",
+        "name": "Goodge Street Underground Station"
+       },
+       {
+        "id": "940GZZLUTCR",
+        "name": "Tottenham Court Road Underground Station"
+       },
+       {
+        "id": "940GZZLULSQ",
+        "name": "Leicester Square Underground Station"
+       },
+       {
+        "id": "940GZZLUCHX",
+        "name": "Charing Cross Underground Station"
+       },
+       {
+        "id": "940GZZLUEMB",
+        "name": "Embankment Underground Station"
+       }
+      ]
+     }
+    },
+    {
+     "duration": 6,
+     "departureTime": "2026-09-26T18:56:00",
+     "arrivalTime": "2026-09-26T19:02:00",
+     "isDisrupted": false,
+     "mode": {
+      "id": "tube",
+      "name": "tube"
+     },
+     "departurePoint": {
+      "commonName": "Embankment Underground Station",
+      "naptanId": "940GZZLUEMB",
+      "individualStopId": "9400ZZLUEMB3",
+      "icsCode": "1000075"
+     },
+     "arrivalPoint": {
+      "commonName": "Cannon Street Underground Station",
+      "naptanId": "940GZZLUCST",
+      "individualStopId": "9400ZZLUCST1",
+      "icsCode": "1000040"
+     },
+     "routeOptions": [
+      {
+       "name": "Circle",
+       "directions": [
+        "Hammersmith (H&C and Circle Lines)"
+       ],
+       "lineIdentifier": {
+        "id": "circle",
+        "name": "Circle"
+       }
+      }
+     ],
+     "path": {
+      "stopPoints": [
+       {
+        "id": "940GZZLUTMP",
+        "name": "Temple Underground Station"
+       },
+       {
+        "id": "940GZZLUBKF",
+        "name": "Blackfriars Underground Station"
+       },
+       {
+        "id": "940GZZLUMSH",
+        "name": "Mansion House Underground Station"
+       },
+       {
+        "id": "940GZZLUCST",
+        "name": "Cannon Street Underground Station"
+       }
+      ]
+     }
+    },
+    {
+     "duration": 4,
+     "departureTime": "2026-09-26T19:02:00",
+     "arrivalTime": "2026-09-26T19:06:00",
+     "isDisrupted": false,
+     "interChangeDuration": "4",
+     "interChangePosition": "IDEST",
+     "mode": {
+      "id": "walking",
+      "name": "walking"
+     },
+     "departurePoint": {
+      "commonName": "Cannon Street Underground Station",
+      "naptanId": "940GZZLUCST",
+      "individualStopId": "9400ZZLUCST1",
+      "icsCode": "1000040"
+     },
+     "arrivalPoint": {
+      "commonName": "Cannon Street, Cannon Street Rail Station",
+      "individualStopId": "4900CANONST1",
+      "icsCode": "1000337"
+     },
+     "routeOptions": [
+      {
+       "name": "",
+       "directions": [
+        ""
+       ]
+      }
+     ],
+     "path": {
+      "stopPoints": [
+       {
+        "name": "Cannon Street, Cannon Street Rail Station"
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
