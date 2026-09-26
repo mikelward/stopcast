@@ -14,6 +14,8 @@ import app.stopdash.domain.JourneyPlanner
 import app.stopdash.domain.LineRoute
 import app.stopdash.domain.LineSequence
 import app.stopdash.domain.LineStatus
+import app.stopdash.domain.RouteMiss
+import app.stopdash.domain.RouteStops
 import app.stopdash.domain.StopDisruption
 import app.stopdash.domain.TflClient
 import app.stopdash.domain.TflException
@@ -1026,6 +1028,22 @@ class TripViewModelTest {
         // It failed to load.
         assertEquals(TripMessage.INCOMPLETE, tripCheckState(state, estimates, now, mapOf("blue" to null)))
         assertNull(tripCheckState(state, estimates, now, mapOf("blue" to blue)))
+        // Neither a loading nor a failed route names a train: the fetch logs a failure itself.
+        assertTrue(tripMisses(state, estimates, now, emptyMap()).isEmpty())
+        assertTrue(tripMisses(state, estimates, now, mapOf("blue" to null)).isEmpty())
+        assertTrue(tripMisses(state, estimates, now, mapOf("blue" to blue)).isEmpty())
+    }
+
+    @Test
+    fun `a train whose path won't resolve is named for the log`() {
+        val state = TripViewModel.State(
+            routes = listOf(route),
+            live = mapOf("B" to TripViewModel.StopLive(listOf(train("blue", "Nowhere", 16)), now)),
+        )
+        val estimates = checkNotNull(tripEstimates(state, now, Duration.ZERO, emptyMap()))
+        val sequences = mapOf("blue" to blue)
+        assertEquals(TripMessage.INCOMPLETE, tripCheckState(state, estimates, now, sequences))
+        assertEquals(setOf(RouteMiss("blue", "B", RouteStops.Resolution.NoMatch)), tripMisses(state, estimates, now, sequences))
     }
 
     // A line forking after B: on to C, or to D.

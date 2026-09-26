@@ -48,6 +48,10 @@ internal fun rememberTripView(
     val result = remember(loaded?.stops, destination, sequences, hubs, hidden) {
         DirectTrips.filter(loaded?.stops.orEmpty(), destination, sequences, hubs, hidden)
     }
+    // The page says only that some couldn't be checked; the log says which and why, once per
+    // distinct set (a refresh finding the same misses logs nothing new), off composition.
+    val repository = LocalRouteStops.current
+    LaunchedEffect(repository, result.misses) { repository?.reportMisses(result.misses) }
     if (loaded == null) return TripView(state, null, none)
     fun text(message: TripMessage) = when (message) {
         TripMessage.CHECKING -> checking

@@ -144,6 +144,7 @@ import app.stopdash.domain.HiddenModes
 import app.stopdash.domain.ModeGroups
 import app.stopdash.domain.NoTimes
 import app.stopdash.domain.RelativeTime
+import app.stopdash.domain.RouteMiss
 import app.stopdash.domain.Staleness
 import app.stopdash.domain.StarredRow
 import app.stopdash.domain.JourneyCall
@@ -387,6 +388,15 @@ fun MainScreen(
     val journeySegments = remember(cardJourneys, starSequences) {
         cardJourneys.associate { j -> j.key to starSequences[j.lineId]?.let { Journeys.segment(j, it) } }
     }
+    // A journey its loaded route can't place reads "Couldn't check": the log says which, once per
+    // distinct set, off composition.
+    val unplacedJourneys = remember(cardJourneys, journeySegments, starSequences) {
+        cardJourneys.filter { starSequences[it.lineId] != null && journeySegments[it.key] == null }
+            .mapTo(LinkedHashSet()) { it.lineId }
+    }
+    LaunchedEffect(routeStopsRepository, unplacedJourneys) {
+        unplacedJourneys.forEach { lineId -> routeStopsRepository?.reportUnplaced(lineId) }
+    }
     // A bus journey's origin stop area (from its starred line's route) and the area's poles, looked
     // up once a day off the render path: another line may board beside the origin (stop K by
     // stop L) and reach the far end too (SPEC *Journeys*). A failed lookup is kept as such (null).
@@ -542,6 +552,8 @@ fun MainScreen(
             val boardingStops = listOf(originId) + journeySiblings[journey.key]?.poles.orEmpty().map { it.id }
             // The far-end stops the card's departures reach (another line may use another pole).
             var reached = emptySet<String>()
+            // The departures its check left out as unchecked, for the debug log.
+            var misses = emptySet<RouteMiss>()
             // The stop being fetched: known before the route is in for a station (see journeyOrigins).
             val fetchedId = segment?.originId ?: journey.from.stopId.takeUnless { journey.bus }
             val state = when {
@@ -567,7 +579,9 @@ fun MainScreen(
                         pending = parts.any { it.pending },
                         unresolved = parts.any { it.unresolved },
                         routeFailed = parts.any { it.routeFailed },
+                        misses = parts.flatMapTo(LinkedHashSet()) { it.misses },
                     )
+                    misses = trains.misses
                     // Trains on another branch, offered with where to change when no direct one is due.
                     val changes = Journeys.changesWithoutDirect(trains.rows, parts.flatMap { it.changes })
                     reached = parts.flatMapTo(HashSet()) { it.reachedIds }
@@ -634,9 +648,13 @@ fun MainScreen(
             } + destinationClosures
             // A destination whose check failed with nothing known: the card says so, not "open".
             val destinationUnchecked = destinationIds.any { it in journeyDestinationsUnknown }
-            JourneyCard(journey, state, closures, checked, boardingIds, destinationIds, destinationUnchecked)
+            JourneyCard(journey, state, closures, checked, boardingIds, destinationIds, destinationUnchecked, misses)
         }
     }
+    // The cards say only "Some routes couldn't be checked"; the log says which trains and why, once
+    // per distinct set (a refresh finding the same misses logs nothing new), off composition.
+    val journeyMisses = remember(journeyCards) { journeyCards.flatMapTo(LinkedHashSet()) { it.misses } }
+    LaunchedEffect(routeStopsRepository, journeyMisses) { routeStopsRepository?.reportMisses(journeyMisses) }
     // The far ends to check for a closure.
     val journeyDestinations = remember(journeyCards) {
         journeyCards.flatMap { card -> card.destinationIds.map { id -> StopRef(id, card.journey.to.name) } }.distinctBy { it.id }
@@ -3083,6 +3101,8 @@ internal data class JourneyCard(
     val destinationIds: Set<String> = emptySet(),
     // Some far-end stop's closure check failed with nothing known, so it may be closed.
     val destinationUnchecked: Boolean = false,
+    // The departures left out as unchecked, by line, stop and reason, for the debug log.
+    val misses: Set<RouteMiss> = emptySet(),
 )
 
 /** What a journey card can say about its trains. */

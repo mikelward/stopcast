@@ -146,6 +146,33 @@ class RouteStopsTest {
     }
 
     @Test
+    fun `misses and an unplaced journey are logged with their ids and reasons`() {
+        val warnings = mutableListOf<String>()
+        val repository = RouteStopsRepository(
+            source = object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String) = labeledBus
+            },
+            warn = { warnings += it },
+        )
+        repository.reportMisses(
+            listOf(
+                RouteMiss("43", "P", RouteStops.Resolution.NoMatch),
+                RouteMiss("", "P", RouteStops.Resolution.NoLine),
+            ),
+        )
+        repository.reportMisses(emptyList())
+        repository.reportUnplaced("43")
+        assertEquals(
+            listOf(
+                "route stops unavailable for line 43 at stop P: destination matches no route",
+                "route stops unavailable for line (none) at stop P: no line id",
+                "journey not placed on line 43: no single boarding stop before the far end",
+            ),
+            warnings,
+        )
+    }
+
+    @Test
     fun `route names parse to their far end`() {
         assertEquals("Edgware", RouteStops.terminusOf("Morden  &harr;  Edgware  via Bank"))
         assertEquals("Archway", RouteStops.terminusOf("Victoria Bus Station &harr;  Archway Station"))

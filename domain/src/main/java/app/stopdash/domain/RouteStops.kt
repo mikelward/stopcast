@@ -138,6 +138,14 @@ interface StopAreaSource {
     suspend fun stopAreaPoles(areaId: String): List<StopLocation>
 }
 
+/**
+ * A departure a filter left out because it couldn't be checked against its line's route: the line,
+ * the stop it boards at, and why ([RouteStops.Resolution], never [RouteStops.Resolution.Found]).
+ * Ids only, so it can go in the debug log as it stands. A route that failed to load isn't one: its
+ * fetch failure is logged where it happened.
+ */
+data class RouteMiss(val lineId: String, val stopId: String, val reason: RouteStops.Resolution)
+
 object RouteStops {
     private val DIRECTIONS = listOf("inbound", "outbound")
 
@@ -162,6 +170,8 @@ object RouteStops {
         data class Ambiguous(val paths: Int) : Resolution
         /** TfL has no route for the line at all (a National Rail service it doesn't know). */
         data object UnknownLine : Resolution
+        /** The departure carries no line id, so there is no route to follow it on. */
+        data object NoLine : Resolution
     }
 
     /** The stop list, or null when [resolve] can't say which path the train takes. */
@@ -453,8 +463,28 @@ class RouteStopsRepository(
             RouteStops.Resolution.NoMatch -> "destination matches no route"
             is RouteStops.Resolution.Ambiguous -> "${resolution.paths} possible paths"
             RouteStops.Resolution.UnknownLine -> "line not known to TfL"
+            RouteStops.Resolution.NoLine -> "no line id"
         }
-        warn("route stops unavailable for line $lineId at stop $stopId: $reason")
+        warn("route stops unavailable for line ${lineId.ifBlank { "(none)" }} at stop $stopId: $reason")
+    }
+
+    /**
+     * Logs each departure a trip, To… page or journey card left out as unchecked ([misses]), as
+     * [reportUnresolved] does for a followed train: those screens show only "Some routes couldn't be
+     * checked", so this is what says which line, at which stop, and why (SPEC principle 2).
+     */
+    fun reportMisses(misses: Collection<RouteMiss>) {
+        misses.forEach { reportUnresolved(it.lineId, it.stopId, it.reason) }
+    }
+
+    /**
+     * Logs that a starred journey on [lineId] can't be placed on its line's route this way round —
+     * no route calls at both ends in order, or the origin comes out as more than one stop — so a
+     * card reading "Couldn't check" says why (SPEC principle 2). The line only: a journey's two ends
+     * together are a route the rider travels, which the log's floor keeps out (docs/PRIVACY.md).
+     */
+    fun reportUnplaced(lineId: String) {
+        warn("journey not placed on line $lineId: no single boarding stop before the far end")
     }
 
     /**

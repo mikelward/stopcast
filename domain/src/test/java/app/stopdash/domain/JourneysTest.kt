@@ -359,6 +359,7 @@ class JourneysTest {
         val trains = Journeys.trains(segment, rowsAt("TOP", departure("Bottom A", 60, lineId = "")), mapOf("example" to rail))
         assertTrue(trains.rows.isEmpty())
         assertTrue(trains.unresolved)
+        assertEquals(setOf(RouteMiss("", "TOP", RouteStops.Resolution.NoLine)), trains.misses)
     }
 
     @Test
@@ -388,9 +389,12 @@ class JourneysTest {
         val unknown = Journeys.trains(segment, rowsAt("TOP", departure("Nowhere", 120)), sequences)
         assertTrue(unknown.rows.isEmpty())
         assertTrue(unknown.unresolved)
+        assertEquals(setOf(RouteMiss("example", "TOP", RouteStops.Resolution.NoMatch)), unknown.misses)
         val otherBranch = Journeys.trains(segment, rowsAt("TOP", departure("Bottom B", 60)), sequences)
         assertTrue(otherBranch.rows.isEmpty())
         assertFalse(otherBranch.unresolved)
+        // A definite no is no miss.
+        assertTrue(otherBranch.misses.isEmpty())
     }
 
     @Test

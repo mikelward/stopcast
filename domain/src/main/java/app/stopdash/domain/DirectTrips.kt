@@ -16,9 +16,14 @@ object DirectTrips {
      * What a trip filter kept: the [stops] with only the departures that reach the destination (a
      * stop keeps its closure notice with none), and why an empty or short list may not be the whole
      * answer — a line's route still loading ([pending]), or a departure that couldn't be checked
-     * ([unresolved]).
+     * ([unresolved]), each such departure named in [misses] for the debug log.
      */
-    data class Result(val stops: List<StopArrivals>, val pending: Boolean, val unresolved: Boolean)
+    data class Result(
+        val stops: List<StopArrivals>,
+        val pending: Boolean,
+        val unresolved: Boolean,
+        val misses: Set<RouteMiss> = emptySet(),
+    )
 
     /**
      * Keeps the departures in [stops] that call at one of [destination]'s stops after boarding,
@@ -40,6 +45,7 @@ object DirectTrips {
         val destinationIds = destination.mapTo(HashSet()) { it.id }
         var pending = false
         var unresolved = false
+        val misses = LinkedHashSet<RouteMiss>()
         // A line's route as seen from [stop] and the destination's stops, once per stop and line.
         fun sequenceAt(stop: StopArrivals, lineId: String): LineSequence? {
             var sequence = sequences[lineId] ?: return null
@@ -61,6 +67,7 @@ object DirectTrips {
                     // No line to follow: it may well call there, so never a silent "no".
                     lineId.isBlank() -> {
                         unresolved = true
+                        misses += RouteMiss(lineId, stop.stopId, RouteStops.Resolution.NoLine)
                         false
                     }
                     lineId !in sequences -> {
@@ -70,14 +77,17 @@ object DirectTrips {
                     else -> {
                         val sequence = routeOf(lineId)
                         val bus = departure.mode.equals("bus", ignoreCase = true)
-                        val path = sequence?.let {
-                            RouteStops.ahead(it, stop.stopId, departure.destination, departure.branch, lineId, bus)
+                        val resolution = sequence?.let {
+                            RouteStops.resolve(it, stop.stopId, departure.destination, departure.branch, lineId, bus)
                         }
-                        if (path == null) {
+                        if (resolution !is RouteStops.Resolution.Found) {
                             unresolved = true
+                            // A failed route (null) is logged by its fetch; a path that won't
+                            // resolve is logged nowhere else, so it's named here.
+                            if (resolution != null) misses += RouteMiss(lineId, stop.stopId, resolution)
                             false
                         } else {
-                            path.drop(1).any { it.id in destinationIds }
+                            resolution.stops.drop(1).any { it.id in destinationIds }
                         }
                     }
                 }
@@ -97,7 +107,7 @@ object DirectTrips {
             }
             stop.copy(departures = departures, lines = lines)
         }.filter { it.departures.isNotEmpty() || it.lines.isNotEmpty() || it.disruptions.isNotEmpty() }
-        return Result(kept, pending, unresolved)
+        return Result(kept, pending, unresolved, misses)
     }
 
     /** How far from the rider a stop still counts as "here" for To… from the near-me list: 0.2 mi. */

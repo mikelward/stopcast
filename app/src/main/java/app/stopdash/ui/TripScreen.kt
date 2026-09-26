@@ -74,6 +74,7 @@ import app.stopdash.domain.HiddenModes
 import app.stopdash.domain.LineRef
 import app.stopdash.domain.LineSequence
 import app.stopdash.domain.LineStatus
+import app.stopdash.domain.RouteMiss
 import app.stopdash.domain.RouteStops
 import app.stopdash.domain.Staleness
 import app.stopdash.domain.StopArrivals
@@ -281,21 +282,37 @@ internal fun tripCheckState(
     now: Instant,
     sequences: Map<String, LineSequence?>,
 ): TripMessage? {
-    var pending = false
-    var unresolved = false
-    for (leg in estimates.flatMap { it.route.rides }.distinct()) {
-        val stop = state.live[leg.fromId] ?: continue
-        if (Staleness.isStale(Duration.between(stop.fetchedAt, now).toKotlinDuration())) continue
-        val result = legFilter(leg, stop, now, sequences) ?: continue
-        pending = pending || result.pending
-        unresolved = unresolved || result.unresolved
-    }
+    val results = legChecks(state, estimates, now, sequences)
     return when {
-        unresolved -> TripMessage.INCOMPLETE
-        pending -> TripMessage.CHECKING
+        results.any { it.unresolved } -> TripMessage.INCOMPLETE
+        results.any { it.pending } -> TripMessage.CHECKING
         else -> null
     }
 }
+
+/**
+ * The trains [tripCheckState] found it couldn't check, by line, stop and reason: the banner says only
+ * "Some routes couldn't be checked", so these are what the debug log records (SPEC principle 2).
+ */
+internal fun tripMisses(
+    state: TripViewModel.State,
+    estimates: List<TripTiming.Estimate>,
+    now: Instant,
+    sequences: Map<String, LineSequence?>,
+): Set<RouteMiss> = legChecks(state, estimates, now, sequences).flatMapTo(LinkedHashSet()) { it.misses }
+
+// Each ridden leg's live trains judged on their route: legs with fresh arrivals and trains only.
+private fun legChecks(
+    state: TripViewModel.State,
+    estimates: List<TripTiming.Estimate>,
+    now: Instant,
+    sequences: Map<String, LineSequence?>,
+): List<DirectTrips.Result> =
+    estimates.flatMap { it.route.rides }.distinct().mapNotNull { leg ->
+        val stop = state.live[leg.fromId] ?: return@mapNotNull null
+        if (Staleness.isStale(Duration.between(stop.fetchedAt, now).toKotlinDuration())) return@mapNotNull null
+        legFilter(leg, stop, now, sequences)
+    }
 
 /**
  * The trains a first-leg row times, at most [cap]: the soonest the rider can reach, after as many of
@@ -672,6 +689,10 @@ private fun TripContent(
             // With a route open, only its own legs' warnings frame it; the list takes every route's.
             val shown = open?.let { listOf(it) } ?: cards?.flatten()
             val check = remember(state, shown, now, sequences) { shown?.let { tripCheckState(state, it, now, sequences) } }
+            // Which trains the banner means, logged once per distinct set, off composition.
+            val misses = remember(state, shown, now, sequences) { shown?.let { tripMisses(state, it, now, sequences) }.orEmpty() }
+            val routeStops = LocalRouteStops.current
+            LaunchedEffect(routeStops, misses) { routeStops?.reportMisses(misses) }
             TripBanners(shown, state, check, locationBanner, onRelocate, hiddenModes, onShowAllModes)
             Box(Modifier.fillMaxSize()) {
                 when {
