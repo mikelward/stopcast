@@ -823,10 +823,32 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         now *From…*, and a station's page has *To…*, which keeps only the departures whose own
         line's route calls at the picked destination (`DirectTrips.filter`), flagging any it
         couldn't check.
-    - [ ] **Journey planning** (maintainer, 2026-09-24): trips with a change, the eventual goal
-          behind *To…* (TfL Journey API or our own route data). SPEC *Non-goals* lifts when this
-          starts; cost and privacy to be stated then (a Journey request per trip is keyless-free
-          but sends both ends).
+    - [ ] **Trips with a change** (maintainer, 2026-09-24; designed 2026-09-26, SPEC *Trips with a
+          change*): *To…* a stop plans with TfL's Journey Planner, lists routes best first (checked and open, then unchecked, then not running; within each,
+          fully live, then est., then withheld; then earliest arrival) as
+          alike cards (line pills, duration · arrival, first leg's live row), and opens a route with
+          every leg as the list's own header and route card with live times and alerts.
+          Mock: the "StopDash Journeys Mock" artifact. `docs/PRIVACY.md` and Play Data Safety are
+          updated in the same change (both ends of a trip go to TfL as stop ids).
+      - [ ] **Mode toggles** at the top of a trip, remembered across trips (the Planner's `mode=`).
+      - [ ] **Avoid a line**: request `includeAlternativeRoutes` and drop routes using it, since
+            the Planner has no line exclusion (each returned route names its lines, so filtering
+            on the phone is enough). UI to settle; the maintainer leans to the first:
+            - a long press on a route offering "Avoid <line>" for each of its lines;
+            - an avoided-lines chip at the top of the trip;
+            - a setting listing lines to avoid.
+      - [ ] **On the way** (later milestone; mocked 2026-09-26): tapping a first-leg train ("I'm on
+            this one") starts the trip. A top card shows the next action ("Change at Whitechapel ·
+            Platform A"), over a timeline of the route with the rider's position on it, followed
+            by the boarded train's vehicle id in TfL arrivals, so it works underground without GPS.
+      - [ ] **Step by step** (later milestone): the next action as an ongoing notification, with
+            a nudge a stop before each change. A foreground service and a new wakeup, so it's a
+            battery and permission decision stated when it's picked up.
+      - [ ] **One-tap trips** (if trips work well): an app-bar shortcut straight into *To…*, which
+            means first freeing app-bar room by shrinking the "Last update" freshness stamp.
+      - [ ] **Arrows between a route's pills** if space permits (dropped for width, 2026-09-26).
+      - [ ] **Shared-leg pill**: a leg several routes serve alike (buses 43 and 134 share the stops
+            to Highgate station) as one diagonally cut pill carrying both routes.
     - [ ] **Star a From… To… trip as a journey**: the trip has no single starred line, which
           `StarredJourney` places its ends on, so it needs a line-free journey first.
     - [x] **To… from the near-me list** (maintainer, 2026-09-24): the overflow's *To…* starts
