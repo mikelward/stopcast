@@ -1893,6 +1893,10 @@ class MainActivity : ComponentActivity() {
             onRelocate = onLocate ?: relocate,
             hiddenModes = hiddenModes,
             onShowAllModes = showAllModes,
+            // A line row's long-press "Hide ‹mode›", as on the list.
+            onHideMode = { mode -> HiddenModesSetting.setGroupHidden(ModeGroups.of(mode), hidden = true) },
+            hiddenModesWriteFailed = HiddenModesSetting.writeFailed.collectAsStateWithLifecycle().value,
+            onHiddenModesWriteFailureShown = HiddenModesSetting::writeFailureShown,
             menu = LocalAppMenu.current,
             openRoute = trip.openRoute,
             dismissed = trip.dismissed.collectAsStateWithLifecycle().value,
