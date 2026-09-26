@@ -89,7 +89,7 @@ fun DarwinBoardDto.toDepartures(warn: (String) -> Unit = {}): List<Departure> {
         val at = instantNear(now, time) ?: return@mapNotNull null
         val destination = service.destination.orEmpty().mapNotNull { it.locationName?.trim()?.ifBlank { null } }
         Departure(
-            lineId = railLineId(operator),
+            lineId = railLineId(operator, service.operatorCode),
             lineName = operator,
             direction = "",
             destination = cleanStopName(destination.joinToString(" & ")),
