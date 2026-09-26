@@ -142,7 +142,7 @@ fun StationSearchScreen(
                 is StationSearchViewModel.Result.Matches -> {
                     val listState = rememberLazyListState()
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize().scrollEdgeFade(listState, MaterialTheme.colorScheme.background),
+                        modifier = Modifier.fillMaxSize().scrollEdgeCue(listState, scrollCueColors(MaterialTheme.colorScheme.background)),
                         state = listState,
                     ) {
                         items(result.matches, key = { it.id }) { match ->
@@ -186,7 +186,7 @@ private fun YourStopsList(favorites: List<StationMatch>, recent: List<StationMat
         modifier = Modifier
             .fillMaxSize()
             .testTag("stationSearchYours")
-            .scrollEdgeFade(listState, MaterialTheme.colorScheme.background),
+            .scrollEdgeCue(listState, scrollCueColors(MaterialTheme.colorScheme.background)),
         state = listState,
     ) {
         listOf(R.string.station_search_starred to favorites, R.string.station_search_recent to recent).forEach { (heading, stops) ->

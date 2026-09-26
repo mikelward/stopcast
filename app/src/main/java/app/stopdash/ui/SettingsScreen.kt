@@ -122,7 +122,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.surface)
+                    .scrollEdgeCue(scrollState, scrollCueColors(MaterialTheme.colorScheme.surface))
                     .verticalScroll(scrollState),
             ) {
                 // Text size (display scaling, SPEC *Display size*): a slider that mirrors — and

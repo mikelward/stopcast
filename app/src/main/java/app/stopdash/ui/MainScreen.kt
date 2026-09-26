@@ -1275,7 +1275,7 @@ fun MainScreen(
                     val scrollState = rememberScrollState()
                     Centered(
                         Modifier.fillMaxSize()
-                            .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.background)
+                            .scrollEdgeCue(scrollState, scrollCueColors(MaterialTheme.colorScheme.background))
                             .verticalScroll(scrollState),
                     ) {
                         Text(
@@ -1477,7 +1477,7 @@ private fun LoadedContent(
                 val scrollState = rememberScrollState()
                 Centered(
                     Modifier.fillMaxSize()
-                        .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.background)
+                        .scrollEdgeCue(scrollState, scrollCueColors(MaterialTheme.colorScheme.background))
                         .verticalScroll(scrollState),
                 ) {
                     // A stale snapshot with nothing left can't be read as "no departures"
@@ -1931,7 +1931,7 @@ private fun DepartureList(
     }
     LazyColumn(
         // Fades the edges while the list scrolls on past them, so more below reads as more.
-        modifier = modifier.scrollEdgeFade(listState, MaterialTheme.colorScheme.background),
+        modifier = modifier.scrollEdgeCue(listState, scrollCueColors(MaterialTheme.colorScheme.background)),
         state = listState,
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -3622,8 +3622,8 @@ internal fun RouteDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                // Before verticalScroll, so the fade stays pinned to the viewport ([scrollEdgeFade]).
-                .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.background)
+                // Before verticalScroll, so the cue stays pinned to the viewport ([scrollEdgeCue]).
+                .scrollEdgeCue(scrollState, scrollCueColors(MaterialTheme.colorScheme.background))
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
