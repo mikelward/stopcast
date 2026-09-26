@@ -1,5 +1,10 @@
 package app.stopdash.ui
 
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import app.stopdash.R
 import app.stopdash.domain.ArrivalsCache
 import app.stopdash.domain.Departure
@@ -114,6 +119,28 @@ class TripViewModelTest {
         toIds: List<String> = listOf("C"),
         arrivals: ArrivalsCache = ArrivalsCache(),
     ) = TripViewModel(planner, client, "A", toIds, clock = { now }, plans = plans, io = dispatcher, arrivals = arrivals)
+
+    @Test
+    fun `the open route outlasts the process and is forgotten with the trip`() {
+        val saved = SavedStateHandle()
+        val store = ViewModelStore()
+        val trip = ViewModelProvider.create(
+            store,
+            viewModelFactory {
+                initializer { TripViewModel(FakePlanner(listOf(route)), FakeClient(mutableMapOf()), "A", listOf("C"), io = dispatcher, savedState = saved) }
+            },
+        )[TripViewModel::class]
+        trip.openRoute.value = "red>blue"
+        // A recreated process restores the handle: the new model opens the same route.
+        val restored = TripViewModel(
+            FakePlanner(listOf(route)), FakeClient(mutableMapOf()), "A", listOf("C"), io = dispatcher,
+            savedState = SavedStateHandle(mapOf("openRoute" to saved.get<String>("openRoute"))),
+        )
+        assertEquals("red>blue", restored.openRoute.value)
+        // A trip let go takes its route with it, so the next trip sharing the handle opens none.
+        store.clear()
+        assertNull(saved.get<String>("openRoute"))
+    }
 
     @Test
     fun `a boarding stop another screen just fetched shows at once and isn't asked for again`() = runTest(dispatcher) {

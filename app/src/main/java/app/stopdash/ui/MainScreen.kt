@@ -349,7 +349,6 @@ fun MainScreen(
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Overflow-menu and About-dialog visibility. Saved so an open dialog survives rotation.
-    var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     val starWriteFailedMessage = stringResource(R.string.star_write_failed)
     // The rows the screen renders, grouped against the live clock (SPEC D4) — computed once here so
@@ -1067,109 +1066,67 @@ fun MainScreen(
                     if (stationTitle != null && onPlanTo != null && platformRows == null && !journeyViewOpen) {
                         TextButton(onClick = onPlanTo) { Text(stringResource(R.string.menu_to)) }
                     }
-                    // Button and menu wrapped together so the dropdown anchors to the overflow
-                    // button and opens from it; a bare DropdownMenu sibling anchors to the row
-                    // slot instead and drops from the wrong place.
-                    if (stationTitle == null) Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Box {
-                                Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.menu_more))
-                                if (updateAvailable) {
-                                    val updateDescription = stringResource(R.string.update_available)
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            // Off-grid 2dp: an optical nudge seating the dot into
-                                            // the icon's top-right corner (the standard badge spot).
-                                            .offset(x = 2.dp, y = (-2).dp)
-                                            .size(8.dp)
-                                            .background(MaterialTheme.colorScheme.error, CircleShape)
-                                            .semantics { contentDescription = updateDescription }
-                                            .testTag(UPDATE_AVAILABLE_DOT_TAG),
-                                    )
-                                }
-                            }
-                        }
-                        // The menu opens its own window, which doesn't inherit the theme's scaled
-                        // density or pinch handler — FontSizeWindow re-applies the chosen size to
-                        // the items and pinchFontSizeHost lets a pinch resize while it's open, so
-                        // the size setting reaches the menu too (SPEC *Display size*). The host
-                        // consumes only a two-finger pinch, so item taps are unaffected.
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                            modifier = Modifier.pinchFontSizeHost(),
-                        ) {
-                            FontSizeWindow {
-                                if (updateAvailable) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.update_available)) },
-                                        onClick = {
-                                            menuExpanded = false
-                                            onOpenAppListing()
-                                        },
-                                    )
-                                }
-                                if (onFindStation != null) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.menu_from)) },
-                                        onClick = {
-                                            menuExpanded = false
-                                            onFindStation()
-                                        },
-                                    )
-                                }
-                                // To… from here: pick a destination, then the direct trips from
-                                // the stops near the rider (SPEC *Finding stops → From… To…*).
-                                if (onPlanTo != null) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.menu_to)) },
-                                        onClick = {
-                                            menuExpanded = false
-                                            onPlanTo()
-                                        },
-                                    )
-                                }
-                                // One checkbox per mode nearby (SPEC *Finding stops → Hiding a mode*):
-                                // ticked is shown. The menu stays open, so several can be toggled.
-                                if (onSetModeGroupShown != null) {
-                                    HorizontalDivider()
-                                    ModeGroups.ALL.forEach { group ->
-                                        val shown = !ModeGroups.isHidden(group, hiddenModes)
-                                        DropdownMenuItem(
-                                            text = { Text(groupName(group)) },
-                                            leadingIcon = { Checkbox(checked = shown, onCheckedChange = null) },
-                                            onClick = { onSetModeGroupShown(group, !shown) },
-                                            modifier = Modifier.semantics {
-                                                toggleableState = ToggleableState(shown)
-                                                role = Role.Checkbox
-                                            },
-                                        )
-                                    }
-                                    HorizontalDivider()
-                                }
+                    if (stationTitle == null) {
+                        AppOverflowMenu(updateAvailable, onOpenAppListing) { close ->
+                            if (onFindStation != null) {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.menu_settings)) },
+                                    text = { Text(stringResource(R.string.menu_from)) },
                                     onClick = {
-                                        menuExpanded = false
-                                        onOpenSettings()
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.menu_send_bug_report)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onSendBugReport()
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.menu_about)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        showAbout = true
+                                        close()
+                                        onFindStation()
                                     },
                                 )
                             }
+                            // To… from here: pick a destination, then the direct trips from the
+                            // stops near the rider (SPEC *Finding stops → From… To…*).
+                            if (onPlanTo != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.menu_to)) },
+                                    onClick = {
+                                        close()
+                                        onPlanTo()
+                                    },
+                                )
+                            }
+                            // One checkbox per mode nearby (SPEC *Finding stops → Hiding a mode*):
+                            // ticked is shown. The menu stays open, so several can be toggled.
+                            if (onSetModeGroupShown != null) {
+                                HorizontalDivider()
+                                ModeGroups.ALL.forEach { group ->
+                                    val shown = !ModeGroups.isHidden(group, hiddenModes)
+                                    DropdownMenuItem(
+                                        text = { Text(groupName(group)) },
+                                        leadingIcon = { Checkbox(checked = shown, onCheckedChange = null) },
+                                        onClick = { onSetModeGroupShown(group, !shown) },
+                                        modifier = Modifier.semantics {
+                                            toggleableState = ToggleableState(shown)
+                                            role = Role.Checkbox
+                                        },
+                                    )
+                                }
+                                HorizontalDivider()
+                            }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.menu_settings)) },
+                                onClick = {
+                                    close()
+                                    onOpenSettings()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.menu_send_bug_report)) },
+                                onClick = {
+                                    close()
+                                    onSendBugReport()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.menu_about)) },
+                                onClick = {
+                                    close()
+                                    showAbout = true
+                                },
+                            )
                         }
                     }
                 },

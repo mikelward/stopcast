@@ -114,6 +114,8 @@ import app.stopdash.domain.StopMap
 import app.stopdash.ui.BugReportConsentDialog
 import app.stopdash.ui.FontSizeSetting
 import app.stopdash.ui.LocalRouteStops
+import app.stopdash.ui.LocalAppMenu
+import app.stopdash.ui.AppMenuActions
 import app.stopdash.ui.LocalRouteTopology
 import app.stopdash.ui.LicensesScreen
 import app.stopdash.telemetry.TelemetryConsent
@@ -492,237 +494,247 @@ class MainActivity : ComponentActivity() {
                 // composition rather than polling TfL behind a static screen. [NearbyArea] hosts the
                 // switch and composes the foreground-return observer in its aboveOverlay slot — above
                 // the switch — so a return that lands while an overlay is open is still seen (#136).
-                NearbyArea(
-                    overlayOpen = licensesOpen || settingsOpen || stationSearchOpen || openStationId != null,
-                    aboveOverlay = {
-                        ForegroundReturnLatcher(
-                            isReady = { nearbyViewModel.state.value is NearbyStopsViewModel.State.Ready },
-                            isBusy = { nearbyViewModel.relocating.value },
-                            onReturn = { returnLatch.pending = true },
-                        )
-                    },
-                    overlayContent = {
-                        // Licenses wins if both are somehow set; each closes via its own Back.
-                        if (licensesOpen) {
-                            LicensesScreen(onBack = { licensesOpen = false })
-                        } else if (!settingsOpen) {
-                            StationSearchArea(
-                                stationId = openStationId,
-                                stationName = openStationName,
-                                onOpenStation = { match ->
-                                    openStationId = match.id
-                                    openStationName = match.name
-                                },
-                                // The name goes with the id, so nothing about a station looked at is
-                                // kept in the saved state once it's closed.
-                                onCloseStation = {
-                                    openStationId = null
-                                    openStationName = ""
-                                    tripPicking = false
-                                    tripToId = null
-                                    tripToName = ""
-                                },
-                                onCloseSearch = {
-                                    stationSearchOpen = false
-                                    openStationId = null
-                                    openStationName = ""
-                                    tripPicking = false
-                                    tripToId = null
-                                    tripToName = ""
-                                },
-                                tripPicking = tripPicking,
-                                tripToId = tripToId,
-                                tripToName = tripToName,
-                                onPlanTo = { tripPicking = true },
-                                onPickTo = { match ->
-                                    tripPicking = false
-                                    tripToId = match.id
-                                    tripToName = match.name
-                                },
-                                onClosePicker = { tripPicking = false },
-                                onClearTo = {
-                                    tripToId = null
-                                    tripToName = ""
-                                },
+                // The app's overflow actions, for a screen several layers down (a trip) to offer too.
+                CompositionLocalProvider(
+                    LocalAppMenu provides AppMenuActions(
+                        updateAvailable = updateAvailable.value,
+                        onOpenAppListing = ::openPlayListing,
+                        onSendBugReport = requestBugReport,
+                        onOpenLicenses = openLicenses,
+                    ),
+                ) {
+                    NearbyArea(
+                        overlayOpen = licensesOpen || settingsOpen || stationSearchOpen || openStationId != null,
+                        aboveOverlay = {
+                            ForegroundReturnLatcher(
+                                isReady = { nearbyViewModel.state.value is NearbyStopsViewModel.State.Ready },
+                                isBusy = { nearbyViewModel.relocating.value },
+                                onReturn = { returnLatch.pending = true },
                             )
-                        } else {
-                            SettingsScreen(
-                                liveWidgetRefresh = liveWidgetRefresh == true,
-                                liveWidgetRefreshEnabled = liveWidgetRefresh != null,
-                                liveWidgetRefreshFailed = liveWidgetRefreshFailed,
-                                onLiveWidgetRefreshChange = { enabled ->
-                                    settingsScope.launch {
-                                        liveWidgetRefreshFailed =
-                                            applyLiveWidgetRefresh(applicationContext, settings, enabled) ==
-                                                LiveWidgetRefreshResult.FAILED
-                                    }
-                                },
-                                onDismissLiveWidgetRefreshError = { liveWidgetRefreshFailed = false },
-                                // The paste field. Applied to memory at once (next refresh uses it) and
-                                // persisted in the background; a blank clears it back to keyless (SPEC D7).
-                                // Disabled until the stored key has actually been read, so the field can't be
-                                // edited over a value that hasn't loaded yet.
-                                userApiKey = userApiKeyValue.orEmpty(),
-                                userApiKeyLoaded = apiKeyLoaded,
-                                onUserApiKeyChange = { key -> UserApiKeySetting.set(key) },
-                                // The National Rail key, handled the same way (SPEC *National Rail*).
-                                railApiKey = railApiKeyValue.orEmpty(),
-                                railApiKeyLoaded = railApiKeyLoaded,
-                                onRailApiKeyChange = { key -> RailApiKeySetting.set(key) },
-                                // Crash reports and usage stats, off until the user opts in here
-                                // (SPEC *Privacy*); the holder applies it at once, the gate follows.
-                                telemetryOptIn = telemetryOptIn,
-                                onTelemetryOptInChange = TelemetryConsent::set,
-                                // Applied in memory at once (the list re-labels), persisted in order.
-                                distanceUnits = distanceUnits,
-                                onDistanceUnitsChange = DistanceUnitsSetting::set,
-                                distanceUnitsLoaded = distanceUnitsLoaded,
-                                distanceUnitsWriteFailed = distanceUnitsWriteFailed,
-                                onDismissDistanceUnitsError = DistanceUnitsSetting::writeFailureShown,
-                                onBack = { settingsOpen = false },
-                            )
-                        }
-                    },
-                    body = {
-                        // The precise-fix follow-up is foreground-only: it stops when the nearby
-                        // surface leaves (an overlay replaces it) or the app goes to the background,
-                        // and asks again on return if the outcome is still flagged coarse.
-                        LifecycleStartEffect(Unit) {
-                            nearbyViewModel.resumeRefining()
-                            onStopOrDispose { nearbyViewModel.pauseRefining() }
-                        }
-                        when (val state = nearby) {
-                            // "To…" from the near-me list takes the list's place while it's open,
-                            // inside the nearby lifecycle: the location gate, its errors and a
-                            // re-locate on return apply to it as they do to the list.
-                            is NearbyStopsViewModel.State.Ready -> if (hereTripOpen) {
-                                val hidden by HiddenModesSetting.changes.collectAsStateWithLifecycle()
-                                // A precise fix that moves the set moves the trip too, as its own
-                                // re-locate does: the origins are worked out from the set shown.
-                                val refinementNow by nearbyViewModel.refinement.collectAsStateWithLifecycle()
-                                LaunchedEffect(refinementNow?.id) {
-                                    refinementNow?.let { nearbyViewModel.applyRefinement(it) }
-                                }
-                                HereTripArea(
-                                    // Worked out from the current set, so a re-locate moves the
-                                    // trip with the rider; none left (all hidden) ends it (below).
-                                    origin = remember(state, hidden) {
-                                        val byId = state.nearbyStops.associateBy { it.id }
-                                        hereOriginIds(state.eagerStops, state.nearbyStops, state.distanceMeters, hidden)
-                                            .mapNotNull { byId[it] }
+                        },
+                        overlayContent = {
+                            // Licenses wins if both are somehow set; each closes via its own Back.
+                            if (licensesOpen) {
+                                LicensesScreen(onBack = { licensesOpen = false })
+                            } else if (!settingsOpen) {
+                                StationSearchArea(
+                                    stationId = openStationId,
+                                    stationName = openStationName,
+                                    onOpenStation = { match ->
+                                        openStationId = match.id
+                                        openStationName = match.name
                                     },
-                                    // The Planner starts from the nearest stop of any mode, hidden or
-                                    // not (it walks on to a better one); hidden modes filter its routes.
-                                    anchors = state.nearbyStops,
-                                    distanceMeters = state.distanceMeters,
-                                    clusters = state.eager + state.more,
-                                    hiddenModes = hidden,
-                                    picking = herePicking,
-                                    toId = hereToId,
-                                    toName = hereToName,
-                                    onPlanTo = { herePicking = true },
+                                    // The name goes with the id, so nothing about a station looked at is
+                                    // kept in the saved state once it's closed.
+                                    onCloseStation = {
+                                        openStationId = null
+                                        openStationName = ""
+                                        tripPicking = false
+                                        tripToId = null
+                                        tripToName = ""
+                                    },
+                                    onCloseSearch = {
+                                        stationSearchOpen = false
+                                        openStationId = null
+                                        openStationName = ""
+                                        tripPicking = false
+                                        tripToId = null
+                                        tripToName = ""
+                                    },
+                                    tripPicking = tripPicking,
+                                    tripToId = tripToId,
+                                    tripToName = tripToName,
+                                    onPlanTo = { tripPicking = true },
                                     onPickTo = { match ->
-                                        herePicking = false
-                                        hereToId = match.id
-                                        hereToName = match.name
+                                        tripPicking = false
+                                        tripToId = match.id
+                                        tripToName = match.name
                                     },
-                                    // Back from the search returns to the trip, or to the list when
-                                    // no destination was picked yet.
-                                    onClosePicker = { if (hereToId == null) closeHereTrip() else herePicking = false },
-                                    onClose = closeHereTrip,
-                                    // A return to the foreground re-locates first, as the list does,
-                                    // then refreshes the trip if the rider is still near its stops.
-                                    foregroundReturnPending = returnLatch.pending,
-                                    onForegroundReturnConsumed = { returnLatch.pending = false },
-                                    isRelocating = { nearbyViewModel.relocating.value },
-                                    relocate = { nearbyViewModel.relocate() },
-                                    // "Show all" re-picks the set from the same fix, as the list's does,
-                                    // so a hidden mode's stops can become origins again.
-                                    showAllModes = {
-                                        HiddenModesSetting.showAll()
-                                        nearbyViewModel.refilter()
+                                    onClosePicker = { tripPicking = false },
+                                    onClearTo = {
+                                        tripToId = null
+                                        tripToName = ""
                                     },
-                                    relocating = nearbyViewModel.relocating,
-                                    repicked = nearbyViewModel.repicked,
-                                    locationBanner = nearbyViewModel.locationBanner,
                                 )
                             } else {
-                                DeparturesForStops(
-                                    ready = state,
-                                    relocate = { onSameSet -> nearbyViewModel.relocate(onSameSet) },
-                                    relocating = nearbyViewModel.relocating,
-                                    locationBanner = nearbyViewModel.locationBanner,
-                                    refinement = nearbyViewModel.refinement,
-                                    applyRefinement = nearbyViewModel::applyRefinement,
-                                    onOpenLicenses = openLicenses,
-                                    onOpenSettings = { settingsOpen = true },
-                                    onFindStation = { stationSearchOpen = true },
-                                    onPlanTo = {
-                                        listStores.clearAll()
-                                        hereTripOpen = true
-                                        herePicking = true
+                                SettingsScreen(
+                                    liveWidgetRefresh = liveWidgetRefresh == true,
+                                    liveWidgetRefreshEnabled = liveWidgetRefresh != null,
+                                    liveWidgetRefreshFailed = liveWidgetRefreshFailed,
+                                    onLiveWidgetRefreshChange = { enabled ->
+                                        settingsScope.launch {
+                                            liveWidgetRefreshFailed =
+                                                applyLiveWidgetRefresh(applicationContext, settings, enabled) ==
+                                                    LiveWidgetRefreshResult.FAILED
+                                        }
                                     },
-                                    updateAvailable = updateAvailable.value,
-                                    onOpenAppListing = ::openPlayListing,
-                                    onSendBugReport = requestBugReport,
-                                    // A foreground return that landed while an overlay was open is latched
-                                    // above; consume it here so re-entering departures relocates.
-                                    foregroundReturnPending = returnLatch.pending,
-                                    onForegroundReturnConsumed = { returnLatch.pending = false },
-                                    listState = departuresListState,
-                                    farReveal = farReveal,
-                                    pendingTracker = departuresTracker,
+                                    onDismissLiveWidgetRefreshError = { liveWidgetRefreshFailed = false },
+                                    // The paste field. Applied to memory at once (next refresh uses it) and
+                                    // persisted in the background; a blank clears it back to keyless (SPEC D7).
+                                    // Disabled until the stored key has actually been read, so the field can't be
+                                    // edited over a value that hasn't loaded yet.
+                                    userApiKey = userApiKeyValue.orEmpty(),
+                                    userApiKeyLoaded = apiKeyLoaded,
+                                    onUserApiKeyChange = { key -> UserApiKeySetting.set(key) },
+                                    // The National Rail key, handled the same way (SPEC *National Rail*).
+                                    railApiKey = railApiKeyValue.orEmpty(),
+                                    railApiKeyLoaded = railApiKeyLoaded,
+                                    onRailApiKeyChange = { key -> RailApiKeySetting.set(key) },
+                                    // Crash reports and usage stats, off until the user opts in here
+                                    // (SPEC *Privacy*); the holder applies it at once, the gate follows.
+                                    telemetryOptIn = telemetryOptIn,
+                                    onTelemetryOptInChange = TelemetryConsent::set,
+                                    // Applied in memory at once (the list re-labels), persisted in order.
+                                    distanceUnits = distanceUnits,
+                                    onDistanceUnitsChange = DistanceUnitsSetting::set,
+                                    distanceUnitsLoaded = distanceUnitsLoaded,
+                                    distanceUnitsWriteFailed = distanceUnitsWriteFailed,
+                                    onDismissDistanceUnitsError = DistanceUnitsSetting::writeFailureShown,
+                                    onBack = { settingsOpen = false },
                                 )
                             }
-                            else -> {
-                                // While the gate is up (a failed/empty relocate, or a retry), drop
-                                // any departures store retained from the pre-gate set, so recovering
-                                // to the same stop IDs rebuilds the ViewModel and re-fetches instead
-                                // of showing the pre-gate departures until the next auto-refresh
-                                // (Codex). Ready never enters this branch, so a same-set relocate is
-                                // untouched. Runs once on gate entry (keyed Unit).
-                                val stores: NearbyDeparturesStores = viewModel()
-                                // The from-here trip's origins too, for the same reason (Codex).
-                                val hereTripStores: NearbyDeparturesStores = viewModel(key = "here-trip-stores")
-                                DisposableEffect(Unit) {
-                                    stores.clearAll()
-                                    hereTripStores.clearAll()
-                                    onDispose {}
-                                }
-                                // "No stops nearby" from a coarse fix: a precise fix that lands
-                                // elsewhere looks again from there (nothing is fetched to cancel).
-                                val gateRefinement by nearbyViewModel.refinement.collectAsStateWithLifecycle()
-                                LaunchedEffect(gateRefinement?.id) {
-                                    gateRefinement?.let { nearbyViewModel.applyRefinement(it) }
-                                }
-                                val gateBanner by nearbyViewModel.locationBanner.collectAsStateWithLifecycle()
-                                LocationGate(
-                                    state = state,
-                                    approximate = gateBanner == LocationBanner.COARSE,
-                                    permanentlyDenied = permissionPermanentlyDenied,
-                                    onAllow = { permissionLauncher.launch(locationPermissions) },
-                                    onRetry = {
-                                        if (hasLocationPermission()) nearbyViewModel.locate()
-                                        else permissionLauncher.launch(locationPermissions)
-                                    },
-                                    onOpenSettings = ::openAppSettings,
-                                    onOpenLicenses = openLicenses,
-                                    // The report is most useful in exactly these stuck states (no fix,
-                                    // TfL unreachable, nothing nearby), so it is reachable here too, not
-                                    // only past the gate — with no location or stops (Codex P2 on #86).
-                                    onSendBugReport = requestBugReport,
-                                    // The gate is in front of the departures overflow (which carries the
-                                    // update item), so surface an available update on the Locating spinner.
-                                    updateAvailable = updateAvailable.value,
-                                    onOpenAppListing = ::openPlayListing,
-                                    // The station search needs no location, so it's offered here too:
-                                    // most useful to exactly the users who can't use near me.
-                                    onFindStation = { stationSearchOpen = true },
-                                )
+                        },
+                        body = {
+                            // The precise-fix follow-up is foreground-only: it stops when the nearby
+                            // surface leaves (an overlay replaces it) or the app goes to the background,
+                            // and asks again on return if the outcome is still flagged coarse.
+                            LifecycleStartEffect(Unit) {
+                                nearbyViewModel.resumeRefining()
+                                onStopOrDispose { nearbyViewModel.pauseRefining() }
                             }
-                        }
-                    },
-                )
+                            when (val state = nearby) {
+                                // "To…" from the near-me list takes the list's place while it's open,
+                                // inside the nearby lifecycle: the location gate, its errors and a
+                                // re-locate on return apply to it as they do to the list.
+                                is NearbyStopsViewModel.State.Ready -> if (hereTripOpen) {
+                                    val hidden by HiddenModesSetting.changes.collectAsStateWithLifecycle()
+                                    // A precise fix that moves the set moves the trip too, as its own
+                                    // re-locate does: the origins are worked out from the set shown.
+                                    val refinementNow by nearbyViewModel.refinement.collectAsStateWithLifecycle()
+                                    LaunchedEffect(refinementNow?.id) {
+                                        refinementNow?.let { nearbyViewModel.applyRefinement(it) }
+                                    }
+                                    HereTripArea(
+                                        // Worked out from the current set, so a re-locate moves the
+                                        // trip with the rider; none left (all hidden) ends it (below).
+                                        origin = remember(state, hidden) {
+                                            val byId = state.nearbyStops.associateBy { it.id }
+                                            hereOriginIds(state.eagerStops, state.nearbyStops, state.distanceMeters, hidden)
+                                                .mapNotNull { byId[it] }
+                                        },
+                                        // The Planner starts from the nearest stop of any mode, hidden or
+                                        // not (it walks on to a better one); hidden modes filter its routes.
+                                        anchors = state.nearbyStops,
+                                        distanceMeters = state.distanceMeters,
+                                        clusters = state.eager + state.more,
+                                        hiddenModes = hidden,
+                                        picking = herePicking,
+                                        toId = hereToId,
+                                        toName = hereToName,
+                                        onPlanTo = { herePicking = true },
+                                        onPickTo = { match ->
+                                            herePicking = false
+                                            hereToId = match.id
+                                            hereToName = match.name
+                                        },
+                                        // Back from the search returns to the trip, or to the list when
+                                        // no destination was picked yet.
+                                        onClosePicker = { if (hereToId == null) closeHereTrip() else herePicking = false },
+                                        onClose = closeHereTrip,
+                                        // A return to the foreground re-locates first, as the list does,
+                                        // then refreshes the trip if the rider is still near its stops.
+                                        foregroundReturnPending = returnLatch.pending,
+                                        onForegroundReturnConsumed = { returnLatch.pending = false },
+                                        isRelocating = { nearbyViewModel.relocating.value },
+                                        relocate = { nearbyViewModel.relocate() },
+                                        // "Show all" re-picks the set from the same fix, as the list's does,
+                                        // so a hidden mode's stops can become origins again.
+                                        showAllModes = {
+                                            HiddenModesSetting.showAll()
+                                            nearbyViewModel.refilter()
+                                        },
+                                        relocating = nearbyViewModel.relocating,
+                                        repicked = nearbyViewModel.repicked,
+                                        locationBanner = nearbyViewModel.locationBanner,
+                                    )
+                                } else {
+                                    DeparturesForStops(
+                                        ready = state,
+                                        relocate = { onSameSet -> nearbyViewModel.relocate(onSameSet) },
+                                        relocating = nearbyViewModel.relocating,
+                                        locationBanner = nearbyViewModel.locationBanner,
+                                        refinement = nearbyViewModel.refinement,
+                                        applyRefinement = nearbyViewModel::applyRefinement,
+                                        onOpenLicenses = openLicenses,
+                                        onOpenSettings = { settingsOpen = true },
+                                        onFindStation = { stationSearchOpen = true },
+                                        onPlanTo = {
+                                            listStores.clearAll()
+                                            hereTripOpen = true
+                                            herePicking = true
+                                        },
+                                        updateAvailable = updateAvailable.value,
+                                        onOpenAppListing = ::openPlayListing,
+                                        onSendBugReport = requestBugReport,
+                                        // A foreground return that landed while an overlay was open is latched
+                                        // above; consume it here so re-entering departures relocates.
+                                        foregroundReturnPending = returnLatch.pending,
+                                        onForegroundReturnConsumed = { returnLatch.pending = false },
+                                        listState = departuresListState,
+                                        farReveal = farReveal,
+                                        pendingTracker = departuresTracker,
+                                    )
+                                }
+                                else -> {
+                                    // While the gate is up (a failed/empty relocate, or a retry), drop
+                                    // any departures store retained from the pre-gate set, so recovering
+                                    // to the same stop IDs rebuilds the ViewModel and re-fetches instead
+                                    // of showing the pre-gate departures until the next auto-refresh
+                                    // (Codex). Ready never enters this branch, so a same-set relocate is
+                                    // untouched. Runs once on gate entry (keyed Unit).
+                                    val stores: NearbyDeparturesStores = viewModel()
+                                    // The from-here trip's origins too, for the same reason (Codex).
+                                    val hereTripStores: NearbyDeparturesStores = viewModel(key = "here-trip-stores")
+                                    DisposableEffect(Unit) {
+                                        stores.clearAll()
+                                        hereTripStores.clearAll()
+                                        onDispose {}
+                                    }
+                                    // "No stops nearby" from a coarse fix: a precise fix that lands
+                                    // elsewhere looks again from there (nothing is fetched to cancel).
+                                    val gateRefinement by nearbyViewModel.refinement.collectAsStateWithLifecycle()
+                                    LaunchedEffect(gateRefinement?.id) {
+                                        gateRefinement?.let { nearbyViewModel.applyRefinement(it) }
+                                    }
+                                    val gateBanner by nearbyViewModel.locationBanner.collectAsStateWithLifecycle()
+                                    LocationGate(
+                                        state = state,
+                                        approximate = gateBanner == LocationBanner.COARSE,
+                                        permanentlyDenied = permissionPermanentlyDenied,
+                                        onAllow = { permissionLauncher.launch(locationPermissions) },
+                                        onRetry = {
+                                            if (hasLocationPermission()) nearbyViewModel.locate()
+                                            else permissionLauncher.launch(locationPermissions)
+                                        },
+                                        onOpenSettings = ::openAppSettings,
+                                        onOpenLicenses = openLicenses,
+                                        // The report is most useful in exactly these stuck states (no fix,
+                                        // TfL unreachable, nothing nearby), so it is reachable here too, not
+                                        // only past the gate — with no location or stops (Codex P2 on #86).
+                                        onSendBugReport = requestBugReport,
+                                        // The gate is in front of the departures overflow (which carries the
+                                        // update item), so surface an available update on the Locating spinner.
+                                        updateAvailable = updateAvailable.value,
+                                        onOpenAppListing = ::openPlayListing,
+                                        // The station search needs no location, so it's offered here too:
+                                        // most useful to exactly the users who can't use near me.
+                                        onFindStation = { stationSearchOpen = true },
+                                    )
+                                }
+                            }
+                        },
+                    )
+                }
 
                 // The consent gate overlays whatever is shown; requested from the Ready overflow or
                 // a stuck gate. Confirm builds the report from the current state and shares it
@@ -1836,6 +1848,7 @@ class MainActivity : ComponentActivity() {
                         journeyPlanner, departuresClient(appContext), fromStop.id, toStopIds, warn = ::logDepartureWarning,
                         arrivals = ArrivalsCache.SHARED, departureSourceChanges = RailApiKeySetting.changes,
                         poles = { area -> routeStops(appContext).loadPoles(area).map { it.id } },
+                        savedState = createSavedStateHandle(),
                     )
                 }
             },
@@ -1878,6 +1891,8 @@ class MainActivity : ComponentActivity() {
             onRelocate = onLocate ?: relocate,
             hiddenModes = hiddenModes,
             onShowAllModes = showAllModes,
+            menu = LocalAppMenu.current,
+            openRoute = trip.openRoute,
         )
     }
 

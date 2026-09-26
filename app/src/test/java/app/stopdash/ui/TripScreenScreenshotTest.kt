@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -21,6 +22,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -42,6 +44,9 @@ import java.time.Duration
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import app.stopdash.R
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -208,7 +213,11 @@ class TripScreenScreenshotTest {
         ),
     )
 
-    private fun show(state: TripViewModel.State, routeStops: RouteStopsRepository = RouteStopsRepository(source)) {
+    private fun show(
+        state: TripViewModel.State,
+        routeStops: RouteStopsRepository = RouteStopsRepository(source),
+        menu: AppMenuActions? = null,
+    ) {
         composeRule.setContent {
             StopDashTheme(dynamicColor = false) {
                 // No outer provider: the screen checks its trains against the repository it's given.
@@ -220,6 +229,7 @@ class TripScreenScreenshotTest {
                     routeStops = routeStops,
                     onBack = {},
                     onRetry = {},
+                    menu = menu,
                 )
             }
         }
@@ -397,6 +407,67 @@ class TripScreenScreenshotTest {
         }
         assertTrue(widths.all { it > 0.dp })
         assertTrue(widths.maxOf { it.value } - widths.minOf { it.value } < 1f)
+    }
+
+    @Test
+    fun a_trip_has_the_app_overflow() {
+        var reported = 0
+        show(planned, menu = AppMenuActions(updateAvailable = true, onOpenAppListing = {}, onSendBugReport = { reported++ }, onOpenLicenses = {}))
+        // The update dot, as on the list, and the menu's report and About.
+        composeRule.onNodeWithTag(UPDATE_AVAILABLE_DOT_TAG, useUnmergedTree = true).assertExists()
+        // The button and its dot; the open menu is a popup window of its own, which this capture of
+        // the activity's window doesn't draw.
+        captureSnapshot("trip-overflow.png")
+        composeRule.onNodeWithContentDescription(composeRule.activity.getString(R.string.menu_more)).performClick()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.update_available)).assertExists()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.menu_about)).assertExists()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.menu_send_bug_report)).performClick()
+        assertEquals(1, reported)
+    }
+
+    @Test
+    fun an_open_route_outlasts_the_screen_leaving() {
+        val openRoute = mutableStateOf<String?>(null)
+        val showing = mutableStateOf(true)
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                // Taken out of composition and back, as an overlay (the licenses) does.
+                if (showing.value) {
+                    TripScreen(
+                        title = "To Canary Wharf", state = planned, now = now, access = Duration.ofMinutes(2),
+                        routeStops = RouteStopsRepository(source), onBack = {}, onRetry = {}, openRoute = openRoute,
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("28 min · ~08:30").performClick()
+        composeRule.waitForIdle()
+        showing.value = false
+        composeRule.waitForIdle()
+        showing.value = true
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("6 stops to Whitechapel").assertIsDisplayed()
+    }
+
+    @Test
+    fun an_open_route_is_restored_after_the_process_is_recreated() {
+        val restoration = StateRestorationTester(composeRule)
+        val openRoute = mutableStateOf<String?>(null)
+        restoration.setContent {
+            StopDashTheme(dynamicColor = false) {
+                TripScreen(
+                    title = "To Canary Wharf", state = planned, now = now, access = Duration.ofMinutes(2),
+                    routeStops = RouteStopsRepository(source), onBack = {}, onRetry = {}, openRoute = openRoute,
+                )
+            }
+        }
+        composeRule.onNodeWithText("28 min · ~08:30").performClick()
+        composeRule.waitForIdle()
+        // A new trip model, as after a kill: it starts with no route open.
+        openRoute.value = null
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("6 stops to Whitechapel").assertIsDisplayed()
     }
 
     @Test
