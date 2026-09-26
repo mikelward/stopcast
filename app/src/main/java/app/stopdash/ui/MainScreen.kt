@@ -3694,11 +3694,20 @@ private fun CollapsibleStatus(
             .fillMaxWidth()
             .clickable(onClickLabel = clickLabel) { expanded = !expanded },
     ) {
+        // A dismissible notice is as tall as its 48dp controls when collapsed: the text carries its own
+        // vertical margin rather than the row padding above and below the buttons (maintainer,
+        // 2026-09-26: "make them shorter"), centered in the 48dp so one line sits level with the
+        // chevron and ×.
+        val dismissible = onDismiss != null
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = if (dismissible) 0.dp else 8.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f)
+                    .then(if (dismissible) Modifier.heightIn(min = 48.dp).padding(vertical = 12.dp) else Modifier),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 // The title (the interchange/stop name) heads the surface whenever one is given —
                 // collapsed and expanded — so a notice that doesn't name its own stop still says
                 // which stop. The route detail passes null (its dialog header already carries the
