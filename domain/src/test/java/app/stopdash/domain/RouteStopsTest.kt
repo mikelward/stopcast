@@ -2,7 +2,10 @@ package app.stopdash.domain
 
 import java.time.Duration
 import java.time.Instant
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -168,6 +171,7 @@ class RouteStopsTest {
                 }
             },
             warn = { warnings += it },
+            clock = { Instant.parse("2026-09-26T08:00:00Z") },
         )
         assertNull(repository.cached("14", "inbound"))
         repository.load("14", "inbound")
@@ -188,7 +192,59 @@ class RouteStopsTest {
         }
         assertTrue("a failed fetch propagates its reason", thrown != null)
         assertNull("and caches nothing", repository.cached("22", "inbound"))
-        assertEquals(listOf("route sequence fetch failed for line 22: Offline"), warnings)
+        assertEquals(
+            listOf(
+                "route sequence fetched for line 14 inbound in 0 ms",
+                "route sequence fetched for line 14 outbound in 0 ms",
+                "route sequence fetch failed for line 22 inbound after 0 ms: Offline",
+            ),
+            warnings,
+        )
+    }
+
+    @Test
+    fun `route fetches are bounded so live requests keep free slots`() = runTest {
+        var inFlight = 0
+        var most = 0
+        val gate = CompletableDeferred<Unit>()
+        val repository = RouteStopsRepository(
+            source = object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String): LineSequence {
+                    inFlight++
+                    most = maxOf(most, inFlight)
+                    gate.await()
+                    inFlight--
+                    return bus
+                }
+            },
+        )
+        val loads = (1..5).map { line -> async { repository.load("$line", "") } }
+        runCurrent()
+        assertEquals(RouteStopsRepository.MAX_CONCURRENT_FETCHES, inFlight)
+        gate.complete(Unit)
+        loads.forEach { it.await() }
+        assertEquals(RouteStopsRepository.MAX_CONCURRENT_FETCHES, most)
+    }
+
+    @Test
+    fun `a line's two directions are fetched at once, not in turn`() = runTest {
+        val started = mutableListOf<String>()
+        val gate = CompletableDeferred<Unit>()
+        val repository = RouteStopsRepository(
+            source = object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String): LineSequence {
+                    started += direction
+                    gate.await()
+                    return bus
+                }
+            },
+        )
+        val load = async { repository.load("14", "") }
+        runCurrent()
+        // Both requests are out before either answers.
+        assertEquals(listOf("inbound", "outbound"), started)
+        gate.complete(Unit)
+        load.await()
     }
 
     private class MemoryStore : RouteStopsStore {

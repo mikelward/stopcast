@@ -161,6 +161,8 @@ import app.stopdash.domain.JourneyTrains
 import app.stopdash.domain.WidgetJourneys
 import app.stopdash.domain.TflException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateMapOf
 import app.stopdash.domain.stopPlaceKey
 import app.stopdash.domain.StopQualifier
@@ -460,18 +462,23 @@ fun MainScreen(
     }
     LaunchedEffect(routeStopsRepository, journeyLineIds, journeyRouteRetry, routeRecheck) {
         val repository = routeStopsRepository ?: return@LaunchedEffect
-        for (lineId in journeyLineIds) {
-            val held = loadedSequences[lineId]
-            if (held != null && repository.cached(lineId, "") != null) continue
-            if (held == null) loadedSequences.remove(lineId)
-            loadedSequences[lineId] = try {
-                repository.load(lineId, "")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: TflException) {
-                // Logged (sanitized) by the repository; null marks the failure for the card, unless
-                // an expired copy is held: route data a day old beats none.
-                held
+        // Every line at once, so one slow route doesn't hold up the rest.
+        coroutineScope {
+            for (lineId in journeyLineIds) {
+                val held = loadedSequences[lineId]
+                if (held != null && repository.cached(lineId, "") != null) continue
+                if (held == null) loadedSequences.remove(lineId)
+                launch {
+                    loadedSequences[lineId] = try {
+                        repository.load(lineId, "")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: TflException) {
+                        // Logged (sanitized) by the repository; null marks the failure for the card,
+                        // unless an expired copy is held: route data a day old beats none.
+                        held
+                    }
+                }
             }
         }
     }
