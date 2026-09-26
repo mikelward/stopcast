@@ -138,24 +138,29 @@ internal fun onPoles(state: TripViewModel.State, sequences: Map<String, LineSequ
  * ([TripLeg.fromArea], a road's two poles) and one pole of it, which can be the other side of the
  * road: its buses there run the other way. Of the pair's poles on the line's route ([sequences]),
  * the one the route leaves by way of the leg's next stop, and the first pole of the alighting pair
- * after it. Unchanged for a leg named by no pair, before its route loads (or when it failed), or
- * where the route gives no single answer.
+ * after it — or, where it gets off at a stop in no pair, the first stop of that name. Unchanged for
+ * a leg named by no pair, before its route loads (or when it failed), or where the route gives no
+ * single answer.
  */
 internal fun onPoles(leg: TripLeg, sequences: Map<String, LineSequence?>): TripLeg {
     if (leg.isWalk || (leg.fromArea.isEmpty() && leg.toArea.isEmpty())) return leg
     val sequence = sequences[leg.lineId] ?: return leg
     fun boards(id: String) = id == leg.fromId || (leg.fromArea.isNotEmpty() && sequence.stopAreas[id] == leg.fromArea)
     fun alights(id: String) = id == leg.toId || (leg.toArea.isNotEmpty() && sequence.stopAreas[id] == leg.toArea)
+    // A stop in no pair (a bus station's stands, "Archway Station") by its name, only where the route
+    // doesn't call at the stop itself: the Planner can name a stand the line doesn't use, and the
+    // route's own stand is the only tie between them.
+    fun named(id: String) = leg.toArea.isEmpty() && sequence.stopNames[id]?.equals(leg.toName, ignoreCase = true) == true
     val next = leg.path.firstOrNull()
     val ends = sequence.routes.flatMap { route ->
-        route.stopIds.indices.filter { boards(route.stopIds[it]) }.mapNotNull { i ->
+        route.stopIds.indices.filter { boards(route.stopIds[it]) }.flatMap { i ->
             val on = route.stopIds.subList(i + 1, route.stopIds.size)
-            val off = on.indexOfFirst(::alights).takeIf { it >= 0 } ?: return@mapNotNull null
+            // Every stop of the name, so two along the route are no single answer.
+            val offs = listOfNotNull(on.indexOfFirst(::alights).takeIf { it >= 0 })
+                .ifEmpty { on.indices.filter { named(on[it]) } }
             // The way the Planner rides: by its next stop, before or at where it gets off.
-            if (next != null && on.subList(0, off + 1).none { isStop(sequence, it, next) }) {
-                return@mapNotNull null
-            }
-            route.stopIds[i] to on[off]
+            offs.filter { off -> next == null || on.subList(0, off + 1).any { isStop(sequence, it, next) } }
+                .map { off -> route.stopIds[i] to on[off] }
         }
     }.distinct()
     val (from, to) = ends.singleOrNull() ?: return leg
@@ -383,8 +388,12 @@ internal fun timedLineIds(routes: List<TripRoute>, hidden: Set<String>): List<St
 
 /** A route's identity across refreshes and re-ranking: its lines and stops in order. */
 internal fun routeKey(route: TripRoute): String =
-    // A bus leg by its stop pairs, so its key holds once its poles are worked out ([onPoles]).
-    route.legs.joinToString("|") { "${it.mode}:${it.lineId}:${it.fromArea.ifEmpty { it.fromId }}:${it.toArea.ifEmpty { it.toId }}" }
+    // A bus leg by its stop pairs, so its key holds once its poles are worked out ([onPoles]); one
+    // getting off at a stop in no pair by that stop's name, which is how its stop is worked out.
+    route.legs.joinToString("|") { leg ->
+        val to = leg.toArea.ifEmpty { if (leg.fromArea.isNotEmpty()) leg.toName else leg.toId }
+        "${leg.mode}:${leg.lineId}:${leg.fromArea.ifEmpty { leg.fromId }}:$to"
+    }
 
 // How many of a first leg's trains its row times.
 private const val SHOWN_TRAINS = 3

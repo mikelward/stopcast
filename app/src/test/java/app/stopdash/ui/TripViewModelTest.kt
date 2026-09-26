@@ -717,6 +717,30 @@ class TripViewModelTest {
     }
 
     @Test
+    fun `a bus leg to a stop in no pair gets off at the route's stop of that name`() {
+        // The Planner rides north to a bus station's stand Ds, which only the southbound route uses;
+        // the northbound route's own stand there is Dn. Neither is in a pair.
+        val station = road.copy(
+            routes = listOf(LineRoute("North", listOf("As", "Bn", "Xn", "Dn")), LineRoute("South", listOf("Ds", "Xs", "Bs", "Ad"))),
+            stopNames = road.stopNames + mapOf("Dn" to "D", "Ds" to "D"),
+        )
+        val toStation = plannerBus.copy(toId = "Ds", toName = "D", toArea = "", path = listOf("XG", "Ds"))
+        val placed = onPoles(toStation, mapOf("1" to station))
+        assertEquals("Bn", placed.fromId)
+        assertEquals("Dn", placed.toId)
+        // Its route keeps its key, so an open one stays open once its stops are known.
+        assertEquals(routeKey(TripRoute(listOf(toStation))), routeKey(TripRoute(listOf(placed))))
+        // A route calling at the Planner's own stop gets off there, not at an earlier stop of its name.
+        val twice = station.copy(routes = listOf(LineRoute("North", listOf("As", "Bn", "Xn", "Dn", "Ds"))))
+        assertEquals("Ds", onPoles(toStation, mapOf("1" to twice)).toId)
+        // Two stops of the name along the route, and not the Planner's own: no single answer, as named.
+        val loop = station.copy(routes = listOf(LineRoute("North", listOf("As", "Bn", "Xn", "Dn", "Yn", "Dx"))))
+        assertEquals(toStation, onPoles(toStation, mapOf("1" to loop.copy(stopNames = loop.stopNames + ("Dx" to "D")))))
+        // A stop of another name is no match: as the Planner named it.
+        assertEquals(toStation.copy(toName = "E"), onPoles(toStation.copy(toName = "E"), mapOf("1" to station)))
+    }
+
+    @Test
     fun `a bus stop pair's buses wait for the route to say which side the bus uses`() {
         val state = TripViewModel.State(live = mapOf("Bs" to TripViewModel.StopLive(listOf(train("1", "A", 2).copy(mode = "bus")), now)))
         assertEquals(emptyList<Departure>(), pendingTrains(state, plannerBus, now, emptyMap()))

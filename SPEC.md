@@ -866,7 +866,8 @@ boarding stop's arrivals arrive, and "–" when none can be vouched for (*Text i
 space*). A bus stop the Planner names by its stop pair (a road's two poles) boards at the pole its
 bus uses, worked out from the line's route: the pole the Planner names can be the other side of the
 road, where the buses run the other way. Both poles are fetched, and the times read "Loading" until
-the route says which. A route that is all walking (two stops close
+the route says which. A bus station's stands are in no pair, and the Planner can name one the line
+doesn't use, so the ride gets off at the route's own stop of that name. A route that is all walking (two stops close
 together) shows "Walk" where the pills go and its minutes, with no live row and no arrivals request.
 
 Tapping a route opens it, drawn with the list's own parts, **every leg a card**: the leg's platform header ("Highbury
