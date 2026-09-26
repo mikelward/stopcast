@@ -27,7 +27,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * A trip with a change (SPEC *Trips with a change*): TfL's Journey Planner's routes from [fromId] to
- * [toId], and the live arrivals and line statuses that time them. The plan is held in memory for
+ * [toIds], and the live arrivals and line statuses that time them. The plan is held in memory for
  * [PLAN_REUSE] and planned again after that; live times refresh on each [refresh], which the screen
  * calls on the list's own foreground tick, so nothing runs while the trip isn't on screen.
  *
@@ -38,7 +38,9 @@ class TripViewModel(
     private val planner: JourneyPlanner,
     private val client: TflClient,
     val fromId: String,
-    val toId: String,
+    // The stops the trip is planned to: one, or one per station of a complex and one of its bus
+    // stops (SPEC *Trips with a change*), each asked in parallel and the answers merged.
+    val toIds: List<String>,
     private val clock: () -> Instant = Instant::now,
     // Coarse facts only — a stop id, an error kind, never a coordinate (SPEC *Privacy*).
     private val warn: (String) -> Unit = {},
@@ -65,10 +67,13 @@ class TripViewModel(
         // failed before any was known. They can't be vouched for as running (ranked unchecked).
         val statusUnknown: Set<String> = emptySet(),
         val refreshing: Boolean = false,
+        // The last plan reached only some of the trip's stops (a complex's other stations failed):
+        // its routes stand, and the trip says it couldn't plan to every station, with a retry.
+        val planIncomplete: Boolean = false,
     )
 
     private val _state = MutableStateFlow(
-        plans.get(fromId, toId)?.let { (routes, at) -> State(routes = routes, plannedAt = at, statusUnknown = linesOf(routes)) } ?: State(),
+        plans.get(fromId, toIds)?.let { (routes, at) -> State(routes = routes, plannedAt = at, statusUnknown = linesOf(routes)) } ?: State(),
     )
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -137,34 +142,70 @@ class TripViewModel(
 
     private suspend fun plan() {
         _state.update { it.copy(planning = true) }
+        // A first plan shows each stop's answer as it lands, so routes appear without waiting on
+        // the slowest. A re-plan keeps the last plan until every stop has answered or failed, so
+        // routes (and an open one) don't come and go as the answers land.
+        val progressive = _state.value.routes == null
+        val gathered = mutableListOf<TripRoute>()
+        var answered = 0
+        var failure: TflException? = null
         try {
-            val routes = withContext(io) { planner.journeys(fromId, toId) }
-            val at = clock()
-            plans.put(fromId, toId, routes, at)
-            // A new plan's lines are unchecked until their status arrives: none passes as running
-            // normally meanwhile (its last known status, if held, stands).
-            _state.update {
-                it.copy(
-                    routes = routes,
-                    plannedAt = at,
-                    planning = false,
-                    planError = null,
-                    statusUnknown = linesOf(routes).filterTo(HashSet()) { line -> line !in it.statuses },
-                )
+            coroutineScope {
+                for (toId in toIds) {
+                    launch {
+                        val routes = try {
+                            withContext(io) { planner.journeys(fromId, toId) }
+                        } catch (e: TflException) {
+                            // Neither end is logged: together they're a trip the rider chose.
+                            warn("trip plan failed: ${e::class.simpleName}")
+                            failure = failure ?: e
+                            return@launch
+                        }
+                        answered++
+                        gathered += routes
+                        // Nothing yet from any stop keeps "Planning…" (or the last plan) rather than
+                        // say there's no route while others are still answering.
+                        if (!progressive || gathered.isEmpty()) return@launch
+                        val shown = gathered.toList()
+                        // A first answer after a failed plan clears its error: the routes it brings stand.
+                        _state.update { it.copy(routes = shown, planError = null, statusUnknown = unknownLines(shown, it)) }
+                    }
+                }
             }
         } catch (e: CancellationException) {
             _state.update { it.copy(planning = false) }
             throw e
-        } catch (e: TflException) {
-            warn("trip plan failed: ${e::class.simpleName}")
-            _state.update { it.copy(planning = false, planError = errorKindOf(e)) }
+        }
+        val failed = failure
+        // Failed only when no stop answered: one that answered with no route is still an answer.
+        if (answered == 0 && failed != null) {
+            _state.update { it.copy(planning = false, planError = errorKindOf(failed)) }
+            return
+        }
+        val routes = gathered.toList()
+        val at = clock()
+        // Only a whole plan is kept for reuse: a partial one is planned again on the next open.
+        if (failed == null) plans.put(fromId, toIds, routes, at)
+        // A new plan's lines are unchecked until their status arrives: none passes as running
+        // normally meanwhile (its last known status, if held, stands).
+        _state.update {
+            it.copy(
+                routes = routes,
+                plannedAt = at,
+                planning = false,
+                planError = null,
+                planIncomplete = failed != null,
+                statusUnknown = unknownLines(routes, it),
+            )
         }
     }
 
     private suspend fun refreshLive() {
         // Routes riding a hidden mode aren't shown, so their stops and lines aren't fetched either.
+        // Only the routes the screen times (the soonest few of those shown) are fetched for.
         val routes = _state.value.routes
-            ?.filterNot { route -> route.rides.any { HiddenModes.isHidden(it.mode, hiddenModes) } } ?: return
+            ?.filterNot { route -> route.rides.any { HiddenModes.isHidden(it.mode, hiddenModes) } }
+            ?.let(::bestOf) ?: return
         val stops = routes.flatMap { route -> route.rides.map { it.fromId } }.filter { it.isNotBlank() }.distinct()
         val lines = routes.flatMap { route -> route.rides.map { it.lineId } }.distinct()
         _state.update { it.copy(refreshing = true) }
@@ -213,6 +254,25 @@ class TripViewModel(
         private fun linesOf(routes: List<TripRoute>): Set<String> =
             routes.flatMapTo(HashSet()) { route -> route.rides.map { it.lineId } }
 
+        private fun unknownLines(routes: List<TripRoute>, state: State): Set<String> =
+            linesOf(routes).filterTo(HashSet()) { it !in state.statuses }
+
+        /**
+         * The routes worth timing among [routes] (the plan's, less those riding a hidden mode, so a
+         * hidden mode's routes never crowd out the rest): the [MAX_ROUTES] that arrive soonest by the
+         * Planner's timetable, each with all its timetable variants (a later one can still be caught
+         * when an earlier one can't). Each kept route's boarding stops are fetched on every refresh,
+         * so the cap bounds the requests a complex's several answers add.
+         */
+        internal fun bestOf(routes: List<TripRoute>): List<TripRoute> {
+            val keys = routes.sortedBy { it.legs.lastOrNull()?.arrival ?: Instant.MAX }
+                .map(::routeKey).distinct().take(MAX_ROUTES).toSet()
+            return routes.filter { routeKey(it) in keys }
+        }
+
+        /** How many distinct routes a trip times at most. */
+        const val MAX_ROUTES = 6
+
         /** How long a plan is reused before the Planner is asked again. */
         val PLAN_REUSE: Duration = Duration.ofMinutes(15)
     }
@@ -226,15 +286,17 @@ class TripPlans {
     private val plans = LinkedHashMap<String, Pair<List<TripRoute>, Instant>>()
 
     @Synchronized
-    fun get(fromId: String, toId: String): Pair<List<TripRoute>, Instant>? = plans["$fromId>$toId"]
+    fun get(fromId: String, toIds: List<String>): Pair<List<TripRoute>, Instant>? = plans[key(fromId, toIds)]
 
     @Synchronized
-    fun put(fromId: String, toId: String, routes: List<TripRoute>, at: Instant) {
-        val key = "$fromId>$toId"
+    fun put(fromId: String, toIds: List<String>, routes: List<TripRoute>, at: Instant) {
+        val key = key(fromId, toIds)
         plans.remove(key)
         plans[key] = routes to at
         while (plans.size > MAX) plans.remove(plans.keys.first())
     }
+
+    private fun key(fromId: String, toIds: List<String>) = "$fromId>${toIds.joinToString(",")}"
 
     companion object {
         const val MAX = 8

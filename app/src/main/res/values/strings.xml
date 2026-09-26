@@ -197,6 +197,8 @@
     <string name="trip_replanning">Planned %1$d min ago · updating…</string>
     <!-- Over a trip whose planning failed; the reason (offline, rate-limited…) follows. -->
     <string name="trip_plan_failed">Couldn\'t plan the trip: %1$s</string>
+    <!-- Some of a station complex's stations couldn't be planned to: the routes shown may miss the best. -->
+    <string name="trip_plan_incomplete">Couldn\'t plan to every station</string>
     <!-- A trip the Planner found no route for. -->
     <string name="trip_no_routes">No routes found</string>
     <!-- A route's door-to-door time and arrival, from live trains plus the Planner's run times, so

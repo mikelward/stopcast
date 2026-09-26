@@ -15,13 +15,17 @@ import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -67,10 +71,16 @@ class TripViewModelTest {
     private class FakePlanner(var routes: List<TripRoute>) : JourneyPlanner {
         var calls = 0
         var failWith: TflException? = null
+        // Per destination, where a test plans to several; else [routes] for any.
+        var byDestination: Map<String, List<TripRoute>> = emptyMap()
+        var failFor: Set<String> = emptySet()
+        var delays: Map<String, Long> = emptyMap()
         override suspend fun journeys(fromId: String, toId: String): List<TripRoute> {
             calls++
+            delays[toId]?.let { delay(it) }
             failWith?.let { throw it }
-            return routes
+            if (toId in failFor) throw TflException.Offline(null)
+            return byDestination[toId] ?: routes
         }
     }
 
@@ -91,8 +101,156 @@ class TripViewModelTest {
         override suspend fun stopDisruptions(stopId: String): List<StopDisruption> = emptyList()
     }
 
-    private fun model(planner: JourneyPlanner, client: TflClient, plans: TripPlans = TripPlans()) =
-        TripViewModel(planner, client, "A", "C", clock = { now }, plans = plans, io = dispatcher)
+    private fun model(
+        planner: JourneyPlanner,
+        client: TflClient,
+        plans: TripPlans = TripPlans(),
+        toIds: List<String> = listOf("C"),
+    ) = TripViewModel(planner, client, "A", toIds, clock = { now }, plans = plans, io = dispatcher)
+
+    // To a complex's other station, D, by another line.
+    private val toD = TripRoute(listOf(leg("red", "A", "B", 5, 15), leg("green", "B", "D", 18, 25)))
+
+    @Test
+    fun `a complex is planned to each of its stops and the answers merged`() = runTest(dispatcher) {
+        val planner = FakePlanner(emptyList()).apply { byDestination = mapOf("C" to listOf(route), "D" to listOf(toD)) }
+        val plans = TripPlans()
+        val trip = model(planner, FakeClient(mutableMapOf()), plans, toIds = listOf("C", "D"))
+        trip.refresh()
+        advanceUntilIdle()
+        assertEquals(2, planner.calls)
+        assertEquals(setOf(route, toD), trip.state.value.routes?.toSet())
+        assertFalse(trip.state.value.planIncomplete)
+        assertEquals(setOf(route, toD), plans.get("A", listOf("C", "D"))?.first?.toSet())
+    }
+
+    @Test
+    fun `a stop that fails leaves the others' routes, says so, and isn't kept for reuse`() = runTest(dispatcher) {
+        val planner = FakePlanner(emptyList()).apply {
+            byDestination = mapOf("C" to listOf(route), "D" to listOf(toD))
+            failFor = setOf("D")
+        }
+        val plans = TripPlans()
+        val trip = model(planner, FakeClient(mutableMapOf()), plans, toIds = listOf("C", "D"))
+        trip.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf(route), trip.state.value.routes)
+        assertTrue(trip.state.value.planIncomplete)
+        assertNull(trip.state.value.planError)
+        assertNull(plans.get("A", listOf("C", "D")))
+    }
+
+    @Test
+    fun `a stop with no routes answering first doesn't say there are none while others plan`() = runTest(dispatcher) {
+        val planner = FakePlanner(emptyList()).apply {
+            byDestination = mapOf("C" to emptyList(), "D" to listOf(toD))
+            delays = mapOf("D" to 1_000)
+        }
+        val trip = model(planner, FakeClient(mutableMapOf()), toIds = listOf("C", "D"))
+        trip.refresh()
+        advanceTimeBy(500)
+        runCurrent()
+        assertNull(trip.state.value.routes)
+        assertTrue(trip.state.value.planning)
+        advanceUntilIdle()
+        assertEquals(listOf(toD), trip.state.value.routes)
+    }
+
+    @Test
+    fun `a stop answering with no route while another fails is a partial plan, not a failure`() = runTest(dispatcher) {
+        val planner = FakePlanner(emptyList()).apply {
+            byDestination = mapOf("C" to emptyList())
+            failFor = setOf("D")
+        }
+        val trip = model(planner, FakeClient(mutableMapOf()), toIds = listOf("C", "D"))
+        trip.refresh()
+        advanceUntilIdle()
+        assertEquals(emptyList<TripRoute>(), trip.state.value.routes)
+        assertTrue(trip.state.value.planIncomplete)
+        assertNull(trip.state.value.planError)
+    }
+
+    @Test
+    fun `hidden modes' routes don't crowd the shown ones out of the cap`() {
+        val buses = (0 until TripViewModel.MAX_ROUTES).map { i ->
+            TripRoute(listOf(leg("bus$i", "A", "C", 5, 10L + i).copy(mode = "bus")))
+        }
+        val tube = TripRoute(listOf(leg("red", "A", "C", 5, 40)))
+        val state = TripViewModel.State(routes = buses + tube)
+        assertEquals(listOf(tube), tripEstimates(state, now, Duration.ZERO, emptyMap(), hidden = setOf("bus"))?.map { it.route })
+    }
+
+    @Test
+    fun `only the timed routes' lines load route data`() {
+        val routes = (0..TripViewModel.MAX_ROUTES).map { i -> TripRoute(listOf(leg("line$i", "A", "C", 5, 10L + i))) }
+        val lines = timedLineIds(routes, emptySet())
+        assertEquals(TripViewModel.MAX_ROUTES, lines.size)
+        assertFalse("line${TripViewModel.MAX_ROUTES}" in lines)
+    }
+
+    @Test
+    fun `route data loads for a plan once it settles, not for each answer as it lands`() {
+        val landing = TripViewModel.State(routes = listOf(route), planning = true)
+        assertEquals(listOf("old"), sequenceLineIds(landing, emptySet(), settled = listOf("old")))
+        assertEquals(listOf("red", "blue"), sequenceLineIds(landing.copy(planning = false), emptySet(), settled = listOf("old")))
+    }
+
+    @Test
+    fun `a re-plan keeps the last plan until every stop has answered`() = runTest(dispatcher) {
+        val planner = FakePlanner(emptyList()).apply { byDestination = mapOf("C" to listOf(toD), "D" to listOf(route)) }
+        val trip = model(planner, FakeClient(mutableMapOf()), toIds = listOf("C", "D"))
+        trip.refresh()
+        advanceUntilIdle()
+        // C answers at once, D a second later: the last plan stands meanwhile, not C's routes alone.
+        planner.delays = mapOf("D" to 1_000)
+        trip.retry()
+        advanceTimeBy(500)
+        runCurrent()
+        assertTrue(trip.state.value.planning)
+        assertEquals(setOf(route, toD), trip.state.value.routes?.toSet())
+        advanceUntilIdle()
+        assertFalse(trip.state.value.planning)
+    }
+
+    @Test
+    fun `a retry's first routes clear the failed plan's error`() = runTest(dispatcher) {
+        val planner = FakePlanner(emptyList()).apply { failFor = setOf("C", "D") }
+        val trip = model(planner, FakeClient(mutableMapOf()), toIds = listOf("C", "D"))
+        trip.refresh()
+        advanceUntilIdle()
+        assertEquals(DeparturesUiState.Error.Kind.OFFLINE, trip.state.value.planError)
+        planner.failFor = emptySet()
+        planner.byDestination = mapOf("C" to listOf(route), "D" to listOf(toD))
+        planner.delays = mapOf("D" to 1_000)
+        trip.retry()
+        advanceTimeBy(500)
+        runCurrent()
+        assertEquals(listOf(route), trip.state.value.routes)
+        assertNull(trip.state.value.planError)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `every stop failing is a failed plan`() = runTest(dispatcher) {
+        val planner = FakePlanner(emptyList()).apply { failFor = setOf("C", "D") }
+        val trip = model(planner, FakeClient(mutableMapOf()), toIds = listOf("C", "D"))
+        trip.refresh()
+        advanceUntilIdle()
+        assertNull(trip.state.value.routes)
+        assertEquals(DeparturesUiState.Error.Kind.OFFLINE, trip.state.value.planError)
+    }
+
+    @Test
+    fun `the merged plan keeps the routes arriving soonest, with their variants`() {
+        val routes = (0 until TripViewModel.MAX_ROUTES + 2).map { i ->
+            TripRoute(listOf(leg("line$i", "A", "C", 5, 20L + i)))
+        }
+        val later = TripRoute(routes[0].legs.map { it.copy(departure = it.departure.plusSeconds(600), arrival = it.arrival.plusSeconds(600)) })
+        val best = TripViewModel.bestOf(routes.reversed() + later)
+        assertEquals(TripViewModel.MAX_ROUTES, best.map(::routeKey).distinct().size)
+        assertTrue(later in best)
+        assertFalse(routes.last() in best)
+    }
 
     @Test
     fun `a recreated screen over the same model doesn't fetch again, a new re-pick does`() = runTest(dispatcher) {
@@ -371,6 +529,8 @@ class TripViewModelTest {
         val refreshing = TripViewModel.State(refreshing = true)
         assertEquals(true, statusNote(refreshing, unchecked = true))
         assertNull(statusNote(refreshing, unchecked = false))
+        // A plan still landing hasn't checked its lines yet: checking, not failed.
+        assertEquals(true, statusNote(TripViewModel.State(planning = true), unchecked = true))
         assertEquals(false, statusNote(TripViewModel.State(), unchecked = true))
         assertEquals(false, statusNote(TripViewModel.State(statusFailed = true), unchecked = false))
         assertNull(statusNote(TripViewModel.State(), unchecked = false))

@@ -90,8 +90,10 @@ and matches your starred stops and the stops the app has lately shown you, all r
 device; none of that is sent anywhere either.
 
 **Trips with a change** (*To…* from the near-me list or a *From…* station) send both ends of the
-trip together to **TfL's Journey Planner**, as two stop ids: the stop nearest you (or the *From…*
-station) and the stop you picked. Your coordinates are never sent to the Planner; the nearest
+trip together to **TfL's Journey Planner**, as stop ids: the stop nearest you (or the *From…*
+station) and the stop you picked. When you pick a station complex such as King's Cross St.
+Pancras, the Planner is asked once for each of its stations and once for its bus stops, each
+request carrying the same start. Your coordinates are never sent to the Planner; the nearest
 stop's id stands in for where you are, which says no more than the nearby-stops lookup already
 does. The Planner is asked when a trip opens, about every 15 minutes while it stays on screen, and
 when you tap *Try again*; while a trip is on screen, the departures at each stop where a route
