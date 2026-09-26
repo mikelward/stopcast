@@ -11,7 +11,8 @@ object CollapsedPlaces {
      * A collapsed place: its [key] (stable across a relocation that keeps it), the station it opens,
      * the name its card shows, how far it is, and the [lines] it adds that the list doesn't reach.
      * A bus place carries its [stops] already (the nearby lookup found them), so opening it needs no
-     * lookup; a station's are looked up by [stationId] when it is tapped.
+     * lookup; a station's are looked up by [stationId] when it is tapped. A bus place's [stationIds]
+     * are the station stops it stands next to ([FartherBuses.Farther.stationIds]).
      */
     data class Place(
         val key: String,
@@ -20,6 +21,7 @@ object CollapsedPlaces {
         val meters: Double,
         val lines: List<LineRef>,
         val stops: List<StopLocation> = emptyList(),
+        val stationIds: Set<String> = emptySet(),
     )
 
     /**
@@ -45,6 +47,7 @@ object CollapsedPlaces {
             meters = farther.meters,
             lines = farther.lines,
             stops = farther.stops,
+            stationIds = farther.stationIds,
         )
 
     /** Whether [place] is a farther bus place ([of] a [FartherBuses.Farther]), not a station. */
@@ -56,8 +59,14 @@ object CollapsedPlaces {
      * [places] with their bus places narrowed to the cards to show (SPEC *Finding stops → Farther
      * stations*), decided against [shownLineIds], the bus routes the screen shows.
      *
-     * Whether a place **earns** a card: nearest first, each bus place earns one when it serves a
-     * route neither shown nor claimed by an earlier card, and at most [max] bus cards are kept.
+     * Whether a place **earns** a card: in claim order, each bus place earns one when it serves a
+     * route neither shown nor claimed by an earlier card, and at most [max] bus cards are kept. The
+     * claim order is nearest first, except that places next to a station the list shows — one of
+     * their [Place.stationIds] in [shownStopIds], the stops the screen draws rows for — claim before
+     * the rest (maintainer, 2026-09-26): the rider is walking to the station anyway, so of two places
+     * adding the same route, the one at the station wins even when the other is a little nearer as
+     * the crow flies. Deciding "shown" from the rows drawn honors a failed fetch and the nearest-stop
+     * dedupe without copying either (Codex).
      *
      * What a card **names**: every route a tap would show — each route not shown and not named by an
      * opened card — whether or not a nearer card names it too (maintainer, 2026-09-26). Naming only
@@ -75,6 +84,7 @@ object CollapsedPlaces {
         shownLineIds: Set<String>,
         opened: Set<String> = emptySet(),
         max: Int = FartherBuses.MAX_CARDS,
+        shownStopIds: Set<String> = emptySet(),
     ): List<Place> {
         // Opened places are kept first, wherever a relocation has put them: they take their slots
         // under the cap, and their routes, which show under them, before any other card is chosen.
@@ -87,6 +97,7 @@ object CollapsedPlaces {
         val earned = HashMap<String, Place>()
         var buses = kept.size
         val claimOrder = places.filter { isBus(it) && it.key !in kept }
+            .sortedByDescending { place -> place.stationIds.any { it in shownStopIds } }
         for (place in claimOrder) {
             if (buses >= max) break
             if (place.lines.none { it.id !in claimed }) continue

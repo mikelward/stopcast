@@ -1051,8 +1051,10 @@ class MainActivity : ComponentActivity() {
                 // ends its services reach.
                 val reached = reachedStops
                 // The candidate bus places come from the nearby lookup's farther tier, already in
-                // memory; the screen narrows them to the cards to show, against the rows it draws.
-                val buses = FartherBuses.candidates(ready.more, hiddenModes).map { CollapsedPlaces.of(it) }
+                // memory; the screen narrows them to the cards to show, against the rows it draws. Each
+                // place records the eager stations it stands by; one the screen shows wins it a tie.
+                val stationStops = FartherBuses.stationStops(ready.eager, hiddenModes)
+                val buses = FartherBuses.candidates(ready.more, hiddenModes, stationStops).map { CollapsedPlaces.of(it) }
                 value = withContext(Dispatchers.IO) {
                     val index = StationIndexStore.load(appContext)
                     val stations = FartherStations.pick(index.stations, ready.location, reached, hiddenModes)

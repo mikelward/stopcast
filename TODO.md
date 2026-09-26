@@ -1092,6 +1092,9 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
         routes, at most four, below the station cards within a mile. Offering them costs no request.
   - [x] **A bus card names every route a tap would show** (maintainer, 2026-09-26). It used to name
         only the routes no nearer card named, so a card read "N20" and opened to a 234.
+  - [x] **A bus place next to a station on the list wins a tie** (maintainer, 2026-09-26): a pole
+        within 150 m of a shown station claims its routes before nearer places, so the station's
+        own stops beat one that is nearer as the crow flies but a longer walk.
   - [ ] **Consider showing every route a stop carries** (maintainer, 2026-09-26, undecided). A bus
         card names only the routes a tap would add; the rider may want the whole set — always, behind
         a toggle, or at least on the opened card or a tap on the stop's header. The catch: the opened
