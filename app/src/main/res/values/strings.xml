@@ -215,6 +215,10 @@
     </plurals>
     <!-- In place of a route's line pills when the whole route is on foot. -->
     <string name="trip_walk_only">Walk</string>
+    <!-- A leg either line serves alike, read out for its cut pill: "43 or 134". -->
+    <string name="trip_lines_either">%1$s or %2$s</string>
+    <!-- One of a cut pill's disrupted lines, read out with the others: "134: Severe Delays". -->
+    <string name="trip_line_status">%1$s: %2$s</string>
     <!-- A walk between two stations, in the Planner's minutes. -->
     <!-- A route's first-leg times while its boarding stop's arrivals are still being fetched: one
          word that fits the times slot, no ellipsis (SPEC *Text is chosen to fit its space*). -->

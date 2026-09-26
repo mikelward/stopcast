@@ -4,12 +4,27 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.dp
+import app.stopdash.domain.LineRef
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -25,6 +40,8 @@ import app.stopdash.ui.theme.StopDashTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import java.time.Duration
 import java.time.Instant
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -191,7 +208,7 @@ class TripScreenScreenshotTest {
         ),
     )
 
-    private fun show(state: TripViewModel.State) {
+    private fun show(state: TripViewModel.State, routeStops: RouteStopsRepository = RouteStopsRepository(source)) {
         composeRule.setContent {
             StopDashTheme(dynamicColor = false) {
                 // No outer provider: the screen checks its trains against the repository it's given.
@@ -200,7 +217,7 @@ class TripScreenScreenshotTest {
                     state = state,
                     now = now,
                     access = Duration.ofMinutes(2),
-                    routeStops = RouteStopsRepository(source),
+                    routeStops = routeStops,
                     onBack = {},
                     onRetry = {},
                 )
@@ -254,6 +271,132 @@ class TripScreenScreenshotTest {
         composeRule.onAllNodes(shows("Canada Water")).assertCountEquals(0)
         // The boarding stop's arrivals aren't in yet: its times say so rather than show a dash.
         composeRule.onAllNodes(hasText("Loading")).onFirst().assertExists()
+    }
+
+    @Test
+    fun trip_shared_first_leg() {
+        // Either bus from one stop to Canada Water, then the Jubilee: one card, a cut 47/188 pill, a row each.
+        val busStop = "490000001A" to "Surrey Docks"
+        val busStation = "490000002B" to "Canada Water Bus Station"
+        fun bus(line: String, departs: Long) = TripRoute(
+            listOf(
+                leg("bus", line, line, busStop, busStation, departs, departs + 6, 3, change = 4),
+                leg("tube", "jubilee", "Jubilee", canadaWaterTube, canaryWharf, departs + 11, departs + 13, 1),
+            ),
+        )
+        val busRoute = { line: String -> LineRoute(line, listOf(busStop.first, "stop0", "stop1", busStation.first)) }
+        val busSequences = sequences + mapOf(
+            "47" to LineSequence(routes = listOf(busRoute("47")), stopNames = mapOf(busStop.first to "Surrey Docks", busStation.first to "Canada Water")),
+            "188" to LineSequence(routes = listOf(busRoute("188")), stopNames = mapOf(busStop.first to "Surrey Docks", busStation.first to "Canada Water")),
+        )
+        val busLive = live + (
+            busStop.first to TripViewModel.StopLive(
+                listOf(
+                    train("47", "47", "bus", "Catford", 4, "Stop A"),
+                    train("188", "188", "bus", "North Greenwich", 6, "Stop A"),
+                    train("47", "47", "bus", "Catford", 12, "Stop A"),
+                    train("188", "188", "bus", "North Greenwich", 15, "Stop A"),
+                ),
+                now,
+            )
+            )
+        show(
+            planned.copy(
+                routes = listOf(bus("47", 4), bus("188", 6), viaWhitechapel),
+                live = busLive,
+                statuses = planned.statuses + listOf("47", "188").associateWith { LineStatus(it, LineStatus.GOOD_SERVICE, "Good Service") },
+            ),
+            routeStops = RouteStopsRepository(
+                object : RouteSequenceSource {
+                    override suspend fun routeSequence(lineId: String, direction: String): LineSequence = busSequences.getValue(lineId)
+                },
+            ),
+        )
+        composeRule.onNodeWithContentDescription("47 or 188").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Catford").onFirst().assertExists()
+        composeRule.onAllNodesWithText("North Greenwich").onFirst().assertExists()
+        captureSnapshot("trip-shared-first-leg.png")
+    }
+
+    @Test
+    fun a_cut_pill_warns_of_each_disrupted_line() {
+        val busStop = "490000001A" to "Surrey Docks"
+        val busStation = "490000002B" to "Canada Water Bus Station"
+        fun bus(line: String, departs: Long) = TripRoute(
+            listOf(
+                leg("bus", line, line, busStop, busStation, departs, departs + 6, 3, change = 4),
+                leg("tube", "jubilee", "Jubilee", canadaWaterTube, canaryWharf, departs + 11, departs + 13, 1),
+            ),
+        )
+        show(
+            planned.copy(
+                routes = listOf(bus("47", 4), bus("188", 6)),
+                statuses = planned.statuses + mapOf(
+                    "47" to LineStatus("47", 9, "Minor Delays"),
+                    "188" to LineStatus("188", 6, "Severe Delays"),
+                ),
+            ),
+            // The buses' routes aren't needed here: none loads, and the pill stands on the plan.
+            routeStops = RouteStopsRepository(
+                object : RouteSequenceSource {
+                    override suspend fun routeSequence(lineId: String, direction: String): LineSequence =
+                        sequences[lineId] ?: LineSequence(routes = emptyList(), stopNames = emptyMap())
+                },
+            ),
+        )
+        // One ⚠ beside the cut pill, reading out both lines' details.
+        composeRule.onNodeWithContentDescription("47: Minor Delays; 188: Severe Delays").assertExists()
+    }
+
+    @Test
+    fun a_cut_pill_reads_as_its_combined_label() {
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Box(Modifier.semantics(mergeDescendants = true) {}.testTag("row")) {
+                    SharedLinePill(listOf(LineRef("47", "47", "bus"), LineRef("188", "188", "bus")), "47 or 188")
+                }
+            }
+        }
+        // A screen reader hears "47 or 188" once, not the segments' codes as well.
+        val config = composeRule.onNodeWithTag("row").fetchSemanticsNode().config
+        assertEquals(listOf("47 or 188"), config.getOrElse(SemanticsProperties.ContentDescription) { emptyList() })
+        assertTrue(config.getOrElse(SemanticsProperties.Text) { emptyList() }.isEmpty())
+    }
+
+    @Test
+    fun a_cut_pill_keeps_its_lines_in_order_right_to_left() {
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                    SharedLinePill(listOf(LineRef("victoria", "Victoria", "tube"), LineRef("central", "Central", "tube")), "either")
+                }
+            }
+        }
+        // Painted left to right, so the first line's code stays over its own (left) segment.
+        val first = composeRule.onNodeWithText("VIC", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val second = composeRule.onNodeWithText("CEN", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue(first.left < second.left)
+    }
+
+    @Test
+    fun a_cut_pill_fits_the_room_it_has() {
+        val lines = listOf("47", "188", "199", "225", "381", "N1").map { LineRef(it, it, "bus") }
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                Box(Modifier.width(120.dp)) {
+                    SharedLinePill(lines, "any", Modifier.testTag("cut"))
+                }
+            }
+        }
+        // Six lines in 120dp: every segment shrinks alike, so each label stays over its own color
+        // rather than the last few being squeezed out.
+        val bounds = composeRule.onNodeWithTag("cut").getUnclippedBoundsInRoot()
+        assertTrue(bounds.right - bounds.left <= 120.dp)
+        val widths = lines.map { line ->
+            composeRule.onNodeWithText(line.name, useUnmergedTree = true).getUnclippedBoundsInRoot().let { it.right - it.left }
+        }
+        assertTrue(widths.all { it > 0.dp })
+        assertTrue(widths.maxOf { it.value } - widths.minOf { it.value } < 1f)
     }
 
     @Test

@@ -1,6 +1,8 @@
 package app.stopdash.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,17 +10,30 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import app.stopdash.domain.LineRef
 import app.stopdash.domain.lineCode
 
 /**
@@ -107,3 +122,117 @@ fun LinePill(lineName: String, lineId: String, mode: String, modifier: Modifier 
  * clips nor widens the column past the others.
  */
 private val LINE_PILL_LABEL_WIDTH = 48.dp
+
+/**
+ * Lines that serve one leg alike (the 43 or the 134 to the same stop) as **one pill cut
+ * diagonally**, a segment per line in [lines]' order, each in its own [LinePill] colors and label
+ * width, so "43/134" reads as either line. [description] is the accessible label ("43 or 134").
+ */
+@Composable
+fun SharedLinePill(lines: List<LineRef>, description: String, modifier: Modifier = Modifier) {
+    if (lines.size == 1) {
+        val line = lines.single()
+        LinePill(line.name, line.id, line.mode, modifier)
+        return
+    }
+    val surface = MaterialTheme.colorScheme.surface
+    val neutralFill = MaterialTheme.colorScheme.surfaceVariant
+    val neutralLabel = MaterialTheme.colorScheme.onSurfaceVariant
+    val neutralBorder = MaterialTheme.colorScheme.outlineVariant
+    val segments = lines.map { line ->
+        when (val colors = pillColors(line.name, line.id, line.mode, surface)) {
+            is PillColors.Solid -> Segment(line, colors.fill, colors.label, colors.border, colors.halo)
+            is PillColors.Hollow -> Segment(line, Color.Transparent, colors.label, colors.border, null)
+            PillColors.Neutral -> Segment(line, neutralFill, neutralLabel, neutralBorder, null)
+        }
+    }
+    val density = LocalDensity.current
+    val haloBlurPx = with(density) { 2.dp.toPx() }
+    // Tighter than a lone pill: each segment as wide as the widest code among them, not the fixed
+    // pill width, so "43/134" reads as one label rather than two pills side by side.
+    val measurer = rememberTextMeasurer()
+    val baseStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+    val naturalWidth = with(density) {
+        segments.maxOf { measurer.measure(lineCode(it.line.name, it.line.mode), baseStyle, maxLines = 1).size.width }.toDp()
+    }
+    val shape = RoundedCornerShape(8.dp)
+    // Never wider than the room it's given (many lines, a narrow screen, large text): each segment
+    // shrinks alike, its label ellipsizing, so the segments stay equal and under their labels.
+    // Left to right whatever the locale: the segments are painted left to right, and line codes
+    // read that way anyway, so a code never sits over another line's color.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+    BoxWithConstraints(modifier) {
+        val labelWidth = if (constraints.hasBoundedWidth) {
+            // In whole pixels, rounded down, so the segments never add up to a pixel more than the room.
+            val share = constraints.maxWidth / segments.size - with(density) { (SEGMENT_PADDING * 2).roundToPx() }
+            naturalWidth.coerceAtMost(with(density) { share.coerceAtLeast(0).toDp() })
+        } else {
+            naturalWidth
+        }
+        Row(
+            modifier = Modifier
+                .clip(shape)
+                .drawWithContent {
+                    val corner = CornerRadius(8.dp.toPx())
+                    val stroke = 1.5.dp.toPx()
+                    // The cut's lean: its top edge this far right of its bottom.
+                    val lean = 8.dp.toPx()
+                    val width = size.width / segments.size
+                    fun part(i: Int) = Path().apply {
+                        val left = i * width
+                        val right = left + width
+                        moveTo(if (i == 0) 0f else left + lean / 2, 0f)
+                        lineTo(if (i == segments.lastIndex) size.width else right + lean / 2, 0f)
+                        lineTo(if (i == segments.lastIndex) size.width else right - lean / 2, size.height)
+                        lineTo(if (i == 0) 0f else left - lean / 2, size.height)
+                        close()
+                    }
+                    segments.forEachIndexed { i, segment ->
+                        clipPath(part(i)) {
+                            drawRoundRect(segment.fill, cornerRadius = corner)
+                            drawRoundRect(
+                                segment.border,
+                                topLeft = Offset(stroke / 2, stroke / 2),
+                                size = Size(size.width - stroke, size.height - stroke),
+                                cornerRadius = corner,
+                                style = Stroke(stroke),
+                            )
+                        }
+                    }
+                    // Each cut a gap of the surface, so two fills of one color still read as two lines.
+                    for (i in 1 until segments.size) {
+                        val x = i * width
+                        drawLine(
+                            surface,
+                            Offset(x + lean / 2, 0f),
+                            Offset(x - lean / 2, size.height),
+                            strokeWidth = stroke * 1.5f,
+                        )
+                    }
+                    drawContent()
+                }
+                // Only the combined label ("43 or 134"), not each segment's code as well.
+                .clearAndSetSemantics { contentDescription = description },
+        ) {
+            segments.forEach { segment ->
+                val style = segment.halo?.let { baseStyle.copy(shadow = Shadow(it, Offset.Zero, haloBlurPx)) } ?: baseStyle
+                Text(
+                    text = lineCode(segment.line.name, segment.line.mode),
+                    style = style,
+                    color = segment.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = SEGMENT_PADDING, vertical = 4.dp).width(labelWidth),
+                )
+            }
+        }
+    }
+    }
+}
+
+// Each [SharedLinePill] segment's side padding, as a lone pill's.
+private val SEGMENT_PADDING = 8.dp
+
+// One line's part of a [SharedLinePill]: its fill, label and border colors, and a label halo on a solid fill.
+private data class Segment(val line: LineRef, val fill: Color, val label: Color, val border: Color, val halo: Color?)
