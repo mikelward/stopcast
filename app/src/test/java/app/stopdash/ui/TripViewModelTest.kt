@@ -573,6 +573,19 @@ class TripViewModelTest {
     }
 
     @Test
+    fun `ways riding the same lines are one card, the best timed, or the open one`() {
+        // The same lines changing at another stop, the Planner arriving later.
+        val elsewhere = TripRoute(listOf(leg("red", "A", "X", 5, 18), leg("blue", "X", "C", 22, 35)))
+        val state = TripViewModel.State(routes = listOf(elsewhere, route))
+        assertEquals(listOf(route), tripEstimates(state, now, Duration.ZERO, emptyMap())?.map { it.route })
+        // Open, it stays as its card.
+        assertEquals(listOf(elsewhere), tripEstimates(state, now, Duration.ZERO, emptyMap(), openKey = routeKey(elsewhere))?.map { it.route })
+        // Other lines are another card.
+        val green = TripRoute(listOf(leg("red", "A", "B", 5, 15), leg("green", "B", "C", 20, 32)))
+        assertEquals(2, tripEstimates(state.copy(routes = listOf(route, green)), now, Duration.ZERO, emptyMap())?.size)
+    }
+
+    @Test
     fun `journeys that ride alike are one route`() {
         val later = TripRoute(route.legs.map { it.copy(departure = it.departure.plusSeconds(600), arrival = it.arrival.plusSeconds(600)) })
         val state = TripViewModel.State(routes = listOf(route, later))

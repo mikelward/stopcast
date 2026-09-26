@@ -357,6 +357,9 @@ internal fun tripEstimates(
     sequences: Map<String, LineSequence?>,
     hidden: Set<String> = emptySet(),
     originUnconfirmed: Boolean = false,
+    // The route open on screen ([routeKey]): kept as its card, even when another way riding the same
+    // lines times better, so it isn't swapped out from under the rider.
+    openKey: String? = null,
 ): List<TripTiming.Estimate>? {
     val routes = state.routes
         ?.filterNot { route -> route.rides.any { HiddenModes.isHidden(it.mode, hidden) } }
@@ -374,8 +377,16 @@ internal fun tripEstimates(
     // Journeys the Planner times differently but rides alike are one route here (one key in the
     // list): each is timed, since a later timetable slot can still be caught when an earlier one
     // can't, and the best stands for the route.
-    return TripTiming.rank(estimates).distinctBy { routeKey(it.route) }
+    val ranked = TripTiming.rank(estimates).distinctBy { routeKey(it.route) }
+    // Ways riding the same lines in turn (changing at another stop) read alike, so they're one card:
+    // the best of them, or the open one.
+    val shown = ranked.groupBy { lineKey(it.route) }
+        .mapValues { (_, alike) -> alike.firstOrNull { routeKey(it.route) == openKey } ?: alike.first() }
+    return ranked.filter { shown[lineKey(it.route)] === it }
 }
+
+// The lines a route rides, in turn: what its card shows.
+private fun lineKey(route: TripRoute): String = route.rides.joinToString("|") { "${it.mode}:${it.lineId}" }
 
 /**
  * The lines whose route data a trip loads: [settled] while a first plan's answers are still landing,
@@ -467,10 +478,10 @@ private fun TripContent(
     // other side of the road); everything below reads the trip this way.
     val state = remember(planned, sequences) { onPoles(planned, sequences) }
     val originUnconfirmed = relocating || locationBanner != null
-    val estimates = remember(state, now, access, sequences, hiddenModes, originUnconfirmed) {
-        tripEstimates(state, now, access, sequences, hiddenModes, originUnconfirmed)
-    }
     var openKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val estimates = remember(state, now, access, sequences, hiddenModes, originUnconfirmed, openKey) {
+        tripEstimates(state, now, access, sequences, hiddenModes, originUnconfirmed, openKey)
+    }
     val open = estimates?.firstOrNull { routeKey(it.route) == openKey }
     BackHandler { if (open != null) openKey = null else onBack() }
     Scaffold(

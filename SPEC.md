@@ -847,7 +847,9 @@ result's name over its modes); it gains only a "From" chip naming the start ("He
 station). The trip opens on a **list of routes, best first**: ordered first by how far StopDash
 stands behind each route (tiers, below — usable before not, fully live before "est."), and within a
 tier by the earliest end-to-end arrival, worked out leg by leg from live trains (below). The first
-route is therefore the fastest one StopDash can vouch for, not an earlier estimate. **Every route looks alike** — no
+route is therefore the fastest one StopDash can vouch for, not an earlier estimate. Routes riding the
+same lines in turn (changing at a different stop) would read as identical cards, so they're **one
+card**: the best of them, or the one open on screen (maintainer, 2026-09-26). **Every route looks alike** — no
 route is expanded — as a card whose top row is its lines' pills in order (no station names, no
 arrows), a ⚠ where a leg is disrupted, and **duration · arrival** ("22 min · 08:24") at the end,
 where a number of changes might otherwise go; the duration is from now to that arrival, so it
