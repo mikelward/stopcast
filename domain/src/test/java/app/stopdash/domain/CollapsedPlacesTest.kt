@@ -52,14 +52,16 @@ class CollapsedPlacesTest {
     private fun station(key: String) = CollapsedPlaces.Place("station:$key", key, key, 900.0, emptyList())
 
     @Test
-    fun `a bus card names only routes neither shown nor on a nearer card, and one with none goes`() {
+    fun `a bus card earns its place with a route no nearer card claimed, and names every route it adds`() {
         val picked = CollapsedPlaces.withBusesPicked(
-            listOf(station("S"), busPlace("J1", "73", "390"), busPlace("J2", "390"), busPlace("J3", "30", "73")),
+            listOf(station("S"), busPlace("J1", "73", "390"), busPlace("J2", "390"), busPlace("J3", "30", "390", "73")),
             shownLineIds = setOf("73"),
         )
+        // J2 adds only 390, which J1 already offers: no card. J3 earns one with 30, and names 390 too,
+        // since a tap on it would show it; 73 is on the list already, so neither names it.
         assertEquals(listOf("station:S", "bus:J1", "bus:J3"), picked.map { it.key })
         assertEquals(listOf("390"), picked[1].lines.map { it.id })
-        assertEquals(listOf("30"), picked[2].lines.map { it.id })
+        assertEquals(listOf("30", "390"), picked[2].lines.map { it.id })
     }
 
     @Test
@@ -82,6 +84,7 @@ class CollapsedPlacesTest {
         )
         assertEquals(listOf("bus:J1", "bus:J2"), picked.map { it.key })
         assertEquals(listOf("73"), picked[0].lines.map { it.id })
+        // J2's 73 is the opened card's to show, so J2 names only what it adds beyond it.
         assertEquals(listOf("30"), picked[1].lines.map { it.id })
     }
 

@@ -334,7 +334,9 @@ The app finds stops two ways:
   poles, or an interchange's same-named ones (a card is named after its nearest pole, so a
   differently named stop gets its own) — within the nearby lookup's mile, beyond the list's nearest two, earns
   a card when a pole serves a **bus route the list doesn't already show** and no nearer card
-  already offers it; the card names just those routes. **At most four** bus cards, nearest first.
+  already offers it. The card names **every route a tap would show** — each one the list doesn't
+  already show, even one a nearer card names too (maintainer, 2026-09-26): naming only the routes
+  no nearer card offered read "N20" on a card that opened to a 234. **At most four** bus cards, nearest first.
   They sit **below the station cards within a mile and above the farther ones** (maintainer,
   2026-09-25). A farther pole of a route the list already shows, running the other way, earns no
   card (the route's own page shows its stops both ways); a route-less stop earns none, and hiding
