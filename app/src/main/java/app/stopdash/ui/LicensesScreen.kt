@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -107,8 +108,10 @@ internal fun LicensesContent(
             }
             // Just the component names, one compact row each; the version and license live behind
             // a tap so the list stays scannable.
+            val listState = rememberLazyListState()
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().scrollEdgeFade(listState, MaterialTheme.colorScheme.surface),
+                state = listState,
                 contentPadding = PaddingValues(bottom = 8.dp),
             ) {
                 items(

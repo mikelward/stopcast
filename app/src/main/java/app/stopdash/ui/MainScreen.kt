@@ -1259,7 +1259,12 @@ fun MainScreen(
                 // Under the pull box with a scrollable child so a downward swipe refreshes
                 // the error screen too (SPEC D6), not only the button.
                 PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = content) {
-                    Centered(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    val scrollState = rememberScrollState()
+                    Centered(
+                        Modifier.fillMaxSize()
+                            .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.background)
+                            .verticalScroll(scrollState),
+                    ) {
                         Text(
                             text = stringResource(errorMessage(state.kind)),
                             style = MaterialTheme.typography.bodyLarge,
@@ -1449,8 +1454,13 @@ private fun LoadedContent(
                 // pull from a scrollable child's nested-scroll events, so a plain Column
                 // here would leave pull-to-refresh dead on the empty state (only the
                 // button would work). verticalScroll forwards the gesture; the content
-                // still centers.
-                Centered(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                // still centers. With farther cards below, it can overflow, so it fades like a list.
+                val scrollState = rememberScrollState()
+                Centered(
+                    Modifier.fillMaxSize()
+                        .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.background)
+                        .verticalScroll(scrollState),
+                ) {
                     // A stale snapshot with nothing left can't be read as "no departures"
                     // — the data is too old to trust that conclusion, and newer ones may
                     // exist (SPEC D4). Prompt a refresh instead of asserting an empty list.
@@ -1828,7 +1838,8 @@ private fun DepartureList(
             }
     }
     LazyColumn(
-        modifier = modifier,
+        // Fades the edges while the list scrolls on past them, so more below reads as more.
+        modifier = modifier.scrollEdgeFade(listState, MaterialTheme.colorScheme.background),
         state = listState,
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -3211,11 +3222,14 @@ internal fun RouteDetailScreen(
     ) { innerPadding ->
         // Scrollable so a long expanded alert or a large text size isn't clipped (SPEC *Display
         // size*); the 16dp gutter matches the app's other reading surfaces.
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
+                // Before verticalScroll, so the fade stays pinned to the viewport ([scrollEdgeFade]).
+                .scrollEdgeFade(scrollState, MaterialTheme.colorScheme.background)
+                .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
             // "From Victoria" names the boarding stop only while no stop list does: the list opens on

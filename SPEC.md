@@ -1055,6 +1055,16 @@ number and one boolean about how the app draws itself — nothing about the user
 the time — and travels with the rest of the config through Android's backup like any other
 setting.
 
+### Scroll cue
+
+A scrolling screen fades its top or bottom edge into the background while there is more to
+scroll past that edge, and shows no fade where the list ends. Without it, a list that happens
+to stop near the bottom of the screen reads the same as one cut off mid-content, so a rider
+misses stops or settings below the fold (maintainer, 2026-09-26). It covers every
+scrolling screen on the phone — the near-me list and its empty and error states, a route's
+page, station search, the location gate, Settings, and Licenses. Dialogs are left as the
+platform draws them, and the watch's list already scales its edges.
+
 ### Update indicator
 
 When Google Play reports a newer version, the departures overflow (⋮) icon carries a small

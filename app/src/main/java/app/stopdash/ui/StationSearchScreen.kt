@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -138,27 +139,33 @@ fun StationSearchScreen(
                     Text(stringResource(errorMessage(result.kind)), textAlign = TextAlign.Center)
                     TextButton(onClick = onRetry) { Text(stringResource(R.string.route_stops_retry)) }
                 }
-                is StationSearchViewModel.Result.Matches -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(result.matches, key = { it.id }) { match ->
-                        MatchRow(match, onClick = { onOpenStation(match) })
-                        HorizontalDivider()
-                    }
-                    // The bundled stations matched but TfL's search (bus stops) failed: say so under
-                    // the matches rather than show them as the whole answer.
-                    result.remoteFailure?.let { kind ->
-                        item(key = "remote-failure") {
-                            Column(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(stringResource(R.string.station_search_bus_stops_missing), textAlign = TextAlign.Center)
-                                Text(
-                                    stringResource(errorMessage(kind)),
-                                    textAlign = TextAlign.Center,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                TextButton(onClick = onRetry) { Text(stringResource(R.string.route_stops_retry)) }
+                is StationSearchViewModel.Result.Matches -> {
+                    val listState = rememberLazyListState()
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().scrollEdgeFade(listState, MaterialTheme.colorScheme.background),
+                        state = listState,
+                    ) {
+                        items(result.matches, key = { it.id }) { match ->
+                            MatchRow(match, onClick = { onOpenStation(match) })
+                            HorizontalDivider()
+                        }
+                        // The bundled stations matched but TfL's search (bus stops) failed: say so under
+                        // the matches rather than show them as the whole answer.
+                        result.remoteFailure?.let { kind ->
+                            item(key = "remote-failure") {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(stringResource(R.string.station_search_bus_stops_missing), textAlign = TextAlign.Center)
+                                    Text(
+                                        stringResource(errorMessage(kind)),
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    TextButton(onClick = onRetry) { Text(stringResource(R.string.route_stops_retry)) }
+                                }
                             }
                         }
                     }
@@ -174,7 +181,14 @@ internal fun queryFieldValue(query: String): TextFieldValue = TextFieldValue(que
 /** The user's starred stops, then their recent opens, each under its heading. */
 @Composable
 private fun YourStopsList(favorites: List<StationMatch>, recent: List<StationMatch>, onOpenStation: (StationMatch) -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize().testTag("stationSearchYours")) {
+    val listState = rememberLazyListState()
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("stationSearchYours")
+            .scrollEdgeFade(listState, MaterialTheme.colorScheme.background),
+        state = listState,
+    ) {
         listOf(R.string.station_search_starred to favorites, R.string.station_search_recent to recent).forEach { (heading, stops) ->
             if (stops.isEmpty()) return@forEach
             item(key = "heading-$heading") {
