@@ -3744,7 +3744,7 @@ private fun CollapsibleStatus(
 
 /** The stable identity of the route a [DepartureRow] represents — its stop, line, and direction —
  *  used as the saveable key for the open route-detail page so it re-resolves against live rows. */
-private fun DepartureRow.detailKey(): String = "$stopId|$lineId|$directionKey|$platform"
+internal fun DepartureRow.detailKey(): String = "$stopId|$lineId|$directionKey|$platform"
 
 /**
  * The tap-to-open route detail (SPEC D8 / *Disruptions*, `TODO.md`): a full-screen page — reached by
@@ -3786,6 +3786,9 @@ internal fun RouteDetailScreen(
     // The stop list for the soonest train. Null resolves it from [LocalRouteStops]; a screenshot
     // test passes a fixed state.
     routeStops: RouteStopsUi? = null,
+    // The stop list for a row with no train to follow (a trip leg's), given the page's retry count;
+    // null follows the row's train as above.
+    loadRouteStops: (@Composable (retry: Int) -> RouteStopsUi)? = null,
     // The route tapped on the card; null (a status row, or a caller with no route) follows the
     // row's soonest train.
     focus: RouteFocus? = null,
@@ -3809,6 +3812,7 @@ internal fun RouteDetailScreen(
         // Only a row with a train to follow: a status row has no list to withhold.
         stale && row.upcoming.isNotEmpty() && row.lineId.isNotBlank() -> RouteStopsUi.Stale
         routeStops != null -> routeStops
+        loadRouteStops != null -> loadRouteStops(routeStopsRetry)
         else -> rememberRouteStops(row, followed, routeStopsRetry)
     }
     // Every upcoming train on the followed route, not the card's first few — TfL predicts ~30 min

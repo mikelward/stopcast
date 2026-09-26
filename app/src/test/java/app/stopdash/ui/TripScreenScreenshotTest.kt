@@ -20,7 +20,9 @@ import androidx.compose.ui.unit.dp
 import app.stopdash.domain.LineRef
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -30,12 +32,16 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import app.stopdash.R
 import app.stopdash.domain.Departure
+import app.stopdash.domain.DismissedAlert
+import app.stopdash.domain.DepartureRow
 import app.stopdash.domain.LineRoute
 import app.stopdash.domain.LineSequence
 import app.stopdash.domain.LineStatus
 import app.stopdash.domain.RouteSequenceSource
 import app.stopdash.domain.RouteStopsRepository
+import app.stopdash.domain.TflException
 import app.stopdash.domain.TripLeg
 import app.stopdash.domain.TripRoute
 import app.stopdash.ui.theme.StopDashTheme
@@ -44,9 +50,6 @@ import java.time.Duration
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import app.stopdash.R
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithContentDescription
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -258,6 +261,151 @@ class TripScreenScreenshotTest {
         composeRule.onNodeWithText("┊  3 min to change").assertIsDisplayed()
         composeRule.onNodeWithText("2 stops to Canary Wharf").assertIsDisplayed()
         captureSnapshot("trip-route-legs.png")
+    }
+
+    @Test
+    fun trip_leg_opens_its_line() {
+        show(planned)
+        composeRule.onNodeWithText("27 min · ~08:29").performClick()
+        composeRule.waitForIdle()
+        // The Jubilee leg's row opens the line's page, with its service alert, as the main screen's does.
+        composeRule.onNodeWithText("Stratford").performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodes(hasTestTag("tripLegs")).assertCountEquals(0)
+        composeRule.onAllNodesWithText("Minor Delays", substring = true).onFirst().assertExists()
+        captureSnapshot("trip-leg-line.png")
+    }
+
+    @Test
+    fun a_leg_page_dismisses_its_line_alert_as_the_list_does() {
+        val dismissedRows = mutableListOf<DepartureRow>()
+        val dismissed = androidx.compose.runtime.mutableStateOf(emptySet<DismissedAlert>())
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                TripScreen(
+                    title = "To Canary Wharf", state = planned, now = now, access = Duration.ofMinutes(2),
+                    routeStops = RouteStopsRepository(source), onBack = {}, onRetry = {},
+                    dismissed = dismissed.value, onDismissAlert = { dismissedRows += it },
+                )
+            }
+        }
+        composeRule.onNodeWithText("27 min · ~08:29").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Stratford").performClick()
+        composeRule.waitForIdle()
+        // The Jubilee's Minor Delays carries the list page's ×, dismissing it line-wide.
+        composeRule.onNodeWithContentDescription(composeRule.activity.getString(R.string.alert_dismiss)).performClick()
+        assertEquals(listOf("jubilee"), dismissedRows.map { it.lineId })
+        // Once dismissed, the page keeps its times and says so, rather than claim a clean line.
+        dismissed.value = setOf(DismissedAlert.ofLineStatus(planned.statuses.getValue("jubilee")))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.route_detail_alert_dismissed)).assertExists()
+    }
+
+    @Test
+    fun a_no_trains_leg_whose_alert_was_dismissed_still_opens() {
+        // No Jubilee trains at Canada Water, and its Minor Delays dismissed: the leg still opens its
+        // line's stops, saying the alert was dismissed rather than dropping the page.
+        val dismissed = setOf(DismissedAlert.ofLineStatus(planned.statuses.getValue("jubilee")))
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                TripScreen(
+                    title = "To Canary Wharf", state = planned.copy(live = planned.live - canadaWaterTube.first), now = now,
+                    access = Duration.ofMinutes(2), routeStops = RouteStopsRepository(source), onBack = {}, onRetry = {},
+                    dismissed = dismissed, onDismissAlert = {},
+                )
+            }
+        }
+        composeRule.onAllNodes(hasClickAction() and hasContentDescription("Windrush") and hasContentDescription("Jubilee"))
+            .onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNode(hasClickAction() and hasContentDescription("Jubilee")).performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodes(hasTestTag("tripLegs")).assertCountEquals(0)
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.route_detail_alert_dismissed)).assertExists()
+    }
+
+    @Test
+    fun a_leg_opened_after_a_failed_status_check_claims_nothing() {
+        // The last statuses are held, but the latest check failed: the line's page can't vouch for it.
+        show(planned.copy(statusFailed = true))
+        composeRule.onNodeWithText("27 min · ~08:29", substring = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Stratford").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.disruptions_unknown)).assertExists()
+    }
+
+    @Test
+    fun a_leg_with_no_trains_opens_to_its_stops() {
+        // No live trains at Canada Water: the Jubilee leg's row opens its line's stops all the same.
+        show(planned.copy(live = planned.live - canadaWaterTube.first))
+        composeRule.onAllNodes(hasClickAction() and hasContentDescription("Windrush") and hasContentDescription("Jubilee"))
+            .onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodes(hasTestTag("tripLegs")).assertCountEquals(1)
+        composeRule.onNode(hasClickAction() and hasContentDescription("Jubilee")).performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodes(hasTestTag("tripLegs")).assertCountEquals(0)
+        composeRule.onNodeWithText("Canary Wharf").assertExists()
+    }
+
+    @Test
+    fun a_no_trains_leg_whose_route_is_unknown_logs_why() {
+        val warnings = mutableListOf<String>()
+        // TfL knows no route for the line: the page says "unavailable", and the log says why, once.
+        val unknown = RouteStopsRepository(
+            object : RouteSequenceSource {
+                override suspend fun routeSequence(lineId: String, direction: String): LineSequence =
+                    if (lineId == "jubilee") throw TflException.NotFound(null) else sequences.getValue(lineId)
+            },
+            warn = { warnings += it },
+        )
+        show(planned.copy(live = planned.live - canadaWaterTube.first), routeStops = unknown)
+        composeRule.onAllNodes(hasClickAction() and hasContentDescription("Windrush") and hasContentDescription("Jubilee"))
+            .onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNode(hasClickAction() and hasContentDescription("Jubilee")).performClick()
+        composeRule.waitForIdle()
+        assertEquals(
+            listOf("route stops unavailable for line jubilee at stop ${canadaWaterTube.first}: line not known to TfL"),
+            warnings.filter { it.startsWith("route stops unavailable") },
+        )
+    }
+
+    @Test
+    fun a_leg_whose_refresh_failed_opens_as_stale() {
+        // The Jubilee stop's last refresh failed: its held arrivals open with the stale caveat.
+        val failed = planned.live + (canadaWaterTube.first to planned.live.getValue(canadaWaterTube.first).copy(failed = true))
+        show(planned.copy(live = failed))
+        composeRule.onNodeWithText("27 min · ~08:29", substring = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Stratford").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.route_detail_status_stale)).assertExists()
+    }
+
+    @Test
+    fun a_no_trains_page_closes_once_trains_come() {
+        val trip = androidx.compose.runtime.mutableStateOf(planned.copy(live = planned.live - canadaWaterTube.first))
+        composeRule.setContent {
+            StopDashTheme(dynamicColor = false) {
+                TripScreen(
+                    title = "To Canary Wharf", state = trip.value, now = now, access = Duration.ofMinutes(2),
+                    routeStops = RouteStopsRepository(source), onBack = {}, onRetry = {},
+                )
+            }
+        }
+        composeRule.onAllNodes(hasClickAction() and hasContentDescription("Windrush") and hasContentDescription("Jubilee"))
+            .onFirst().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNode(hasClickAction() and hasContentDescription("Jubilee")).performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodes(hasTestTag("tripLegs")).assertCountEquals(0)
+        // Its trains come: the page opened from the no-trains row closes, back to the route.
+        trip.value = planned
+        composeRule.waitForIdle()
+        composeRule.onAllNodes(hasTestTag("tripLegs")).assertCountEquals(1)
     }
 
     @Test

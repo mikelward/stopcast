@@ -388,4 +388,72 @@ class RouteStopsTest {
         assertEquals(listOf("14/inbound"), source.calls)
         assertEquals(now, store.contents.sequences.getValue("14/inbound").at)
     }
+
+    private fun at(minutes: Long) = Instant.parse("2026-09-26T08:00:00Z").plus(Duration.ofMinutes(minutes))
+
+    @Test
+    fun `a planned leg shows the stops of its own branch`() {
+        // Two branches from A to one terminus Z, by B or by C: the Planner rides by C.
+        val forked = LineSequence(
+            routes = listOf(LineRoute("A ↔ Z via B", listOf("A", "B", "Z")), LineRoute("A ↔ Z via C", listOf("A", "C", "Z"))),
+            stopNames = mapOf("A" to "A", "B" to "B", "C" to "C", "Z" to "Z"),
+        )
+        val leg = TripLeg("tube", "fork", "fork", "A", "A", "Z", "Z", at(5), at(15), path = listOf("C", "Z"), headings = listOf("Z"))
+        val stops = RouteStops.forLeg(forked, leg) as RouteStops.Resolution.Found
+        assertEquals(listOf("A", "C", "Z"), stops.stops.map { it.id })
+        // No planned path: the terminus alone can't say which branch.
+        assertTrue(RouteStops.forLeg(forked, leg.copy(path = emptyList(), toId = "Q")) !is RouteStops.Resolution.Found)
+    }
+
+    @Test
+    fun `a planned leg lists its line on to the terminus, past where the rider gets off`() {
+        // Both branches pass B; the Planner's train, heading to Y, rides on by C.
+        val line = LineSequence(
+            routes = listOf(LineRoute("A ↔ Y", listOf("A", "B", "C", "Y")), LineRoute("A ↔ Z", listOf("A", "B", "D", "Z"))),
+            stopNames = mapOf("A" to "A", "B" to "B", "C" to "C", "D" to "D", "Y" to "Y", "Z" to "Z"),
+        )
+        val leg = TripLeg("tube", "line", "line", "A", "A", "B", "B", at(5), at(9), path = listOf("B"), headings = listOf("Y"))
+        val stops = RouteStops.forLeg(line, leg) as RouteStops.Resolution.Found
+        assertEquals(listOf("A", "B", "C", "Y"), stops.stops.map { it.id })
+        // A terminus no route reaches past where the rider gets off: no list, rather than a guessed one.
+        assertTrue(RouteStops.forLeg(line, leg.copy(headings = listOf("Q"))) !is RouteStops.Resolution.Found)
+    }
+
+    @Test
+    fun `a planned leg follows its whole planned path where branches share their first stop`() {
+        // Both branches leave A by H, then split by B or by C to rejoin at Z, as the Northern line does.
+        val forked = LineSequence(
+            routes = listOf(LineRoute("A ↔ Z via B", listOf("A", "H", "B", "Z")), LineRoute("A ↔ Z via C", listOf("A", "H", "C", "Z"))),
+            stopNames = mapOf("A" to "A", "H" to "H", "B" to "B", "C" to "C", "Z" to "Z"),
+        )
+        val leg = TripLeg("tube", "fork", "fork", "A", "A", "Z", "Z", at(5), at(15), path = listOf("H", "C", "Z"), headings = listOf("Z"))
+        val stops = RouteStops.forLeg(forked, leg) as RouteStops.Resolution.Found
+        assertEquals(listOf("A", "H", "C", "Z"), stops.stops.map { it.id })
+    }
+
+    @Test
+    fun `a planned leg whose route misses where the rider gets off has no list`() {
+        // The line's route runs to the Planner's terminus but never calls where the leg alights (the
+        // two datasets disagree): no list, rather than one without the rider's stop.
+        val line = LineSequence(
+            routes = listOf(LineRoute("A ↔ Z", listOf("A", "B", "Z"))),
+            stopNames = mapOf("A" to "A", "B" to "B", "Z" to "Z"),
+        )
+        val leg = TripLeg("tube", "line", "line", "A", "A", "Q", "Q", at(5), at(9), path = listOf("Q"), headings = listOf("Z"))
+        assertTrue(RouteStops.forLeg(line, leg) !is RouteStops.Resolution.Found)
+    }
+
+    @Test
+    fun `a planned leg gets off at the station the Planner names by its other id`() {
+        // The route calls at Z's low-level platforms (ZLL); the Planner names the station's main id
+        // (Z), in the same interchange: the same place, so the rider gets off there.
+        val line = LineSequence(
+            routes = listOf(LineRoute("A ↔ Y", listOf("A", "B", "ZLL", "Y"))),
+            stopNames = mapOf("A" to "A", "B" to "B", "ZLL" to "Z", "Z" to "Z", "Y" to "Y"),
+            stopHubs = mapOf("ZLL" to "HUBZ", "Z" to "HUBZ"),
+        )
+        val leg = TripLeg("rail", "line", "line", "A", "A", "Z", "Z", at(5), at(9), path = listOf("B", "Z"), headings = listOf("Y"))
+        val stops = RouteStops.forLeg(line, leg) as RouteStops.Resolution.Found
+        assertEquals(listOf("A", "B", "Z", "Y"), stops.stops.map { it.id })
+    }
 }

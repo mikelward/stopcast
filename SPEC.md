@@ -888,7 +888,9 @@ to Canary Wharf". A walk reads "5 min walk to ‹place›"; a walk to a station'
 Planner names by its street then the station ("Cannon Street, Cannon Street Rail Station"), goes by
 the station ("Cannon Street"), never the street repeated. Line status and stop closures for every leg show exactly as on the list:
 the ⚠ on a disrupted row, the status chip on a line with no trains, the closure card at a closed
-stop. **Every stop the rider gets off at** is checked too — each leg's alighting stop, including
+stop. **Tapping a leg's row opens its line's page**, as a row on the list does: the line's full
+service alert, with the list's × to dismiss it line-wide (*Disruptions*), and its stops (maintainer,
+2026-09-26); back returns to the route. **Every stop the rider gets off at** is checked too — each leg's alighting stop, including
 both ends of a walk between stations, and the destination — as a starred journey's far end is
 (*Alerts for the journey shown*): a closure or move shows where the rider gets off, from the same
 few-minute cache, and a failed check keeps the last known notice and claims nothing new. Routes sort

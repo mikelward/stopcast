@@ -7,6 +7,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.stopdash.domain.ArrivalsCache
 import app.stopdash.domain.Departure
+import app.stopdash.domain.DepartureRow
+import app.stopdash.domain.DismissedAlert
+import app.stopdash.domain.DismissedAlertsStore
 import app.stopdash.domain.HiddenModes
 import app.stopdash.domain.JourneyPlanner
 import app.stopdash.domain.LineStatus
@@ -69,6 +72,12 @@ class TripViewModel(
     // Keeps the open route ([openRoute]) across process death, from the activity's saved state: the
     // screen's own saved state is gone while something else (the licenses) covers it. On the device.
     private val savedState: SavedStateHandle = SavedStateHandle(),
+    // The service alerts the user dismissed, shared with every screen (SPEC *Disruptions*): a leg's
+    // line page offers the same dismiss the list's does. None kept by default (a test).
+    private val dismissedStore: DismissedAlertsStore = DismissedAlertsStore.NONE,
+    // The activity's failed-write flags, so a dismiss that didn't take is said on whichever screen
+    // shows next, as the list's are.
+    writeFailures: WriteFailures = WriteFailures(),
 ) : ViewModel() {
     /** One boarding stop's last arrivals and when they were fetched; [failed] when the last fetch failed. */
     data class StopLive(val departures: List<Departure>, val fetchedAt: Instant, val failed: Boolean = false)
@@ -164,10 +173,30 @@ class TripViewModel(
         refresh()
     }
 
+    private val _dismissed = MutableStateFlow<Set<DismissedAlert>>(emptySet())
+
+    /** The dismissed service alerts, followed from the shared store; empty until read. */
+    val dismissed: StateFlow<Set<DismissedAlert>> = _dismissed.asStateFlow()
+
+    private val _dismissWriteFailed = writeFailures.dismiss
+
+    /** Whether a dismiss didn't persist, until the screen says so ([dismissWriteFailureShown]). */
+    val dismissWriteFailed: StateFlow<Boolean> = _dismissWriteFailed.asStateFlow()
+
+    /** Dismisses [row]'s line alert, as the list's line page does. */
+    fun dismissAlert(row: DepartureRow) {
+        viewModelScope.launch { dismissAlert(dismissedStore, row, io, _dismissWriteFailed, warn) }
+    }
+
+    fun dismissWriteFailureShown() {
+        _dismissWriteFailed.value = false
+    }
+
     // Bumped on each departure source change: a refresh's arrivals asked for before it are dropped.
     private var sourceGeneration = 0
 
     init {
+        viewModelScope.launch { followDismissed(dismissedStore, _dismissed, warn) }
         // Arrivals fetched under the old source no longer stand: they're dropped (the trip reads
         // "Loading" rather than show them), and the next time the screen shows this retained trip it
         // fetches afresh rather than wait for the minute tick. Nothing is fetched here, since the

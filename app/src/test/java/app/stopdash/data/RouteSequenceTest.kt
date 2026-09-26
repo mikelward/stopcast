@@ -13,6 +13,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
+import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
@@ -153,6 +154,24 @@ class RouteSequenceTest {
         // No overall cap: a bare install(HttpTimeout) has no default request timeout, so a slow start
         // followed by a slow 600 KB transfer runs until 30 s pass without data, not to a total limit.
         assertNull(requestTimeout)
+    }
+
+    @Test
+    fun `a planned leg with no train to follow lists its own branch through to its terminus`() {
+        // A recorded Planner answer (trimmed): Kennington to Archway, via Charing Cross, heading to
+        // High Barnet. Both trunks board at Kennington and reach Archway and High Barnet, so only the
+        // leg's whole path says which it rides.
+        val planned = checkNotNull(javaClass.getResource("/fixtures/journey_results_kennington_to_archway.json")).readText()
+        val leg = json.decodeFromString<TflJourneyResultsDto>(planned).toRoutes(Instant.parse("2026-09-26T19:00:00Z"))
+            .first().rides.single()
+        assertEquals(listOf("High Barnet"), leg.headings)
+        val stops = (RouteStops.forLeg(northern.callingAt(KENNINGTON), leg) as RouteStops.Resolution.Found).stops.map { it.name }
+        assertEquals("Kennington", stops.first())
+        assertTrue("Charing Cross" in stops)
+        assertTrue("Bank" !in stops)
+        // On past where the rider gets off, to the train's terminus.
+        assertTrue("Archway" in stops)
+        assertEquals("High Barnet", stops.last())
     }
 
     private companion object {

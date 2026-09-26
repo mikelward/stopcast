@@ -1849,6 +1849,8 @@ class MainActivity : ComponentActivity() {
                         arrivals = ArrivalsCache.SHARED, departureSourceChanges = RailApiKeySetting.changes,
                         poles = { area -> routeStops(appContext).loadPoles(area).map { it.id } },
                         savedState = createSavedStateHandle(),
+                        dismissedStore = DataStoreDismissedAlertsStore.from(appContext, warn = ::logDepartureWarning),
+                        writeFailures = writeFailures,
                     )
                 }
             },
@@ -1893,6 +1895,10 @@ class MainActivity : ComponentActivity() {
             onShowAllModes = showAllModes,
             menu = LocalAppMenu.current,
             openRoute = trip.openRoute,
+            dismissed = trip.dismissed.collectAsStateWithLifecycle().value,
+            onDismissAlert = trip::dismissAlert,
+            dismissWriteFailed = trip.dismissWriteFailed.collectAsStateWithLifecycle().value,
+            onDismissWriteFailureShown = trip::dismissWriteFailureShown,
         )
     }
 
