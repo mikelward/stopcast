@@ -70,4 +70,32 @@ class FartherBusesTest {
         )
         assertEquals(listOf("73"), FartherBuses.candidates(listOf(capitalized)).single().lines.map { it.id })
     }
+
+    @Test
+    fun `a place records the stations a pole is within 150 m of, and not one farther`() {
+        // 0.001° of latitude is about 111 m; 0.0015° about 167 m.
+        val station = StopLocation("940GEX", "Example", 0.0, 0.0, listOf(LineRef("northern", "Northern", "tube")))
+        fun at(key: String, lat: Double) =
+            cluster(key, 700.0, StopLocation("${key}A", "Stop $key", lat, 0.0, listOf(bus("234")), clusterId = key))
+        val candidates = FartherBuses.candidates(listOf(at("NEAR", 0.001), at("FAR", 0.0015)), stations = listOf(station))
+        assertEquals(listOf(setOf("940GEX"), emptySet<String>()), candidates.map { it.stationIds })
+        assertEquals(
+            listOf(emptySet<String>(), emptySet<String>()),
+            FartherBuses.candidates(listOf(at("NEAR", 0.001), at("FAR", 0.0015))).map { it.stationIds },
+        )
+    }
+
+    @Test
+    fun `the stations the list may show are the eager stops of a shown mode other than bus`() {
+        val tube = StopLocation("940GEX", "Example", 0.0, 0.0, listOf(LineRef("northern", "Northern", "tube")))
+        val rail = StopLocation("910GEX", "Example Rail", 0.0, 0.0, listOf(LineRef("c2c", "c2c", "national-rail")))
+        val eager = listOf(
+            cluster("S1", 300.0, tube),
+            cluster("S2", 400.0, rail),
+            cluster("J1", 100.0, pole("J1A", "J1", "73")),
+        )
+        assertEquals(listOf("940GEX", "910GEX"), FartherBuses.stationStops(eager).map { it.id })
+        // A hidden mode's station isn't on the list, so it draws no bus place to it.
+        assertEquals(listOf("940GEX"), FartherBuses.stationStops(eager, hidden = setOf("national-rail")).map { it.id })
+    }
 }

@@ -723,13 +723,19 @@ fun MainScreen(
     // opened card's (an opened card itself always stays). Deciding it here, from the rows drawn,
     // means every filter the list applies (dismissed alerts, hidden modes, the nearest-stop dedupe,
     // a journey's origin) is honored without being copied, and a route an opened card turned out to
-    // run is never offered again by another.
-    val fartherShown = remember(farther, rows, journeyRowsShown) {
+    // run is never offered again by another. A place by a station the screen shows claims its
+    // routes first: one it draws rows for (the list's or a journey card's), or one still drawn as a
+    // cold load's "Loading" card, so the cards don't reshuffle when its rows land (Codex).
+    val pendingStopIds = (state as? DeparturesUiState.Loaded)?.pendingStops.orEmpty().map { it.id }
+    val fartherShown = remember(farther, rows, journeyRowsShown, pendingStopIds) {
         val opened = farther.filter { it.load != null }.mapTo(HashSet()) { it.place.key }
         val shownBus = (rows + journeyRowsShown)
             .filter { it.mode.equals(FartherBuses.MODE, ignoreCase = true) && it.lineId.isNotBlank() }
             .mapTo(HashSet()) { it.lineId }
-        val kept = CollapsedPlaces.withBusesPicked(farther.map { it.place }, shownBus, opened).associateBy { it.key }
+        val shownStops = (rows + journeyRowsShown).mapTo(HashSet()) { it.stopId }
+        shownStops += pendingStopIds
+        val kept = CollapsedPlaces.withBusesPicked(farther.map { it.place }, shownBus, opened, shownStopIds = shownStops)
+            .associateBy { it.key }
         farther.mapNotNull { card -> kept[card.place.key]?.let { card.copy(place = it) } }
     }
 

@@ -65,6 +65,35 @@ class CollapsedPlacesTest {
     }
 
     @Test
+    fun `a place at a station on the list wins a tie with a nearer one, and keeps its place in the order`() {
+        val nearer = busPlace("NEAR", "234", "N20")
+        val atStation = busPlace("STATION", "234", "N20").copy(meters = 900.0, stationIds = setOf("940GEX"))
+        val picked = CollapsedPlaces.withBusesPicked(listOf(nearer, atStation), emptySet(), shownStopIds = setOf("940GEX"))
+        assertEquals(listOf("bus:STATION"), picked.map { it.key })
+
+        // A station the screen draws no rows for (its fetch failed, or the dedupe folded its lines
+        // into a nearer stop's) isn't on the list, so the nearer place wins the same tie.
+        val notShown = CollapsedPlaces.withBusesPicked(listOf(nearer, atStation), emptySet(), shownStopIds = setOf("940GOTHER"))
+        assertEquals(listOf("bus:NEAR"), notShown.map { it.key })
+
+        // A nearer place that still adds a route of its own keeps its card, and stays first.
+        val both = CollapsedPlaces.withBusesPicked(
+            listOf(busPlace("NEAR", "234", "102"), atStation),
+            emptySet(),
+            shownStopIds = setOf("940GEX"),
+        )
+        assertEquals(listOf("bus:NEAR", "bus:STATION"), both.map { it.key })
+        assertEquals(listOf("234", "102"), both[0].lines.map { it.id })
+    }
+
+    @Test
+    fun `a place at a station claims its slot under the cap first`() {
+        val places = (1..4).map { busPlace("J$it", "r$it") } + busPlace("S", "r9").copy(stationIds = setOf("940GEX"))
+        val picked = CollapsedPlaces.withBusesPicked(places, emptySet(), shownStopIds = setOf("940GEX"))
+        assertEquals(listOf("bus:J1", "bus:J2", "bus:J3", "bus:S"), picked.map { it.key })
+    }
+
+    @Test
     fun `at most four bus cards, stations uncounted`() {
         val places = listOf(station("S1")) + (1..6).map { busPlace("J$it", "r$it") } + station("S2")
         val picked = CollapsedPlaces.withBusesPicked(places, emptySet())

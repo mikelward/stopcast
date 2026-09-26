@@ -15,22 +15,57 @@ object FartherBuses {
     const val MODE = "bus"
 
     /**
-     * A farther bus place: its [key] (the interchange and name its poles share, else the junction),
-     * its poles nearest first, how far its nearest pole is, and its bus routes, in the order its
-     * poles list them.
+     * How near a station on the list a bus place's pole must be to count as at that station
+     * (maintainer, 2026-09-26): the rider is walking to the station anyway, so its bus stops beat a
+     * place that's a little nearer as the crow flies but a longer walk. Wide enough for a station's
+     * own stops (Highgate's are 60–90 m from its position), narrow enough to leave the next road's.
      */
-    data class Farther(val key: String, val stops: List<StopLocation>, val meters: Double, val lines: List<LineRef>)
+    const val AT_STATION_METERS = 150.0
+
+    /**
+     * A farther bus place: its [key] (the interchange and name its poles share, else the junction),
+     * its poles nearest first, how far its nearest pole is, its bus routes, in the order its poles
+     * list them, and the ids of the station stops a pole is within [AT_STATION_METERS] of
+     * ([stationIds]). Whether one of those stations is on the list is decided against the rows the
+     * screen draws ([CollapsedPlaces.withBusesPicked]).
+     */
+    data class Farther(
+        val key: String,
+        val stops: List<StopLocation>,
+        val meters: Double,
+        val lines: List<LineRef>,
+        val stationIds: Set<String> = emptySet(),
+    )
+
+    /**
+     * The stops of the stations the list may show: the [eager] clusters' stops serving a mode other
+     * than bus that isn't [hidden]. What [candidates] measures a bus place's nearness to a station
+     * against; whether the station is actually shown — fetched, and not folded away by the nearest-
+     * stop dedupe — is left to the rows drawn (Codex).
+     */
+    fun stationStops(
+        eager: List<NearbySelection.NearbyCluster>,
+        hidden: Set<String> = emptySet(),
+    ): List<StopLocation> =
+        eager.flatMap { it.stops }.filter { stop ->
+            stop.lines.any { line ->
+                line.mode.isNotBlank() && !line.mode.equals(MODE, ignoreCase = true) && !HiddenModes.isHidden(line.mode, hidden)
+            }
+        }
 
     /**
      * The candidate bus places in [more] (the *more* tier, nearest first), nearest first, each with
      * every bus route its poles serve. A route-less stop is no candidate, it has no departures;
-     * hidden buses ([hidden]) give none. Clusters sharing an interchange and a name are one place. Which of them become cards, and which routes each names, is decided
+     * hidden buses ([hidden]) give none. Clusters sharing an interchange and a name are one place. A
+     * place records which of [stations] ([stationStops]) a pole is within [AT_STATION_METERS] of
+     * ([Farther.stationIds]). Which of them become cards, and which routes each names, is decided
      * against the rows the screen actually shows ([CollapsedPlaces.withBusesPicked]), so this never
      * has to guess what the list shows.
      */
     fun candidates(
         more: List<NearbySelection.NearbyCluster>,
         hidden: Set<String> = emptySet(),
+        stations: List<StopLocation> = emptyList(),
     ): List<Farther> {
         if (HiddenModes.isHidden(MODE, hidden)) return emptyList()
         // Places in first-seen order, which is nearest first: [more] is distance-ordered.
@@ -53,7 +88,14 @@ object FartherBuses {
                     if (line.mode.equals(MODE, ignoreCase = true) && line.id.isNotBlank()) lines.putIfAbsent(line.id, line)
                 }
             }
-            if (lines.isEmpty()) null else Farther(key, stops, clusters.minOf { it.distanceMeters }, lines.values.toList())
+            if (lines.isEmpty()) return@mapNotNull null
+            val stationIds = stations.filterTo(mutableListOf()) { station ->
+                stops.any { pole ->
+                    NearestStops.distanceMeters(pole.latitude, pole.longitude, station.latitude, station.longitude) <=
+                        AT_STATION_METERS
+                }
+            }.mapTo(HashSet()) { it.id }
+            Farther(key, stops, clusters.minOf { it.distanceMeters }, lines.values.toList(), stationIds)
         }
     }
 }
