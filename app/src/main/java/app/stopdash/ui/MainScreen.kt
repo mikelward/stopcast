@@ -1607,10 +1607,12 @@ private fun FreshnessStamp(state: DeparturesUiState, now: Instant, onRefresh: ()
             val age = Duration.between(state.fetchedAt, now).toKotlinDuration()
             when {
                 // A cold load with nothing back yet — only failures so far, or cut short before any
-                // stop landed: no update to stamp, so still loading, not "Updated just now".
+                // stop landed: no update to stamp, so still loading, not "Just now".
                 state.stops.isEmpty() && (state.statusPending || state.partialRefresh) -> stringResource(R.string.loading_stamp)
                 Staleness.isStale(age) -> stringResource(R.string.stale_stamp)
-                else -> stringResource(R.string.updated_stamp, RelativeTime.formatAge(age))
+                // The age alone ("1 min ago", "Just now"): an "Updated" before it cost top-bar room
+                // and said nothing the position doesn't (maintainer, 2026-09-26).
+                else -> RelativeTime.formatAge(age).replaceFirstChar { it.uppercaseChar() }
             }
         }
         // An error has its own full-screen message (no snapshot, so no age to stamp).
