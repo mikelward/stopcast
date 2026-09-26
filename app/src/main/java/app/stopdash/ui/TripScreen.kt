@@ -541,10 +541,13 @@ private fun FirstLegRow(
         LinePill(leg.lineName, leg.lineId, leg.mode)
         // Every destination the times cover, so a time is never read as another train's; shortened
         // as the list shortens a destination (full, then the standard abbreviations, then its floor)
-        // before it would elide.
+        // before it would elide. With no live train to show, the terminus of the Planner's service,
+        // as the train's front shows it (never the stop the rider gets off at, which read as the
+        // line's destination); failing that, where they board.
+        val destinations = shown.map { (train, _) -> train.destination }.filter { it.isNotBlank() }.distinct()
         DestinationsLabel(
-            names = shown.map { (train, _) -> train.destination }.filter { it.isNotBlank() }
-                .distinct().ifEmpty { listOf(leg.toName) },
+            names = destinations.ifEmpty { leg.headings }
+                .ifEmpty { listOf(stringResource(R.string.trip_first_leg_from, leg.fromName)) },
             modifier = Modifier.weight(1f),
         )
         // Graying is lost on TalkBack: each time is read with its destination, and whether it's usable.

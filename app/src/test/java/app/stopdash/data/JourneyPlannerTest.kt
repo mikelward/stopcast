@@ -68,6 +68,8 @@ class JourneyPlannerTest {
         assertEquals(6, mildmay.stops)
         assertEquals("910GSTFD", mildmay.path.last())
         assertEquals(Duration.ofMinutes(6), mildmay.changeAfter)
+        // The terminus the service runs to, cleaned as a stop name.
+        assertEquals(listOf("Stanmore"), first.legs[1].headings)
     }
 
     @Test

@@ -9,7 +9,8 @@ import java.time.Instant
  * and changes are its, the live times are StopDash's own ([TripTiming]).
  *
  * [path] is the stop ids the leg calls at after boarding, through [toId]; [changeAfter] is the time
- * the Planner allows to change to the next leg.
+ * the Planner allows to change to the next leg; [headings] is the terminus the Planner's service
+ * runs to ("Stanmore"), as its front and a station card show it, for when no live train does.
  */
 data class TripLeg(
     val mode: String,
@@ -23,6 +24,7 @@ data class TripLeg(
     val arrival: Instant,
     val path: List<String> = emptyList(),
     val changeAfter: Duration = Duration.ZERO,
+    val headings: List<String> = emptyList(),
 ) {
     val isWalk: Boolean get() = mode.equals(WALKING, ignoreCase = true)
 

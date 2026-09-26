@@ -74,6 +74,8 @@ data class TflJourneyLegDto(
             arrival = arrival,
             path = path.stopPoints.map { it.id }.filter { it.isNotBlank() },
             changeAfter = Duration.ofMinutes(change ?: 0),
+            headings = routeOptions.firstOrNull()?.directions.orEmpty()
+                .map { cleanStopName(it) }.filter { it.isNotBlank() }.distinct(),
         )
     }
 }
@@ -82,7 +84,11 @@ data class TflJourneyLegDto(
 data class TflJourneyPointDto(val naptanId: String? = null, val commonName: String = "")
 
 @Serializable
-data class TflJourneyRouteOptionDto(val lineIdentifier: TflJourneyIdentifierDto? = null)
+data class TflJourneyRouteOptionDto(
+    val lineIdentifier: TflJourneyIdentifierDto? = null,
+    // The terminus the service runs to ("Stanmore Underground Station"), one or more.
+    val directions: List<String> = emptyList(),
+)
 
 @Serializable
 data class TflJourneyIdentifierDto(val id: String = "", val name: String = "")
