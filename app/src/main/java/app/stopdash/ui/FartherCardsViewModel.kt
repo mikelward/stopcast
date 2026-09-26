@@ -140,6 +140,11 @@ class FartherCardsViewModel(
         for (model in models.values) model.refresh()
     }
 
+    /** Makes every opened card's next refresh ask for each stop afresh, as a pull does the list's. */
+    fun forceNextFetch() {
+        for (model in models.values) model.forceNextFetch()
+    }
+
     override fun onCleared() {
         for (store in stores.values) store.clear()
         stores.clear()

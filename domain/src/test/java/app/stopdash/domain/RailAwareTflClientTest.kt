@@ -241,4 +241,18 @@ class RailAwareTflClientTest {
         // An operator TfL has no line for keeps its slug.
         assertEquals("caledonian-sleeper", railLineId("Caledonian Sleeper", "CS"))
     }
+
+    @Test
+    fun `a station's arrivals are another client's to reuse only without National Rail times`() {
+        val board = Board()
+        val client = RailAwareTflClient(tfl, board, { codes })
+        // Its board goes under whichever of its stops this client picked.
+        assertEquals(false, client.shareable("910GEXAMPLE"))
+        assertEquals(true, client.shareable("940GZZLUEXA"))
+        assertEquals(true, client.arrivalsSource())
+        board.key = false
+        assertEquals(true, client.shareable("910GEXAMPLE"))
+        // Its arrivals now come without National Rail times: another source.
+        assertEquals(false, client.arrivalsSource())
+    }
 }

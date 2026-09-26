@@ -4,6 +4,8 @@ import android.Manifest
 import app.stopdash.data.FileNearbyStopsStore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.Mutex
+import app.stopdash.domain.ArrivalsCache
+import app.stopdash.domain.CachingTflClient
 import app.stopdash.domain.ModeGroups
 import app.stopdash.domain.DepartureRow
 import app.stopdash.domain.JourneyEnd
@@ -1011,6 +1013,7 @@ class MainActivity : ComponentActivity() {
                             // stops still missing, and a stop's closure check is reused for a
                             // few minutes — both spare TfL's keyless rate budget.
                             arrivalsReuse = ARRIVALS_REUSE,
+                            sharedArrivals = ArrivalsCache.SHARED,
                             disruptionReuse = DISRUPTION_REUSE,
                             lineStatusReuse = LINE_STATUS_REUSE,
                             // Stops past the walking reach refresh every other minute on the timer.
@@ -1268,6 +1271,15 @@ class MainActivity : ComponentActivity() {
                     // to the foreground runs, so the refresh control and reopening the app both move
                     // the nearby set to the current position.
                     onRefresh = onRelocate,
+                    // A pull asks every stop afresh, here and on the other screens (SPEC *Freshness →
+                    // Shared arrivals*); the crosshairs re-locate and reuse what's recent.
+                    onPullRefresh = {
+                        ArrivalsCache.SHARED.clear()
+                        viewModel.forceNextFetch()
+                        // The opened farther cards refresh with the list, and afresh too.
+                        fartherModels.forceNextFetch()
+                        onRelocate()
+                    },
                     onLocate = onLocate,
                     refreshing = refreshing,
                     // From "near me now": collapse a line served by several adjacent nearby stops
@@ -1820,7 +1832,10 @@ class MainActivity : ComponentActivity() {
             viewModelStoreOwner = owner,
             factory = viewModelFactory {
                 initializer {
-                    TripViewModel(journeyPlanner, departuresClient(appContext), fromStop.id, toStopIds, warn = ::logDepartureWarning)
+                    TripViewModel(
+                        journeyPlanner, departuresClient(appContext), fromStop.id, toStopIds, warn = ::logDepartureWarning,
+                        arrivals = ArrivalsCache.SHARED, departureSourceChanges = RailApiKeySetting.changes,
+                    )
                 }
             },
         )
@@ -1920,6 +1935,7 @@ class MainActivity : ComponentActivity() {
                         dismissedStore = DataStoreDismissedAlertsStore.from(appContext, warn = ::logDepartureWarning),
                         warn = ::logDepartureWarning,
                         arrivalsReuse = ARRIVALS_REUSE,
+                        sharedArrivals = ArrivalsCache.SHARED,
                         disruptionReuse = DISRUPTION_REUSE,
                         lineStatusReuse = LINE_STATUS_REUSE,
                         rateWaitMillis = { SharedTflRateLimiter.waitedMillis },
@@ -1999,6 +2015,11 @@ class MainActivity : ComponentActivity() {
                 // Each station page or trip origin set has its own model, and so its own list.
                 listKey = viewModel,
                 onRefresh = onRefresh ?: { viewModel.refresh() },
+                onPullRefresh = {
+                    ArrivalsCache.SHARED.clear()
+                    viewModel.forceNextFetch()
+                    (onRefresh ?: { viewModel.refresh() })()
+                },
                 onLocate = onLocate,
                 refreshing = refreshing || relocatingNow,
                 starred = starred,
@@ -2086,7 +2107,9 @@ class MainActivity : ComponentActivity() {
         // A departures list's client: TfL's, plus National Rail's own live departures at a rail
         // station once the user has pasted a National Rail key (SPEC *National Rail*). The key and
         // the bundled station codes are read per request, so a paste applies on the next refresh.
-        private fun departuresClient(context: Context): TflClient = RailAwareTflClient(
+        // Every screen's arrivals land in the shared cache, so each shows what the others just
+        // fetched (SPEC *Freshness → Shared arrivals*).
+        private fun departuresClient(context: Context): TflClient = CachingTflClient(RailAwareTflClient(
             tfl = KtorTflClient(
                 httpClient,
                 appKey = { UserApiKeySetting.current },
@@ -2097,7 +2120,7 @@ class MainActivity : ComponentActivity() {
             rail = KtorDarwinClient(httpClient, apiKey = { RailApiKeySetting.current }, warn = ::logDepartureWarning),
             codes = { RailStationCodesStore.load(context.applicationContext) },
             warn = ::logDepartureWarning,
-        )
+        ))
 
         // "Find a station": the name search and a station's stop lookup, both on demand from the
         // search screen, never on the refresh path. The typed query goes to TfL only (SPEC *Privacy*).
@@ -2774,6 +2797,7 @@ private fun fartherCardModel(
     dismissedStore = DataStoreDismissedAlertsStore.from(appContext, warn = ::logDepartureWarning),
     warn = ::logDepartureWarning,
     arrivalsReuse = ARRIVALS_REUSE,
+    sharedArrivals = ArrivalsCache.SHARED,
     disruptionReuse = DISRUPTION_REUSE,
     lineStatusReuse = LINE_STATUS_REUSE,
     rateWaitMillis = { SharedTflRateLimiter.waitedMillis },

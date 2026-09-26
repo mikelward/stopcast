@@ -30,22 +30,55 @@ object WidgetRefresh {
         prior: DeparturesSnapshot,
         now: Instant,
         reuse: Duration = Duration.ZERO,
+        // Arrivals another screen fetched within [ArrivalsCache.TTL] (SPEC *Freshness → Shared
+        // arrivals*): taken, at their own fetch time, rather than asked for again.
+        shared: ArrivalsCache? = null,
+        // The source this refresh fetches from ([TflClient.arrivalsSource]): only arrivals from it are taken.
+        source: Any? = null,
+        // A fetched stop's National Rail feed after its fetch ([TflClient.railFeed]); null keeps the
+        // row's own (a test with no National Rail).
+        railFeed: ((stopId: String) -> RailFeed?)? = null,
         fetchArrivals: suspend (stopId: String) -> List<Departure>?,
     ): DeparturesSnapshot? {
         if (prior.stops.isEmpty()) return null
         // A negative age (the clock moved back) is never "recent" — fetch it, rather than trust it.
+        // Nor is a station's row from before a National Rail key was added or removed ([source]: the
+        // client's [TflClient.arrivalsSource], whether its times are on): "No key" with one, or
+        // National Rail times without. A stop with no National Rail feed is the same either way.
+        fun sameSource(stop: StopArrivals): Boolean {
+            val railOn = source as? Boolean ?: return true
+            val feed = stop.railFeed ?: return true
+            return (feed != RailFeed.NO_KEY) == railOn
+        }
         fun recent(stop: StopArrivals): Boolean {
             val age = Duration.between(stop.fetchedAt, now)
-            return stop.arrivalsFresh && !age.isNegative && age < reuse
+            return stop.arrivalsFresh && !age.isNegative && age < reuse && sameSource(stop)
+        }
+        // A newer fetch of the stop by another screen, where there is one: taken even over a recent
+        // one of the widget's own, so it never shows older times than the app.
+        val sharedByStop = prior.stops.map { stop ->
+            shared?.recent(stop.stopId, now, source)?.takeIf { it.fetchedAt.isAfter(stop.fetchedAt) }
         }
         // Every stop's arrivals in parallel; the client's shared request pool bounds how many are in
         // flight. [fetchArrivals] returns null on failure rather than throwing, so one stop failing
         // never cancels the others.
         val fetchedByStop = coroutineScope {
-            prior.stops.map { stop -> async { if (recent(stop)) null else fetchArrivals(stop.stopId) } }.awaitAll()
+            prior.stops.mapIndexed { i, stop ->
+                async { if (recent(stop) || sharedByStop[i] != null) null else fetchArrivals(stop.stopId) }
+            }.awaitAll()
         }
         var anyFresh = false
         val stops = prior.stops.mapIndexed { i, stop ->
+            sharedByStop[i]?.let { entry ->
+                anyFresh = true
+                // With the National Rail feed that fetch found ("No key" once a key is removed).
+                return@mapIndexed stop.copy(
+                    departures = entry.departures,
+                    fetchedAt = entry.fetchedAt,
+                    arrivalsFresh = true,
+                    railFeed = entry.railFeed,
+                )
+            }
             if (recent(stop)) return@mapIndexed stop
             when (val fetched = fetchedByStop[i]) {
                 // Keep the aged last-good, but mark it not-fresh so its stale withhold fires and
@@ -54,7 +87,12 @@ object WidgetRefresh {
                 null -> stop.copy(arrivalsFresh = false)
                 else -> {
                     anyFresh = true
-                    stop.copy(departures = fetched, fetchedAt = now, arrivalsFresh = true)
+                    stop.copy(
+                        departures = fetched,
+                        fetchedAt = now,
+                        arrivalsFresh = true,
+                        railFeed = if (railFeed != null) railFeed(stop.stopId) else stop.railFeed,
+                    )
                 }
             }
         }

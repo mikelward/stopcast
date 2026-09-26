@@ -203,6 +203,10 @@ fun MainScreen(
     // The app bar's crosshairs: "use my location". Null runs [onRefresh], which on the near-me list
     // and a trip from here re-locates; a From… station page passes a return to the near-me list.
     onLocate: (() -> Unit)? = null,
+    // A pull-to-refresh (and the list's own Refresh buttons): the user asking for fresh times, so the
+    // caller fetches every stop afresh rather than reuse a recent fetch (SPEC *Freshness → Shared
+    // arrivals*). Null runs [onRefresh].
+    onPullRefresh: (() -> Unit)? = null,
     // The full list's scroll position. Hoisted by the caller above the route page and the overlays,
     // which take this screen (or its list) out of composition, so a return lands where it was.
     listState: LazyListState = rememberLazyListState(),
@@ -1194,7 +1198,7 @@ fun MainScreen(
                 // A journey's own view: just its card, each group headed by where it boards, under
                 // Swap and Unstar. Rendered from the same snapshot as the list (SPEC D4).
                 LoadedContent(
-                    state, now, onRefresh, refreshing, content, rows = emptyList(),
+                    state, now, onPullRefresh ?: onRefresh, refreshing, content, rows = emptyList(),
                     listState = drillListState,
                     journeyCards = listOf(journeyViewCard),
                     journeyView = true,
@@ -1215,7 +1219,7 @@ fun MainScreen(
                 )
             } else {
                 LoadedContent(
-                    state, now, onRefresh, refreshing, content, shownRows,
+                    state, now, onPullRefresh ?: onRefresh, refreshing, content, shownRows,
                     listState = if (platformRows != null) drillListState else listState,
                     dismissedClosures = if (platformRows != null) emptyList() else dismissedClosures,
                     sharedNotices = sharedNotices,
@@ -1309,7 +1313,7 @@ fun MainScreen(
             is DeparturesUiState.Error ->
                 // Under the pull box with a scrollable child so a downward swipe refreshes
                 // the error screen too (SPEC D6), not only the button.
-                PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = content) {
+                PullToRefreshBox(isRefreshing = refreshing, onRefresh = onPullRefresh ?: onRefresh, modifier = content) {
                     val scrollState = rememberScrollState()
                     Centered(
                         Modifier.fillMaxSize()
@@ -1320,7 +1324,7 @@ fun MainScreen(
                             text = stringResource(errorMessage(state.kind)),
                             style = MaterialTheme.typography.bodyLarge,
                         )
-                        RefreshButton(onRefresh, Modifier.padding(top = 16.dp))
+                        RefreshButton(onPullRefresh ?: onRefresh, Modifier.padding(top = 16.dp))
                     }
                 }
         }
