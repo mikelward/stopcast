@@ -1,0 +1,171 @@
+package app.stopdash.data
+
+import app.stopdash.domain.TflException
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.HttpRequestData
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.ByteReadChannel
+import java.time.Duration
+import java.time.Instant
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** Against a recorded Journey Planner answer between two well-known stations. */
+class JourneyPlannerTest {
+    private val fixture = checkNotNull(javaClass.getResource("/fixtures/journey_results_highbury_to_canary_wharf.json")).readText()
+
+    private fun client(
+        body: String,
+        status: HttpStatusCode = HttpStatusCode.OK,
+        capture: (HttpRequestData) -> Unit = {},
+        warn: (String) -> Unit = {},
+    ): KtorTflClient {
+        val engine = MockEngine { request ->
+            capture(request)
+            respond(ByteReadChannel(body), status, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val http = HttpClient(engine) {
+            expectSuccess = true
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        }
+        return KtorTflClient(httpClient = http, baseUrl = "https://tfl.example", appKey = { "EXAMPLE" }, warn = warn)
+    }
+
+    @Test
+    fun `asks the Planner between two stop ids`() = runTest {
+        var captured: HttpRequestData? = null
+        client(fixture, capture = { captured = it }).journeys("910GHGHI", "940GZZLUCYF")
+        val url = checkNotNull(captured).url
+        assertEquals("/Journey/JourneyResults/910GHGHI/to/940GZZLUCYF", url.encodedPath)
+        assertEquals("EXAMPLE", url.parameters["app_key"])
+        assertEquals("15", url.parameters["maxWalkingMinutes"])
+    }
+
+    @Test
+    fun `reads each route's legs, lines, ends, times and change`() = runTest {
+        val routes = client(fixture).journeys("910GHGHI", "940GZZLUCYF")
+        assertEquals(3, routes.size)
+        val first = routes[0]
+        assertEquals(listOf("mildmay", "jubilee"), first.rides.map { it.lineId })
+        val mildmay = first.legs[0]
+        assertEquals("overground", mildmay.mode)
+        assertEquals("Mildmay", mildmay.lineName)
+        assertEquals("910GHGHI", mildmay.fromId)
+        assertEquals("910GSTFD", mildmay.toId)
+        // London wall-clock, British Summer Time in September.
+        assertEquals(Instant.parse("2026-09-26T06:37:00Z"), mildmay.departure)
+        assertEquals(Duration.ofMinutes(16), mildmay.run)
+        assertEquals(6, mildmay.stops)
+        assertEquals("910GSTFD", mildmay.path.last())
+        assertEquals(Duration.ofMinutes(6), mildmay.changeAfter)
+    }
+
+    @Test
+    fun `reads a walk at the end of a route`() = runTest {
+        val route = client(fixture).journeys("910GHGHI", "940GZZLUCYF")[2]
+        assertEquals(listOf("windrush", "elizabeth"), route.rides.map { it.lineId })
+        val walk = route.legs.last()
+        assertTrue(walk.isWalk)
+        assertEquals("", walk.lineId)
+        assertEquals(Duration.ofMinutes(5), walk.run)
+        // The change time TfL puts on a walk to the destination is not a change.
+        assertEquals(Duration.ZERO, walk.changeAfter)
+    }
+
+    @Test
+    fun `drops a route with a leg it can't read, and says how many`() = runTest {
+        val broken = fixture.replaceFirst("\"departureTime\": \"2026-09-26T07:37:00\"", "\"departureTime\": \"soon\"")
+        val warnings = mutableListOf<String>()
+        val routes = client(broken, warn = { warnings += it }).journeys("910GHGHI", "940GZZLUCYF")
+        assertEquals(2, routes.size)
+        assertEquals(listOf("journey planner: 1 of 3 routes unreadable"), warnings)
+    }
+
+    @Test
+    fun `drops a route riding from or to a stop the Planner didn't name`() = runTest {
+        val broken = fixture.replaceFirst("\"naptanId\": \"910GSTFD\"", "\"naptanId\": null")
+        val routes = client(broken).journeys("910GHGHI", "940GZZLUCYF")
+        assertEquals(2, routes.size)
+        assertTrue(routes.none { route -> route.rides.any { it.toId.isBlank() || it.fromId.isBlank() } })
+    }
+
+    @Test
+    fun `a time in the autumn rollback's repeated hour runs forward from the one before`() {
+        // 25 October 2026: 01:30 London is 00:30Z (summer time) or 01:30Z (after the rollback).
+        val now = Instant.parse("2026-10-25T00:50:00Z")
+        // Planned at 00:50Z (01:50 summer time): 01:55 is still to come in summer time, but 01:30
+        // has passed, so it's the 01:30 after the rollback.
+        assertEquals(Instant.parse("2026-10-25T00:55:00Z"), londonTime("2026-10-25T01:55:00", now))
+        assertEquals(Instant.parse("2026-10-25T01:30:00Z"), londonTime("2026-10-25T01:30:00", now))
+        // A leg leaving 01:50 (summer time) and arriving 01:10: the arrival is after the rollback.
+        val departure = checkNotNull(londonTime("2026-10-25T01:50:00", now))
+        assertEquals(Instant.parse("2026-10-25T01:10:00Z"), londonTime("2026-10-25T01:10:00", now, after = departure))
+        // A ride leaving 01:30 summer time and arriving 01:30 after the rollback: an hour, not none.
+        val leaves = checkNotNull(londonTime("2026-10-25T01:30:00", Instant.parse("2026-10-25T00:20:00Z")))
+        assertEquals(Instant.parse("2026-10-25T01:30:00Z"), londonTime("2026-10-25T01:30:00", now, after = leaves, strictlyAfter = true))
+        assertEquals(leaves, londonTime("2026-10-25T01:30:00", now, after = leaves))
+        assertEquals(Instant.parse("2026-09-26T06:37:00Z"), londonTime("2026-09-26T07:37:00", now))
+    }
+
+    @Test
+    fun `a leg after a change in the repeated hour is read after the change`() {
+        // Arrive 01:20 summer time with 20 min to change: the next leg's 01:30 is the one after the rollback.
+        val leg = TflJourneyLegDto(
+            departureTime = "2026-10-25T01:00:00",
+            arrivalTime = "2026-10-25T01:20:00",
+            departurePoint = TflJourneyPointDto("A", "A"),
+            arrivalPoint = TflJourneyPointDto("B", "B"),
+            routeOptions = listOf(TflJourneyRouteOptionDto(TflJourneyIdentifierDto("red", "Red"))),
+            mode = TflJourneyIdentifierDto("tube", "Tube"),
+            interChangeDuration = "20",
+            interChangePosition = "AFTER",
+        )
+        val next = leg.copy(
+            departureTime = "2026-10-25T01:30:00",
+            arrivalTime = "2026-10-25T01:40:00",
+            departurePoint = TflJourneyPointDto("B", "B"),
+            arrivalPoint = TflJourneyPointDto("C", "C"),
+            interChangeDuration = null,
+            interChangePosition = null,
+        )
+        val route = checkNotNull(TflJourneyDto(listOf(leg, next)).toRouteOrNull(Instant.parse("2026-10-25T00:00:00Z")))
+        assertEquals(Instant.parse("2026-10-25T00:20:00Z"), route.legs[0].arrival)
+        assertEquals(Instant.parse("2026-10-25T01:30:00Z"), route.legs[1].departure)
+    }
+
+    @Test
+    fun `journeys offered but none readable is a failure, not no routes`() {
+        val broken = fixture.replace(Regex("\"departureTime\": \"[^\"]+\""), "\"departureTime\": \"soon\"")
+        assertThrows(TflException.Unreachable::class.java) {
+            kotlinx.coroutines.runBlocking { client(broken).journeys("910GHGHI", "940GZZLUCYF") }
+        }
+    }
+
+    @Test
+    fun `an end the Planner can't place gives no routes, not a failure`() = runTest {
+        val warnings = mutableListOf<String>()
+        val routes = client("{}", status = HttpStatusCode.MultipleChoices, warn = { warnings += it })
+            .journeys("910GHGHI", "HUBEXAMPLE")
+        assertEquals(emptyList<Any>(), routes)
+        assertEquals(listOf("journey planner: HTTP 300"), warnings)
+    }
+
+    @Test
+    fun `a rate-limited Planner is the honest rate-limited state`() {
+        assertThrows(TflException.RateLimited::class.java) {
+            kotlinx.coroutines.runBlocking {
+                client("{}", status = HttpStatusCode.TooManyRequests).journeys("910GHGHI", "940GZZLUCYF")
+            }
+        }
+    }
+}

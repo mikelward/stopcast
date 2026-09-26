@@ -830,6 +830,25 @@ fix lands in the shared layer, not per-surface. Raised in chat 2026-09-19.
           every leg as the list's own header and route card with live times and alerts.
           Mock: the "StopDash Journeys Mock" artifact. `docs/PRIVACY.md` and Play Data Safety are
           updated in the same change (both ends of a trip go to TfL as stop ids).
+      - [x] **First version** (#242): *To…* from the near-me list and a *From…* station plans,
+            lists and opens routes with live times, walks, ranking tiers, status and refresh
+            warnings, the location banner and hidden modes.
+      - [ ] **Closure checks where the rider gets off** (each leg's alighting stop and the
+            destination), from the list's few-minute cache; not yet fetched.
+      - [ ] **Gray unreachable trains in the leg-by-leg cards** (the list's first-leg row does).
+      - [ ] **"From" chip on the destination search** naming the start ("Here" or the station).
+      - [ ] **Station page's own *To…*** still shows direct trains only; move it to trips.
+      - [ ] **Plan to every station of a complex** (maintainer, 2026-09-26: the goal is the best
+            way to King's Cross St. Pancras whatever the line or mode). Today one member stop is
+            sent, and the Planner only walks on from its mode: aimed at the Underground it offered
+            Blackfriars "Thameslink then Metropolitan" (10 min) where Thameslink direct to St Pancras
+            is 7. Plan once per distinct station (members of one name merged, e.g. St Pancras'
+            two codes) plus one bus stop area (the Planner walks between stands), merge, and keep
+            the best few routes before fetching live times: 5 Planner calls per plan at King's
+            Cross, 2-3 at a typical interchange, 1 elsewhere. Not the complex's centre point: it
+            ended every trip at a street address with a 3-9 min walk and didn't fix the bias.
+      - [ ] **Configurable walking limit** (maintainer, 2026-09-26): the Planner's
+            `maxWalkingMinutes`, fixed at 15 for now.
       - [ ] **Mode toggles** at the top of a trip, remembered across trips (the Planner's `mode=`).
       - [ ] **Avoid a line**: request `includeAlternativeRoutes` and drop routes using it, since
             the Planner has no line exclusion (each returned route names its lines, so filtering

@@ -1594,7 +1594,7 @@ private fun FreshnessStamp(state: DeparturesUiState, now: Instant, onRefresh: ()
 }
 
 @Composable
-private fun Banner(text: String) {
+internal fun Banner(text: String) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         modifier = Modifier.fillMaxWidth(),
@@ -1615,7 +1615,7 @@ private fun Banner(text: String) {
  * [Banner].
  */
 @Composable
-private fun ActionBanner(
+internal fun ActionBanner(
     text: String,
     onTryAgain: () -> Unit = {},
     actionLabel: String = stringResource(R.string.try_again),
@@ -2553,7 +2553,7 @@ private fun FartherCardView(
  * top space marks the break between groups; the first on screen takes none.
  */
 @Composable
-private fun StopGroupHeader(
+internal fun StopGroupHeader(
     name: String,
     qualifier: StopQualifier?,
     distanceLabel: String?,
@@ -3045,7 +3045,7 @@ private fun JourneyHeader(
 }
 
 @Composable
-private fun StopGroupCard(
+internal fun StopGroupCard(
     group: StopGroup,
     now: Instant,
     starred: Set<StarredRow>,
@@ -3288,7 +3288,7 @@ private fun RouteRow(
  * material-icons-core (like the outline star the app already vendors).
  */
 @Composable
-private fun DisruptionWarningGlyph(description: String, modifier: Modifier = Modifier) {
+internal fun DisruptionWarningGlyph(description: String, modifier: Modifier = Modifier) {
     Text(
         text = "⚠",
         style = MaterialTheme.typography.titleMedium,
@@ -3989,7 +3989,7 @@ private fun RowScope.DestinationLabelContent(label: String, branch: String?, mod
  * wrong and a live-looking number would misrepresent them (SPEC D4).
  */
 @Composable
-private fun CountdownLabel(
+internal fun CountdownLabel(
     departures: List<Departure>,
     stale: Boolean,
     now: Instant,
@@ -4023,7 +4023,7 @@ private fun CountdownLabel(
  * status alone ("Severe Delays"), not "Victoria line: severe delays".
  */
 @Composable
-private fun DisruptionChip(description: String, modifier: Modifier = Modifier) {
+internal fun DisruptionChip(description: String, modifier: Modifier = Modifier) {
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,

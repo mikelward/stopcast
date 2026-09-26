@@ -98,7 +98,7 @@ internal fun tripLoaded(loaded: DeparturesUiState.Loaded, stops: List<StopArriva
  * repository let expire is refetched while the page stays up; the old copy shows meanwhile.
  */
 @Composable
-private fun rememberLineSequences(lineIds: List<String>, now: Instant): Map<String, LineSequence?> {
+internal fun rememberLineSequences(lineIds: List<String>, now: Instant): Map<String, LineSequence?> {
     val repository = LocalRouteStops.current
     val loaded = remember { mutableStateMapOf<String, LineSequence?>() }
     val recheck = now.epochSecond / 3600

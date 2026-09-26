@@ -191,6 +191,40 @@
     <string name="trip_none">No direct trips to %1$s soon</string>
     <!-- Title of a To… from the near-me list: the direct trips from the stops near you. -->
     <string name="trip_title_here">To %1$s</string>
+    <!-- A trip with a change (SPEC *Trips with a change*), while TfL's Journey Planner answers. -->
+    <string name="trip_planning">Planning…</string>
+    <!-- Over a trip's routes while they are planned again; %1$d is how many minutes old they are. -->
+    <string name="trip_replanning">Planned %1$d min ago · updating…</string>
+    <!-- Over a trip whose planning failed; the reason (offline, rate-limited…) follows. -->
+    <string name="trip_plan_failed">Couldn\'t plan the trip: %1$s</string>
+    <!-- A trip the Planner found no route for. -->
+    <string name="trip_no_routes">No routes found</string>
+    <!-- A route's door-to-door time and arrival, from live trains plus the Planner's run times, so
+         "about" (~). %1$d is minutes, %2$s a clock time. -->
+    <string name="trip_duration_arrival">%1$d min · ~%2$s</string>
+    <!-- The same, with a leg timed from the Planner's timetable because no live train is known yet. -->
+    <string name="trip_duration_arrival_estimated">%1$d min · est. %2$s</string>
+    <!-- A route whose Planner train is missed with no live train known: no honest arrival to give. -->
+    <string name="trip_arrival_unknown">Arrival unknown</string>
+    <!-- Between a leg's card and the next: how far it rides. %1$d stops, %2$s where it gets off. -->
+    <plurals name="trip_stops_to">
+        <item quantity="one">%1$d stop to %2$s</item>
+        <item quantity="other">%1$d stops to %2$s</item>
+    </plurals>
+    <!-- In place of a route's line pills when the whole route is on foot. -->
+    <string name="trip_walk_only">Walk</string>
+    <!-- A walk between two stations, in the Planner's minutes. -->
+    <string name="trip_walk">%1$d min walk to %2$s</string>
+    <!-- Time allowed to change between two rides, shown between their cards. -->
+    <!-- A first-leg train for screen readers: its countdown ("3 min") and destination. -->
+    <string name="trip_train_description">%1$s to %2$s</string>
+    <!-- The same for a train the rider can't use (leaves too soon, or goes another way). -->
+    <string name="trip_train_unusable_description">%1$s to %2$s, can\'t catch</string>
+    <string name="trip_change">%1$d min to change</string>
+    <!-- The rider's walk to the trip's first stop, estimated on the phone. -->
+    <string name="trip_walk_first">~%1$d min walk to %2$s</string>
+    <!-- A route leg's line isn't running. %1$s is TfL's status ("Suspended"). -->
+    <string name="trip_line_not_running">%1$s: %2$s</string>
     <!-- Placeholder in the station search field. -->
     <string name="station_search_hint">Station or stop name</string>
     <!-- Shown under the empty search field. -->

@@ -89,6 +89,16 @@ TfL names it) is kept the same way, and forgotten once you unstar it. The search
 and matches your starred stops and the stops the app has lately shown you, all read on the
 device; none of that is sent anywhere either.
 
+**Trips with a change** (*To…* from the near-me list or a *From…* station) send both ends of the
+trip together to **TfL's Journey Planner**, as two stop ids: the stop nearest you (or the *From…*
+station) and the stop you picked. Your coordinates are never sent to the Planner; the nearest
+stop's id stands in for where you are, which says no more than the nearby-stops lookup already
+does. The Planner is asked when a trip opens, about every 15 minutes while it stays on screen, and
+when you tap *Try again*; while a trip is on screen, the departures at each stop where a route
+boards are fetched from TfL like any other stop's, along with its lines' status. The plan is held
+in memory only, never saved or logged beyond coarse diagnostics (a stop id, an HTTP status), and
+nothing runs once you leave the trip.
+
 **Starred journeys** (two stops you travel between) are kept on the device with your other
 settings and stars, so they ride your own Android backup like the rest (above); they are never
 logged or sent anywhere. For the widget, the departures at a journey's nearer stop, and which of
