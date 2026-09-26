@@ -27,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import app.stopdash.domain.RouteStopsRepository
 import app.stopdash.domain.DestinationAbbreviations
 import app.stopdash.R
 import app.stopdash.domain.Countdown
@@ -101,10 +103,17 @@ internal fun legTrains(
 internal fun leavesAlongLeg(train: Departure, leg: TripLeg, sequences: Map<String, LineSequence?>): Boolean? {
     val next = leg.path.firstOrNull() ?: return null
     val sequence = sequences[leg.lineId]?.callingAt(leg.fromId) ?: return null
-    if (sequence.routes.none { next in it.stopIds }) return null
-    val ahead = RouteStops.ahead(sequence, leg.fromId, train.destination, train.branch, leg.lineId) ?: return null
-    return ahead.getOrNull(1)?.id == next
+    if (sequence.routes.none { route -> route.stopIds.any { isStop(sequence, it, next) } }) return null
+    // A bus blind names an area more often than a stop: a bus runs to its route's end (RouteStops.resolve).
+    val bus = leg.mode.equals("bus", ignoreCase = true)
+    val ahead = RouteStops.ahead(sequence, leg.fromId, train.destination, train.branch, leg.lineId, bus) ?: return null
+    return ahead.getOrNull(1)?.let { isStop(sequence, it.id, next) } == true
 }
+
+// Whether the route's stop [id] is the Planner's [stop]: the stop itself, or, for a bus, the stop
+// pair ("490G…") the Planner names its path by, which holds both of a road's poles.
+private fun isStop(sequence: LineSequence, id: String, stop: String): Boolean =
+    id == stop || sequence.stopAreas[id] == stop
 
 // [leg]'s line's upcoming trains at [stop] judged on their routes; null when the line has none.
 private fun legFilter(
@@ -269,7 +278,7 @@ internal fun lineTrains(
                 route.stopIds.indices.filter { route.stopIds[it] == leg.fromId && it < route.stopIds.lastIndex }
                     .map { route.stopIds[it + 1] }
             }
-            onward.isNotEmpty() && onward.all { it == next }
+            onward.isNotEmpty() && onward.all { isStop(sequence, it, next) }
         }.mapTo(HashSet()) { it.direction }
     }
     return Countdown.upcoming(line.filter { it.direction in directions }, now)
@@ -331,15 +340,40 @@ private val LONDON: ZoneId = ZoneId.of("Europe/London")
  * A trip with a change (SPEC *Trips with a change*): the routes best first, every route alike — its
  * line pills, ⚠ on a disrupted leg, and duration · arrival, over its first leg's live trains — and,
  * once one is tapped, that route leg by leg in the list's own header and route cards. Renders from
- * [state] alone; the caller refreshes it on the list's foreground tick.
+ * [state] alone; the caller refreshes it on the list's foreground tick. Its trains are checked
+ * against each line's route from [routeStops], which a caller must give: with none, no route would
+ * load and every train would stay "checking".
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TripScreen(
     title: String,
     state: TripViewModel.State,
     now: Instant,
     // The rider's walk to the trip's first stop (zero from a From… station).
+    access: Duration,
+    routeStops: RouteStopsRepository,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+    locationBanner: LocationBanner? = null,
+    relocating: Boolean = false,
+    onRelocate: () -> Unit = {},
+    hiddenModes: Set<String> = emptySet(),
+    onShowAllModes: () -> Unit = {},
+) {
+    CompositionLocalProvider(LocalRouteStops provides routeStops) {
+        TripContent(
+            title, state, now, access, onBack, onRetry, locationBanner, relocating, onRelocate,
+            hiddenModes, onShowAllModes,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TripContent(
+    title: String,
+    state: TripViewModel.State,
+    now: Instant,
     access: Duration,
     onBack: () -> Unit,
     onRetry: () -> Unit,

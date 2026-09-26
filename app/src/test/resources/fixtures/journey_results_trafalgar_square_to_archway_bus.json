@@ -1,0 +1,140 @@
+{
+  "journeys": [
+    {
+      "legs": [
+        {
+          "departureTime": "2026-09-26T14:33:00",
+          "arrivalTime": "2026-09-26T14:40:00",
+          "departurePoint": {
+            "individualStopId": "490014585M",
+            "commonName": "Whitehall / Trafalgar Square"
+          },
+          "arrivalPoint": {
+            "naptanId": "490G000804",
+            "individualStopId": "490013767A",
+            "commonName": "Northumberland Avenue / Trafalgar Square"
+          },
+          "routeOptions": [],
+          "mode": {
+            "id": "walking"
+          },
+          "path": {
+            "stopPoints": []
+          },
+          "interChangeDuration": "7",
+          "interChangePosition": "IDEST"
+        },
+        {
+          "departureTime": "2026-09-26T14:40:00",
+          "arrivalTime": "2026-09-26T14:56:00",
+          "departurePoint": {
+            "naptanId": "490G000804",
+            "individualStopId": "490013767A",
+            "commonName": "Northumberland Avenue / Trafalgar Square"
+          },
+          "arrivalPoint": {
+            "naptanId": "490G000850",
+            "individualStopId": "490000252S",
+            "commonName": "Hampstead Road / Drummond Street"
+          },
+          "routeOptions": [
+            {
+              "lineIdentifier": {
+                "id": "24",
+                "name": "24"
+              },
+              "directions": [
+                "Royal Free Hospital"
+              ]
+            }
+          ],
+          "mode": {
+            "id": "bus"
+          },
+          "path": {
+            "stopPoints": [
+              {
+                "id": "490G00004695"
+              },
+              {
+                "id": "490G00019157"
+              },
+              {
+                "id": "490000252X"
+              },
+              {
+                "id": "490G000850"
+              }
+            ]
+          },
+          "interChangeDuration": "2",
+          "interChangePosition": "AFTER"
+        },
+        {
+          "departureTime": "2026-09-26T15:01:00",
+          "arrivalTime": "2026-09-26T15:27:00",
+          "departurePoint": {
+            "naptanId": "490G000850",
+            "individualStopId": "490000252S",
+            "commonName": "Hampstead Road / Drummond Street"
+          },
+          "arrivalPoint": {
+            "individualStopId": "490000008C",
+            "commonName": "Archway Station"
+          },
+          "routeOptions": [
+            {
+              "lineIdentifier": {
+                "id": "134",
+                "name": "134"
+              },
+              "directions": [
+                "Tally Ho Corner"
+              ]
+            }
+          ],
+          "mode": {
+            "id": "bus"
+          },
+          "path": {
+            "stopPoints": [
+              {
+                "id": "490G00010158"
+              },
+              {
+                "id": "490G000437"
+              },
+              {
+                "id": "490G00008663"
+              },
+              {
+                "id": "490G00007927"
+              },
+              {
+                "id": "490G00019924"
+              },
+              {
+                "id": "490G00004894"
+              },
+              {
+                "id": "490G00008661"
+              },
+              {
+                "id": "490G00008904"
+              },
+              {
+                "id": "490G000132"
+              },
+              {
+                "id": "490G00009985"
+              },
+              {
+                "id": "490G00003989"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

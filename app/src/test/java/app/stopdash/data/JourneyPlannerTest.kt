@@ -170,4 +170,17 @@ class JourneyPlannerTest {
             }
         }
     }
+
+    @Test
+    fun `a bus leg boards and alights at the poles, not the stop pairs the Planner names`() = runTest {
+        // A recorded Planner answer, trimmed: its bus legs' ends are stop pairs ("490G…", which TfL
+        // gives no arrivals for) naming their poles, and the last ends at a pole with no pair at all.
+        val body = checkNotNull(javaClass.getResource("/fixtures/journey_results_trafalgar_square_to_archway_bus.json")).readText()
+        val legs = client(body).journeys("490G000832", "940GZZLUACY").single().legs
+        assertEquals(listOf("walking", "bus", "bus"), legs.map { it.mode })
+        assertEquals("490013767A", legs[1].fromId)
+        assertEquals("490000252S", legs[1].toId)
+        assertEquals("490000252S", legs[2].fromId)
+        assertEquals("490000008C", legs[2].toId)
+    }
 }
